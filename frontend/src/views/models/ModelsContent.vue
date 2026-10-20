@@ -2207,7 +2207,7 @@ function safeFilename(value: string): string {
 }
 
 .compare-error {
-  color: #b91c1c;
+  color: var(--ss-danger);
   font-size: 0.875rem;
   margin: 0;
 }

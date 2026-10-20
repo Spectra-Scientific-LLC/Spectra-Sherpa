@@ -301,7 +301,7 @@ onMounted(async () => {
 }
 
 .template-status-detail {
-  color: var(--orange-300);
+  color: var(--ss-warning);
   font-size: 0.82rem;
 }
 
@@ -364,7 +364,7 @@ onMounted(async () => {
   border-color: color-mix(in srgb, var(--primary-color) 65%, var(--surface-border));
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--primary-color) 20%, transparent),
-    0 10px 24px rgba(15, 23, 42, 0.08);
+    0 10px 24px color-mix(in srgb, var(--ss-shadow-color) 8%, transparent);
   background: color-mix(in srgb, var(--primary-color) 5%, var(--surface-card));
 }
 
@@ -412,13 +412,13 @@ onMounted(async () => {
 }
 
 .template-status.ready {
-  background: color-mix(in srgb, var(--green-500) 15%, white);
-  color: var(--green-700);
+  background: color-mix(in srgb, var(--ss-success) 15%, var(--ss-surface));
+  color: var(--ss-success-strong);
 }
 
 .template-status.wip {
-  background: color-mix(in srgb, var(--yellow-500) 18%, white);
-  color: var(--yellow-800);
+  background: color-mix(in srgb, var(--ss-warning) 18%, var(--ss-surface));
+  color: var(--ss-warning-strong);
 }
 
 .template-card-body p {

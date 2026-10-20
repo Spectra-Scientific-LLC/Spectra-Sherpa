@@ -240,6 +240,6 @@ async function onReferenceFilesSelected(event: Event): Promise<void> {
 .reference-rebind__list div { display: grid; gap: 0.2rem; min-width: 0; }
 .reference-rebind__list small, .reference-rebind__note { color: var(--text-color-secondary); }
 .reference-rebind__list a { flex-shrink: 0; font-weight: 600; text-decoration: none; }
-.reference-rebind__error { color: var(--red-500); font-weight: 600; }
+.reference-rebind__error { color: var(--ss-danger); font-weight: 600; }
 @media (max-width: 900px) { .reference-rebind__list li { align-items: flex-start; flex-direction: column; } }
 </style>

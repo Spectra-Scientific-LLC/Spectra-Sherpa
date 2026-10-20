@@ -1576,6 +1576,7 @@
 </template>
 
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { ref, reactive, computed, toRaw, nextTick, onMounted, onBeforeUnmount, watch } from "vue";
 import { portfolioDetail } from "@/utils/dataPortfolio";
 import { useConfirmAction } from "@/composables/useConfirmAction";
@@ -3585,7 +3586,7 @@ const libraryPreviewPlotData = computed(() => {
       type: "scatter",
       mode: "lines",
       name: spectrum.name,
-      line: { color: "#2563eb", width: 2 },
+      line: { color: SCIENTIFIC_COLORS.observationStrong, width: 2 },
       hovertemplate: `${spectrum.name}<br>%{x:.2f} cm^-1<br>normalized=%{y:.4f}<extra></extra>`,
     },
   ];
@@ -6939,7 +6940,7 @@ function formatDate(dateStr: string): string {
 
 .workflow-selection-error {
   margin-bottom: 0.65rem;
-  color: var(--red-600);
+  color: var(--ss-danger);
   font-size: 0.875rem;
 }
 
@@ -6979,7 +6980,7 @@ function formatDate(dateStr: string): string {
 }
 
 .acquisition-difference {
-  background: var(--yellow-50, #fff8e1);
+  background: var(--yellow-50, var(--ss-warning-surface));
   border-radius: 6px;
   color: var(--text-color);
   flex: 0 0 auto;
@@ -7050,7 +7051,7 @@ function formatDate(dateStr: string): string {
   justify-content: flex-start;
   gap: 8px;
   padding: 40px 16px;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   text-align: left;
 }
 
@@ -7061,7 +7062,7 @@ function formatDate(dateStr: string): string {
 .empty-state-sm {
   text-align: left;
   padding: 16px;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
 }
 
 .file-groups {
@@ -7100,14 +7101,14 @@ function formatDate(dateStr: string): string {
   margin: 0 0 6px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #475569;
+  color: var(--ss-text-secondary);
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
 .stage-header i {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.85rem;
 }
 
@@ -7185,7 +7186,7 @@ function formatDate(dateStr: string): string {
 
 .file-name {
   font-size: 0.9rem;
-  color: #1e293b;
+  color: var(--ss-text-strong);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7194,7 +7195,7 @@ function formatDate(dateStr: string): string {
 
 .file-size {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   white-space: nowrap;
 }
 
@@ -7226,18 +7227,18 @@ function formatDate(dateStr: string): string {
   align-items: center;
   gap: 8px;
   margin: 0 0 4px;
-  color: #1e293b;
+  color: var(--ss-text-strong);
   font-size: 1rem;
   font-weight: 600;
 }
 
 .library-title i {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .library-header p {
   margin: 0;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.9rem;
   line-height: 1.45;
 }
@@ -7272,7 +7273,7 @@ function formatDate(dateStr: string): string {
 .compact-field label {
   display: block;
   margin-bottom: 4px;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.75rem;
   font-weight: 600;
 }
@@ -7304,7 +7305,7 @@ function formatDate(dateStr: string): string {
   align-items: flex-start;
   gap: 12px;
   padding: 60px 24px;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   text-align: left;
 }
 
@@ -7314,21 +7315,21 @@ function formatDate(dateStr: string): string {
 
 .explore-empty h3 {
   margin: 0;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .explore-empty p {
   line-height: 1.5;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .explore-error i {
   font-size: 2rem;
-  color: #f59e0b;
+  color: var(--ss-warning);
 }
 
 .explore-error span {
-  color: #dc2626;
+  color: var(--ss-danger);
 }
 
 .explore-content {
@@ -7355,11 +7356,11 @@ function formatDate(dateStr: string): string {
   gap: 8px;
   font-size: 1.1rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 
 .explore-title i {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .explore-table {
@@ -7404,7 +7405,7 @@ function formatDate(dateStr: string): string {
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
-  color: #334155;
+  color: var(--ss-action-text);
   white-space: pre-wrap;
 }
 
@@ -7425,7 +7426,7 @@ function formatDate(dateStr: string): string {
   margin: 0 0 12px;
   font-size: 0.95rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 
 .metadata-table {
@@ -7439,7 +7440,7 @@ function formatDate(dateStr: string): string {
   justify-content: space-between;
   align-items: center;
   padding: 6px 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--ss-surface-subtle);
 }
 
 .meta-row:last-child {
@@ -7448,12 +7449,12 @@ function formatDate(dateStr: string): string {
 
 .meta-key {
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .meta-val {
   font-size: 0.9rem;
-  color: #1e293b;
+  color: var(--ss-text-strong);
   font-weight: 500;
 }
 
@@ -7516,7 +7517,7 @@ function formatDate(dateStr: string): string {
 .data-story-context-label {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #334155;
+  color: var(--ss-action-text);
 }
 
 .data-story-context-input {
@@ -7526,7 +7527,7 @@ function formatDate(dateStr: string): string {
 .data-story-context-hint {
   margin: 0;
   font-size: 0.8rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
   line-height: 1.4;
 }
 
@@ -7535,9 +7536,9 @@ function formatDate(dateStr: string): string {
   font-weight: 500;
   letter-spacing: 0.02em;
   text-transform: lowercase;
-  color: #8b5cf6;
+  color: var(--ss-accent);
   background: transparent;
-  border: 1px solid color-mix(in srgb, #8b5cf6 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-accent) 35%, transparent);
   padding: 0.05rem 0.45rem;
   border-radius: 4px;
 }
@@ -7546,19 +7547,19 @@ function formatDate(dateStr: string): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.9rem;
 }
 
 .data-story-text {
   font-size: 0.9rem;
   line-height: 1.6;
-  color: #334155;
+  color: var(--ss-action-text);
   white-space: pre-wrap;
 }
 
 .data-story-hint {
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   font-size: 0.85rem;
   font-style: italic;
   margin: 0;
@@ -7577,14 +7578,14 @@ function formatDate(dateStr: string): string {
   margin: 0 0 16px;
   font-size: 1rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .ref-catalog-title i {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .source-side-layout {
@@ -7607,14 +7608,14 @@ function formatDate(dateStr: string): string {
   padding: 0.25rem 0 0.25rem 1rem;
   background: transparent;
   border: none;
-  border-left: 3px solid var(--red-500);
+  border-left: 3px solid var(--ss-danger);
   border-radius: 0;
-  color: var(--red-500);
+  color: var(--ss-danger);
   font-size: 0.9375rem;
 }
 
 .ref-catalog-error i {
-  color: #dc2626;
+  color: var(--ss-danger);
   font-size: 1.1rem;
   flex-shrink: 0;
 }
@@ -7641,17 +7642,17 @@ function formatDate(dateStr: string): string {
   gap: 8px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .ref-panel-header i {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.85rem;
 }
 
 .registered-reference-catalog-link {
   align-items: center;
-  background: var(--surface-50);
+  background: var(--ss-surface-subtle);
   border-radius: 8px;
   display: flex;
   gap: 0.75rem;
@@ -7708,11 +7709,11 @@ function formatDate(dateStr: string): string {
 }
 
 .registered-reference-card__status.ready {
-  color: var(--green-600);
+  color: var(--ss-success);
 }
 
 .registered-reference-card__status.error {
-  color: var(--red-600);
+  color: var(--ss-danger);
 }
 
 @media (max-width: 48rem) {
@@ -7775,7 +7776,7 @@ function formatDate(dateStr: string): string {
 
 .ref-ds-label {
   font-size: 0.85rem;
-  color: #1e293b;
+  color: var(--ss-text-strong);
   font-weight: 500;
   flex: 1;
   min-width: 0;
@@ -7792,7 +7793,7 @@ function formatDate(dateStr: string): string {
 .ref-scp-category {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 8px;
@@ -7966,9 +7967,9 @@ function formatDate(dateStr: string): string {
   align-items: center;
   flex-wrap: wrap;
   gap: 0.75rem;
-  border: 1px solid #fbbf24;
-  background: #fffbeb;
-  color: #92400e;
+  border: 1px solid var(--ss-warning-border);
+  background: var(--ss-warning-surface);
+  color: var(--ss-warning);
   border-radius: 6px;
   padding: 10px 12px;
   font-size: 0.9rem;
@@ -8106,15 +8107,15 @@ function formatDate(dateStr: string): string {
 }
 
 .upload-members .selected-member-row .upload-cleanup-error {
-  color: #b42318;
+  color: var(--ss-danger);
   white-space: normal;
 }
 
 .upload-refusals {
-  background: #fff7ed;
-  border: 1px solid #fdba74;
+  background: var(--ss-warning-surface);
+  border: 1px solid var(--ss-warning-border);
   border-radius: 8px;
-  color: #9a3412;
+  color: var(--ss-warning);
   padding: 0.75rem 0.9rem;
 }
 
@@ -8139,7 +8140,7 @@ function formatDate(dateStr: string): string {
 }
 
 .upload-refusals li span {
-  color: #7c2d12;
+  color: var(--ss-warning);
   font-size: 0.8125rem;
   margin-top: 0.1rem;
 }
@@ -8159,8 +8160,8 @@ function formatDate(dateStr: string): string {
 }
 
 .upload-format-chip.disabled {
-  color: #94a3b8;
-  background: #f8fafc;
+  color: var(--ss-text-muted);
+  background: var(--ss-surface-subtle);
 }
 
 .upload-name {
@@ -8196,7 +8197,7 @@ function formatDate(dateStr: string): string {
 /* ---- Catalog explore card ---- */
 .dataset-description {
   font-size: 0.9rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
   line-height: 1.6;
   margin: 0;
   white-space: pre-line;
@@ -8209,7 +8210,7 @@ function formatDate(dateStr: string): string {
 }
 
 .text-warn {
-  color: #f59e0b;
+  color: var(--ss-warning);
   font-weight: 600;
 }
 
@@ -8233,21 +8234,21 @@ function formatDate(dateStr: string): string {
 .field label {
   font-weight: 500;
   font-size: 0.9rem;
-  color: #334155;
+  color: var(--ss-action-text);
 }
 
 .required {
-  color: #ef4444;
+  color: var(--ss-danger);
 }
 
 .field-hint {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
 }
 
 .field-help {
   font-size: 0.78rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .inspection-asset-selector {
@@ -8276,10 +8277,10 @@ function formatDate(dateStr: string): string {
   max-width: 680px;
   margin: 0.75rem 0;
   padding: 0.75rem 0.85rem;
-  border: 1px solid #f59e0b;
+  border: 1px solid var(--ss-warning);
   border-radius: 8px;
-  background: #fffbeb;
-  color: #92400e;
+  background: var(--ss-warning-surface);
+  color: var(--ss-warning);
   font-size: 0.86rem;
   line-height: 1.4;
 }

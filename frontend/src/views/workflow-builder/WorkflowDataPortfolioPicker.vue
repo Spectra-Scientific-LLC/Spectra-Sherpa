@@ -207,7 +207,7 @@ async function applySelection(): Promise<void> {
 .workflow-portfolio-picker label { font-size: .8rem; font-weight: 600; }
 .picker-controls { display: flex; gap: .4rem; }
 .picker-controls select { background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: 4px; color: var(--text-color); flex: 1; min-width: 0; padding: .4rem; }
-.picker-controls button { border: 1px solid var(--primary-color); border-radius: 4px; background: var(--primary-color); color: white; cursor: pointer; }
+.picker-controls button { border: 1px solid var(--primary-color); border-radius: 4px; background: var(--primary-color); color: var(--ss-on-action); cursor: pointer; }
 .workflow-portfolio-picker small { color: var(--text-color-secondary); }
-.workflow-portfolio-picker .picker-error { color: #b91c1c; }
+.workflow-portfolio-picker .picker-error { color: var(--ss-panel-danger); }
 </style>

@@ -476,7 +476,7 @@ onBeforeUnmount(() => document.removeEventListener("visibilitychange", onVisibil
 
 .goal-starter__error {
   margin: 0;
-  color: var(--red-600, #b42318);
+  color: var(--red-600, var(--ss-danger));
 }
 
 .goal-starter__done {
@@ -575,7 +575,7 @@ onBeforeUnmount(() => document.removeEventListener("visibilitychange", onVisibil
 .goal-step--done .goal-step__marker {
   border-color: var(--primary-color);
   background: var(--primary-color);
-  color: var(--primary-color-text, #fff);
+  color: var(--primary-color-text, var(--ss-on-action));
 }
 
 .goal-step--current .goal-step__marker {
@@ -600,7 +600,7 @@ onBeforeUnmount(() => document.removeEventListener("visibilitychange", onVisibil
 
 .goal-step__warning {
   margin: 0.4rem 0 0;
-  color: var(--orange-700, #b54708);
+  color: var(--orange-700, var(--ss-warning));
   font-size: 0.875rem;
 }
 

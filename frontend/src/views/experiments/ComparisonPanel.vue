@@ -923,13 +923,13 @@ function shapeFromValue(value: unknown): DataShape {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #1f2937;
+  color: var(--ss-text-strong);
   font-size: 1rem;
   font-weight: 650;
 }
 
 .comparison-title i {
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .comparison-empty {
@@ -938,7 +938,7 @@ function shapeFromValue(value: unknown): DataShape {
   align-items: flex-start;
   gap: 8px;
   padding: 48px;
-  color: #64748b;
+  color: var(--ss-text-muted);
   text-align: left;
 }
 
@@ -949,16 +949,16 @@ function shapeFromValue(value: unknown): DataShape {
 .qualification-note {
   margin: 0;
   padding: 0.5rem 0.75rem;
-  border-left: 3px solid #60a5fa;
-  background: #eff6ff;
-  color: #1e40af;
+  border-left: 3px solid var(--ss-action-border);
+  background: var(--ss-action-tint);
+  color: var(--ss-action);
   font-size: 0.8rem;
 }
 
 
 .comparison-empty-inline {
   padding: 1rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
   text-align: left;
 }
 
@@ -967,40 +967,40 @@ function shapeFromValue(value: unknown): DataShape {
 }
 
 .metric-best {
-  color: #15803d;
+  color: var(--ss-success);
   font-weight: 650;
 }
 
 .difference-neutral {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--ss-action-tint);
+  color: var(--ss-action);
   font-weight: 550;
 }
 
 .workflow-difference {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--ss-action-tint);
+  color: var(--ss-action);
   font-weight: 550;
 }
 
 .delta-positive {
-  color: #15803d;
+  color: var(--ss-success);
   font-weight: 600;
 }
 
 .delta-negative {
-  color: #b91c1c;
+  color: var(--ss-danger);
   font-weight: 600;
 }
 
 .delta-zero,
 .muted {
-  color: #94a3b8;
+  color: var(--ss-text-muted);
 }
 
 .matrix-scroll {
   overflow-x: auto;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--ss-border-strong);
   border-radius: 6px;
 }
 
@@ -1008,7 +1008,7 @@ function shapeFromValue(value: unknown): DataShape {
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
-  color: #334155;
+  color: var(--ss-action-text);
   font-size: 0.8rem;
 }
 
@@ -1023,7 +1023,7 @@ function shapeFromValue(value: unknown): DataShape {
 .comparison-matrix th,
 .comparison-matrix td {
   padding: 0.55rem 0.7rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--ss-border);
   text-align: left;
   vertical-align: top;
   overflow-wrap: anywhere;
@@ -1034,8 +1034,8 @@ function shapeFromValue(value: unknown): DataShape {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f8fafc;
-  color: #334155;
+  background: var(--ss-surface-subtle);
+  color: var(--ss-action-text);
   font-weight: 650;
 }
 
@@ -1045,29 +1045,29 @@ function shapeFromValue(value: unknown): DataShape {
 }
 
 .comparison-matrix tbody th[scope="row"] {
-  background: #fff;
+  background: var(--ss-surface);
   font-weight: 600;
 }
 
 .matrix-section-row th {
   padding-block: 0.45rem;
-  border-top: 2px solid #94a3b8;
-  background: #e2e8f0;
-  color: #1e293b;
+  border-top: 2px solid var(--ss-border-strong);
+  background: var(--ss-border);
+  color: var(--ss-text-strong);
   font-size: 0.75rem;
   text-transform: uppercase;
 }
 
 .matrix-empty {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-style: italic;
 }
 
 code {
   padding: 2px 6px;
   border-radius: 4px;
-  background: #f1f5f9;
-  color: #475569;
+  background: var(--ss-surface-subtle);
+  color: var(--ss-text-secondary);
   font-size: 0.78rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

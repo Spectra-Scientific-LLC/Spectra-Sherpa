@@ -118,7 +118,7 @@ function toggle(key: keyof GuidanceSettingsPatch, event: Event): void {
 
 .error-message {
   margin: 0;
-  color: var(--red-500);
+  color: var(--ss-danger);
   font-size: 14px;
 }
 </style>

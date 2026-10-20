@@ -374,7 +374,7 @@ const expandedDetails = computed(() => {
 }
 
 .analysis-readiness__persistence--error {
-  color: var(--red-600);
+  color: var(--ss-danger);
 }
 
 .analysis-readiness__profile > div,
@@ -391,12 +391,12 @@ const expandedDetails = computed(() => {
 
 .analysis-readiness__diagnostic {
   margin: 0.7rem 1rem 0;
-  color: var(--orange-700);
+  color: var(--ss-warning-strong);
   font-size: 0.82rem;
 }
 
 .analysis-readiness__diagnostic--error {
-  color: var(--red-600);
+  color: var(--ss-danger);
 }
 
 .analysis-readiness__unbind {

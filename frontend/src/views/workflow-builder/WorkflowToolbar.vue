@@ -543,9 +543,9 @@ defineExpose({ summarizePurpose });
 
 <style scoped>
 .workflow-toolbar {
-  background: #1e293b;
+  background: var(--ss-panel);
   border-radius: 8px;
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -559,7 +559,7 @@ defineExpose({ summarizePurpose });
 
 .toolbar-header {
   padding: 16px;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid var(--ss-panel-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -580,14 +580,14 @@ defineExpose({ summarizePurpose });
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 
 .collapse-toggle {
   background: transparent;
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
   border-radius: 4px;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   width: 26px;
   height: 26px;
   display: inline-flex;
@@ -599,9 +599,9 @@ defineExpose({ summarizePurpose });
 }
 
 .collapse-toggle:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #e2e8f0;
-  border-color: #475569;
+  background: color-mix(in srgb, var(--ss-surface) 6%, transparent);
+  color: var(--ss-panel-secondary);
+  border-color: var(--ss-panel-border);
 }
 
 .collapse-toggle i {
@@ -625,20 +625,20 @@ defineExpose({ summarizePurpose });
 }
 
 .toolbar-mode-tabs button {
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
   border-radius: 5px;
   padding: 6px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   cursor: pointer;
   font: inherit;
   font-size: 0.74rem;
 }
 
 .toolbar-mode-tabs button.active {
-  border-color: #3b82f6;
-  background: rgba(59, 130, 246, 0.16);
-  color: #dbeafe;
+  border-color: var(--ss-action);
+  background: color-mix(in srgb, var(--ss-action) 16%, transparent);
+  color: var(--ss-action);
 }
 
 .catalog-shell {
@@ -660,35 +660,35 @@ defineExpose({ summarizePurpose });
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   padding: 12px 12px;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--ss-surface) 3%, transparent);
   border-radius: 6px;
 }
 
 .section-header:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #94a3b8;
+  background: color-mix(in srgb, var(--ss-surface) 6%, transparent);
+  color: var(--ss-panel-muted);
 }
 
 .section-header.active {
-  color: #cbd5e1;
-  background: rgba(59, 130, 246, 0.1);
+  color: var(--ss-panel-secondary);
+  background: color-mix(in srgb, var(--ss-action) 10%, transparent);
 }
 
 .section-header.static {
   cursor: default;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 
 .section-header.static:hover {
-  background: rgba(255, 255, 255, 0.03);
-  color: #94a3b8;
+  background: color-mix(in srgb, var(--ss-surface) 3%, transparent);
+  color: var(--ss-panel-muted);
 }
 
 .section-header > span {
@@ -719,9 +719,9 @@ defineExpose({ summarizePurpose });
   width: 100%;
   padding: 8px 28px 8px 10px;
   border-radius: 6px;
-  border: 1px solid #334155;
-  background: rgba(15, 23, 42, 0.6);
-  color: #e2e8f0;
+  border: 1px solid var(--ss-panel-border);
+  background: color-mix(in srgb, var(--ss-panel-inset) 60%, transparent);
+  color: var(--ss-panel-secondary);
   font-size: 0.85rem;
   font-family: inherit;
   transition: border-color 0.15s ease, background 0.15s ease;
@@ -729,13 +729,13 @@ defineExpose({ summarizePurpose });
 }
 
 .search-input::placeholder {
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 
 .search-input:focus {
   outline: none;
-  border-color: #3b82f6;
-  background: rgba(15, 23, 42, 0.9);
+  border-color: var(--ss-action);
+  background: color-mix(in srgb, var(--ss-panel-inset) 90%, transparent);
 }
 
 .search-clear {
@@ -745,7 +745,7 @@ defineExpose({ summarizePurpose });
   transform: translateY(-50%);
   background: transparent;
   border: none;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   cursor: pointer;
   padding: 4px;
   display: inline-flex;
@@ -755,8 +755,8 @@ defineExpose({ summarizePurpose });
 }
 
 .search-clear:hover {
-  color: #e2e8f0;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--ss-panel-secondary);
+  background: color-mix(in srgb, var(--ss-surface) 8%, transparent);
 }
 
 .search-clear i {
@@ -770,7 +770,7 @@ defineExpose({ summarizePurpose });
 .search-empty {
   padding: 10px 12px;
   font-size: 0.78rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   font-style: italic;
 }
 
@@ -802,7 +802,7 @@ defineExpose({ summarizePurpose });
   transition: all 0.2s ease;
   font-weight: 500;
   font-size: 0.9rem;
-  color: white;
+  color: var(--ss-on-action);
 }
 
 .node-button:hover {
@@ -820,11 +820,11 @@ defineExpose({ summarizePurpose });
   z-index: 1000;
   max-width: 320px;
   padding: 10px 12px;
-  background: #0f172a;
-  color: #e2e8f0;
-  border: 1px solid #334155;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-secondary);
+  border: 1px solid var(--ss-panel-border);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ss-shadow-color) 45%, transparent);
   font-size: 0.78rem;
   line-height: 1.4;
   pointer-events: none;
@@ -836,12 +836,12 @@ defineExpose({ summarizePurpose });
 .node-tooltip-title {
   font-weight: 600;
   font-size: 0.82rem;
-  color: #f8fafc;
+  color: var(--ss-panel-text);
 }
 
 .node-tooltip-body {
   font-weight: 400;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   white-space: normal;
   word-wrap: break-word;
 }
@@ -857,64 +857,64 @@ defineExpose({ summarizePurpose });
 
 /* Node type colors */
 .node-data {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: linear-gradient(135deg, var(--ss-action), var(--ss-action));
 }
 
 .node-synthesis {
-  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  background: linear-gradient(135deg, var(--ss-info), var(--ss-info));
 }
 
 .node-preprocess {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
+  background: linear-gradient(135deg, var(--ss-success), var(--ss-success));
 }
 
 .node-selection {
-  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  background: linear-gradient(135deg, var(--ss-success), var(--ss-success));
 }
 
 .node-exploratory {
-  background: linear-gradient(135deg, #a855f7, #9333ea);
+  background: linear-gradient(135deg, var(--ss-accent), var(--ss-accent));
 }
 
 .node-regression {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  background: linear-gradient(135deg, var(--ss-accent), var(--ss-accent));
 }
 
 .node-classify {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
+  background: linear-gradient(135deg, var(--ss-warning), var(--ss-warning));
 }
 
 .node-clustering {
-  background: linear-gradient(135deg, #ec4899, #db2777);
+  background: linear-gradient(135deg, var(--ss-annotation), var(--ss-annotation));
 }
 
 .node-validation {
-  background: linear-gradient(135deg, #eab308, #ca8a04);
+  background: linear-gradient(135deg, var(--ss-warning), var(--ss-warning));
 }
 
 .node-visualize {
-  background: linear-gradient(135deg, #f97316, #ea580c);
+  background: linear-gradient(135deg, var(--ss-warning), var(--ss-warning));
 }
 
 .node-export {
-  background: linear-gradient(135deg, #64748b, #475569);
+  background: linear-gradient(135deg, var(--ss-border-strong), var(--ss-panel-border));
 }
 
 .node-plugin {
-  background: linear-gradient(135deg, #ec4899, #be185d);
+  background: linear-gradient(135deg, var(--ss-annotation), var(--ss-annotation));
 }
 
 .toolbar-help {
   padding: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border-top: 1px solid #334155;
+  background: color-mix(in srgb, var(--ss-surface) 3%, transparent);
+  border-top: 1px solid var(--ss-panel-border);
 }
 
 .toolbar-help h4 {
   margin: 0 0 12px 0;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -928,7 +928,7 @@ defineExpose({ summarizePurpose });
   margin: 0;
   padding-left: 18px;
   font-size: 0.8rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   line-height: 1.6;
 }
 

@@ -216,6 +216,8 @@
 </template>
 
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, ref, watch } from "vue";
 import api from "@/api/client";
@@ -333,13 +335,13 @@ const allowed = computed(() => new Set(review.value?.rows.map((row) => row.id) |
 const selectedSet = computed(() => new Set(selected.value));
 const marked = computed(() => new Set(review.value?.state.marked || []));
 const masked = computed(() => new Set(review.value?.state.heldout_excluded || []));
-const palette = ["#0072B2", "#009E73", "#D55E00", "#CC79A7", "#E69F00", "#56B4E9", "#222222"];
+
 const groupColors = computed(
   () =>
     new Map(
       [...new Set(review.value?.rows.map((row) => row.group) || [])]
         .sort()
-        .map((group, index) => [group, palette[index % palette.length]]),
+        .map((group, index) => [group, seriesPalette("diagnostics")[index % seriesPalette("diagnostics").length]]),
     ),
 );
 const config = { responsive: true, displaylogo: false, modeBarButtonsToRemove: ["autoScale2d"] };
@@ -457,7 +459,7 @@ const influenceLayout = computed(() => ({
             y0: 0,
             y1: 1,
             yref: "paper",
-            line: { color: "#555" },
+            line: { color: SCIENTIFIC_COLORS.referenceLine },
           },
         ]
       : []),
@@ -470,7 +472,7 @@ const influenceLayout = computed(() => ({
             y0: 0,
             y1: 1,
             yref: "paper",
-            line: { color: "#555", dash: "dash" },
+            line: { color: SCIENTIFIC_COLORS.referenceLine, dash: "dash" },
           },
         ]
       : []),
@@ -483,7 +485,7 @@ const influenceLayout = computed(() => ({
             xref: "paper",
             y0: qLimit.value,
             y1: qLimit.value,
-            line: { color: "#555" },
+            line: { color: SCIENTIFIC_COLORS.referenceLine },
           },
         ]
       : []),
@@ -622,6 +624,6 @@ function setPcaAdvisorFocus(value: { variables: string[]; response: number; samp
   text-align: left;
 }
 .saved-diagnostics tr.is-selected {
-  background: var(--primary-50);
+  background: var(--ss-action-tint);
 }
 </style>

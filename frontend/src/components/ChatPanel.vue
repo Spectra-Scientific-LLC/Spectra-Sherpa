@@ -160,7 +160,7 @@
           <Menu ref="llmMenu" :model="llmMenuItems" :popup="true" class="llm-menu">
             <template #item="{ item }">
               <div class="llm-menu-item" :class="{ active: item.active }">
-                <i class="pi pi-sparkles" style="color: #3b82f6; font-size: 0.85rem"></i>
+                <i class="pi pi-sparkles" style="color: var(--ss-action); font-size: 0.85rem"></i>
                 <span class="llm-provider-name">{{ item.label }}</span>
                 <span class="llm-model-name">{{ item.model }}</span>
               </div>
@@ -1521,19 +1521,19 @@ const collapsed = computed(() => props.collapsed);
 
 <style scoped>
 .diagnostic-context {
-  border: 1px solid var(--surface-border, #dbe2ea);
+  border: 1px solid var(--surface-border, var(--ss-border));
   border-radius: 0.5rem;
   padding: 0.75rem;
   margin-bottom: 0.5rem;
-  background: var(--surface-ground, #f8fafc);
+  background: var(--surface-ground, var(--ss-surface-subtle));
   font-size: 0.875rem;
 }
 .diagnostic-context p { margin: 0 0 0.5rem; }
 .diagnostic-context button {
-  border: 1px solid var(--surface-border, #dbe2ea);
+  border: 1px solid var(--surface-border, var(--ss-border));
   border-radius: 0.35rem;
   padding: 0.3rem 0.6rem;
-  background: var(--surface-card, white);
+  background: var(--surface-card, var(--ss-surface));
   color: inherit;
   cursor: pointer;
 }
@@ -1543,7 +1543,7 @@ const collapsed = computed(() => props.collapsed);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #ffffff;
+  background: var(--ss-surface);
 }
 
 .chat-panel__inner {
@@ -1566,8 +1566,8 @@ const collapsed = computed(() => props.collapsed);
   flex-wrap: wrap;
   gap: 12px;
   padding: 8px 12px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--ss-surface-subtle);
+  border-bottom: 1px solid var(--ss-border);
   flex-shrink: 0;
 }
 
@@ -1576,11 +1576,11 @@ const collapsed = computed(() => props.collapsed);
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 
 .panel-topbar .divider {
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   font-weight: 300;
 }
 
@@ -1596,9 +1596,9 @@ const collapsed = computed(() => props.collapsed);
 
 .sherpa-scope-breadcrumb {
   font-size: 0.78rem;
-  color: var(--text-color-secondary, #667085);
-  background: var(--surface-100, #f3f4f6);
-  border: 1px solid var(--surface-200, #e5e7eb);
+  color: var(--text-color-secondary, var(--ss-text-muted));
+  background: var(--surface-100, var(--ss-surface-subtle));
+  border: 1px solid var(--surface-200, var(--ss-border));
   border-radius: 12px;
   padding: 2px 10px;
   white-space: nowrap;
@@ -1617,7 +1617,7 @@ const collapsed = computed(() => props.collapsed);
 }
 
 .sherpa-topics-btn {
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .sherpa-menu {
@@ -1645,22 +1645,22 @@ const collapsed = computed(() => props.collapsed);
 }
 
 .sherpa-menu-item--disabled {
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   cursor: default;
 }
 
 .sherpa-menu-item.active {
-  background: #e0f2fe;
+  background: var(--ss-info-surface);
 }
 
 .sherpa-menu-title {
-  color: #1e293b;
+  color: var(--ss-text-strong);
   font-size: 0.85rem;
   line-height: 1.2;
 }
 
 .sherpa-menu-meta {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.72rem;
 }
 
@@ -1668,7 +1668,7 @@ const collapsed = computed(() => props.collapsed);
 .tab-toggle {
   display: flex;
   gap: 2px;
-  background: #e2e8f0;
+  background: var(--ss-border);
   border-radius: 8px;
   padding: 2px;
 }
@@ -1680,30 +1680,30 @@ const collapsed = computed(() => props.collapsed);
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #64748b;
+  color: var(--ss-text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
 }
 
 .tab-btn:hover {
-  color: #334155;
-  background: rgba(255, 255, 255, 0.5);
+  color: var(--ss-action-text);
+  background: color-mix(in srgb, var(--ss-surface) 50%, transparent);
 }
 
 .tab-btn.active {
-  background: #ffffff;
-  color: #1e293b;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--ss-surface);
+  color: var(--ss-text-strong);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ss-shadow-color) 8%, transparent);
 }
 
 .llm-settings-btn,
 .llm-new-conv-btn {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .open-tab-btn {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 /* LLM Menu Styles */
@@ -1726,25 +1726,25 @@ const collapsed = computed(() => props.collapsed);
 }
 
 .llm-menu-item:hover {
-  background: #f1f5f9;
+  background: var(--ss-surface-subtle);
 }
 
 .llm-menu-item.active {
-  background: #e0f2fe;
-  border: 1px solid #3b82f6;
+  background: var(--ss-info-surface);
+  border: 1px solid var(--ss-action);
 }
 
 .llm-provider-name {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
   flex: 1;
 }
 
 .llm-model-name {
   font-size: 0.75rem;
-  color: #64748b;
-  background: #f1f5f9;
+  color: var(--ss-text-muted);
+  background: var(--ss-surface-subtle);
   padding: 2px 8px;
   border-radius: 4px;
   white-space: nowrap;
@@ -1765,7 +1765,7 @@ const collapsed = computed(() => props.collapsed);
 }
 
 .chat-sidebar {
-  border-right: 1px solid #e2e8f0;
+  border-right: 1px solid var(--ss-border);
   padding-right: 8px;
   overflow-y: auto;
   display: flex;
@@ -1784,14 +1784,14 @@ const collapsed = computed(() => props.collapsed);
   gap: 4px;
   padding: 2px;
   border-radius: 10px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: #1b1f23;
+  background: var(--ss-surface-subtle);
+  border: 1px solid var(--ss-border);
+  color: var(--ss-text);
 }
 
 .conversation-item.active {
-  background: #e0f2fe;
-  border-color: #3b82f6;
+  background: var(--ss-info-surface);
+  border-color: var(--ss-action);
 }
 
 .conversation-button {
@@ -1810,7 +1810,7 @@ const collapsed = computed(() => props.collapsed);
 }
 
 .conversation-button:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: color-mix(in srgb, var(--ss-shadow-color) 5%, transparent);
 }
 
 .conversation-item strong {
@@ -1820,7 +1820,7 @@ const collapsed = computed(() => props.collapsed);
 
 .conversation-item span {
   font-size: 0.7rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .delete-btn {
@@ -1862,22 +1862,22 @@ const collapsed = computed(() => props.collapsed);
   margin-top: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid #fde047;
-  background: #fefce8;
-  color: #a16207;
+  border: 1px solid var(--ss-warning-border);
+  background: var(--ss-warning-surface);
+  color: var(--ss-warning);
   font-size: 0.85rem;
 }
 
 .ws-status.disconnected {
-  border-color: #fecaca;
-  background: #fef2f2;
-  color: #b91c1c;
+  border-color: var(--ss-danger-surface);
+  background: var(--ss-danger-surface);
+  color: var(--ss-danger);
 }
 
 .ws-status.connecting {
-  border-color: #fde047;
-  background: #fefce8;
-  color: #a16207;
+  border-color: var(--ss-warning-border);
+  background: var(--ss-warning-surface);
+  color: var(--ss-warning);
 }
 
 .chat-messages {
@@ -1888,15 +1888,15 @@ const collapsed = computed(() => props.collapsed);
   flex-direction: column;
   gap: 8px;
   padding: 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
   border-radius: 12px;
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
 }
 
 .chat-input-shell {
   flex-shrink: 0;
-  border-top: 1px solid #e2e8f0;
-  background: #ffffff;
+  border-top: 1px solid var(--ss-border);
+  background: var(--ss-surface);
 }
 
 .chat-upgrade-row {
@@ -1917,13 +1917,13 @@ const collapsed = computed(() => props.collapsed);
   max-width: 70%;
   padding: 8px 12px;
   border-radius: 12px;
-  background: #e2e8f0;
+  background: var(--ss-border);
   white-space: pre-wrap;
 }
 
 .chat-message.user .chat-bubble {
-  background: #2563eb;
-  color: white;
+  background: var(--ss-action);
+  color: var(--ss-on-action);
 }
 
 .sherpa-recap-card {
@@ -1933,10 +1933,10 @@ const collapsed = computed(() => props.collapsed);
   align-items: flex-start;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #c4b5fd;
+  border: 1px solid var(--ss-accent-border);
   border-radius: 8px;
-  background: #f5f3ff;
-  color: #312e81;
+  background: var(--ss-accent-faint);
+  color: var(--ss-accent);
 }
 
 .sherpa-recap-card__icon {
@@ -1945,8 +1945,8 @@ const collapsed = computed(() => props.collapsed);
   width: 24px;
   height: 24px;
   border-radius: 999px;
-  background: #ede9fe;
-  color: #6d28d9;
+  background: var(--ss-accent-faint);
+  color: var(--ss-accent);
 }
 
 .sherpa-recap-card__body {
@@ -1959,7 +1959,7 @@ const collapsed = computed(() => props.collapsed);
   font-weight: 700;
   letter-spacing: 0;
   text-transform: uppercase;
-  color: #6d28d9;
+  color: var(--ss-accent);
 }
 
 .sherpa-recap-card__body p {
@@ -1977,12 +1977,12 @@ const collapsed = computed(() => props.collapsed);
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #6d28d9;
+  color: var(--ss-accent);
   cursor: pointer;
 }
 
 .sherpa-recap-card__dismiss:hover {
-  background: #ede9fe;
+  background: var(--ss-accent-faint);
 }
 
 .product-proposal-card {
@@ -2087,14 +2087,14 @@ const collapsed = computed(() => props.collapsed);
 }
 
 .chat-bubble--md :deep(code) {
-  background: rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--ss-shadow-color) 8%, transparent);
   padding: 1px 4px;
   border-radius: 3px;
   font-size: 0.9em;
 }
 
 .chat-bubble--md :deep(pre) {
-  background: rgba(0, 0, 0, 0.06);
+  background: color-mix(in srgb, var(--ss-shadow-color) 6%, transparent);
   padding: 8px;
   border-radius: 6px;
   overflow-x: auto;
@@ -2122,7 +2122,7 @@ const collapsed = computed(() => props.collapsed);
 
 .chat-bubble--md :deep(th),
 .chat-bubble--md :deep(td) {
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid color-mix(in srgb, var(--ss-shadow-color) 15%, transparent);
   padding: 3px 8px;
 }
 

@@ -389,14 +389,14 @@ watch([backendConnected, () => authStore.user, () => siteProfile?.value], ([isCo
   left: 0;
   right: 0;
   z-index: 10000;
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-  color: white;
+  background: linear-gradient(135deg, var(--ss-danger) 0%, var(--ss-danger) 100%);
+  color: var(--ss-on-action);
   padding: 12px 20px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ss-shadow-color) 15%, transparent);
   animation: slideDown 0.3s ease-out;
 }
 
@@ -406,14 +406,14 @@ watch([backendConnected, () => authStore.user, () => siteProfile?.value], ([isCo
   left: 0;
   right: 0;
   z-index: 10000;
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  color: white;
+  background: linear-gradient(135deg, var(--ss-warning) 0%, var(--ss-warning) 100%);
+  color: var(--ss-on-action);
   padding: 12px 20px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ss-shadow-color) 15%, transparent);
   animation: slideDown 0.3s ease-out;
 }
 
@@ -423,20 +423,20 @@ watch([backendConnected, () => authStore.user, () => siteProfile?.value], ([isCo
   left: 0;
   right: 0;
   z-index: 10000;
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  color: white;
+  background: linear-gradient(135deg, var(--ss-warning) 0%, var(--ss-warning) 100%);
+  color: var(--ss-on-action);
   padding: 12px 20px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ss-shadow-color) 15%, transparent);
 }
 
 .session-expiry-banner .retry-btn {
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  color: white;
+  background: color-mix(in srgb, var(--ss-surface) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-surface) 40%, transparent);
+  color: var(--ss-on-action);
   padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
@@ -478,7 +478,7 @@ watch([backendConnected, () => authStore.user, () => siteProfile?.value], ([isCo
 }
 
 .backend-status-banner code {
-  background: rgba(255, 255, 255, 0.2);
+  background: color-mix(in srgb, var(--ss-surface) 20%, transparent);
   padding: 2px 8px;
   border-radius: 4px;
   font-family: "Monaco", "Courier New", monospace;
@@ -486,9 +486,9 @@ watch([backendConnected, () => authStore.user, () => siteProfile?.value], ([isCo
 }
 
 .backend-status-banner .retry-btn {
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: white;
+  background: color-mix(in srgb, var(--ss-surface) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-surface) 30%, transparent);
+  color: var(--ss-on-action);
   padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
@@ -501,8 +501,8 @@ watch([backendConnected, () => authStore.user, () => siteProfile?.value], ([isCo
 }
 
 .backend-status-banner .retry-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.3);
-  border-color: rgba(255, 255, 255, 0.5);
+  background: color-mix(in srgb, var(--ss-surface) 30%, transparent);
+  border-color: color-mix(in srgb, var(--ss-surface) 50%, transparent);
 }
 
 .backend-status-banner .retry-btn:disabled {

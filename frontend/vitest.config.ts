@@ -23,6 +23,9 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     setupFiles: ['./src/test/setup.ts'],
+    // The theme's raw CSS import is executable export input, not an optional
+    // stylesheet stub. Exercise the real authority in unit tests too.
+    css: { include: [/tokens\.css/] },
     // Vitest defaults catch e2e/*.spec.ts — those are Playwright specs
     // (driven by `npm run test:e2e`) and cannot be imported by vitest.
     // Restrict the vitest glob to src/ so the unit-test suite is

@@ -86,8 +86,8 @@ function resizeWithKeyboard(event: KeyboardEvent) {
 }
 .inspector-resize-handle:hover,
 .inspector-resize-handle:focus-visible {
-  background: rgba(99, 102, 241, 0.3);
+  background: color-mix(in srgb, var(--ss-accent) 30%, transparent);
   border-radius: 4px;
-  outline: 2px solid #818cf8;
+  outline: 2px solid var(--ss-accent-border);
 }
 </style>

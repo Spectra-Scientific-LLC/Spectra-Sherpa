@@ -44,10 +44,10 @@ function loadWhenOpened(event: Event) {
 </script>
 
 <style scoped>
-.scientific-basis { padding: .75rem; border: 1px solid #cbd5e1; border-radius: 6px; }
+.scientific-basis { padding: .75rem; border: 1px solid var(--ss-border-strong); border-radius: 6px; }
 summary { cursor: pointer; font-weight: 600; }
 details details { margin-top: .75rem; }
 p, li { font-size: .85rem; line-height: 1.5; }
-.muted { color: #64748b; }
+.muted { color: var(--ss-text-muted); }
 a { overflow-wrap: anywhere; }
 </style>

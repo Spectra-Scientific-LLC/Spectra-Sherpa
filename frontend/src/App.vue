@@ -53,8 +53,8 @@ const reload = () => window.location.reload();
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #111827;
-  color: #f9fafb;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-text);
   z-index: 100000;
   padding: 24px;
 }
@@ -62,16 +62,16 @@ const reload = () => window.location.reload();
 .server-module-failure .panel {
   max-width: 480px;
   text-align: center;
-  background: #1f2937;
-  border: 1px solid #374151;
+  background: var(--ss-panel);
+  border: 1px solid var(--ss-panel-border);
   border-radius: 12px;
   padding: 32px;
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 24px 48px color-mix(in srgb, var(--ss-shadow-color) 40%, transparent);
 }
 
 .server-module-failure .icon {
   font-size: 2.5rem;
-  color: #f59e0b;
+  color: var(--ss-panel-warning);
   margin-bottom: 16px;
 }
 
@@ -84,16 +84,16 @@ const reload = () => window.location.reload();
   font-size: 0.95rem;
   line-height: 1.5;
   margin: 8px 0;
-  color: #d1d5db;
+  color: var(--ss-panel-secondary);
 }
 
 .server-module-failure .meta {
   font-size: 0.85rem;
-  color: #9ca3af;
+  color: var(--ss-panel-muted);
 }
 
 .server-module-failure code {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--ss-surface) 8%, transparent);
   padding: 2px 6px;
   border-radius: 4px;
   font-family: "Monaco", "Courier New", monospace;
@@ -101,8 +101,8 @@ const reload = () => window.location.reload();
 
 .server-module-failure button {
   margin-top: 20px;
-  background: #3b82f6;
-  color: white;
+  background: var(--ss-action);
+  color: var(--ss-on-action);
   border: none;
   padding: 10px 24px;
   border-radius: 8px;
@@ -112,6 +112,6 @@ const reload = () => window.location.reload();
 }
 
 .server-module-failure button:hover {
-  background: #2563eb;
+  background: var(--ss-action);
 }
 </style>

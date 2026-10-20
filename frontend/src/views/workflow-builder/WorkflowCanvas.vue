@@ -21,7 +21,7 @@
             refY="3"
             orient="auto"
           >
-            <polygon points="0 0, 10 3, 0 6" fill="#10b981" />
+            <polygon points="0 0, 10 3, 0 6" fill="var(--ss-edge-valid)" />
           </marker>
           <!-- Invalid edge arrowhead (red) -->
           <marker
@@ -32,7 +32,7 @@
             refY="3"
             orient="auto"
           >
-            <polygon points="0 0, 10 3, 0 6" fill="#ef4444" />
+            <polygon points="0 0, 10 3, 0 6" fill="var(--ss-edge-invalid)" />
           </marker>
         </defs>
 
@@ -55,7 +55,7 @@
           <path
             :d="edgeRoutes.get(getEdgeKey(edge))?.path"
             fill="none"
-            :stroke="edge.isValid === false ? '#ef4444' : '#10b981'"
+            :stroke="edge.isValid === false ? 'var(--ss-edge-invalid)' : 'var(--ss-edge-valid)'"
             :stroke-width="edge.isValid === false ? 3 : 2"
             :stroke-dasharray="edge.isValid === false ? '5,5' : 'none'"
             :marker-end="
@@ -76,8 +76,8 @@
             :transform="`translate(${edgeRoutes.get(getEdgeKey(edge))?.label.x}, ${(edgeRoutes.get(getEdgeKey(edge))?.label.y ?? 0) + 18})`"
             class="edge-warning-icon"
           >
-            <circle cx="0" cy="0" r="10" fill="#ef4444" />
-            <text x="0" y="4" text-anchor="middle" fill="white" font-size="12" font-weight="bold">
+            <circle cx="0" cy="0" r="10" fill="var(--ss-edge-invalid)" />
+            <text x="0" y="4" text-anchor="middle" fill="var(--ss-on-action)" font-size="12" font-weight="bold">
               !
             </text>
             <title>{{ edge.validationError }}</title>
@@ -110,7 +110,7 @@
           :y1="edgeEndpoint(connecting || '', connectingFromPort || undefined, 'output').y"
           :x2="mousePos.x"
           :y2="mousePos.y"
-          stroke="#10b981"
+          stroke="var(--ss-edge-valid)"
           stroke-width="2"
           stroke-dasharray="5,5"
           opacity="0.6"
@@ -353,6 +353,7 @@
 </template>
 
 <script setup lang="ts">
+import { themeToken } from "@/theme/interfaceTheme";
 import { ref, computed, watch, onBeforeUnmount } from "vue";
 import { routeEdges } from "@/utils/edgeRouting";
 import { saveCanvasPng } from "@/utils/canvasPng";
@@ -390,14 +391,14 @@ const emit = defineEmits<{
 
 // Port color scheme by category
 const PORT_COLORS: Record<string, string> = {
-  dataset: "#3b82f6", // Blue - canonical spectral data
-  array: "#3b82f6", // Blue - array types
-  target: "#f59e0b", // Orange/amber - y values, labels
-  model: "#a855f7", // Purple - trained models
-  number: "#10b981", // Green - scalar values
-  visualization: "#ec4899", // Pink - plots
-  config: "#64748b", // Gray - configuration dicts
-  default: "#64748b", // Fallback gray
+  dataset: themeToken("port-data"), // Blue - canonical spectral data
+  array: themeToken("port-data"), // Blue - array types
+  target: themeToken("port-target"), // Orange/amber - y values, labels
+  model: themeToken("port-model"), // Purple - trained models
+  number: themeToken("port-number"), // Green - scalar values
+  visualization: themeToken("port-visualization"), // Pink - plots
+  config: themeToken("port-config"), // Gray - configuration dicts
+  default: themeToken("port-config"), // Fallback gray
 };
 
 // Get workflow store for node metadata
@@ -1080,7 +1081,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 
 <style scoped>
 .workflow-canvas {
-  --workflow-grid-color: #e5e7eb;
+  --workflow-grid-color: var(--ss-border);
   --workflow-grid-size: 20px;
   width: 100%;
   height: 100%;
@@ -1090,7 +1091,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   min-width: 0;
   background: radial-gradient(circle, var(--workflow-grid-color) 1px, transparent 1.5px);
   background-size: var(--workflow-grid-size) var(--workflow-grid-size);
-  background-color: #fefbff;
+  background-color: var(--ss-workspace-paper);
 }
 
 .canvas-surface {
@@ -1135,7 +1136,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 .edge-label {
   font-size: 11px;
   font-weight: 600;
-  fill: #374151;
+  fill: var(--ss-action-text);
   font-family: "SF Mono", Monaco, monospace;
   pointer-events: auto;
   cursor: pointer;
@@ -1154,9 +1155,9 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 .workflow-node {
   position: absolute;
   width: 160px;
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   border-radius: 8px;
-  border: 2px solid #334155;
+  border: 2px solid var(--ss-panel-border);
   cursor: grab;
   transition:
     border-color 0.2s,
@@ -1166,14 +1167,14 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 }
 
 .workflow-node:hover {
-  border-color: #64748b;
+  border-color: var(--ss-border-strong);
 }
 
 .workflow-node.is-selected {
-  border-color: #3b82f6;
+  border-color: var(--ss-action);
   box-shadow:
-    0 0 0 3px rgba(59, 130, 246, 0.4),
-    0 0 15px rgba(59, 130, 246, 0.2);
+    0 0 0 3px color-mix(in srgb, var(--ss-action) 40%, transparent),
+    0 0 15px color-mix(in srgb, var(--ss-action) 20%, transparent);
 }
 
 .workflow-node.is-dragging {
@@ -1189,45 +1190,45 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   border-radius: 6px 6px 0 0;
   font-weight: 600;
   font-size: 0.85rem;
-  color: white;
+  color: var(--ss-on-action);
 }
 
 .header-data {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: linear-gradient(135deg, var(--ss-node-data), var(--ss-node-data-end));
 }
 .header-synthesis {
-  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  background: linear-gradient(135deg, var(--ss-node-synthesis), var(--ss-node-synthesis-end));
 }
 .header-preprocess {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
+  background: linear-gradient(135deg, var(--ss-node-preprocess), var(--ss-node-preprocess-end));
 }
 .header-selection {
-  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  background: linear-gradient(135deg, var(--ss-node-selection), var(--ss-node-selection-end));
 }
 .header-exploratory {
-  background: linear-gradient(135deg, #a855f7, #9333ea);
+  background: linear-gradient(135deg, var(--ss-node-exploratory), var(--ss-node-exploratory-end));
 }
 .header-regression {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  background: linear-gradient(135deg, var(--ss-node-regression), var(--ss-node-regression-end));
 }
 .header-classify {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
+  background: linear-gradient(135deg, var(--ss-node-classify), var(--ss-node-classify-end));
 }
 .header-clustering {
-  background: linear-gradient(135deg, #ec4899, #db2777);
+  background: linear-gradient(135deg, var(--ss-node-clustering), var(--ss-node-clustering-end));
 }
 .header-validation {
-  background: linear-gradient(135deg, #eab308, #ca8a04);
+  background: linear-gradient(135deg, var(--ss-node-validation), var(--ss-node-validation-end));
 }
 .header-visualize {
-  background: linear-gradient(135deg, #f97316, #ea580c);
+  background: linear-gradient(135deg, var(--ss-node-visualize), var(--ss-node-visualize-end));
 }
 .header-export {
-  background: linear-gradient(135deg, #64748b, #475569);
+  background: linear-gradient(135deg, var(--ss-node-export), var(--ss-node-export-end));
 }
 .header-plugin,
 .header-default {
-  background: linear-gradient(135deg, #ec4899, #be185d);
+  background: linear-gradient(135deg, var(--ss-node-plugin), var(--ss-node-plugin-end));
 }
 
 .node-icon {
@@ -1245,7 +1246,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 .delete-btn {
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.7);
+  color: color-mix(in srgb, var(--ss-on-action) 70%, transparent);
   cursor: pointer;
   padding: 2px;
   border-radius: 4px;
@@ -1258,14 +1259,14 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 }
 
 .delete-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
+  background: color-mix(in srgb, var(--ss-surface) 20%, transparent);
+  color: var(--ss-on-action);
 }
 
 .node-body {
   position: relative;
   padding: 10px;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid var(--ss-panel-border);
 }
 
 .node-status {
@@ -1277,23 +1278,23 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 }
 
 .node-status.success {
-  color: #10b981;
+  color: var(--ss-panel-success);
 }
 
 .node-status.pending {
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 
 .node-status.error {
-  color: #ef4444;
+  color: var(--ss-panel-danger);
 }
 
 .node-status.running {
-  color: #3b82f6;
+  color: var(--ss-panel-action);
 }
 
 .node-status.stale {
-  color: #f59e0b;
+  color: var(--ss-panel-warning);
 }
 
 /* Data shape badge */
@@ -1303,12 +1304,12 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   gap: 4px;
   margin-top: 6px;
   padding: 3px 6px;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: color-mix(in srgb, var(--ss-action) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-action) 30%, transparent);
   border-radius: 4px;
   font-size: 0.7rem;
   font-weight: 500;
-  color: #93c5fd;
+  color: var(--ss-panel-action);
   font-family: "SF Mono", Monaco, monospace;
 }
 
@@ -1326,10 +1327,10 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   gap: 6px;
   margin: 8px;
   padding: 4px 10px;
-  background: #ef4444;
+  background: var(--ss-danger);
   border: none;
   border-radius: 999px;
-  color: white;
+  color: var(--ss-on-action);
   font-size: 0.7rem;
   font-weight: 500;
   cursor: pointer;
@@ -1337,7 +1338,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 }
 
 .cancel-connect-pill:hover {
-  background: #dc2626;
+  background: var(--ss-danger);
 }
 
 .empty-state {
@@ -1346,19 +1347,19 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   max-width: 28rem;
 }
 
 .empty-icon {
   font-size: 2.25rem;
   margin-bottom: 12px;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 
 .empty-title {
   margin: 0 0 8px;
-  color: #e2e8f0;
+  color: var(--ss-panel-secondary);
   font-size: 1.05rem;
   font-weight: 600;
 }
@@ -1374,23 +1375,23 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border: 1px dashed #475569;
+  border: 1px dashed var(--ss-panel-border);
   border-radius: 999px;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   font-size: 0.8rem;
 }
 
 .empty-pointer i {
-  color: #60a5fa;
+  color: var(--ss-panel-action);
 }
 
 /* Context Menu */
 .context-menu {
   position: absolute;
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: var(--ss-panel);
+  border: 1px solid var(--ss-panel-border);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ss-shadow-color) 40%, transparent);
   z-index: 1000;
   min-width: 160px;
   padding: 4px;
@@ -1401,7 +1402,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
-  color: #e2e8f0;
+  color: var(--ss-panel-secondary);
   font-size: 0.85rem;
   cursor: pointer;
   border-radius: 4px;
@@ -1410,7 +1411,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 }
 
 .context-menu-item:hover {
-  background: #334155;
+  background: var(--ss-panel-raised);
 }
 
 .context-menu-item.disabled {
@@ -1423,11 +1424,11 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 }
 
 .context-menu-item.danger {
-  color: #ef4444;
+  color: var(--ss-panel-danger);
 }
 
 .context-menu-item.danger:hover {
-  background: rgba(239, 68, 68, 0.1);
+  background: color-mix(in srgb, var(--ss-danger) 10%, transparent);
 }
 
 .context-menu-item i {
@@ -1438,7 +1439,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 
 .context-menu-divider {
   height: 1px;
-  background: #334155;
+  background: var(--ss-panel-raised);
   margin: 4px 0;
 }
 
@@ -1467,8 +1468,8 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 2px solid #0f172a;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  border: 2px solid var(--ss-panel-inset);
+  box-shadow: 0 2px 4px color-mix(in srgb, var(--ss-shadow-color) 30%, transparent);
   transition:
     transform 0.2s,
     box-shadow 0.2s;
@@ -1509,17 +1510,17 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   justify-content: center;
   font-size: 11px;
   font-weight: 700;
-  border: 1px solid rgba(15, 23, 42, 0.8);
-  background: #0f172a;
+  border: 1px solid color-mix(in srgb, var(--ss-panel-inset) 80%, transparent);
+  background: var(--ss-panel-inset);
   pointer-events: none;
 }
 
 .port-compat-indicator.ok {
-  color: #10b981;
+  color: var(--ss-panel-success);
 }
 
 .port-compat-indicator.bad {
-  color: #ef4444;
+  color: var(--ss-panel-danger);
 }
 
 .port-tooltip {
@@ -1529,11 +1530,11 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   top: 50%;
   transform: translate(-50%, -100%);
   margin-top: -10px;
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: var(--ss-panel);
+  border: 1px solid var(--ss-panel-border);
   border-radius: 6px;
   padding: 8px 10px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ss-shadow-color) 40%, transparent);
   white-space: nowrap;
   z-index: 1000;
   pointer-events: none;
@@ -1542,14 +1543,14 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 .port-tooltip-label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #e2e8f0;
+  color: var(--ss-panel-secondary);
   margin-bottom: 2px;
 }
 
 .port-tooltip-type {
   font-size: 0.7rem;
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-family: "SF Mono", Monaco, monospace;
   letter-spacing: 0.2px;
   word-break: break-all;
@@ -1557,22 +1558,22 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 
 .port-tooltip-desc {
   font-size: 0.7rem;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px solid #334155;
+  border-top: 1px solid var(--ss-panel-border);
   max-width: 200px;
   white-space: normal;
 }
 
 /* Connection compatibility highlighting */
 .workflow-node.is-connecting-source {
-  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.5);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ss-success) 50%, transparent);
   z-index: 100;
 }
 
 .workflow-node.is-compatible-target {
-  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.8);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ss-success) 80%, transparent);
   animation: pulse-green 1.5s infinite;
 }
 
@@ -1595,10 +1596,10 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 @keyframes pulse-green {
   0%,
   100% {
-    box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.8);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ss-success) 80%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 6px rgba(74, 222, 128, 0.4);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--ss-success) 40%, transparent);
   }
 }
 
@@ -1615,8 +1616,8 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
 /* Rubber band selection */
 .rubber-band {
   position: absolute;
-  background: rgba(59, 130, 246, 0.2);
-  border: 1px solid rgba(59, 130, 246, 0.6);
+  background: color-mix(in srgb, var(--ss-action) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-action) 60%, transparent);
   pointer-events: none;
   z-index: 50;
 }
@@ -1626,14 +1627,14 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   position: fixed;
   top: 80px;
   right: 20px;
-  background: #2563eb;
-  color: white;
+  background: var(--ss-action);
+  color: var(--ss-on-action);
   padding: 6px 12px;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
   z-index: 100;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ss-shadow-color) 20%, transparent);
   pointer-events: none;
   animation: fadeIn 0.2s ease-out;
 }

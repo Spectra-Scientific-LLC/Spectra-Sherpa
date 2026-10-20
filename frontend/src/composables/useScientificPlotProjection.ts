@@ -1,3 +1,5 @@
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import { matrixColorEncoding, scoreGeometry, componentPercent, scientificNumber } from "@/utils/scientificEncoding";
 import { projectActiveSpectralCohort } from "@/utils/scientificCohort";
 import { refusedScientificPlot } from "@/utils/scientificPlotState";
@@ -82,10 +84,7 @@ export interface QuickPlotSelection {
   selectedSampleLabels: Ref<string>;
 }
 
-const CATEGORY_COLORS = [
-  "#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6",
-  "#ec4899", "#06b6d4", "#f97316", "#14b8a6", "#6366f1",
-];
+
 
 // ============================================================================
 // Plot option interface
@@ -284,7 +283,7 @@ function buildScoresTraces(
             size: 10,
             color: colorMap.get(cat),
             opacity: 0.8,
-            line: { width: 1, color: "rgba(0,0,0,0.3)" },
+            line: { width: 1, color: SCIENTIFIC_COLORS.pointOutline },
           },
           hovertemplate: `%{text}${hoverSuffix}`,
         });
@@ -300,7 +299,7 @@ function buildScoresTraces(
     x: scores.map((row) => row[xAxis]),
     y: scores.map((row) => row[yAxis]),
     text: sampleLabels,
-    marker: { size: 10, color: "#3b82f6", opacity: 0.8, line: { width: 1, color: "#1e40af" } },
+    marker: { size: 10, color: SCIENTIFIC_COLORS.observation, opacity: 0.8, line: { width: 1, color: SCIENTIFIC_COLORS.selectionStrong } },
     hovertemplate: `%{text}${hoverSuffix}`,
   }];
 }
@@ -323,9 +322,9 @@ function scoresLayout(
   };
   if (hasCat) {
     layout.legend = {
-      bgcolor: "rgba(255, 255, 255, 0.95)",
-      font: { color: "#334155" },
-      bordercolor: "#cbd5e1",
+      bgcolor: SCIENTIFIC_COLORS.legendPaper,
+      font: { color: SCIENTIFIC_COLORS.ink },
+      bordercolor: SCIENTIFIC_COLORS.border,
       borderwidth: 1,
       x: 1, y: 1, xanchor: "right", yanchor: "top",
     };
@@ -379,7 +378,7 @@ function loadingsLayout(metadata: any, portPayload?: any): Record<string, any> {
       : {}),
     margin: { ...BASE_PLOT_LAYOUT.margin, t: 90, ...(namedFeatureAxis ? {b:150} : {}) },
     showlegend: true,
-    legend: { orientation: "h", x: 0, xanchor: "left", y: 1.08, yanchor: "bottom", bgcolor: "rgba(0,0,0,0)" },
+    legend: { orientation: "h", x: 0, xanchor: "left", y: 1.08, yanchor: "bottom", bgcolor: "transparent" },
     xaxis: {
       ...BASE_PLOT_LAYOUT.xaxis,
       title: namedFeatureAxis ? { text: title, standoff: 24 } : title,
@@ -407,8 +406,8 @@ function prebuiltPlot(output: any, plotKey: string): { data: any[]; layout: Reco
       paper_bgcolor: BASE_PLOT_LAYOUT.paper_bgcolor,
       plot_bgcolor: BASE_PLOT_LAYOUT.plot_bgcolor,
       font: BASE_PLOT_LAYOUT.font,
-      xaxis: { ...backendLayout.xaxis, gridcolor: "#334155", zerolinecolor: "#475569" },
-      yaxis: { ...backendLayout.yaxis, gridcolor: "#334155", zerolinecolor: "#475569" },
+      xaxis: { ...backendLayout.xaxis, gridcolor: SCIENTIFIC_COLORS.ink, zerolinecolor: SCIENTIFIC_COLORS.secondary },
+      yaxis: { ...backendLayout.yaxis, gridcolor: SCIENTIFIC_COLORS.ink, zerolinecolor: SCIENTIFIC_COLORS.secondary },
     },
   };
 }
@@ -631,7 +630,7 @@ function spectraOverlayLayout(metadata: any): Record<string, any> {
   return {
     ...BASE_PLOT_LAYOUT,
     showlegend: !featureTable,
-    legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)", font: { size: 10 } },
+    legend: { x: 1, xanchor: "right", y: 1, bgcolor: "transparent", font: { size: 10 } },
     xaxis: { ...BASE_PLOT_LAYOUT.xaxis, title: xLabel, autorange: reverse ? "reversed" : true },
     yaxis: { ...BASE_PLOT_LAYOUT.yaxis, title: yLabel },
   };
@@ -703,7 +702,7 @@ function buildBoxPlotTraces(output: any): any[] {
       type: "box",
       y: data.map((row: number[]) => row[f]),
       name: featureNames[f] || `Feature ${f + 1}`,
-      marker: { color: "#64748b" },
+      marker: { color: SCIENTIFIC_COLORS.referenceStrong },
       boxpoints: false,
       showlegend: false,
     });
@@ -728,7 +727,7 @@ function buildBoxPlotTraces(output: any): any[] {
         type: "scatter", mode: "markers",
         x: xValues, y: yValues,
         name: String(cat),
-        marker: { color: CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length], size: 6, opacity: 0.7 },
+        marker: { color: seriesPalette("components")[catIdx % seriesPalette("components").length], size: 6, opacity: 0.7 },
         legendgroup: String(cat), showlegend: true,
         hovertemplate: `${cat}<br>%{x}: %{y:.15g}<extra></extra>`,
       });
@@ -777,7 +776,7 @@ function buildFeatureScatterTraces(output: any, xIdx: number, yIdx: number): any
         x: indices.map((i: number) => data[i][xIdx]),
         y: indices.map((i: number) => data[i][yIdx]),
         name: String(cat),
-        marker: { size: 10, color: CATEGORY_COLORS[catIdx % CATEGORY_COLORS.length], opacity: 0.8, line: { width: 1, color: "rgba(0,0,0,0.3)" } },
+        marker: { size: 10, color: seriesPalette("components")[catIdx % seriesPalette("components").length], opacity: 0.8, line: { width: 1, color: SCIENTIFIC_COLORS.pointOutline } },
         hovertemplate: `%{text}<br>${xName}: %{x:.15g}<br>${yName}: %{y:.15g}<extra>${cat}</extra>`,
         text: indices.map((i: number) => `Sample ${i + 1}`),
       };
@@ -789,7 +788,7 @@ function buildFeatureScatterTraces(output: any, xIdx: number, yIdx: number): any
     x: data.map((row: number[]) => row[xIdx]),
     y: data.map((row: number[]) => row[yIdx]),
     text: sampleLabels,
-    marker: { size: 10, color: "#3b82f6", opacity: 0.8, line: { width: 1, color: "#1e40af" } },
+    marker: { size: 10, color: SCIENTIFIC_COLORS.observation, opacity: 0.8, line: { width: 1, color: SCIENTIFIC_COLORS.selectionStrong } },
     hovertemplate: `%{text}<br>${xName}: %{x:.15g}<br>${yName}: %{y:.15g}<extra></extra>`,
   }];
 }
@@ -807,7 +806,7 @@ function featureScatterLayout(metadata: any, xIdx: number, yIdx: number): Record
     showlegend: hasCat,
     xaxis: { ...BASE_PLOT_LAYOUT.xaxis, title: xName },
     yaxis: { ...BASE_PLOT_LAYOUT.yaxis, title: yName },
-    legend: hasCat ? { x: 1, y: 1, xanchor: "right", yanchor: "top", bgcolor: "rgba(0,0,0,0)" } : undefined,
+    legend: hasCat ? { x: 1, y: 1, xanchor: "right", yanchor: "top", bgcolor: "transparent" } : undefined,
   };
 }
 
@@ -829,7 +828,7 @@ function buildStatsDistributionTraces(output: any): any[] {
   }
   return [{
     type: "histogram", x: values, nbinsx: 50,
-    marker: { color: "#3b82f6" },
+    marker: { color: SCIENTIFIC_COLORS.observation },
     hovertemplate: "Range: %{x}<br>Count: %{y}<extra></extra>",
   }];
 }
@@ -866,7 +865,7 @@ function buildStatsMeanStdTraces(output: any): any[] {
       y: [...upperY, ...[...lowerY].reverse()],
       type: "scatter",
       fill: "toself",
-      fillcolor: "rgba(59,130,246,0.15)",
+      fillcolor: SCIENTIFIC_COLORS.selectionFill,
       line: { color: "transparent" },
       showlegend: false,
       hoverinfo: "skip",
@@ -878,7 +877,7 @@ function buildStatsMeanStdTraces(output: any): any[] {
     x, y: means,
     type: "scatter", mode: "lines",
     name: "Mean",
-    line: { color: "#3b82f6", width: 2 },
+    line: { color: SCIENTIFIC_COLORS.observation, width: 2 },
     hovertemplate: "x: %{x:.15g}<br>Mean: %{y:.15g}<extra></extra>",
   });
 
@@ -888,7 +887,7 @@ function buildStatsMeanStdTraces(output: any): any[] {
       x, y: stds,
       type: "scatter", mode: "lines",
       name: "Std Dev",
-      line: { color: "#f59e0b", width: 1.5, dash: "dash" },
+      line: { color: SCIENTIFIC_COLORS.threshold, width: 1.5, dash: "dash" },
       yaxis: "y2",
       hovertemplate: "x: %{x:.15g}<br>Std: %{y:.15g}<extra></extra>",
     });
@@ -907,9 +906,9 @@ function statsMeanStdLayout(): Record<string, any> {
       overlaying: "y",
       side: "right",
       gridcolor: "transparent",
-      color: "#f59e0b",
+      color: SCIENTIFIC_COLORS.threshold,
     },
-    legend: { x: 0.01, y: 0.99, bgcolor: "rgba(0,0,0,0.3)", font: { size: 11 } },
+    legend: { x: 0.01, y: 0.99, bgcolor: SCIENTIFIC_COLORS.pointOutline, font: { size: 11 } },
   };
 }
 
@@ -1935,7 +1934,7 @@ export function useQuickPlotProjection(
             const sPredicted = Array.isArray(s.predicted) ? s.predicted.map(Number) : [];
             const trainActual = Array.isArray(s.train_actual) ? s.train_actual.map(Number) : [];
             const trainPredicted = Array.isArray(s.train_predicted) ? s.train_predicted.map(Number) : [];
-            const color = CATEGORY_COLORS[idx % CATEGORY_COLORS.length];
+            const color = seriesPalette("components")[idx % seriesPalette("components").length];
             const name = String(s.name || "Target");
             if (trainActual.length && trainPredicted.length) {
               traces.push({
@@ -1971,7 +1970,7 @@ export function useQuickPlotProjection(
             mode: "lines",
             type: "scatter",
             name: "1:1 Line",
-            line: { dash: "dash", color: "#94a3b8" },
+            line: { dash: "dash", color: SCIENTIFIC_COLORS.reference },
           });
           const joined = targetNames.join(", ");
           const titleText = hasRealNames
@@ -1983,10 +1982,10 @@ export function useQuickPlotProjection(
             layout: {
               ...BASE_PLOT_LAYOUT,
               meta: { evaluation_metrics: vizObj.metadata ?? {} },
-              title: { text: titleText, font: { color: "#e2e8f0", size: 14 } },
+              title: { text: titleText, font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
               margin: { ...BASE_PLOT_LAYOUT.margin, t: 66 },
-              xaxis: { title: "Actual", color: "#94a3b8" },
-              yaxis: { title: yTitle, color: "#94a3b8" },
+              xaxis: { title: "Actual", color: SCIENTIFIC_COLORS.reference },
+              yaxis: { title: yTitle, color: SCIENTIFIC_COLORS.reference },
               showlegend: true,
             },
           };
@@ -2015,21 +2014,21 @@ export function useQuickPlotProjection(
                 mode: "markers",
                 type: "scatter",
                 name: "Train",
-                marker: { color: "#3b82f6", size: 7, symbol: "circle-open" },
+                marker: { color: SCIENTIFIC_COLORS.observation, size: 7, symbol: "circle-open" },
               }]
             : []),
-          { x: actual, y: predicted, mode: "markers", type: "scatter", name: "Test", marker: { color: "#3b82f6", size: 8, symbol: "circle" } },
-          { x: [minVal, maxVal], y: [minVal, maxVal], mode: "lines", type: "scatter", name: "1:1 Line", line: { dash: "dash", color: "#94a3b8" } },
+          { x: actual, y: predicted, mode: "markers", type: "scatter", name: "Test", marker: { color: SCIENTIFIC_COLORS.observation, size: 8, symbol: "circle" } },
+          { x: [minVal, maxVal], y: [minVal, maxVal], mode: "lines", type: "scatter", name: "1:1 Line", line: { dash: "dash", color: SCIENTIFIC_COLORS.reference } },
         ];
         return {
           data: traces,
           layout: {
             ...BASE_PLOT_LAYOUT,
             meta: { evaluation_metrics: vizObj.metadata ?? {} },
-            title: { text: titleText, font: { color: "#e2e8f0", size: 14 } },
+            title: { text: titleText, font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
             margin: { ...BASE_PLOT_LAYOUT.margin, t: 66 },
-            xaxis: { title: "Actual", color: "#94a3b8" },
-            yaxis: { title: yTitle, color: "#94a3b8" },
+            xaxis: { title: "Actual", color: SCIENTIFIC_COLORS.reference },
+            yaxis: { title: yTitle, color: SCIENTIFIC_COLORS.reference },
             showlegend: trainPairs.length > 0,
           },
         };
@@ -2066,13 +2065,13 @@ export function useQuickPlotProjection(
             text: textLabels,
             texttemplate: "%{text}",
             hovertemplate: "True: %{y}<br>Predicted: %{x}<br>Row fraction: %{z:.15g}<extra></extra>",
-            colorbar: { title: { text: "Row fraction", font: { color: "#94a3b8" } } },
+            colorbar: { title: { text: "Row fraction", font: { color: SCIENTIFIC_COLORS.reference } } },
           }],
           layout: {
             ...BASE_PLOT_LAYOUT,
-            title: { text: "Confusion Matrix (normalized by true class)", font: { color: "#e2e8f0", size: 14 } },
-            xaxis: { title: "Predicted", color: "#94a3b8" },
-            yaxis: { title: "True", color: "#94a3b8", autorange: "reversed" },
+            title: { text: "Confusion Matrix (normalized by true class)", font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
+            xaxis: { title: "Predicted", color: SCIENTIFIC_COLORS.reference },
+            yaxis: { title: "True", color: SCIENTIFIC_COLORS.reference, autorange: "reversed" },
           },
         };
       }
@@ -2097,7 +2096,7 @@ export function useQuickPlotProjection(
           name: m.label,
           xaxis: `x${idx + 1}`,
           yaxis: `y${idx + 1}`,
-          marker: { color: ["#3b82f6", "#22c55e", "#f59e0b", "#a855f7"][idx] },
+          marker: { color: seriesPalette("metrics")[idx % seriesPalette("metrics").length] },
           text: perClass.map((e) => Number(e[m.key] ?? 0).toFixed(3)),
           textposition: "outside",
           hovertemplate: `%{x}: %{y:.15g}<extra>${m.label}</extra>`,
@@ -2106,7 +2105,7 @@ export function useQuickPlotProjection(
           data: traces,
           layout: {
             ...BASE_PLOT_LAYOUT,
-            title: { text: "Per-Class Metrics", font: { color: "#e2e8f0", size: 14 } },
+            title: { text: "Per-Class Metrics", font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
             grid: { rows: 2, columns: 2, pattern: "independent" },
             showlegend: false,
             annotations: metricKeys.map((m, idx) => {
@@ -2120,19 +2119,19 @@ export function useQuickPlotProjection(
                 xref: `x${idx + 1} domain` as const,
                 yref: `y${idx + 1} domain` as const,
                 yanchor: "bottom" as const,
-                font: { color: "#e2e8f0", size: 12 },
+                font: { color: SCIENTIFIC_COLORS.grid, size: 12 },
                 xshift: col * 0,
                 yshift: row * 0,
               };
             }),
-            xaxis: { color: "#94a3b8", automargin: true },
-            xaxis2: { color: "#94a3b8", automargin: true },
-            xaxis3: { color: "#94a3b8", automargin: true },
-            xaxis4: { color: "#94a3b8", automargin: true },
-            yaxis: { color: "#94a3b8", range: [0, 1.1] },
-            yaxis2: { color: "#94a3b8", range: [0, 1.1] },
-            yaxis3: { color: "#94a3b8", range: [0, 1.1] },
-            yaxis4: { color: "#94a3b8", range: [0, 1.1] },
+            xaxis: { color: SCIENTIFIC_COLORS.reference, automargin: true },
+            xaxis2: { color: SCIENTIFIC_COLORS.reference, automargin: true },
+            xaxis3: { color: SCIENTIFIC_COLORS.reference, automargin: true },
+            xaxis4: { color: SCIENTIFIC_COLORS.reference, automargin: true },
+            yaxis: { color: SCIENTIFIC_COLORS.reference, range: [0, 1.1] },
+            yaxis2: { color: SCIENTIFIC_COLORS.reference, range: [0, 1.1] },
+            yaxis3: { color: SCIENTIFIC_COLORS.reference, range: [0, 1.1] },
+            yaxis4: { color: SCIENTIFIC_COLORS.reference, range: [0, 1.1] },
           },
         };
       }
@@ -2154,7 +2153,7 @@ export function useQuickPlotProjection(
         const isCls = typeof preds[0] === "string";
         if (isCls) {
           const classes = Array.from(new Set(preds.map(String)));
-          const colors = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#a855f7", "#06b6d4"];
+          const colors = seriesPalette("populations");
           const traces = classes.map((cls, idx) => {
             const xs: number[] = [];
             const ys: string[] = [];
@@ -2178,9 +2177,9 @@ export function useQuickPlotProjection(
             data: traces,
             layout: {
               ...BASE_PLOT_LAYOUT,
-              title: { text: "Predictions by Sample Index", font: { color: "#e2e8f0", size: 14 } },
-              xaxis: { title: "Sample Index", color: "#94a3b8" },
-              yaxis: { title: "Predicted Class", color: "#94a3b8", type: "category", categoryorder: "array", categoryarray: classes },
+              title: { text: "Predictions by Sample Index", font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
+              xaxis: { title: "Sample Index", color: SCIENTIFIC_COLORS.reference },
+              yaxis: { title: "Predicted Class", color: SCIENTIFIC_COLORS.reference, type: "category", categoryorder: "array", categoryarray: classes },
               showlegend: true,
             },
           };
@@ -2193,14 +2192,14 @@ export function useQuickPlotProjection(
             mode: "markers",
             type: "scatter",
             name: "Predictions",
-            marker: { color: "#3b82f6", size: 6 },
+            marker: { color: SCIENTIFIC_COLORS.observation, size: 6 },
             hovertemplate: "Sample %{x}<br>Predicted: %{y:.15g}<extra></extra>",
           }],
           layout: {
             ...BASE_PLOT_LAYOUT,
-            title: { text: "Predictions by Sample Index", font: { color: "#e2e8f0", size: 14 } },
-            xaxis: { title: "Sample Index", color: "#94a3b8" },
-            yaxis: { title: "Predicted Value", color: "#94a3b8" },
+            title: { text: "Predictions by Sample Index", font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
+            xaxis: { title: "Sample Index", color: SCIENTIFIC_COLORS.reference },
+            yaxis: { title: "Predicted Value", color: SCIENTIFIC_COLORS.reference },
             showlegend: false,
           },
         };
@@ -2249,16 +2248,16 @@ export function useQuickPlotProjection(
             mode: "lines",
             type: "scatter",
             name: "Zero",
-            line: { dash: "dash", color: "#94a3b8" },
+            line: { dash: "dash", color: SCIENTIFIC_COLORS.reference },
             hoverinfo: "skip",
           });
           return {
             data: traces,
             layout: {
               ...BASE_PLOT_LAYOUT,
-              title: { text: "Residuals vs Predicted (per target)", font: { color: "#e2e8f0", size: 14 } },
-              xaxis: { title: "Predicted", color: "#94a3b8" },
-              yaxis: { title: "Residual (true \u2212 predicted)", color: "#94a3b8" },
+              title: { text: "Residuals vs Predicted (per target)", font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
+              xaxis: { title: "Predicted", color: SCIENTIFIC_COLORS.reference },
+              yaxis: { title: "Residual (true \u2212 predicted)", color: SCIENTIFIC_COLORS.reference },
               showlegend: true,
             },
           };
@@ -2279,7 +2278,7 @@ export function useQuickPlotProjection(
               mode: "markers",
               type: "scatter",
               name: "Residuals",
-              marker: { color: "#3b82f6", size: 6 },
+              marker: { color: SCIENTIFIC_COLORS.observation, size: 6 },
               hovertemplate: "Predicted: %{x:.15g}<br>Residual: %{y:.15g}<extra></extra>",
             },
             {
@@ -2288,15 +2287,15 @@ export function useQuickPlotProjection(
               mode: "lines",
               type: "scatter",
               name: "Zero",
-              line: { dash: "dash", color: "#94a3b8" },
+              line: { dash: "dash", color: SCIENTIFIC_COLORS.reference },
               hoverinfo: "skip",
             },
           ],
           layout: {
             ...BASE_PLOT_LAYOUT,
-            title: { text: "Residuals vs Predicted", font: { color: "#e2e8f0", size: 14 } },
-            xaxis: { title: "Predicted", color: "#94a3b8" },
-            yaxis: { title: "Residual (true \u2212 predicted)", color: "#94a3b8" },
+            title: { text: "Residuals vs Predicted", font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
+            xaxis: { title: "Predicted", color: SCIENTIFIC_COLORS.reference },
+            yaxis: { title: "Residual (true \u2212 predicted)", color: SCIENTIFIC_COLORS.reference },
             showlegend: false,
           },
         };
@@ -2345,22 +2344,22 @@ export function useQuickPlotProjection(
             header: {
               values: ["<b>Metric</b>", "<b>Value</b>"],
               align: ["left", "left"],
-              fill: { color: "#1e293b" },
-              font: { color: "#e2e8f0", size: 13 },
-              line: { color: "#334155", width: 1 },
+              fill: { color: SCIENTIFIC_COLORS.panel },
+              font: { color: SCIENTIFIC_COLORS.grid, size: 13 },
+              line: { color: SCIENTIFIC_COLORS.ink, width: 1 },
             },
             cells: {
               values: [names, values],
               align: ["left", "left"],
-              fill: { color: "#0f172a" },
-              font: { color: "#e2e8f0", size: 12 },
-              line: { color: "#334155", width: 1 },
+              fill: { color: SCIENTIFIC_COLORS.panelInset },
+              font: { color: SCIENTIFIC_COLORS.grid, size: 12 },
+              line: { color: SCIENTIFIC_COLORS.ink, width: 1 },
               height: 28,
             },
           }],
           layout: {
             ...BASE_PLOT_LAYOUT,
-            title: { text: "Evaluation Metrics", font: { color: "#e2e8f0", size: 14 } },
+            title: { text: "Evaluation Metrics", font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
           },
         };
       }

@@ -43,6 +43,7 @@ import "primevue/resources/themes/lara-light-blue/theme.css";
 import "primevue/resources/primevue.min.css";
 import "primeicons/primeicons.css";
 import "./assets/tokens.css";
+import "./assets/controls.css";
 import "./assets/main.css";
 
 // Expose bundled Vue/Vue-Router/Pinia/primevue on globalThis so the

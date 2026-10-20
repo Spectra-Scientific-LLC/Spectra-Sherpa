@@ -117,7 +117,7 @@ const headerActionItems = computed(() => [
 }
 
 .logs-error {
-  color: #b91c1c;
+  color: var(--ss-danger);
 }
 
 .log-entry {

@@ -1,3 +1,5 @@
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import { matrixColorEncoding, scoreGeometry, scientificNumber } from "@/utils/scientificEncoding";
 import { hasVariableSelectionHistory } from "@/utils/selectedSpectralCoordinates";
 /**
@@ -441,7 +443,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
               size: 10,
               color: colorMap.get(category),
               opacity: 0.8,
-              line: { width: 1, color: "rgba(0,0,0,0.3)" },
+              line: { width: 1, color: SCIENTIFIC_COLORS.pointOutline },
             },
             hovertemplate: `%{text}<br>${xTitle}: %{x:.15g}<br>${yTitle}: %{y:.15g}<extra></extra>`,
           },
@@ -459,13 +461,13 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
             showscale: true,
             colorbar: { title: "Target" },
             opacity: 0.85,
-            line: { width: 1, color: "rgba(15,23,42,0.35)" },
+            line: { width: 1, color: SCIENTIFIC_COLORS.pointOutline },
           }
         : {
             size: 10,
-            color: params.fallbackColor ?? "#3b82f6",
+            color: params.fallbackColor ?? SCIENTIFIC_COLORS.observation,
             opacity: 0.8,
-            line: { width: 1, color: "#1e40af" },
+            line: { width: 1, color: SCIENTIFIC_COLORS.selectionStrong },
           };
     return [
       {
@@ -846,10 +848,10 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     // Ensure legend is properly configured when categorical
     if (hasCategorical) {
       layout.legend = {
-        bgcolor: "rgba(30, 41, 59, 0.8)",
-        bordercolor: "#334155",
+        bgcolor: SCIENTIFIC_COLORS.hoverPaper,
+        bordercolor: SCIENTIFIC_COLORS.ink,
         borderwidth: 1,
-        font: { color: "#f8fafc" },
+        font: { color: SCIENTIFIC_COLORS.inverse },
         x: 1,
         y: 1,
         xanchor: "right",
@@ -953,7 +955,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
             size: 9,
             color: colorMap.get(category),
             opacity: 0.78,
-            line: { width: 1, color: "rgba(15, 23, 42, 0.55)" },
+            line: { width: 1, color: SCIENTIFIC_COLORS.pointOutlineStrong },
           },
           hovertemplate: `%{text}<br>${pcXLabel}: %{x:.15g}<br>${pcYLabel}: %{y:.15g}<extra></extra>`,
         });
@@ -976,9 +978,9 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         name: "Samples",
         marker: {
           size: 9,
-          color: "#60a5fa",
+          color: SCIENTIFIC_COLORS.preview,
           opacity: 0.8,
-          line: { width: 1, color: "#1d4ed8" },
+          line: { width: 1, color: SCIENTIFIC_COLORS.selection },
         },
         hovertemplate: `%{text}<br>${pcXLabel}: %{x:.15g}<br>${pcYLabel}: %{y:.15g}<extra></extra>`,
       });
@@ -1065,7 +1067,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       x: vectorLineX,
       y: vectorLineY,
       name: "Loadings vectors",
-      line: { color: "#f59e0b", width: 1.6 },
+      line: { color: SCIENTIFIC_COLORS.threshold, width: 1.6 },
       hoverinfo: "skip",
       showlegend: true,
     };
@@ -1077,13 +1079,13 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       y: vectorEndY,
       text: vectorText,
       textposition: "top center",
-      textfont: { size: 10, color: "#fde68a" },
+      textfont: { size: 10, color: SCIENTIFIC_COLORS.annotation },
       customdata: vectorCustomData,
       marker: {
         size: 6,
-        color: "#f97316",
+        color: SCIENTIFIC_COLORS.peak,
         opacity: 0.92,
-        line: { width: 1, color: "#7c2d12" },
+        line: { width: 1, color: SCIENTIFIC_COLORS.thresholdNote },
       },
       name: "Variables",
       showlegend: false,
@@ -1114,8 +1116,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       height: 460,
       showlegend: true,
       legend: {
-        bgcolor: "rgba(30, 41, 59, 0.82)",
-        bordercolor: "#334155",
+        bgcolor: SCIENTIFIC_COLORS.hoverPaper,
+        bordercolor: SCIENTIFIC_COLORS.ink,
         borderwidth: 1,
         x: 1,
         y: 1,
@@ -1127,7 +1129,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         ...basePlotLayout.xaxis,
         title: `${pcXLabel} (scores)`,
         zeroline: true,
-        zerolinecolor: "#64748b",
+        zerolinecolor: SCIENTIFIC_COLORS.referenceStrong,
         zerolinewidth: 1.2,
       },
       yaxis: {
@@ -1135,7 +1137,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         ...scoreGeometry,
         title: `${pcYLabel} (scores)`,
         zeroline: true,
-        zerolinecolor: "#64748b",
+        zerolinecolor: SCIENTIFIC_COLORS.referenceStrong,
         zerolinewidth: 1.2,
       },
       hovermode: "closest",
@@ -1244,7 +1246,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       ...(hasFeatureLabels ? { margin: { ...basePlotLayout.margin, b: 150 } } : {}),
       margin: { ...basePlotLayout.margin, ...(hasFeatureLabels ? {b:150} : {}) },
       showlegend: true,
-      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
+      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "transparent" },
       xaxis: {
         ...basePlotLayout.xaxis,
         title: hasFeatureLabels ? { text: xaxis_title, standoff: 24 } : xaxis_title,
@@ -1308,7 +1310,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           x: oneDimensional.map((variable) => variable.x),
           y: oneDimensional.map((variable) => variable.name),
           customdata: oneDimensional.map((variable) => [variable.name, variable.x]),
-          marker: { color: "#ef4444" },
+          marker: { color: SCIENTIFIC_COLORS.alert },
           hovertemplate: "<b>%{customdata[0]}</b><br>Correlation: %{customdata[1]:.4f}<extra></extra>",
         }],
         layout: {
@@ -1333,7 +1335,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "lines",
         x: theta.map(Math.cos),
         y: theta.map(Math.sin),
-        line: { color: "#94a3b8", width: 1 },
+        line: { color: SCIENTIFIC_COLORS.reference, width: 1 },
         hoverinfo: "skip",
         showlegend: false,
       },
@@ -1344,9 +1346,9 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         y: selected.map((variable) => variable.y),
         text: selected.map((variable, index) => index < labelled ? variable.name : ""),
         textposition: selected.map((_, index) => index % 2 ? "bottom center" : "top center"),
-        textfont: { color: "#334155", size: 10 },
+        textfont: { color: SCIENTIFIC_COLORS.ink, size: 10 },
         customdata: selected.map((variable) => [variable.name, variable.x, variable.y]),
-        marker: { color: "#ef4444", size: 5 },
+        marker: { color: SCIENTIFIC_COLORS.alert, size: 5 },
         name: selected.length === vectors.length
           ? "Variables"
           : `Top ${selected.length} of ${vectors.length} by projected correlation`,
@@ -1368,7 +1370,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           title: `r(variable, PC${xIndex + 1})`,
           range: [-1.12, 1.12],
           zeroline: true,
-          zerolinecolor: "#64748b",
+          zerolinecolor: SCIENTIFIC_COLORS.referenceStrong,
         },
         yaxis: {
           ...basePlotLayout.yaxis,
@@ -1376,7 +1378,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           title: `r(variable, PC${yIndex + 1})`,
           range: [-1.12, 1.12],
           zeroline: true,
-          zerolinecolor: "#64748b",
+          zerolinecolor: SCIENTIFIC_COLORS.referenceStrong,
         },
         annotations: selected.map((variable) => ({
           x: variable.x,
@@ -1392,7 +1394,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           arrowhead: 2,
           arrowsize: 0.8,
           arrowwidth: 1.2,
-          arrowcolor: "#ef4444",
+          arrowcolor: SCIENTIFIC_COLORS.alert,
         })),
       },
     };
@@ -1428,7 +1430,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       x: xLabels,
       y: variancePercent,
       name: "Individual %",
-      marker: { color: "#3b82f6" },
+      marker: { color: SCIENTIFIC_COLORS.observation },
       hovertemplate: "%{x}: %{y:.15g}%<extra></extra>",
     };
 
@@ -1445,8 +1447,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       x: xLabels,
       y: cumulativeY,
       name: "Cumulative %",
-      line: { color: "#f97316", width: 3 },
-      marker: { size: 10, color: "#f97316" },
+      line: { color: SCIENTIFIC_COLORS.peak, width: 3 },
+      marker: { size: 10, color: SCIENTIFIC_COLORS.peak },
       hovertemplate: "%{x}: %{y:.15g}% cumulative<extra></extra>",
     };
 
@@ -1463,7 +1465,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       xanchor: "center",
       y: 1.15,
       orientation: "h",
-      bgcolor: "rgba(0,0,0,0)",
+      bgcolor: "transparent",
       font: { color: basePlotLayout.font.color },
     },
     xaxis: {
@@ -1606,7 +1608,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
             y: [metadata.t2_p95, metadata.t2_p95],
             name: "T² 95% Control Limit (F-dist)",
             yaxis: "y",
-            line: { color: "#64748b", width: 1, dash: "dash" },
+            line: { color: SCIENTIFIC_COLORS.referenceStrong, width: 1, dash: "dash" },
             showlegend: true,
             hoverinfo: "skip",
             legendgroup: "limits",
@@ -1644,7 +1646,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
             y: [metadata.spe_p95, metadata.spe_p95],
             name: "SPE 95% Control Limit (χ²)",
             yaxis: "y2",
-            line: { color: "#64748b", width: 1, dash: "dash" },
+            line: { color: SCIENTIFIC_COLORS.referenceStrong, width: 1, dash: "dash" },
             showlegend: true,
             hoverinfo: "skip",
             legendgroup: "limits",
@@ -1662,8 +1664,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           name: "T²",
           text: sampleLabels,
           yaxis: "y",
-          line: { color: "#38bdf8", width: 2 },
-          marker: { size: 6, color: "#38bdf8", symbol: "circle" },
+          line: { color: SCIENTIFIC_COLORS.statistic, width: 2 },
+          marker: { size: 6, color: SCIENTIFIC_COLORS.statistic, symbol: "circle" },
           hovertemplate: "%{text}<br>T²: %{y:.15g}<extra></extra>",
         });
 
@@ -1676,7 +1678,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
             y: [metadata.t2_p95, metadata.t2_p95],
             name: "T² 95% Control Limit (F-dist)",
             yaxis: "y",
-            line: { color: "#38bdf8", width: 1, dash: "dash" },
+            line: { color: SCIENTIFIC_COLORS.statistic, width: 1, dash: "dash" },
             showlegend: true,
             hoverinfo: "skip",
           });
@@ -1692,8 +1694,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           name: "SPE (Q)",
           text: sampleLabels,
           yaxis: "y2",
-          line: { color: "#f97316", width: 2 },
-          marker: { size: 6, color: "#f97316", symbol: "square" },
+          line: { color: SCIENTIFIC_COLORS.peak, width: 2 },
+          marker: { size: 6, color: SCIENTIFIC_COLORS.peak, symbol: "square" },
           hovertemplate: "%{text}<br>SPE: %{y:.15g}<extra></extra>",
         });
 
@@ -1706,7 +1708,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
             y: [metadata.spe_p95, metadata.spe_p95],
             name: "SPE 95% Control Limit (χ²)",
             yaxis: "y2",
-            line: { color: "#f97316", width: 1, dash: "dash" },
+            line: { color: SCIENTIFIC_COLORS.peak, width: 1, dash: "dash" },
             showlegend: true,
             hoverinfo: "skip",
           });
@@ -1731,7 +1733,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         xanchor: "center",
         y: 1.15,
         orientation: "h",
-        bgcolor: "rgba(0,0,0,0)",
+        bgcolor: "transparent",
         font: { color: basePlotLayout.font.color },
       },
       xaxis: { ...basePlotLayout.xaxis, title: "Sample" },
@@ -1740,8 +1742,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         overlaying: "y",
         side: "right",
         title: { text: "SPE (Q)", standoff: 20 },
-        gridcolor: "rgba(0,0,0,0)",
-        zerolinecolor: "#475569",
+        gridcolor: "transparent",
+        zerolinecolor: SCIENTIFIC_COLORS.secondary,
       },
     };
   });
@@ -1784,7 +1786,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       ...basePlotLayout,
       height: 350,
       showlegend: true,
-      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
+      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "transparent" },
       xaxis: { ...basePlotLayout.xaxis, title: metadata.y_title || "Sample Index" },
       yaxis: {
         ...basePlotLayout.yaxis,
@@ -1855,7 +1857,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       ...basePlotLayout,
       height: 350,
       showlegend: true,
-      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
+      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "transparent" },
       xaxis: {
         ...basePlotLayout.xaxis,
         title: xLabel,
@@ -1897,7 +1899,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         x: actual,
         y: predicted,
         name: "Selected match",
-        marker: { color: "#3b82f6", size: 8 },
+        marker: { color: SCIENTIFIC_COLORS.observation, size: 8 },
         hovertemplate: "Target: %{x:.4g}<br>Recovered: %{y:.4g}<extra></extra>",
       },
       {
@@ -1906,7 +1908,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         x: [lo, hi],
         y: [lo, hi],
         name: "Ideal",
-        line: { dash: "dash", color: "#94a3b8" },
+        line: { dash: "dash", color: SCIENTIFIC_COLORS.reference },
       },
     ];
   });
@@ -1929,7 +1931,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       xaxis: { ...basePlotLayout.xaxis, title: targetTitle },
       yaxis: { ...basePlotLayout.yaxis, title: "Affine-aligned recovered concentration" },
       showlegend: true,
-      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
+      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "transparent" },
     };
   });
 
@@ -1952,7 +1954,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         x,
         y: spectrum,
         name: String(metrics.recovered_component || "Selected spectrum"),
-        line: { width: 2, color: "#14b8a6" },
+        line: { width: 2, color: SCIENTIFIC_COLORS.component },
         hovertemplate: "%{x:.4g}<br>Normalized intensity: %{y:.4g}<extra></extra>",
       },
     ];
@@ -2053,7 +2055,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     return {
       ...basePlotLayout,
       height: 380,
-      title: { text: title, font: { color: "#94a3b8", size: 13 } },
+      title: { text: title, font: { color: SCIENTIFIC_COLORS.reference, size: 13 } },
       xaxis: {
         ...basePlotLayout.xaxis,
         title: xLabel,
@@ -2179,7 +2181,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           mode: "lines" as const,
           type: "scatter" as const,
           name: "Ideal",
-          line: { dash: "dash" as const, color: "#94a3b8" },
+          line: { dash: "dash" as const, color: SCIENTIFIC_COLORS.reference },
         });
         return traces;
       }
@@ -2319,10 +2321,10 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
     if (hasCategorical) {
       layout.legend = {
-        bgcolor: "rgba(30, 41, 59, 0.8)",
-        bordercolor: "#334155",
+        bgcolor: SCIENTIFIC_COLORS.hoverPaper,
+        bordercolor: SCIENTIFIC_COLORS.ink,
         borderwidth: 1,
-        font: { color: "#f8fafc" },
+        font: { color: SCIENTIFIC_COLORS.inverse },
         x: 1,
         y: 1,
         xanchor: "right",
@@ -2562,7 +2564,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         xref: "x",
         yref: "y",
         showarrow: false,
-        font: { size: 10, color: "black" },
+        font: { size: 10, color: SCIENTIFIC_COLORS.ink },
         xanchor: "center",
         yanchor: "middle",
       });
@@ -2576,14 +2578,14 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         ...basePlotLayout.xaxis,
         title: "Loading on LV1",
         zeroline: true,
-        zerolinecolor: "gray",
+        zerolinecolor: SCIENTIFIC_COLORS.zeroLine,
         zerolinewidth: 1,
       },
       yaxis: {
         ...basePlotLayout.yaxis,
         title: "Loading on LV2",
         zeroline: true,
-        zerolinecolor: "gray",
+        zerolinecolor: SCIENTIFIC_COLORS.zeroLine,
         zerolinewidth: 1,
       },
       annotations,
@@ -2780,7 +2782,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       ...basePlotLayout,
       height: 400,
       showlegend: true,
-      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)", font: { size: 10 } },
+      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "transparent", font: { size: 10 } },
       xaxis: {
         ...basePlotLayout.xaxis,
         title: xLabel,
@@ -2877,16 +2879,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
     const numFeatures = data[0].length;
     const traces: any[] = [];
-    const colors = [
-      "#3b82f6",
-      "#ef4444",
-      "#22c55e",
-      "#f59e0b",
-      "#8b5cf6",
-      "#ec4899",
-      "#06b6d4",
-      "#f97316",
-    ];
+    const colors = seriesPalette("classes");
 
     // Create one box per feature (showing all data)
     for (let f = 0; f < numFeatures; f++) {
@@ -2896,7 +2889,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         type: "box",
         y: featureData,
         name: featureName,
-        marker: { color: "#64748b" }, // Neutral gray for boxes
+        marker: { color: SCIENTIFIC_COLORS.referenceStrong }, // Neutral gray for boxes
         boxpoints: false, // Don't show points on box - we'll add colored scatter
         showlegend: false,
       });
@@ -2995,7 +2988,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         hasTarget ||
         (typedMetadataGrouping.value.kind === "valid" &&
           typedMetadataGrouping.value.colorOptions.length > 0),
-      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)", font: { size: 10 } },
+      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "transparent", font: { size: 10 } },
       xaxis: { ...basePlotLayout.xaxis, title: "Feature" },
       yaxis: { ...basePlotLayout.yaxis, title: "Value" },
     };
@@ -3036,16 +3029,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       );
     }
 
-    const colors = [
-      "#3b82f6",
-      "#ef4444",
-      "#22c55e",
-      "#f59e0b",
-      "#8b5cf6",
-      "#ec4899",
-      "#06b6d4",
-      "#f97316",
-    ];
+    const colors = seriesPalette("classes");
 
     // If we have labels, create one trace per class
     if (target.length > 0 && targetNames.length > 0) {
@@ -3078,7 +3062,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           y: data.map((row: number[]) => row[yIdx]),
           name: "Samples",
           marker: {
-            color: "#3b82f6",
+            color: SCIENTIFIC_COLORS.observation,
             size: 8,
             opacity: 0.8,
           },
@@ -3107,7 +3091,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         hasTarget ||
         (typedMetadataGrouping.value.kind === "valid" &&
           typedMetadataGrouping.value.colorOptions.length > 0),
-      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)", font: { size: 10 } },
+      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "transparent", font: { size: 10 } },
       xaxis: { ...basePlotLayout.xaxis, title: xName },
       yaxis: { ...basePlotLayout.yaxis, title: yName },
     };
@@ -3170,7 +3154,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "lines",
         x: xValues,
         y: spectrum,
-        line: { color: "#3b82f6", width: 2 },
+        line: { color: SCIENTIFIC_COLORS.observation, width: 2 },
         hovertemplate: `${xTitle}: %{x:.15g}<br>Value: %{y:.15g}<extra></extra>`,
       },
       {
@@ -3179,7 +3163,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "markers",
         x: [contourClickPoint.value.wavenumber],
         y: [spectrum[contourClickPoint.value.wavenumberIdx]],
-        marker: { size: 12, color: "#f97316", symbol: "circle" },
+        marker: { size: 12, color: SCIENTIFIC_COLORS.peak, symbol: "circle" },
         showlegend: false,
         hoverinfo: "skip",
       },
@@ -3227,7 +3211,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "lines",
         x,
         y: profile,
-        line: { color: "#10b981", width: 2 },
+        line: { color: SCIENTIFIC_COLORS.selected, width: 2 },
         hovertemplate: "Sample %{x}: %{y:.15g}<extra></extra>",
       },
       {
@@ -3236,7 +3220,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "markers",
         x: [contourClickPoint.value.sampleIdx + 1],
         y: [profile[contourClickPoint.value.sampleIdx]],
-        marker: { size: 12, color: "#f97316", symbol: "circle" },
+        marker: { size: 12, color: SCIENTIFIC_COLORS.peak, symbol: "circle" },
         showlegend: false,
         hoverinfo: "skip",
       },
@@ -3255,18 +3239,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
   // CLUSTER SCATTER (KMeans / DBSCAN)
   // ============================================================================
 
-  const CLUSTER_COLORS = [
-    "#3b82f6",
-    "#ef4444",
-    "#22c55e",
-    "#f59e0b",
-    "#8b5cf6",
-    "#ec4899",
-    "#06b6d4",
-    "#f97316",
-    "#6366f1",
-    "#14b8a6",
-  ];
+
 
   const clusterScatterData = computed(() => {
     if (
@@ -3300,7 +3273,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         type: "scatter" as const,
         name: isNoise ? "Noise" : `Cluster ${label}`,
         marker: {
-          color: isNoise ? "#6b7280" : CLUSTER_COLORS[label % CLUSTER_COLORS.length],
+          color: isNoise ? SCIENTIFIC_COLORS.excluded : seriesPalette("clusters")[label % seriesPalette("clusters").length],
           size: isNoise ? 5 : 8,
           symbol: isNoise ? "x" : "circle",
           opacity: isNoise ? 0.5 : 0.8,
@@ -3311,11 +3284,11 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
   const clusterScatterLayout = computed(() => ({
     ...basePlotLayout,
-    title: { text: "Cluster Assignments", font: { color: "#e2e8f0", size: 14 } },
-    xaxis: { title: "Component 1", color: "#94a3b8" },
-    yaxis: { title: "Component 2", color: "#94a3b8" },
+    title: { text: "Cluster Assignments", font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
+    xaxis: { title: "Component 1", color: SCIENTIFIC_COLORS.reference },
+    yaxis: { title: "Component 2", color: SCIENTIFIC_COLORS.reference },
     showlegend: true,
-    legend: { font: { color: "#94a3b8" } },
+    legend: { font: { color: SCIENTIFIC_COLORS.reference } },
   }));
 
   // OUTLIER DETECTION: T² vs Q Control Chart
@@ -3360,7 +3333,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "markers",
         type: "scatter",
         name: "Normal",
-        marker: { color: "#3b82f6", size: 7 },
+        marker: { color: SCIENTIFIC_COLORS.observation, size: 7 },
         hovertemplate: "%{text}<br>T²: %{x:.15g}<br>Q: %{y:.15g}<extra></extra>",
       },
     ];
@@ -3373,7 +3346,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         textposition: "top center",
         type: "scatter",
         name: "Outlier",
-        marker: { color: "#ef4444", size: 9, symbol: "diamond" },
+        marker: { color: SCIENTIFIC_COLORS.alert, size: 9, symbol: "diamond" },
         hovertemplate: "%{text}<br>T²: %{x:.15g}<br>Q: %{y:.15g}<extra></extra>",
       });
     }
@@ -3386,7 +3359,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "lines",
         type: "scatter",
         name: `T² limit`,
-        line: { dash: "dash", color: "#f59e0b", width: 2 },
+        line: { dash: "dash", color: SCIENTIFIC_COLORS.threshold, width: 2 },
         showlegend: true,
       });
     }
@@ -3399,7 +3372,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "lines",
         type: "scatter",
         name: `Q limit`,
-        line: { dash: "dash", color: "#f59e0b", width: 2 },
+        line: { dash: "dash", color: SCIENTIFIC_COLORS.threshold, width: 2 },
         showlegend: true,
       });
     }
@@ -3408,11 +3381,11 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
   const outlierChartLayout = computed(() => ({
     ...basePlotLayout,
-    title: { text: "T² vs Q Residuals (Control Chart)", font: { color: "#e2e8f0", size: 14 } },
-    xaxis: { title: "Hotelling T²", color: "#94a3b8", zeroline: false },
-    yaxis: { title: "Q Residuals (SPE)", color: "#94a3b8", zeroline: false },
+    title: { text: "T² vs Q Residuals (Control Chart)", font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
+    xaxis: { title: "Hotelling T²", color: SCIENTIFIC_COLORS.reference, zeroline: false },
+    yaxis: { title: "Q Residuals (SPE)", color: SCIENTIFIC_COLORS.reference, zeroline: false },
     showlegend: true,
-    legend: { font: { color: "#94a3b8" } },
+    legend: { font: { color: SCIENTIFIC_COLORS.reference } },
   }));
 
   // CANONICAL EVALUATOR / CROSS-VALIDATION PLOTS
@@ -3477,21 +3450,12 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
   const holdoutConfusionLayout = computed(() => ({
     ...basePlotLayout,
-    title: { text: "Confusion Matrix", font: { color: "#e2e8f0", size: 14 } },
-    xaxis: { title: "Predicted", color: "#94a3b8" },
-    yaxis: { title: "True", color: "#94a3b8", autorange: "reversed" as const },
+    title: { text: "Confusion Matrix", font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
+    xaxis: { title: "Predicted", color: SCIENTIFIC_COLORS.reference },
+    yaxis: { title: "True", color: SCIENTIFIC_COLORS.reference, autorange: "reversed" as const },
   }));
 
-  const holdoutRegressionColors = [
-    "#3b82f6",
-    "#ef4444",
-    "#22c55e",
-    "#f59e0b",
-    "#8b5cf6",
-    "#ec4899",
-    "#06b6d4",
-    "#f97316",
-  ];
+
 
   const holdoutRegressionData = computed(() => {
     const viz = holdoutVisualization.value;
@@ -3525,7 +3489,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           ? s.train_predicted.map(Number)
           : [];
         const name = String(s.name || "Target");
-        const color = holdoutRegressionColors[idx % holdoutRegressionColors.length];
+        const color = seriesPalette("classes")[idx % seriesPalette("classes").length];
         if (trainActual.length > 0 && trainPredicted.length > 0) {
           traces.push({
             x: trainActual,
@@ -3560,7 +3524,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "lines" as const,
         type: "scatter" as const,
         name: "1:1 Line",
-        line: { dash: "dash" as const, color: "#94a3b8" },
+        line: { dash: "dash" as const, color: SCIENTIFIC_COLORS.reference },
       });
       return traces;
     }
@@ -3585,7 +3549,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
               mode: "markers" as const,
               type: "scatter" as const,
               name: "Train",
-              marker: { color: "#3b82f6", size: 7, symbol: "circle-open" },
+              marker: { color: SCIENTIFIC_COLORS.observation, size: 7, symbol: "circle-open" },
             },
           ]
         : []),
@@ -3595,7 +3559,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "markers" as const,
         type: "scatter" as const,
         name: "Test",
-        marker: { color: "#3b82f6", size: 8, symbol: "circle" },
+        marker: { color: SCIENTIFIC_COLORS.observation, size: 8, symbol: "circle" },
       },
       {
         x: [minVal, maxVal],
@@ -3603,7 +3567,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "lines" as const,
         type: "scatter" as const,
         name: "1:1 Line",
-        line: { dash: "dash" as const, color: "#94a3b8" },
+        line: { dash: "dash" as const, color: SCIENTIFIC_COLORS.reference },
       },
     ];
     return traces;
@@ -3642,11 +3606,11 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       meta: { evaluation_metrics: viz?.metadata ?? {} },
       title: {
         text: titleText,
-        font: { color: "#e2e8f0", size: 14 },
+        font: { color: SCIENTIFIC_COLORS.grid, size: 14 },
       },
       margin: { ...basePlotLayout.margin, t: 66 },
-      xaxis: { title: "Actual", color: "#94a3b8" },
-      yaxis: { title: yTitle, color: "#94a3b8" },
+      xaxis: { title: "Actual", color: SCIENTIFIC_COLORS.reference },
+      yaxis: { title: yTitle, color: SCIENTIFIC_COLORS.reference },
       showlegend: isMultiTarget || Array.isArray((viz?.metadata as any)?.train?.data),
     };
   });
@@ -3694,14 +3658,14 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           y: heights,
           text: labels,
           hovertemplate: "%{text}<extra></extra>",
-          marker: { color: "#3b82f6", size: 10 },
+          marker: { color: SCIENTIFIC_COLORS.observation, size: 10 },
           name: "Median Height",
           error_y: {
             type: "data",
             symmetric: false,
             array: q3.map((q, i) => q - heights[i]), // upper = q3 - median
             arrayminus: heights.map((h, i) => h - q1[i]), // lower = median - q1
-            color: "#60a5fa",
+            color: SCIENTIFIC_COLORS.preview,
             thickness: 2,
             width: 6,
           },
@@ -3709,7 +3673,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
             type: "data",
             array: posStd,
             arrayminus: posStd,
-            color: "#94a3b8",
+            color: SCIENTIFIC_COLORS.reference,
             thickness: 1.5,
             width: 4,
           },
@@ -3738,7 +3702,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
             x,
             y: means,
             name: "Mean",
-            marker: { color: "#3b82f6" },
+            marker: { color: SCIENTIFIC_COLORS.observation },
             hovertemplate: "Feature: %{x}<br>Mean: %{y:.15g}<extra></extra>",
           },
         ];
@@ -3748,7 +3712,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
             x,
             y: stds,
             name: "Std Dev",
-            marker: { color: "#f59e0b" },
+            marker: { color: SCIENTIFIC_COLORS.threshold },
             hovertemplate: "Feature: %{x}<br>Std Dev: %{y:.15g}<extra></extra>",
           });
         }
@@ -3762,7 +3726,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           x,
           y: means,
           name: "Mean",
-          line: { color: "#3b82f6", width: 2 },
+          line: { color: SCIENTIFIC_COLORS.observation, width: 2 },
           hovertemplate: "x: %{x:.15g}<br>Mean: %{y:.15g}<extra></extra>",
         },
       ];
@@ -3773,7 +3737,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           x,
           y: stds,
           name: "Std Dev",
-          line: { color: "#f59e0b", width: 1.5, dash: "dash" },
+          line: { color: SCIENTIFIC_COLORS.threshold, width: 1.5, dash: "dash" },
           yaxis: "y2",
           hovertemplate: "x: %{x:.15g}<br>Std Dev: %{y:.15g}<extra></extra>",
         });
@@ -3802,7 +3766,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         type: "histogram",
         x: values,
         nbinsx: 50,
-        marker: { color: "#3b82f6" },
+        marker: { color: SCIENTIFIC_COLORS.observation },
         hovertemplate: "Range: %{x}<br>Count: %{y}<extra></extra>",
       },
     ];
@@ -3823,7 +3787,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         height: 450,
         title: {
           text: "Peak Consensus: Position ± σ (horizontal) · Height ± IQR (vertical)",
-          font: { size: 13, color: "#94a3b8" },
+          font: { size: 13, color: SCIENTIFIC_COLORS.reference },
         },
         xaxis: { ...basePlotLayout.xaxis, title: xLabel },
         yaxis: { ...basePlotLayout.yaxis, title: "Peak Height (absorbance)" },
@@ -3860,7 +3824,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           overlaying: "y",
           side: "right",
           gridcolor: "transparent",
-          color: "#f59e0b",
+          color: SCIENTIFIC_COLORS.threshold,
         },
         showlegend: true,
       };
@@ -3928,7 +3892,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       ...basePlotLayout,
       height: 450,
       showlegend: true,
-      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
+      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "transparent" },
       xaxis: { ...basePlotLayout.xaxis, title: metadata.x_title || "Sample Index" },
       yaxis: { ...basePlotLayout.yaxis, title: "Eigenvalue (log scale)", type: "log" },
     };
@@ -4020,7 +3984,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         type: "bar",
         x: categories,
         y: accuracies.map((a: number) => a * 100),
-        marker: { color: "#3b82f6" },
+        marker: { color: SCIENTIFIC_COLORS.observation },
         name: "Per-class",
         hovertemplate: "%{x}: %{y:.15g}%<extra></extra>",
       },
@@ -4029,7 +3993,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         mode: "lines",
         x: [categories[0], categories[categories.length - 1]],
         y: [overall * 100, overall * 100],
-        line: { color: "#f59e0b", dash: "dash", width: 2 },
+        line: { color: SCIENTIFIC_COLORS.threshold, dash: "dash", width: 2 },
         name: `Overall (${(overall * 100).toFixed(1)}%)`,
       },
     ];
@@ -4045,7 +4009,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       xaxis: { ...basePlotLayout.xaxis, title: "Class" },
       yaxis: { ...basePlotLayout.yaxis, title: "Accuracy (%)", range: [0, 105] },
       showlegend: true,
-      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
+      legend: { x: 1, xanchor: "right", y: 1, bgcolor: "transparent" },
     };
   });
 

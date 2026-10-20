@@ -898,8 +898,8 @@ watch(() => props.syncRefreshRevision, loadMeasuredRows);
   padding: 1rem;
 }
 .plan-error {
-  border-color: #f59e0b;
-  color: #92400e;
+  border-color: var(--ss-warning);
+  color: var(--ss-warning);
 }
 .plan-spinner {
   justify-self: center;

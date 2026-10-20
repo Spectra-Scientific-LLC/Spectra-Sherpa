@@ -259,11 +259,11 @@ watch(
 
 <style scoped>
 .detail-section {
-  background: #1e293b;
+  background: var(--ss-panel);
   border-radius: 12px;
   margin-bottom: 24px;
   overflow: hidden;
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
 }
 .section-header {
   display: flex;
@@ -274,7 +274,7 @@ watch(
   transition: background 0.15s;
 }
 .section-header:hover {
-  background: rgba(51, 65, 85, 0.5);
+  background: color-mix(in srgb, var(--ss-panel-raised) 50%, transparent);
 }
 .section-title {
   display: flex;
@@ -283,7 +283,7 @@ watch(
 }
 .section-title i {
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .section-title h2 {
   margin: 0;
@@ -292,14 +292,14 @@ watch(
 }
 .section-badge {
   padding: 4px 10px;
-  background: #334155;
+  background: var(--ss-panel-raised);
   border-radius: 12px;
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 .section-content {
   padding: 20px;
-  border-top: 1px solid #334155;
+  border-top: 1px solid var(--ss-panel-border);
 }
 .collapse-enter-active,
 .collapse-leave-active {
@@ -319,25 +319,25 @@ watch(
   align-items: center;
   padding: 40px 20px;
   text-align: center;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .empty-section i {
   font-size: 2.5rem;
   margin-bottom: 16px;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 .empty-section p {
   margin: 0 0 8px;
   font-size: 1rem;
 }
 .empty-section small {
-  color: #475569;
+  color: var(--ss-text-secondary);
   font-size: 0.85rem;
 }
 
 .validation-error-banner {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: color-mix(in srgb, var(--ss-danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-danger) 30%, transparent);
   border-radius: 8px;
   padding: 12px 16px;
   margin-bottom: 16px;
@@ -348,7 +348,7 @@ watch(
   gap: 10px;
 }
 .error-banner-header i {
-  color: #ef4444;
+  color: var(--ss-panel-danger);
   font-size: 1.1rem;
   margin-top: 2px;
 }
@@ -358,24 +358,24 @@ watch(
   gap: 2px;
 }
 .error-banner-content strong {
-  color: #f87171;
+  color: var(--ss-panel-danger);
   font-size: 0.9rem;
 }
 .error-banner-content span {
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-size: 0.85rem;
 }
 .error-list {
   margin: 10px 0 0;
   padding-left: 30px;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   font-size: 0.85rem;
 }
 .error-list li {
   margin-bottom: 4px;
 }
 .error-list strong {
-  color: #f8fafc;
+  color: var(--ss-panel-text);
   font-family: "JetBrains Mono", monospace;
   font-size: 0.8rem;
 }
@@ -391,24 +391,24 @@ watch(
   gap: 6px;
 }
 .param-field.has-error label {
-  color: #f87171;
+  color: var(--ss-panel-danger);
 }
 .param-field label {
   font-size: 0.9rem;
   font-weight: 500;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
 }
 .required-mark {
-  color: #ef4444;
+  color: var(--ss-panel-danger);
   margin-left: 2px;
 }
 .param-description {
-  color: #64748b;
+  color: var(--ss-panel-muted);
   font-size: 0.8rem;
   margin-bottom: 4px;
 }
 .param-error-message {
-  color: #f87171;
+  color: var(--ss-panel-danger);
   font-size: 0.8rem;
   margin-top: 2px;
 }
@@ -418,7 +418,7 @@ watch(
   gap: 12px;
 }
 .toggle-label {
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-size: 0.9rem;
 }
 .full-width {
@@ -436,16 +436,16 @@ watch(
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  border: 1px solid color-mix(in srgb, var(--ss-border-strong) 35%, transparent);
   border-radius: 8px;
-  color: #cbd5e1;
-  background: rgba(15, 23, 42, 0.35);
+  color: var(--ss-panel-secondary);
+  background: color-mix(in srgb, var(--ss-panel-inset) 35%, transparent);
   font-size: 0.85rem;
 }
 .settings-actions {
   display: flex;
   justify-content: flex-end;
   padding-top: 12px;
-  border-top: 1px solid #334155;
+  border-top: 1px solid var(--ss-panel-border);
 }
 </style>

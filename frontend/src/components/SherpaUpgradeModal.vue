@@ -9,7 +9,7 @@
   >
     <div class="upgrade-content">
       <div class="upgrade-icon">
-        <i class="pi pi-lock" style="font-size: 2rem; color: #3b82f6"></i>
+        <i class="pi pi-lock" style="font-size: 2rem; color: var(--ss-action)"></i>
       </div>
       <p class="upgrade-message">{{ upgradeMessage }}</p>
 
@@ -65,7 +65,7 @@ const upgradeUrl = computed(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #dbeafe;
+  background: var(--ss-action-tint);
   border-radius: 50%;
 }
 

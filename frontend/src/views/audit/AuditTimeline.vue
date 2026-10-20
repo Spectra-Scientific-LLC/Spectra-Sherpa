@@ -53,8 +53,8 @@ defineEmits<{
 
 <style scoped>
 .timeline-panel {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--ss-surface);
+  border: 1px solid var(--ss-border);
   border-radius: 8px;
   padding: 16px;
 }
@@ -72,7 +72,7 @@ defineEmits<{
 }
 
 .eyebrow {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.76rem;
   font-weight: 700;
   margin: 0;
@@ -80,16 +80,16 @@ defineEmits<{
 }
 
 .row-count {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--ss-border-strong);
   border-radius: 8px;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.82rem;
   font-weight: 700;
   padding: 6px 10px;
 }
 
 .timeline-state {
-  color: #475569;
+  color: var(--ss-text-secondary);
   padding: 28px 0 10px;
 }
 
@@ -100,15 +100,15 @@ defineEmits<{
 }
 
 .event-list :deep(.event-row) + :deep(.event-row) {
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--ss-border);
 }
 
 .load-more {
   align-items: center;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
+  background: var(--ss-surface);
+  border: 1px solid var(--ss-border-strong);
   border-radius: 8px;
-  color: #0f172a;
+  color: var(--ss-text-strong);
   cursor: pointer;
   display: inline-flex;
   font-weight: 700;
@@ -119,8 +119,8 @@ defineEmits<{
 }
 
 .load-more:disabled {
-  background: #e2e8f0;
-  color: #64748b;
+  background: var(--ss-border);
+  color: var(--ss-text-muted);
   cursor: not-allowed;
 }
 

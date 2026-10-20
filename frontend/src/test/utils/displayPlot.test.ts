@@ -3,6 +3,24 @@ import { DEFAULT_DISPLAY_PREFERENCES } from "@/composables/useDisplayPreferences
 import { displayPlot } from "@/utils/displayPlot";
 
 describe("display plot preferences", () => {
+  it("never recolors continuous values, status/reference traces or exclusions as categories", () => {
+    const traces = [
+      { type: "scatter", mode: "markers", x: [1, 2], y: [3, 4], customdata: ["a", "b"],
+        marker: { color: [-.001, .001], colorscale: "RdBu", cmin: -.001, cmax: .001 } },
+      { type: "scatter", mode: "lines", x: [1, 2], y: [3, 3], line: { color: "red", dash: "dash", width: 2 } },
+      { type: "scatter", mode: "markers", x: [1], y: [2], marker: { color: "gray", symbol: "x" } },
+      { type: "heatmap", z: [[-1, 0, 1]], colorscale: "RdBu", zmin: -1, zmid: 0, zmax: 1 },
+    ];
+    const before = JSON.stringify(traces);
+    for (const palette of ["default", "colorblind", "high-contrast"] as const) {
+      const rendered = displayPlot(traces, {}, { ...DEFAULT_DISPLAY_PREFERENCES, palette });
+      expect(rendered.data[0]).toMatchObject(traces[0]);
+      expect(rendered.data[1]).toEqual(traces[1]);
+      expect(rendered.data[2]).toMatchObject(traces[2]);
+      expect(rendered.data[3]).toEqual(traces[3]);
+      expect(JSON.stringify(traces)).toBe(before);
+    }
+  });
   it("does not describe repeated feature observations as unique samples", () => {
     const traces = Array.from({ length: 4 }, () => ({ type: "scatter", mode: "markers",
       x: Array.from({ length: 150 }, (_, i) => i), y: Array(150).fill(1),
@@ -22,7 +40,7 @@ describe("display plot preferences", () => {
       ],
     };
     const rendered = displayPlot([{ type: "scatter", x: [1], y: [2] }], savedLayout, DEFAULT_DISPLAY_PREFERENCES);
-    expect(rendered.layout.title).toEqual({ text: "PCA Scores" });
+    expect(rendered.layout.title).toMatchObject({ text: "PCA Scores" });
     expect(rendered.layout.annotations).toEqual(savedLayout.annotations.slice(2));
     expect(savedLayout.title.text).toContain("Equal axis units");
     expect(savedLayout.annotations).toHaveLength(4);
@@ -89,7 +107,7 @@ describe("display plot preferences", () => {
     expect((rendered.data[0].line as { width: number }).width).toBe(3);
     expect((rendered.data[0].marker as { size: number }).size).toBe(6);
     expect(rendered.data[0].y).toEqual([0.1, 0.2]);
-    expect(rendered.layout.xaxis).toEqual({ title: "Wavenumber" });
+    expect(rendered.layout.xaxis).toMatchObject({ title: "Wavenumber" });
     expect(source.line.width).toBe(2);
   });
 });

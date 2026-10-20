@@ -1,6 +1,13 @@
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
-import { categoricalPalette } from "@/theme/plotTheme";
+import { categoricalPalette, SERIES_PALETTES, type SeriesPalette } from "@/theme/plotTheme";
 export { PLOTLY_COLORS, EXTENDED_COLORS } from "@/theme/plotTheme";
+
+/** Call inside the projection/computed, not once at module initialization:
+ * existing and newly opened charts must observe the same live preference. */
+export function seriesPalette(family: SeriesPalette): readonly string[] {
+  const preference = useDisplayPreferences().palette;
+  return preference === "default" ? SERIES_PALETTES[family] : categoricalPalette(preference);
+}
 
 /**
  * Maps categorical labels to colors

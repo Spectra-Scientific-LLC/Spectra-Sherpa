@@ -177,88 +177,89 @@ select {
  * Action buttons use one visual grammar across the app. PrimeVue pages mix
  * default, outlined, and text variants; normalize them to a consistent blue
  * outline so every clickable button reads as an explicit action.
+ * Selected choices keep their highlight; they are state, not plain actions.
  */
-.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight) {
   color: var(--ss-action-text);
   background: var(--ss-surface);
   border: 1px solid var(--ss-action);
   box-shadow: none;
 }
 
-.p-button.p-button-text:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
-.p-button.p-button-outlined:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
-.p-button.p-button-secondary:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
-.p-button.p-button-primary:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
-.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
-.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
-.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
-.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+.p-button.p-button-text:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight),
+.p-button.p-button-outlined:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight),
+.p-button.p-button-secondary:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight),
+.p-button.p-button-primary:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight),
+.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight),
+.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight),
+.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight),
+.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight) {
   background: var(--ss-surface);
   border-color: var(--ss-action);
   box-shadow: none;
 }
 
-.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:hover,
-.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:focus {
+.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):enabled:hover,
+.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):enabled:focus {
   color: var(--ss-text-strong);
   background: var(--ss-action-tint);
   border-color: var(--ss-action-hover);
   box-shadow: none;
 }
 
-.p-button.p-button-secondary:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+.p-button.p-button-secondary:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight) {
   color: var(--ss-text-secondary);
 }
 
-.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight) {
   color: var(--ss-success);
   border-color: var(--ss-action);
 }
 
-.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight) {
   color: var(--ss-info);
   border-color: var(--ss-action);
 }
 
-.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight) {
   color: var(--ss-warning);
   border-color: var(--ss-action);
 }
 
-.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight) {
   color: var(--ss-danger);
   border-color: var(--ss-action);
 }
 
-.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:hover,
-.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:focus {
+.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):enabled:hover,
+.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):enabled:focus {
   color: var(--ss-success-strong);
   background: var(--ss-success-surface);
   border-color: var(--ss-action-hover);
 }
 
-.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:hover,
-.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:focus {
+.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):enabled:hover,
+.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):enabled:focus {
   color: var(--ss-info-strong);
   background: var(--ss-info-surface);
   border-color: var(--ss-action-hover);
 }
 
-.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:hover,
-.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:focus {
+.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):enabled:hover,
+.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):enabled:focus {
   color: var(--ss-warning-strong);
   background: var(--ss-warning-surface);
   border-color: var(--ss-action-hover);
 }
 
-.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:hover,
-.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:focus {
+.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):enabled:hover,
+.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):enabled:focus {
   color: var(--ss-danger-strong);
   background: var(--ss-danger-surface);
   border-color: var(--ss-action-hover);
 }
 
-.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):disabled {
+.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):disabled {
   color: var(--ss-text-disabled);
   background: var(--ss-surface-subtle);
   border-color: var(--ss-border-strong);

@@ -1348,7 +1348,7 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 
 <style scoped>
 .campaign-validation-star {
-  color: #eab308;
+  color: var(--ss-warning);
   font-size: 1.6rem;
 }
 .page-content {
@@ -1369,13 +1369,13 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
   align-items: flex-start;
   gap: 0.65rem;
   padding: 2rem;
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  border: 1px solid color-mix(in srgb, var(--ss-accent) 20%, transparent);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--ss-surface) 72%, transparent);
 }
 
 .hosted-pro-deploy i {
-  color: #4338ca;
+  color: var(--ss-accent);
   font-size: 1.75rem;
 }
 
@@ -1385,7 +1385,7 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 }
 
 .hosted-pro-deploy p {
-  color: #475569;
+  color: var(--ss-text-secondary);
   line-height: 1.55;
 }
 
@@ -1401,14 +1401,14 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
   align-items: center;
   gap: 12px;
   padding: 48px;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .released-applications {
   padding: 1rem;
-  border: 1px solid rgba(99, 102, 241, 0.18);
+  border: 1px solid color-mix(in srgb, var(--ss-accent) 18%, transparent);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.62);
+  background: color-mix(in srgb, var(--ss-surface) 62%, transparent);
 }
 
 .section-heading {
@@ -1426,11 +1426,11 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 
 .section-heading p {
   margin: 0.25rem 0 0;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .selected-application {
-  color: #4338ca;
+  color: var(--ss-accent);
   font-size: 0.875rem;
   font-weight: 600;
 }
@@ -1448,17 +1448,17 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
   gap: 0.25rem 0.75rem;
   min-width: 220px;
   padding: 0.75rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--ss-border-strong);
   border-radius: 8px;
-  background: #fff;
+  background: var(--ss-surface);
   color: var(--text-color);
   cursor: pointer;
   text-align: left;
 }
 
 .application-card.selected {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+  border-color: var(--ss-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ss-accent) 18%, transparent);
 }
 
 .application-card__name {
@@ -1470,7 +1470,7 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 
 .application-card small {
   grid-column: 1 / -1;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .watches-table,
@@ -1483,14 +1483,14 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 }
 
 .workflow-ref {
-  color: #6366f1;
+  color: var(--ss-accent);
   font-size: 0.8rem;
 }
 
 .folder-path {
   font-family: monospace;
   font-size: 0.8rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
   max-width: 250px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1503,12 +1503,12 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 }
 
 .timestamp {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.8rem;
 }
 
 .error-text {
-  color: #ef4444;
+  color: var(--ss-danger);
   font-size: 0.8rem;
 }
 
@@ -1529,7 +1529,7 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 .predictions-detail h4 {
   margin: 0 0 12px;
   font-size: 0.9rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .predictions-table {
@@ -1537,7 +1537,7 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 }
 
 .no-predictions {
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   font-size: 0.85rem;
 }
 
@@ -1556,7 +1556,7 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 .form-field label {
   font-size: 0.85rem;
   font-weight: 500;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .form-row {

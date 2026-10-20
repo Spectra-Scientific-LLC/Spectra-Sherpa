@@ -752,8 +752,8 @@ provide(NODE_DETAIL_STATE_KEY, detailState);
 /* Shell-only styles. Per-panel styles live in node-detail/panels/*.vue. */
 .node-detail-view {
   min-height: 100vh;
-  background: #0f172a;
-  color: #f8fafc;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-text);
 }
 
 .node-detail-view.embedded {
@@ -766,8 +766,8 @@ provide(NODE_DETAIL_STATE_KEY, detailState);
   justify-content: space-between;
   align-items: center;
   padding: 16px 32px;
-  background: #1e293b;
-  border-bottom: 1px solid #334155;
+  background: var(--ss-panel);
+  border-bottom: 1px solid var(--ss-panel-border);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -792,7 +792,7 @@ provide(NODE_DETAIL_STATE_KEY, detailState);
 .node-instance-id {
   display: block;
   margin-top: 3px;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   font-size: 0.75rem;
 }
 
@@ -801,8 +801,8 @@ provide(NODE_DETAIL_STATE_KEY, detailState);
   width: fit-content;
   margin-top: 4px;
   padding: 2px 10px;
-  background: rgba(59, 130, 246, 0.2);
-  color: #60a5fa;
+  background: color-mix(in srgb, var(--ss-action) 20%, transparent);
+  color: var(--ss-panel-action);
   border-radius: 12px;
   font-size: 0.75rem;
   font-weight: 500;
@@ -820,7 +820,7 @@ provide(NODE_DETAIL_STATE_KEY, detailState);
   flex-basis: 100%;
   justify-content: flex-end;
   margin: 0;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 
 .detail-content {
@@ -844,8 +844,8 @@ provide(NODE_DETAIL_STATE_KEY, detailState);
 }
 
 .full-metadata-json {
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-secondary);
   padding: 16px;
   border-radius: 8px;
   font-family: "JetBrains Mono", monospace;

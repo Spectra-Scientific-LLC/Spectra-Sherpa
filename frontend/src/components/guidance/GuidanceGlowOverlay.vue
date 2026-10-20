@@ -98,11 +98,11 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 9550;
   pointer-events: none;
-  border: 2px solid #7c3aed;
+  border: 2px solid var(--ss-accent);
   border-radius: 10px;
   box-shadow:
-    0 0 0 4px rgba(124, 58, 237, 0.14),
-    0 0 22px rgba(124, 58, 237, 0.28);
+    0 0 0 4px color-mix(in srgb, var(--ss-accent) 14%, transparent),
+    0 0 22px color-mix(in srgb, var(--ss-accent) 28%, transparent);
   animation: guidance-glow-pulse 2s ease-in-out infinite;
 }
 

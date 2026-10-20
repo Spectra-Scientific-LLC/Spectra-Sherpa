@@ -44,7 +44,7 @@ defineProps<{
 <style scoped>
 .manifest-panel,
 .empty-panel {
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .manifest-head {
@@ -60,7 +60,7 @@ defineProps<{
 }
 
 .eyebrow {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.76rem;
   font-weight: 700;
   margin: 0;
@@ -68,18 +68,18 @@ defineProps<{
 }
 
 .verify-badge {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--ss-border-strong);
   border-radius: 8px;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.82rem;
   font-weight: 700;
   padding: 6px 10px;
 }
 
 .verify-badge.ok {
-  background: #dcfce7;
-  border-color: #86efac;
-  color: #166534;
+  background: var(--ss-success-surface);
+  border-color: var(--ss-success-border);
+  color: var(--ss-success);
 }
 
 .metrics {
@@ -90,13 +90,13 @@ defineProps<{
 }
 
 .metrics div {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
   border-radius: 8px;
   padding: 10px;
 }
 
 .metrics dt {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.74rem;
   font-weight: 700;
   margin-bottom: 4px;

@@ -797,7 +797,7 @@ function absoluteTimestamp(dateStr: string): string {
   margin: 0 0 0.5rem 0;
   /* Match `.tab-header h1` so the page title weight + height are
    * identical to every other tab. Hero layout otherwise stays distinct. */
-  color: #1b1f23;
+  color: var(--ss-text);
 }
 
 .hero-subtitle {

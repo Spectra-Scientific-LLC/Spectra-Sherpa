@@ -87,5 +87,5 @@ onBeforeUnmount(() => { ++generation; controller?.abort(); });
 <style scoped>
 .private-batch-upload { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding-block: 1rem; border-bottom: 1px solid var(--surface-border); }
 .private-batch-upload input { max-width: 100%; min-width: 0; }
-.private-batch-upload p { flex-basis: 100%; color: var(--red-600); }
+.private-batch-upload p { flex-basis: 100%; color: var(--ss-danger); }
 </style>

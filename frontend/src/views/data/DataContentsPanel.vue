@@ -637,6 +637,8 @@
 </template>
 
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import axios from "axios";
 import {
   computed,
@@ -766,28 +768,7 @@ function formatSavedTargets(
     .join(", ");
 }
 
-const PLOT_COLORS = [
-  "#3b82f6",
-  "#ef4444",
-  "#22c55e",
-  "#f59e0b",
-  "#8b5cf6",
-  "#ec4899",
-  "#06b6d4",
-  "#f97316",
-  "#14b8a6",
-  "#6366f1",
-  "#e11d48",
-  "#84cc16",
-  "#0ea5e9",
-  "#d946ef",
-  "#a3e635",
-  "#2dd4bf",
-  "#fb923c",
-  "#818cf8",
-  "#f472b6",
-  "#34d399",
-];
+
 const displayPreferences = useDisplayPreferences();
 const MAX_SAMPLE_TABLE_ROWS = computed(() => displayPreferences.maxRows);
 const MAX_SAMPLE_TABLE_COLUMNS = 24;
@@ -2558,7 +2539,7 @@ const boxPlotData = computed(() => {
       .map((row) => row[colIdx])
       .filter((v): v is number => v !== null && typeof v === "number"),
     name: col,
-    marker: { color: PLOT_COLORS[colIdx % PLOT_COLORS.length] },
+    marker: { color: seriesPalette("dataset")[colIdx % seriesPalette("dataset").length] },
     boxpoints: false,
   }));
 });
@@ -2571,8 +2552,8 @@ const boxPlotLayout = computed(() => ({
   height: 400,
   margin: { t: 40, r: 20, b: 50, l: 60 },
   showlegend: false,
-  plot_bgcolor: "#fafafa",
-  paper_bgcolor: "#ffffff",
+  plot_bgcolor: SCIENTIFIC_COLORS.plotPaper,
+  paper_bgcolor: SCIENTIFIC_COLORS.paper,
 }));
 
 const catalogPreviewPlotData = computed(() => {
@@ -2589,7 +2570,7 @@ const catalogPreviewPlotData = computed(() => {
     type: "scatter" as const,
     mode: "lines" as const,
     name: `Spectrum ${i + 1}`,
-    line: { color: PLOT_COLORS[i % PLOT_COLORS.length], width: 1.2 },
+    line: { color: seriesPalette("dataset")[i % seriesPalette("dataset").length], width: 1.2 },
   }));
 });
 
@@ -2615,8 +2596,8 @@ const catalogPreviewPlotLayout = computed(() => {
     margin: { t: 40, r: 20, b: 50, l: 60 },
     showlegend: (catalogPreviewPlotData.value.length ?? 0) <= 20,
     legend: { font: { size: 10 }, orientation: "h" as const, y: -0.25 },
-    plot_bgcolor: "#fafafa",
-    paper_bgcolor: "#ffffff",
+    plot_bgcolor: SCIENTIFIC_COLORS.plotPaper,
+    paper_bgcolor: SCIENTIFIC_COLORS.paper,
   };
 });
 
@@ -2631,7 +2612,7 @@ const catalogBoxPlotData = computed(() => {
       .map((row) => row[colIdx])
       .filter((v): v is number => v !== null && typeof v === "number"),
     name: col,
-    marker: { color: PLOT_COLORS[colIdx % PLOT_COLORS.length] },
+    marker: { color: seriesPalette("dataset")[colIdx % seriesPalette("dataset").length] },
     boxpoints: false,
   }));
 });
@@ -2644,8 +2625,8 @@ const catalogBoxPlotLayout = computed(() => ({
   height: 400,
   margin: { t: 40, r: 20, b: 80, l: 60 },
   showlegend: false,
-  plot_bgcolor: "#fafafa",
-  paper_bgcolor: "#ffffff",
+  plot_bgcolor: SCIENTIFIC_COLORS.plotPaper,
+  paper_bgcolor: SCIENTIFIC_COLORS.paper,
 }));
 
 const isDataStoryButtonDisabled = computed(() => sherpaStore.isSyncing || sherpaStore.isChatting);
@@ -2959,7 +2940,7 @@ const DataStorySection = defineComponent({
   align-items: flex-start;
   gap: 12px;
   padding: 60px 24px;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   text-align: left;
 }
 
@@ -2969,21 +2950,21 @@ const DataStorySection = defineComponent({
 
 .explore-empty h3 {
   margin: 0;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .explore-empty p {
   line-height: 1.5;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .explore-error i {
   font-size: 2rem;
-  color: #f59e0b;
+  color: var(--ss-warning);
 }
 
 .explore-error span {
-  color: #dc2626;
+  color: var(--ss-danger);
 }
 
 .explore-content {
@@ -3047,18 +3028,18 @@ const DataStorySection = defineComponent({
   gap: 8px;
   font-size: 1.1rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 
 .explore-title i {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .essential-card-number {
   align-items: center;
-  background: #2563eb;
+  background: var(--ss-action);
   border-radius: 999px;
-  color: #ffffff;
+  color: var(--ss-on-action);
   display: inline-flex;
   flex: 0 0 auto;
   font-size: 0.75rem;
@@ -3125,21 +3106,21 @@ const DataStorySection = defineComponent({
   gap: 0.75rem 1rem;
   margin-bottom: 0.75rem;
   padding: 0.75rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
   border-radius: 0.45rem;
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
 }
 
 .plot-display-options,
 .technical-details {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
   border-radius: 0.5rem;
-  background: #ffffff;
+  background: var(--ss-surface);
 }
 
 .plot-display-options > summary,
 .technical-details > summary {
-  color: #475569;
+  color: var(--ss-text-secondary);
   font-size: 0.84rem;
   font-weight: 600;
   gap: 0.5rem;
@@ -3148,7 +3129,7 @@ const DataStorySection = defineComponent({
 
 .plot-display-options .plot-display-controls {
   border: 0;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--ss-border);
   border-radius: 0;
   margin: 0;
 }
@@ -3157,18 +3138,18 @@ const DataStorySection = defineComponent({
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  color: #334155;
+  color: var(--ss-action-text);
   font-size: 0.8rem;
 }
 
 .multi-dataset-style-authority span {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .multi-dataset-plot-status {
   align-items: flex-start;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
+  background: var(--ss-surface-subtle);
+  border: 1px solid var(--ss-border-strong);
   border-radius: 0.5rem;
   display: flex;
   flex-wrap: wrap;
@@ -3180,7 +3161,7 @@ const DataStorySection = defineComponent({
 
 .multi-dataset-plot-status > div:first-child {
   align-items: center;
-  color: #334155;
+  color: var(--ss-action-text);
   display: flex;
   gap: 0.5rem;
 }
@@ -3201,7 +3182,7 @@ const DataStorySection = defineComponent({
 }
 
 .technical-details[open] > summary {
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--ss-border);
 }
 
 .technical-details > section {
@@ -3210,20 +3191,20 @@ const DataStorySection = defineComponent({
 }
 
 .essential-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--ss-surface);
+  border: 1px solid var(--ss-border);
   border-radius: 0.6rem;
   padding: 1rem;
 }
 
 .dataset-step {
-  border-top: 1px solid var(--surface-border, #e2e8f0);
+  border-top: 1px solid var(--surface-border, var(--ss-border));
   padding: 1.25rem 0;
 }
 
 .dataset-step-empty,
 .sample-label-preview p {
-  color: var(--text-color-secondary, #64748b);
+  color: var(--text-color-secondary, var(--ss-text-muted));
   margin: 0.75rem 0;
 }
 
@@ -3254,7 +3235,7 @@ const DataStorySection = defineComponent({
 }
 
 .essential-card-heading p {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.8rem;
   margin-top: 0.15rem;
 }
@@ -3267,12 +3248,12 @@ const DataStorySection = defineComponent({
 }
 
 .essential-fact-grid dt {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.75rem;
 }
 
 .essential-fact-grid dd {
-  color: #1e293b;
+  color: var(--ss-text-strong);
   font-size: 0.88rem;
   font-weight: 600;
   margin: 0.15rem 0 0;
@@ -3297,22 +3278,22 @@ const DataStorySection = defineComponent({
   align-items: flex-start;
   gap: 0.75rem;
   padding: 0.9rem 1rem;
-  border-left: 3px solid #6366f1;
-  background: #eef2ff;
-  color: #3730a3;
+  border-left: 3px solid var(--ss-accent);
+  background: var(--ss-accent-faint);
+  color: var(--ss-accent);
 }
 
 .dimension-projection-notice p {
   margin: 0.25rem 0 0;
-  color: #475569;
+  color: var(--ss-text-secondary);
   line-height: 1.45;
 }
 
 .axis-inventory {
   padding: 1rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
   border-radius: 0.5rem;
-  background: #ffffff;
+  background: var(--ss-surface);
 }
 
 .axis-inventory-header,
@@ -3326,7 +3307,7 @@ const DataStorySection = defineComponent({
 .axis-inventory-header p,
 .axis-card span {
   margin: 0.2rem 0 0;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.8rem;
 }
 
@@ -3339,9 +3320,9 @@ const DataStorySection = defineComponent({
 
 .axis-card {
   padding: 0.75rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
   border-radius: 0.4rem;
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
 }
 
 .axis-card > div:first-child {
@@ -3359,12 +3340,12 @@ const DataStorySection = defineComponent({
 }
 
 .axis-card dt {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .axis-card dd {
   margin: 0;
-  color: #334155;
+  color: var(--ss-action-text);
   font-weight: 600;
 }
 
@@ -3373,13 +3354,13 @@ const DataStorySection = defineComponent({
   grid-template-columns: minmax(14rem, 1fr) minmax(18rem, 2fr);
   gap: 1rem 2rem;
   padding: 1rem;
-  border-left: 3px solid #0f766e;
-  background: #f0fdfa;
+  border-left: 3px solid var(--ss-success);
+  background: var(--ss-success-surface);
 }
 
 .scientific-context p {
   margin: 0.35rem 0 0;
-  color: #475569;
+  color: var(--ss-text-secondary);
   line-height: 1.45;
 }
 
@@ -3392,13 +3373,13 @@ const DataStorySection = defineComponent({
 }
 
 .scientific-context dt {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .scientific-context dd {
   margin: 0;
   overflow-wrap: anywhere;
-  color: #334155;
+  color: var(--ss-action-text);
   font-weight: 600;
 }
 
@@ -3414,11 +3395,11 @@ const DataStorySection = defineComponent({
 }
 
 .plot-display-notice {
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .sample-table-retrieval-error {
-  color: #b91c1c;
+  color: var(--ss-danger);
 }
 
 .plot-grouping-legend {
@@ -3426,9 +3407,9 @@ const DataStorySection = defineComponent({
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 0.8rem 1.5rem;
   padding: 0.75rem 1rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
   border-radius: 0.4rem;
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
   font-size: 0.78rem;
 }
 
@@ -3441,14 +3422,14 @@ const DataStorySection = defineComponent({
 
 .plot-grouping-legend strong {
   width: 100%;
-  color: #334155;
+  color: var(--ss-action-text);
 }
 
 .plot-legend-item {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .plot-legend-item i {
@@ -3462,7 +3443,7 @@ const DataStorySection = defineComponent({
   width: 1.2rem;
   height: 0;
   border-top-width: 2px;
-  border-top-color: #475569;
+  border-top-color: var(--ss-panel-border);
   border-radius: 0;
   background: transparent;
 }
@@ -3474,7 +3455,7 @@ const DataStorySection = defineComponent({
   gap: 1rem;
   padding: 0.75rem 1rem;
   border-left: 3px solid var(--primary-color);
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
 }
 
 .collection-identity div {
@@ -3487,14 +3468,14 @@ const DataStorySection = defineComponent({
 .collection-sample-table-header p,
 .sample-table-omission-note {
   margin: 0;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.82rem;
 }
 
 .collection-identity code {
   max-width: 50%;
   overflow-wrap: anywhere;
-  color: #334155;
+  color: var(--ss-action-text);
   font-size: 0.72rem;
 }
 
@@ -3512,7 +3493,7 @@ const DataStorySection = defineComponent({
 
 .collection-sample-table-scroll {
   overflow-x: auto;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
   border-radius: 0.4rem;
 }
 
@@ -3526,13 +3507,13 @@ const DataStorySection = defineComponent({
 .collection-sample-table th,
 .collection-sample-table td {
   padding: 0.45rem 0.6rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--ss-border);
   text-align: left;
 }
 
 .collection-sample-table th {
-  background: #f8fafc;
-  color: #475569;
+  background: var(--ss-surface-subtle);
+  color: var(--ss-text-secondary);
   font-weight: 650;
   text-transform: capitalize;
 }
@@ -3562,7 +3543,7 @@ const DataStorySection = defineComponent({
   margin: 0 0 12px;
   font-size: 0.95rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 
 .metadata-table {
@@ -3572,13 +3553,13 @@ const DataStorySection = defineComponent({
 }
 
 .metadata-editor-details {
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--ss-border);
   margin-top: 0.35rem;
   padding-top: 0.5rem;
 }
 
 .metadata-editor-details > summary {
-  color: #475569;
+  color: var(--ss-text-secondary);
   font-size: 0.8rem;
   font-weight: 600;
   padding: 0.35rem 0;
@@ -3590,7 +3571,7 @@ const DataStorySection = defineComponent({
   align-items: center;
   gap: 1rem;
   padding: 6px 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--ss-surface-subtle);
 }
 
 .meta-row:last-child {
@@ -3599,12 +3580,12 @@ const DataStorySection = defineComponent({
 
 .meta-key {
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .meta-val {
   font-size: 0.9rem;
-  color: #1e293b;
+  color: var(--ss-text-strong);
   font-weight: 500;
 }
 
@@ -3649,7 +3630,7 @@ const DataStorySection = defineComponent({
 .data-story-context-label {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #334155;
+  color: var(--ss-action-text);
 }
 
 .data-story-context-input {
@@ -3659,7 +3640,7 @@ const DataStorySection = defineComponent({
 .data-story-context-hint {
   margin: 0;
   font-size: 0.8rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
   line-height: 1.4;
 }
 
@@ -3668,9 +3649,9 @@ const DataStorySection = defineComponent({
   font-weight: 500;
   letter-spacing: 0.02em;
   text-transform: lowercase;
-  color: #8b5cf6;
+  color: var(--ss-accent);
   background: transparent;
-  border: 1px solid color-mix(in srgb, #8b5cf6 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-accent) 35%, transparent);
   padding: 0.05rem 0.45rem;
   border-radius: 4px;
 }
@@ -3679,19 +3660,19 @@ const DataStorySection = defineComponent({
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.9rem;
 }
 
 .data-story-text {
   font-size: 0.9rem;
   line-height: 1.6;
-  color: #334155;
+  color: var(--ss-action-text);
   white-space: pre-wrap;
 }
 
 .data-story-hint {
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   font-size: 0.85rem;
   font-style: italic;
   margin: 0;
@@ -3699,7 +3680,7 @@ const DataStorySection = defineComponent({
 
 .dataset-description {
   font-size: 0.9rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
   line-height: 1.6;
   margin: 0;
   white-space: pre-line;
@@ -3716,15 +3697,15 @@ const DataStorySection = defineComponent({
 
 .sample-table-message.success {
   display: block;
-  color: #047857;
-  border-color: #a7f3d0;
-  background: #ecfdf5;
+  color: var(--ss-success);
+  border-color: var(--ss-success-surface);
+  background: var(--ss-success-surface);
 }
 
 .sample-table-message.error {
-  color: #b91c1c;
-  border-color: #fecaca;
-  background: #fef2f2;
+  color: var(--ss-danger);
+  border-color: var(--ss-danger-surface);
+  background: var(--ss-danger-surface);
 }
 
 .sample-table-receipt-heading {
@@ -3764,11 +3745,11 @@ const DataStorySection = defineComponent({
 
 .sample-table-receipt-details dd {
   margin: 0;
-  color: #334155;
+  color: var(--ss-action-text);
 }
 
 .sample-table-next-step {
-  color: #334155;
+  color: var(--ss-action-text);
   font-size: 0.84rem;
 }
 

@@ -216,18 +216,18 @@ onMounted(async () => {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
-  background: #1e3a5f;
-  border: 1px solid #3b82f6;
+  background: var(--ss-panel-info-surface);
+  border: 1px solid var(--ss-action);
   border-radius: 6px;
   padding: 0.75rem 1rem;
   margin-bottom: 1.5rem;
-  color: #bfdbfe;
+  color: var(--ss-panel-action);
   font-size: 0.875rem;
   line-height: 1.5;
 }
 
 .info-callout .pi {
-  color: #3b82f6;
+  color: var(--ss-panel-action);
   font-size: 1rem;
   flex-shrink: 0;
   margin-top: 2px;
@@ -477,12 +477,12 @@ onMounted(async () => {
 
 .test-result .success i {
   font-size: 2rem;
-  color: var(--green-500);
+  color: var(--ss-success);
 }
 
 .test-result .error i {
   font-size: 2rem;
-  color: var(--red-500);
+  color: var(--ss-danger);
 }
 
 .test-result .details p {
@@ -542,14 +542,14 @@ onMounted(async () => {
 }
 
 .message.success {
-  background: #f0fdf4;
-  color: #166534;
-  border: 1px solid #bbf7d0;
+  background: var(--ss-success-surface);
+  color: var(--ss-success);
+  border: 1px solid var(--ss-success-surface);
 }
 
 .message.error {
-  background: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
+  background: var(--ss-danger-surface);
+  color: var(--ss-danger);
+  border: 1px solid var(--ss-danger-surface);
 }
 </style>

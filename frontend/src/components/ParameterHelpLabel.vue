@@ -40,7 +40,7 @@ function dismiss() {
   gap: 8px;
 }
 .parameter-label label {
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   font-size: 0.8rem;
   font-weight: 500;
   margin: 0;
@@ -50,17 +50,17 @@ function dismiss() {
   width: 20px;
   height: 20px;
   padding: 0;
-  border: 1px solid #64748b;
+  border: 1px solid var(--ss-border-strong);
   border-radius: 50%;
   background: transparent;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   cursor: pointer;
   font-size: 12px;
 }
 .parameter-help:hover,
 .parameter-help:focus-visible {
-  border-color: #a5b4fc;
-  outline: 2px solid #818cf8;
+  border-color: var(--ss-accent-border);
+  outline: 2px solid var(--ss-accent-border);
 }
 .parameter-tooltip {
   position: absolute;
@@ -70,13 +70,13 @@ function dismiss() {
   box-sizing: border-box;
   z-index: 100;
   padding: 10px;
-  border: 1px solid #64748b;
+  border: 1px solid var(--ss-border-strong);
   border-radius: 6px;
-  background: #0f172a;
-  color: #f1f5f9;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-text);
   font-size: 0.8125rem;
   font-weight: 400;
   line-height: 1.45;
-  box-shadow: 0 4px 12px #0006;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ss-shadow-color) 40%, transparent);
 }
 </style>

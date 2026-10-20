@@ -693,6 +693,8 @@
 </template>
 
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import DisabledReason from "@/components/DisabledReason.vue";
 import { useRouter } from "vue-router";
@@ -889,18 +891,9 @@ const compoundSortDirection = ref<1 | -1>(1);
 
 // Stable per-species colors so the editor handle, its spline, and the
 // preview trace all read as the same species.
-const CURVE_PALETTE = [
-  "#2563eb",
-  "#d62728",
-  "#2ca02c",
-  "#ff7f0e",
-  "#9467bd",
-  "#8c564b",
-  "#17becf",
-  "#e377c2",
-];
+
 function componentColor(index: number) {
-  return CURVE_PALETTE[index % CURVE_PALETTE.length];
+  return seriesPalette("species")[index % seriesPalette("species").length];
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -1506,7 +1499,7 @@ const contourLayout = computed(() => {
         x1: crosshair.value.x,
         y0: 0,
         y1: 1,
-        line: { color: "#e11d48", width: 1, dash: "dash" },
+        line: { color: SCIENTIFIC_COLORS.boundary, width: 1, dash: "dash" },
       },
       {
         type: "line",
@@ -1516,7 +1509,7 @@ const contourLayout = computed(() => {
         x1: 1,
         y0: crosshair.value.y,
         y1: crosshair.value.y,
-        line: { color: "#e11d48", width: 1, dash: "dash" },
+        line: { color: SCIENTIFIC_COLORS.boundary, width: 1, dash: "dash" },
       },
     );
   }
@@ -1569,7 +1562,7 @@ const horizontalSliceTraces = computed(() => {
       y: [...toDisplayY(result.absorbance[sel.sampleIndex] ?? [])].reverse(),
       type: "scatter",
       mode: "lines",
-      line: { color: "#e11d48" },
+      line: { color: SCIENTIFIC_COLORS.boundary },
       name: `sample ${sel.sampleIndex}`,
       hovertemplate: `%{x:.2f} cm^-1<br>%{y:.5f}<extra></extra>`,
     },
@@ -1596,7 +1589,7 @@ const verticalSliceTraces = computed(() => {
       y: toDisplayY(column),
       type: "scatter",
       mode: "lines+markers",
-      line: { color: "#2563eb" },
+      line: { color: SCIENTIFIC_COLORS.observationStrong },
       marker: { size: 4 },
       name: `${result.wavenumber[sel.wavenumberIndex]?.toFixed(2)} cm^-1`,
       hovertemplate: `sample %{x}<br>%{y:.5f}<extra></extra>`,
@@ -2435,7 +2428,7 @@ function openGuide() {
 
 .component-overlay-option {
   align-items: center;
-  border: 1px solid var(--surface-200);
+  border: 1px solid var(--ss-border);
   border-radius: 999px;
   color: var(--text-color);
   cursor: pointer;
@@ -2553,14 +2546,14 @@ function openGuide() {
 
 .synthesis-note.warn {
   background: transparent;
-  border-left-color: var(--yellow-500);
-  color: var(--yellow-700, #7a5300);
+  border-left-color: var(--ss-warning);
+  color: var(--yellow-700, var(--ss-warning));
 }
 
 .synthesis-note.error {
   background: transparent;
-  border-left-color: var(--red-500);
-  color: var(--red-700, #9f1239);
+  border-left-color: var(--ss-danger);
+  color: var(--red-700, var(--ss-annotation-strong));
 }
 
 .output-size-note {
@@ -2583,7 +2576,7 @@ function openGuide() {
 }
 
 .compound-results {
-  border: 1px solid var(--surface-200);
+  border: 1px solid var(--ss-border);
   border-radius: 6px;
   margin-top: 0.75rem;
   max-height: 20rem;
@@ -2599,14 +2592,14 @@ function openGuide() {
 
 .compound-results-table th,
 .compound-results-table td {
-  border-bottom: 1px solid var(--surface-100);
+  border-bottom: 1px solid var(--ss-surface-subtle);
   padding: 0.45rem 0.65rem;
   text-align: left;
   vertical-align: middle;
 }
 
 .compound-results-table th {
-  background: var(--surface-50);
+  background: var(--ss-surface-subtle);
   color: var(--text-color-secondary);
   font-size: 0.75rem;
   font-weight: 700;
@@ -2617,7 +2610,7 @@ function openGuide() {
 }
 
 .compound-results-table tbody tr:hover {
-  background: var(--surface-50);
+  background: var(--ss-surface-subtle);
 }
 
 .compound-sort {
@@ -2651,7 +2644,7 @@ function openGuide() {
 
 .xsec-native-select {
   background: var(--surface-card);
-  border: 1px solid var(--surface-300);
+  border: 1px solid var(--ss-border);
   border-radius: 6px;
   color: var(--text-color);
   font: inherit;
@@ -2670,7 +2663,7 @@ function openGuide() {
 
 .selected-component {
   align-items: center;
-  border: 1px solid var(--surface-200);
+  border: 1px solid var(--ss-border);
   border-radius: 6px;
   display: grid;
   gap: 0.75rem;
@@ -2696,7 +2689,7 @@ function openGuide() {
 }
 
 .curve-editor {
-  border: 1px solid var(--surface-200);
+  border: 1px solid var(--ss-border);
   border-radius: 6px;
   display: grid;
   gap: 1rem;
@@ -2743,7 +2736,7 @@ function openGuide() {
 }
 
 .shift-asterisk {
-  color: #2563eb;
+  color: var(--ss-action);
   cursor: help;
   font-weight: 700;
   margin-left: 1px;
@@ -2814,8 +2807,8 @@ function openGuide() {
   flex-wrap: wrap;
   gap: 0.5rem 1.5rem;
   align-items: center;
-  background: var(--surface-50);
-  border: 1px solid var(--surface-200);
+  background: var(--ss-surface-subtle);
+  border: 1px solid var(--ss-border);
   border-radius: 6px;
   margin-top: 0.75rem;
   padding: 0.65rem 0.75rem;

@@ -1103,7 +1103,7 @@ function exportCSV() {
 <style scoped>
 .data-table-modal :deep(.p-dialog-content) {
   padding: 0;
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   max-height: calc(100vh - 120px);
   overflow: hidden;
 }
@@ -1123,8 +1123,8 @@ function exportCSV() {
   flex-wrap: wrap;
   gap: 20px;
   padding: 12px 20px;
-  background: #1e293b;
-  border-bottom: 1px solid #334155;
+  background: var(--ss-panel);
+  border-bottom: 1px solid var(--ss-panel-border);
 }
 
 .control-group {
@@ -1135,7 +1135,7 @@ function exportCSV() {
 
 .control-group label {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   white-space: nowrap;
 }
 
@@ -1167,15 +1167,15 @@ function exportCSV() {
 
 .stat-item {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 
 .stat-item strong {
-  color: #f8fafc;
+  color: var(--ss-panel-text);
 }
 
 .stat-item.warning {
-  color: #fbbf24;
+  color: var(--ss-panel-warning);
 }
 
 .table-wrapper {
@@ -1194,35 +1194,35 @@ function exportCSV() {
 }
 
 .data-table :deep(.p-datatable-wrapper) {
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   min-height: 0;
 }
 
 .data-table :deep(.p-datatable-thead > tr > th) {
-  background: #1e293b;
-  color: #f8fafc;
-  border-color: #334155;
+  background: var(--ss-panel);
+  color: var(--ss-panel-text);
+  border-color: var(--ss-panel-border);
   padding: 6px 10px;
   font-weight: 600;
 }
 
 .data-table :deep(.p-datatable-tbody > tr) {
-  background: #0f172a;
-  color: #f8fafc;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-text);
 }
 
 .data-table :deep(.p-datatable-tbody > tr:nth-child(even)) {
-  background: #1e293b;
+  background: var(--ss-panel);
 }
 
 .data-table :deep(.p-datatable-tbody > tr > td) {
-  border-color: #334155;
+  border-color: var(--ss-panel-border);
   padding: 5px 10px;
   line-height: 1.25;
 }
 
 .data-table :deep(.p-datatable-tbody > tr:hover) {
-  background: #334155;
+  background: var(--ss-panel-raised);
 }
 
 .numeric-cell {
@@ -1246,13 +1246,13 @@ function exportCSV() {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 
 .empty-table i {
   font-size: 3rem;
   margin-bottom: 16px;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .empty-table p {
@@ -1262,7 +1262,7 @@ function exportCSV() {
 
 .empty-table small {
   font-size: 0.85rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .metadata-panel {
@@ -1270,15 +1270,15 @@ function exportCSV() {
   max-height: 22vh;
   overflow: auto;
   padding: 16px 20px;
-  background: #1e293b;
-  border-top: 1px solid #334155;
+  background: var(--ss-panel);
+  border-top: 1px solid var(--ss-panel-border);
 }
 
 .metadata-panel h4 {
   margin: 0 0 12px;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #f8fafc;
+  color: var(--ss-panel-text);
 }
 
 .metadata-grid {
@@ -1292,54 +1292,54 @@ function exportCSV() {
 }
 
 .metadata-key {
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   margin-right: 4px;
 }
 
 .metadata-value {
-  color: #f8fafc;
+  color: var(--ss-panel-text);
   font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 
 /* PrimeVue overrides for dark theme */
 :deep(.p-dropdown) {
-  background: #0f172a;
-  border-color: #334155;
+  background: var(--ss-panel-inset);
+  border-color: var(--ss-panel-border);
 }
 
 :deep(.p-dropdown:hover) {
-  border-color: #475569;
+  border-color: var(--ss-panel-border);
 }
 
 .table-controls :deep(.p-dropdown-label),
 .table-controls :deep(.p-dropdown-trigger) {
-  color: #f1f5f9;
+  color: var(--ss-panel-text);
 }
 
 :deep(.p-dialog) {
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: var(--ss-panel);
+  border: 1px solid var(--ss-panel-border);
 }
 
 :deep(.p-dialog-header) {
-  background: #1e293b;
-  color: #f8fafc;
-  border-bottom: 1px solid #334155;
+  background: var(--ss-panel);
+  color: var(--ss-panel-text);
+  border-bottom: 1px solid var(--ss-panel-border);
   padding: 16px 20px;
 }
 
 :deep(.p-dialog-header-icon) {
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 
 :deep(.p-dialog-header-icon:hover) {
-  background: #334155;
-  color: #f8fafc;
+  background: var(--ss-panel-raised);
+  color: var(--ss-panel-text);
 }
 
 /* Virtual scroller styling */
 :deep(.p-virtualscroller) {
-  background: #0f172a;
+  background: var(--ss-panel-inset);
 }
 
 @media (max-width: 1200px) {

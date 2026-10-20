@@ -39,5 +39,5 @@ onBeforeUnmount(() => release?.());
 
 <style scoped>
 .contextual-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-.contextual-actions p { flex-basis: 100%; margin: 0; color: var(--red-700); }
+.contextual-actions p { flex-basis: 100%; margin: 0; color: var(--ss-danger-strong); }
 </style>

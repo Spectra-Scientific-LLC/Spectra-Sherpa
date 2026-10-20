@@ -66,7 +66,7 @@
               <i
                 v-if="sheet.colorSource === 'ai'"
                 class="pi pi-sparkles"
-                style="color: #a855f7; font-size: 0.7rem; margin-right: 4px"
+                style="color: var(--ss-panel-accent); font-size: 0.7rem; margin-right: 4px"
                 aria-hidden="true"
               ></i>
               {{ sheet.name }}
@@ -158,9 +158,10 @@ import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import Menu from "primevue/menu";
 import type { WorkbookSheet } from "@/stores/workbook";
+import { themeToken } from "@/theme/interfaceTheme";
 
-const COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b4513", "#64748b"];
-const CANVAS_BACKGROUND = "#1e293b";
+const COLORS = ["blue", "green", "amber", "red", "brown", "slate"].map(color => themeToken(`sheet-${color}`));
+const CANVAS_BACKGROUND = themeToken("panel");
 
 const props = defineProps<{
   sheets: WorkbookSheet[];
@@ -234,7 +235,7 @@ function tabStyle(sheet: WorkbookSheet, active: boolean): Record<string, string>
   return {
     ...style,
     boxShadow: `inset 0 3px 0 ${sheet.tabColor}`,
-    borderColor: active ? "#334155" : "#475569",
+    borderColor: themeToken(active ? "panel-raised" : "panel-border"),
   };
 }
 
@@ -457,8 +458,8 @@ watch(
 <style scoped>
 .sheet-tabs-shell {
   align-items: flex-end;
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: var(--ss-panel);
+  border: 1px solid var(--ss-panel-border);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
   display: flex;
@@ -490,9 +491,9 @@ watch(
 .sheet-add-btn,
 .sheet-scroll-btn {
   align-items: center;
-  background: #1e293b;
-  border: 1px solid #475569;
-  color: #dbeafe;
+  background: var(--ss-panel);
+  border: 1px solid var(--ss-panel-border);
+  color: var(--ss-panel-action);
   cursor: pointer;
   display: inline-flex;
   height: 30px;
@@ -512,10 +513,10 @@ watch(
 }
 
 .sheet-tab.active {
-  background: #1e293b;
-  border-color: #334155;
-  border-bottom: 1px solid #1e293b;
-  color: #f8fafc;
+  background: var(--ss-panel);
+  border-color: var(--ss-panel-border);
+  border-bottom: 1px solid var(--ss-panel);
+  color: var(--ss-panel-text);
   font-weight: 700;
   height: 36px;
   margin-bottom: -1px;
@@ -529,7 +530,7 @@ watch(
 }
 
 .dirty-dot {
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
   border-radius: 999px;
   height: 6px;
   flex: 0 0 auto;
@@ -542,18 +543,18 @@ watch(
 }
 
 .status-icon.success {
-  color: #22c55e;
+  color: var(--ss-panel-success);
 }
 
 .status-icon.error {
-  color: #ef4444;
+  color: var(--ss-panel-danger);
 }
 
 .sheet-rename-input {
-  background: #0f172a;
-  border: 1px solid #60a5fa;
+  background: var(--ss-panel-inset);
+  border: 1px solid var(--ss-action-border);
   border-radius: 4px;
-  color: #f8fafc;
+  color: var(--ss-panel-text);
   font: inherit;
   max-width: 7.5rem;
   min-width: 5rem;
@@ -572,28 +573,28 @@ watch(
 .sheet-add-btn:hover,
 .sheet-scroll-btn:hover,
 .sheet-tab:hover {
-  background: #334155;
-  border-color: #64748b;
-  color: #f8fafc;
+  background: var(--ss-panel-raised);
+  border-color: var(--ss-border-strong);
+  color: var(--ss-panel-text);
 }
 
 .sheet-tab.active:hover {
-  background: #1e293b;
-  border-color: #334155;
+  background: var(--ss-panel);
+  border-color: var(--ss-panel-border);
 }
 
 .sheet-drop-line {
-  background: #60a5fa;
+  background: var(--ss-action);
   height: 32px;
   margin: 0 0.1rem;
   width: 2px;
 }
 
 .sheet-context-menu {
-  background: #1e293b;
-  border: 1px solid #475569;
+  background: var(--ss-panel);
+  border: 1px solid var(--ss-panel-border);
   border-radius: 6px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--ss-shadow-color) 30%, transparent);
   display: grid;
   gap: 0.15rem;
   min-width: 11rem;
@@ -607,7 +608,7 @@ watch(
   background: transparent;
   border: 0;
   border-radius: 4px;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   cursor: pointer;
   display: flex;
   gap: 0.5rem;
@@ -616,26 +617,26 @@ watch(
 }
 
 .sheet-context-menu button:hover:not(:disabled) {
-  background: #3b82f6;
-  color: #ffffff;
+  background: var(--ss-action);
+  color: var(--ss-on-action);
 }
 
 .sheet-context-menu button:disabled {
-  color: #64748b;
+  color: var(--ss-panel-muted);
   cursor: not-allowed;
 }
 
 .sheet-context-menu .danger {
-  color: #ef4444;
+  color: var(--ss-panel-danger);
 }
 
 .sheet-context-menu .danger:hover:not(:disabled) {
-  background: #ef4444;
-  color: #ffffff;
+  background: var(--ss-danger);
+  color: var(--ss-on-action);
 }
 
 .sheet-menu-label {
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-size: 0.72rem;
   font-weight: 700;
   padding: 0.35rem 0.55rem 0.1rem;
@@ -649,7 +650,7 @@ watch(
 }
 
 .sheet-swatch {
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid color-mix(in srgb, var(--ss-surface) 10%, transparent) !important;
   border-radius: 999px !important;
   height: 18px;
   padding: 0 !important;
@@ -657,12 +658,12 @@ watch(
 }
 
 .sheet-menu-separator {
-  border-top: 1px solid #334155;
+  border-top: 1px solid var(--ss-panel-border);
   margin: 0.2rem 0;
 }
 
 .delete-message {
-  color: #334155;
+  color: var(--ss-action-text);
   line-height: 1.45;
   margin: 0;
 }

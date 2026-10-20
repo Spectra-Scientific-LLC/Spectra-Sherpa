@@ -298,14 +298,14 @@ onMounted(() => {
   justify-content: flex-start;
   padding: 64px 16px;
   text-align: left;
-  color: var(--text-color-secondary, #667085);
+  color: var(--text-color-secondary, var(--ss-text-muted));
 }
 
 .empty-state i,
 .loading-state i {
   font-size: 2.5rem;
   margin-bottom: 12px;
-  color: var(--text-color-secondary, #b0b6bf);
+  color: var(--text-color-secondary, var(--ss-text-muted));
 }
 
 .empty-state h3 {
@@ -317,9 +317,9 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: var(--red-50, #fef2f2);
-  border: 1px solid var(--red-200, #fecaca);
-  color: var(--red-900, #7f1d1d);
+  background: var(--red-50, var(--ss-danger-surface));
+  border: 1px solid var(--red-200, var(--ss-danger-surface));
+  color: var(--red-900, var(--ss-danger));
   border-radius: 6px;
   margin-bottom: 16px;
 }
@@ -336,11 +336,11 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: var(--surface-100, #f3f4f6);
-  border: 1px solid var(--surface-200, #e5e7eb);
+  background: var(--surface-100, var(--ss-surface-subtle));
+  border: 1px solid var(--surface-200, var(--ss-border));
   border-radius: 16px;
   font-size: 0.85rem;
-  color: var(--text-color, #1f2937);
+  color: var(--text-color, var(--ss-text-strong));
 }
 
 .tab-group {
@@ -351,8 +351,8 @@ onMounted(() => {
   margin: 0 0 12px;
   font-size: 1.1rem;
   font-weight: 600;
-  color: var(--primary-color, #3b82f6);
-  border-left: 3px solid var(--primary-color, #3b82f6);
+  color: var(--primary-color, var(--ss-action));
+  border-left: 3px solid var(--primary-color, var(--ss-action));
   padding-left: 10px;
 }
 
@@ -364,8 +364,8 @@ onMounted(() => {
 
 .node-card {
   padding: 14px;
-  background: var(--surface-0, #ffffff);
-  border: 1px solid var(--surface-border, #e5e7eb);
+  background: var(--surface-0, var(--ss-surface));
+  border: 1px solid var(--surface-border, var(--ss-border));
   border-radius: 8px;
   display: flex;
   flex-direction: column;
@@ -373,7 +373,7 @@ onMounted(() => {
 }
 
 .node-card.has-stale {
-  border-color: var(--orange-300, #fdba74);
+  border-color: var(--orange-300, var(--ss-warning-border));
 }
 
 .node-card-header {
@@ -385,13 +385,13 @@ onMounted(() => {
 
 .node-title {
   font-weight: 600;
-  color: var(--text-color, #1f2937);
+  color: var(--text-color, var(--ss-text-strong));
 }
 
 .node-subscope {
   font-family: var(--font-family-mono, ui-monospace, monospace);
   font-size: 0.75rem;
-  color: var(--text-color-secondary, #667085);
+  color: var(--text-color-secondary, var(--ss-text-muted));
 }
 
 .node-badges {
@@ -405,19 +405,19 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: var(--surface-100, #f3f4f6);
+  background: var(--surface-100, var(--ss-surface-subtle));
   border-radius: 10px;
   font-size: 0.75rem;
-  color: var(--text-color, #374151);
+  color: var(--text-color, var(--ss-action-text));
 }
 
 .node-badge-muted {
-  color: var(--text-color-secondary, #667085);
+  color: var(--text-color-secondary, var(--ss-text-muted));
 }
 
 .node-badge-warn {
-  background: var(--orange-100, #ffedd5);
-  color: var(--orange-900, #7c2d12);
+  background: var(--orange-100, var(--ss-warning-surface));
+  color: var(--orange-900, var(--ss-warning));
 }
 
 .node-edges {
@@ -426,9 +426,9 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   padding-top: 8px;
-  border-top: 1px dashed var(--surface-200, #e5e7eb);
+  border-top: 1px dashed var(--surface-200, var(--ss-border));
   font-size: 0.78rem;
-  color: var(--text-color-secondary, #667085);
+  color: var(--text-color-secondary, var(--ss-text-muted));
 }
 
 .edges-label {
@@ -440,15 +440,15 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   padding: 1px 8px;
-  background: var(--blue-50, #eff6ff);
-  border: 1px solid var(--blue-200, #bfdbfe);
+  background: var(--blue-50, var(--ss-action-tint));
+  border: 1px solid var(--blue-200, var(--ss-action-tint));
   border-radius: 10px;
-  color: var(--blue-900, #1e3a8a);
+  color: var(--blue-900, var(--ss-action));
 }
 
 .edge-weight {
   font-size: 0.7rem;
-  color: var(--blue-700, #1d4ed8);
+  color: var(--blue-700, var(--ss-action));
   opacity: 0.75;
 }
 </style>

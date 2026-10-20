@@ -393,8 +393,8 @@ const onProjectChange = async () => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  background: #fefbff;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--ss-workspace-paper);
+  border-bottom: 1px solid var(--ss-border);
   height: 56px;
   gap: 16px;
 }
@@ -409,9 +409,9 @@ const onProjectChange = async () => {
 .nav-collapse-toggle {
   align-items: center;
   background: transparent;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--ss-border-strong);
   border-radius: 4px;
-  color: #64748b;
+  color: var(--ss-text-muted);
   cursor: pointer;
   display: inline-flex;
   height: 26px;
@@ -422,9 +422,9 @@ const onProjectChange = async () => {
 }
 
 .nav-collapse-toggle:hover {
-  background: #f8fafc;
-  border-color: #94a3b8;
-  color: #334155;
+  background: var(--ss-surface-subtle);
+  border-color: var(--ss-border-strong);
+  color: var(--ss-action-text);
 }
 
 .nav-collapse-toggle i {
@@ -442,8 +442,8 @@ const onProjectChange = async () => {
   align-items: center;
   gap: 7px;
   padding: 6px 10px;
-  background: #eef7fb;
-  border: 1px solid #b7d7e7;
+  background: var(--ss-info-surface);
+  border: 1px solid var(--ss-info-surface);
   border-radius: 20px;
 }
 
@@ -479,13 +479,13 @@ const onProjectChange = async () => {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
 }
 
 .project-icon {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 1rem;
 }
 
@@ -506,11 +506,11 @@ const onProjectChange = async () => {
 
 .project-value {
   font-weight: 500;
-  color: #334155;
+  color: var(--ss-action-text);
 }
 
 .project-placeholder {
-  color: #94a3b8;
+  color: var(--ss-text-muted);
 }
 
 .project-option {
@@ -526,7 +526,7 @@ const onProjectChange = async () => {
 
 .project-option-date {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
 }
 
 /* Status Indicators (Traffic Lights) */
@@ -535,9 +535,9 @@ const onProjectChange = async () => {
   align-items: center;
   gap: 10px;
   padding: 6px 12px;
-  background: #f1f5f9;
+  background: var(--ss-surface-subtle);
   border-radius: 20px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
 }
 
 .status-light {
@@ -557,7 +557,7 @@ const onProjectChange = async () => {
 }
 
 .status-light:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--ss-action);
   outline-offset: 3px;
 }
 
@@ -573,8 +573,8 @@ const onProjectChange = async () => {
   top: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%) translateY(-4px);
-  background: #1e293b;
-  color: #f8fafc;
+  background: var(--ss-panel);
+  color: var(--ss-panel-text);
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 0.8rem;
@@ -583,7 +583,7 @@ const onProjectChange = async () => {
   visibility: hidden;
   transition: all 0.2s ease;
   z-index: 1000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ss-shadow-color) 20%, transparent);
 }
 
 .status-tooltip::before {
@@ -593,34 +593,34 @@ const onProjectChange = async () => {
   left: 50%;
   transform: translateX(-50%);
   border: 6px solid transparent;
-  border-bottom-color: #1e293b;
+  border-bottom-color: var(--ss-panel);
 }
 
 /* Status colors — flat mid-tone fills; the pulse animation still glows
    on transitional states (connecting, offline). */
 .status-green {
-  background: #16a34a;
+  background: var(--ss-success);
 }
 
 .status-indicators .status-light:nth-child(1).status-green,
 .status-indicators .status-light:nth-child(2).status-green {
-  background: #33b857;
+  background: var(--ss-success);
 }
 
 .status-yellow {
-  background: #ca8a04;
+  background: var(--ss-warning);
 }
 
 .status-red {
-  background: #dc2626;
+  background: var(--ss-danger);
 }
 
 .status-blue {
-  background: #2563eb;
+  background: var(--ss-action);
 }
 
 .status-gray {
-  background: #94a3b8;
+  background: var(--ss-border-strong);
 }
 
 /* Pulse animation for active/connecting states */

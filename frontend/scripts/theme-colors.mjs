@@ -22,6 +22,10 @@ export function inventoryColors(root) {
         const color = match[0].toLowerCase().replace(/\s+/g, '');
         counts[color] = (counts[color] ?? 0) + 1;
       }
+      for (const match of source.matchAll(/\b(?:[\w-]*color|fill|stroke|background)\s*(?::|=)\s*["']?(white|black|gray|grey|silver|red|maroon|yellow|olive|lime|green|aqua|teal|blue|navy|fuchsia|purple|orange)\b/gi)) {
+        const color = `named:${match[1].toLowerCase()}`;
+        counts[color] = (counts[color] ?? 0) + 1;
+      }
       if (Object.keys(counts).length) files[name] = Object.fromEntries(Object.entries(counts).sort());
     }
   }

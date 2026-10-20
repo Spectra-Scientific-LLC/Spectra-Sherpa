@@ -90,5 +90,5 @@ function download(): void {
 .validation-ledger th, .validation-ledger td { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--surface-border); text-align: left; white-space: nowrap; }
 .validation-ledger .num { text-align: right; font-variant-numeric: tabular-nums; }
 .validation-ledger__note { display: block; margin-top: 0.5rem; color: var(--text-color-secondary); }
-.validation-ledger__note--caution { margin: 0.5rem 0 0; padding: 0.5rem 0.75rem; border-left: 3px solid var(--orange-400); background: var(--surface-ground); color: var(--text-color); font-size: 0.85rem; }
+.validation-ledger__note--caution { margin: 0.5rem 0 0; padding: 0.5rem 0.75rem; border-left: 3px solid var(--ss-warning); background: var(--surface-ground); color: var(--text-color); font-size: 0.85rem; }
 </style>

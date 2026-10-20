@@ -1,3 +1,4 @@
+import { standaloneThemeCss } from "@/theme/interfaceTheme";
 import { reportNodePlotsHtml, type ReportNodePlotSection } from "./reportNodePlots";
 import type { ValidationFigure } from "@/utils/validationReportPlots";
 import type { ReportProjectEvidenceSnapshot } from "@/stores/report";
@@ -183,72 +184,72 @@ function projectEvidenceHtml(snapshot: ReportProjectEvidenceSnapshot | null | un
 }
 
 function buildStyleSheet(): string {
-  return `
+  return standaloneThemeCss + `
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #ffffff; color: #334155; line-height: 1.6;
+      background: var(--ss-surface); color: var(--ss-action-text); line-height: 1.6;
       max-width: 1000px; margin: 0 auto; padding: 40px 24px;
     }
-    h1 { font-size: 1.8rem; color: #172033; margin-bottom: 8px; }
-    h2 { font-size: 1.3rem; color: #172033; margin: 32px 0 16px; border-bottom: 1px solid #cbd5e1; padding-bottom: 8px; }
-    h3 { font-size: 1.15rem; font-weight: 700; color: #172033; margin: 28px 0 14px; padding: 10px 14px; background: #f8fafc; border-left: 4px solid #2563eb; }
+    h1 { font-size: 1.8rem; color: var(--ss-text-strong); margin-bottom: 8px; }
+    h2 { font-size: 1.3rem; color: var(--ss-text-strong); margin: 32px 0 16px; border-bottom: 1px solid var(--ss-border-strong); padding-bottom: 8px; }
+    h3 { font-size: 1.15rem; font-weight: 700; color: var(--ss-text-strong); margin: 28px 0 14px; padding: 10px 14px; background: var(--ss-surface-subtle); border-left: 4px solid var(--ss-action); }
     h3 small { display: block; font-size: 0.8rem; font-weight: 400; margin-top: 4px; }
-    .report-figure { margin: 16px 0 24px; padding: 14px; border: 1px solid #64748b; border-radius: 6px; break-inside: avoid; }
+    .report-figure { margin: 16px 0 24px; padding: 14px; border: 1px solid var(--ss-border-strong); border-radius: 6px; break-inside: avoid; }
     .report-figure h4 { font-size: 1rem; margin: 0 0 12px; }
-    .report-figure img, .report-figure svg { width: 100%; height: auto; display: block; background: white; }
+    .report-figure img, .report-figure svg { width: 100%; height: auto; display: block; background: var(--ss-surface); }
     .report-figure figcaption { margin-top: 10px; font-size: 0.8rem; line-height: 1.5; }
     .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
-    .meta-item { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; }
-    .meta-label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-    .meta-value { font-size: 0.95rem; color: #172033; margin-top: 4px; }
-    .hash { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.8rem; color: #15803d; word-break: break-all; }
-    .node-card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin: 12px 0; }
+    .meta-item { background: var(--ss-surface-subtle); border: 1px solid var(--ss-border-strong); border-radius: 8px; padding: 12px; }
+    .meta-label { font-size: 0.75rem; color: var(--ss-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .meta-value { font-size: 0.95rem; color: var(--ss-text-strong); margin-top: 4px; }
+    .hash { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.8rem; color: var(--ss-success); word-break: break-all; }
+    .node-card { background: var(--ss-surface-subtle); border: 1px solid var(--ss-border-strong); border-radius: 8px; padding: 16px; margin: 12px 0; }
     .node-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
     .node-type-badge { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
-    .badge-data { background: rgba(59,130,246,0.2); color: #2563eb; }
-    .badge-preprocess { background: rgba(168,85,247,0.2); color: #7e22ce; }
-    .badge-model { background: rgba(34,197,94,0.2); color: #15803d; }
-    .badge-output { background: rgba(251,146,60,0.2); color: #c2410c; }
-    .badge-other { background: rgba(148,163,184,0.2); color: #475569; }
+    .badge-data { background: color-mix(in srgb, var(--ss-action) 20%, transparent); color: var(--ss-action); }
+    .badge-preprocess { background: var(--ss-accent-faint); color: var(--ss-node-exploratory); }
+    .badge-model { background: color-mix(in srgb, var(--ss-success) 20%, transparent); color: var(--ss-success); }
+    .badge-output { background: color-mix(in srgb, var(--ss-warning) 20%, transparent); color: var(--ss-warning); }
+    .badge-other { background: color-mix(in srgb, var(--ss-border-strong) 20%, transparent); color: var(--ss-text-secondary); }
     .method-help { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; border: 1px solid currentColor; border-radius: 50%; color: inherit; font-size: .8rem; text-decoration: none; vertical-align: middle; }
-    .method-help:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
+    .method-help:focus-visible { outline: 2px solid var(--ss-accent-border); outline-offset: 3px; }
     .params-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    .params-table th, .params-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #f8fafc; font-size: 0.85rem; }
-    .params-table th { color: #64748b; font-weight: 500; }
-    .params-table td { color: #334155; }
-    .params-table code { background: #ffffff; padding: 1px 4px; border-radius: 3px; font-size: 0.8rem; }
+    .params-table th, .params-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--ss-surface-subtle); font-size: 0.85rem; }
+    .params-table th { color: var(--ss-text-muted); font-weight: 500; }
+    .params-table td { color: var(--ss-action-text); }
+    .params-table code { background: var(--ss-surface); padding: 1px 4px; border-radius: 3px; font-size: 0.8rem; }
     .connection-table { width: 100%; border-collapse: collapse; }
-    .connection-table th, .connection-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #cbd5e1; font-size: 0.85rem; }
-    .connection-table th { background: #f8fafc; color: #64748b; }
-    .connection-table td { color: #334155; }
+    .connection-table th, .connection-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--ss-border-strong); font-size: 0.85rem; }
+    .connection-table th { background: var(--ss-surface-subtle); color: var(--ss-text-muted); }
+    .connection-table td { color: var(--ss-action-text); }
     .plot-gallery { display: grid; grid-template-columns: 1fr; gap: 16px; margin: 16px 0; }
-    .plot-card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; }
+    .plot-card { background: var(--ss-surface-subtle); border: 1px solid var(--ss-border-strong); border-radius: 8px; overflow: hidden; }
     .plot-card img { width: 100%; display: block; }
-    .plot-card .plot-caption { padding: 8px 12px; font-size: 0.85rem; color: #475569; }
-    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #cbd5e1; font-size: 0.8rem; color: #64748b; text-align: center; }
-    .run-card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin: 12px 0; }
+    .plot-card .plot-caption { padding: 8px 12px; font-size: 0.85rem; color: var(--ss-text-secondary); }
+    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--ss-border-strong); font-size: 0.8rem; color: var(--ss-text-muted); text-align: center; }
+    .run-card { background: var(--ss-surface-subtle); border: 1px solid var(--ss-border-strong); border-radius: 8px; padding: 16px; margin: 12px 0; }
     .run-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
     .status-badge { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
-    .status-completed { background: rgba(34,197,94,0.2); color: #15803d; }
-    .status-error { background: rgba(239,68,68,0.2); color: #b91c1c; }
-    .status-partial { background: rgba(251,191,36,0.2); color: #92400e; }
-    .status-running { background: rgba(59,130,246,0.2); color: #2563eb; }
+    .status-completed { background: color-mix(in srgb, var(--ss-success) 20%, transparent); color: var(--ss-success); }
+    .status-error { background: color-mix(in srgb, var(--ss-danger) 20%, transparent); color: var(--ss-danger); }
+    .status-partial { background: color-mix(in srgb, var(--ss-warning) 20%, transparent); color: var(--ss-warning); }
+    .status-running { background: color-mix(in srgb, var(--ss-action) 20%, transparent); color: var(--ss-action); }
     .comparison-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    .comparison-table th, .comparison-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #cbd5e1; font-size: 0.85rem; }
-    .comparison-table th { background: #f8fafc; color: #64748b; font-weight: 500; }
-    .comparison-table td { color: #334155; }
-    .metric-best { color: #15803d; font-weight: 600; }
-    .delta-positive { color: #2563eb; font-weight: 500; }
-    .delta-negative { color: #b91c1c; font-weight: 500; }
-    .narrative-section { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px 24px; margin: 16px 0; line-height: 1.8; font-size: 0.9rem; }
+    .comparison-table th, .comparison-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--ss-border-strong); font-size: 0.85rem; }
+    .comparison-table th { background: var(--ss-surface-subtle); color: var(--ss-text-muted); font-weight: 500; }
+    .comparison-table td { color: var(--ss-action-text); }
+    .metric-best { color: var(--ss-success); font-weight: 600; }
+    .delta-positive { color: var(--ss-action); font-weight: 500; }
+    .delta-negative { color: var(--ss-danger); font-weight: 500; }
+    .narrative-section { background: var(--ss-surface-subtle); border: 1px solid var(--ss-border-strong); border-radius: 8px; padding: 20px 24px; margin: 16px 0; line-height: 1.8; font-size: 0.9rem; }
     .narrative-section p { margin-bottom: 12px; }
-    .label-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; background: rgba(59,130,246,0.2); color: #2563eb; margin-right: 4px; }
+    .label-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; background: color-mix(in srgb, var(--ss-action) 20%, transparent); color: var(--ss-action); margin-right: 4px; }
     @media print {
       @page { size: A4; margin: 14mm; }
       body {
-        background: #fff;
-        color: #111827;
+        background: var(--ss-surface);
+        color: var(--ss-text-strong);
         max-width: none;
         padding: 0;
         font-size: 10pt;
@@ -256,27 +257,27 @@ function buildStyleSheet(): string {
         print-color-adjust: exact;
       }
       h1, h2, h3, .meta-value, .params-table td, .connection-table td, .comparison-table td {
-        color: #111827;
+        color: var(--ss-text-strong);
       }
-      h2 { border-bottom-color: #d1d5db; page-break-after: avoid; break-after: avoid; }
-      h3 { background: #eaf1fa; border-left-color: #2563eb; break-after: avoid; }
+      h2 { border-bottom-color: var(--ss-border-strong); page-break-after: avoid; break-after: avoid; }
+      h3 { background: var(--ss-action-tint); border-left-color: var(--ss-action); break-after: avoid; }
       .node-card, .meta-item, .plot-card, .run-card, .narrative-section {
-        background: #fff;
-        border-color: #d1d5db;
+        background: var(--ss-surface);
+        border-color: var(--ss-border-strong);
         page-break-inside: avoid;
         break-inside: avoid;
       }
       .params-table th, .connection-table th, .comparison-table th {
-        background: #f3f4f6;
-        color: #374151;
+        background: var(--ss-surface-subtle);
+        color: var(--ss-action-text);
       }
       .params-table th, .params-table td, .connection-table th, .connection-table td,
       .comparison-table th, .comparison-table td {
-        border-bottom-color: #e5e7eb;
+        border-bottom-color: var(--ss-border);
       }
-      .params-table code { background: #f3f4f6; color: #111827; }
-      .footer { border-top-color: #d1d5db; color: #6b7280; }
-      .hash { color: #16a34a; }
+      .params-table code { background: var(--ss-surface-subtle); color: var(--ss-text-strong); }
+      .footer { border-top-color: var(--ss-border-strong); color: var(--ss-text-muted); }
+      .hash { color: var(--ss-success); }
     }
   `;
 }
@@ -322,11 +323,11 @@ function buildNodeSection(node: ReportNode, plotImage?: string): string {
     <div class="node-header">
       <span class="node-type-badge ${badge}">${escapeHtml(node.nodeType)}</span>
       <strong>${escapeHtml(node.label)}</strong>
-      <span style="margin-left:auto;font-size:0.75rem;color:#64748b">ID: ${escapeHtml(node.nodeId)}</span>
+      <span style="margin-left:auto;font-size:0.75rem;color:var(--ss-text-muted)">ID: ${escapeHtml(node.nodeId)}</span>
     </div>`;
 
   if (node.outputShape) {
-    html += `<div style="font-size:0.8rem;color:#94a3b8;margin-bottom:8px">Output: ${node.outputType || "unknown"} [${node.outputShape.join(" x ")}]</div>`;
+    html += `<div style="font-size:0.8rem;color:var(--ss-text-muted);margin-bottom:8px">Output: ${node.outputType || "unknown"} [${node.outputShape.join(" x ")}]</div>`;
   }
 
   if (params.length > 0) {
@@ -354,7 +355,7 @@ function buildRunSection(run: RunReportEntry, nodes: ReportNode[]): string {
     <div class="run-header">
       <strong>${escapeHtml(run.name)}</strong>
       <span class="status-badge ${statusClass}">${escapeHtml(run.status)}</span>
-      <span style="margin-left:auto;font-size:0.8rem;color:#64748b">${escapeHtml(dateStr)}</span>
+      <span style="margin-left:auto;font-size:0.8rem;color:var(--ss-text-muted)">${escapeHtml(dateStr)}</span>
     </div>`;
 
   // Labels
@@ -602,7 +603,7 @@ export function generateProvenanceReport(data: ReportData): string {
   <h1>${escapeHtml(workflowName)}</h1>`;
 
   if (workflowDescription) {
-    html += `<p style="color:#94a3b8;margin-bottom:16px">${escapeHtml(workflowDescription)}</p>`;
+    html += `<p style="color:var(--ss-text-muted);margin-bottom:16px">${escapeHtml(workflowDescription)}</p>`;
   }
 
   if (data.reportMode === "summary") {

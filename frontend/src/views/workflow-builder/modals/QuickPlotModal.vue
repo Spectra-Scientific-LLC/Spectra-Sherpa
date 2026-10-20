@@ -275,6 +275,8 @@
 </template>
 
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
 import SampleMetadataStyleControls from "../node-detail/panels/SampleMetadataStyleControls.vue";
 import { scientificNumber } from "@/utils/scientificEncoding";
@@ -607,7 +609,7 @@ const libraryCompareQuickPlotData = computed(() => {
       x: sampleX,
       y: sampleY,
       name: firstCandidate.sample || "Sample",
-      line: { color: "#f8fafc", width: 2 },
+      line: { color: SCIENTIFIC_COLORS.inverse, width: 2 },
     },
   ];
   for (const candidate of candidates) {
@@ -748,10 +750,7 @@ function toggleLibraryCandidate(candidate: LibraryCompareCandidate): void {
 }
 
 function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): string {
-  const palette = [
-    "#38bdf8", "#f59e0b", "#22c55e", "#e879f9", "#fb7185", "#a78bfa",
-    "#14b8a6", "#f97316", "#84cc16", "#60a5fa", "#f472b6", "#c084fc",
-  ];
+  const palette = seriesPalette("library");
   const index = Number(candidate.library_trace_index ?? candidate.library_index ?? candidate.sample_rank ?? 0);
   return palette[Math.abs(Math.trunc(Number.isFinite(index) ? index : 0)) % palette.length];
 }
@@ -1018,7 +1017,7 @@ async function downloadPlot() {
 </script>
 
 <style scoped>
-.feature-paging { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; color: #cbd5e1; }
+.feature-paging { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; color: var(--ss-panel-secondary); }
 .embedded-plot .feature-paging { color: var(--text-color); }
 .embedded-plot .plot-controls, .embedded-plot .data-table-container { background: var(--surface-card); color: var(--text-color); }
 .embedded-plot .control-group label, .embedded-plot .stat-item, .embedded-plot .stat-item strong { color: var(--text-color); }
@@ -1028,7 +1027,7 @@ async function downloadPlot() {
 .embedded-plot .plot-container { height: clamp(420px, 60vh, 680px); min-height: 420px; }
 .quick-plot-modal :deep(.p-dialog-content) {
   padding: 0;
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   overflow: auto;
 }
 
@@ -1040,21 +1039,21 @@ async function downloadPlot() {
 }
 
 .plot-controls {
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   display: flex;
   align-items: center;
   gap: 10px 14px;
   padding: 10px 12px;
-  background: #1e293b;
-  border-bottom: 1px solid #334155;
+  background: var(--ss-panel);
+  border-bottom: 1px solid var(--ss-panel-border);
   flex-wrap: wrap;
 }
 
 .plot-sampling-disclosure {
   padding: 10px 14px;
-  border-bottom: 1px solid #a16207;
-  background: #422d13;
-  color: #fef3c7;
+  border-bottom: 1px solid var(--ss-warning);
+  background: var(--ss-panel-warning-surface);
+  color: var(--ss-panel-warning);
   font-size: 0.85rem;
   line-height: 1.45;
 }
@@ -1064,9 +1063,9 @@ async function downloadPlot() {
   gap: 0.45rem;
   align-items: flex-start;
   padding: 0.55rem 0.8rem;
-  border-bottom: 1px solid #475569;
-  background: #1e293b;
-  color: #cbd5e1;
+  border-bottom: 1px solid var(--ss-panel-border);
+  background: var(--ss-panel);
+  color: var(--ss-panel-secondary);
   font-size: 0.82rem;
   line-height: 1.4;
 }
@@ -1079,12 +1078,12 @@ async function downloadPlot() {
 
 .control-group label {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   white-space: nowrap;
 }
 
 .plot-controls :deep(.control-group > label) {
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
 }
 
 .embedded-plot .plot-controls :deep(.control-group > label) {
@@ -1097,7 +1096,7 @@ async function downloadPlot() {
 
 .quick-plot-modal:not(.embedded-plot) .plot-controls :deep(.p-dropdown-label),
 .quick-plot-modal:not(.embedded-plot) .plot-controls :deep(.p-dropdown-trigger) {
-  color: #f1f5f9;
+  color: var(--ss-panel-text);
 }
 
 .axis-dropdown {
@@ -1124,10 +1123,10 @@ async function downloadPlot() {
   grid-template-columns: 16px 10px minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
   border-radius: 6px;
-  background: #0f172a;
-  color: #cbd5e1;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-secondary);
   cursor: pointer;
   font-size: 0.76rem;
   line-height: 1.15;
@@ -1137,8 +1136,8 @@ async function downloadPlot() {
 
 .species-rank-row:hover,
 .species-rank-row.selected {
-  border-color: #38bdf8;
-  background: rgba(14, 165, 233, 0.14);
+  border-color: var(--ss-info-border);
+  background: color-mix(in srgb, var(--ss-info) 14%, transparent);
 }
 
 .species-rank-row input {
@@ -1149,7 +1148,7 @@ async function downloadPlot() {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(248, 250, 252, 0.28);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ss-shadow-color) 28%, transparent);
 }
 
 .species-rank-row span {
@@ -1160,7 +1159,7 @@ async function downloadPlot() {
 }
 
 .species-rank-row strong {
-  color: #e2e8f0;
+  color: var(--ss-panel-secondary);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -1170,19 +1169,19 @@ async function downloadPlot() {
   align-items: center;
   gap: 6px;
   min-height: 34px;
-  color: #fde68a;
-  border: 1px solid #a16207;
+  color: var(--ss-panel-warning);
+  border: 1px solid var(--ss-warning);
   border-radius: 6px;
-  background: rgba(113, 63, 18, 0.22);
+  background: color-mix(in srgb, var(--ss-warning) 22%, transparent);
   padding: 0 10px;
   font-size: 0.8rem;
   font-weight: 600;
 }
 
 .candidate-alignment-badge.aligned {
-  color: #bbf7d0;
-  border-color: #15803d;
-  background: rgba(22, 101, 52, 0.24);
+  color: var(--ss-panel-success);
+  border-color: var(--ss-success);
+  background: color-mix(in srgb, var(--ss-success) 24%, transparent);
 }
 
 .stats-summary {
@@ -1192,11 +1191,11 @@ async function downloadPlot() {
 
 .stat-item {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 
 .stat-item strong {
-  color: #f8fafc;
+  color: var(--ss-panel-text);
 }
 
 .plotly-container {
@@ -1259,13 +1258,13 @@ async function downloadPlot() {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 
 .empty-plot i {
   font-size: 3rem;
   margin-bottom: 16px;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .empty-plot p {
@@ -1275,7 +1274,7 @@ async function downloadPlot() {
 
 .empty-plot small {
   font-size: 0.85rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 /* View toggle button */
@@ -1288,13 +1287,13 @@ async function downloadPlot() {
   flex: 1;
   padding: 16px;
   overflow: auto;
-  background: #0f172a;
+  background: var(--ss-panel-inset);
 }
 
 .data-summary {
   display: block;
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   margin-bottom: 8px;
 }
 
@@ -1303,61 +1302,61 @@ async function downloadPlot() {
 }
 
 :deep(.preview-datatable .p-datatable-thead > tr > th) {
-  background: #1e293b;
-  color: #f8fafc;
-  border-color: #334155;
+  background: var(--ss-panel);
+  color: var(--ss-panel-text);
+  border-color: var(--ss-panel-border);
   font-weight: 600;
   padding: 3px 8px;
   line-height: 1.15;
 }
 
 :deep(.preview-datatable .p-datatable-tbody > tr) {
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-secondary);
 }
 
 :deep(.preview-datatable .p-datatable-tbody > tr > td) {
-  border-color: #334155;
+  border-color: var(--ss-panel-border);
   padding: 2px 8px;
   line-height: 1.15;
 }
 
 :deep(.preview-datatable .p-datatable-tbody > tr:nth-child(even)) {
-  background: #1e293b;
+  background: var(--ss-panel);
 }
 
 :deep(.preview-datatable .p-datatable-tbody > tr:hover) {
-  background: #334155;
+  background: var(--ss-panel-raised);
 }
 
 /* PrimeVue overrides for dark theme */
 :deep(.p-dropdown) {
-  background: #0f172a;
-  border-color: #334155;
+  background: var(--ss-panel-inset);
+  border-color: var(--ss-panel-border);
 }
 
 :deep(.p-dropdown:hover) {
-  border-color: #475569;
+  border-color: var(--ss-panel-border);
 }
 
 :deep(.p-dialog) {
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: var(--ss-panel);
+  border: 1px solid var(--ss-panel-border);
 }
 
 :deep(.p-dialog-header) {
-  background: #1e293b;
-  color: #f8fafc;
-  border-bottom: 1px solid #334155;
+  background: var(--ss-panel);
+  color: var(--ss-panel-text);
+  border-bottom: 1px solid var(--ss-panel-border);
   padding: 16px 20px;
 }
 
 :deep(.p-dialog-header-icon) {
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 
 :deep(.p-dialog-header-icon:hover) {
-  background: #334155;
-  color: #f8fafc;
+  background: var(--ss-panel-raised);
+  color: var(--ss-panel-text);
 }
 </style>

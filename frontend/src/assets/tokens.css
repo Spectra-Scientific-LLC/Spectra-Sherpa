@@ -7,7 +7,7 @@
   --ss-text-body: #4b5563;
   --ss-text-strong: #0f172a;
   --ss-text-secondary: #475569;
-  --ss-text-muted: #64748b;
+  --ss-text-muted: #526176;
   --ss-text-disabled: #94a3b8;
   --ss-surface-page: #f5f7fa;
   --ss-surface: #ffffff;
@@ -16,10 +16,10 @@
   --ss-surface-workspace: #e4e0fa;
   --ss-border: #e2e8f0;
   --ss-border-strong: #cbd5e1;
-  --ss-border-input: #cbd5f5;
+  --ss-border-input: #64748b;
   --ss-action-text: #334155;
-  --ss-action: #2563eb;
-  --ss-action-hover: #1d4ed8;
+  --ss-action: #1d4ed8;
+  --ss-action-hover: #1e40af;
   --ss-action-tint: #eff6ff;
   --ss-focus: #2563eb;
   --ss-success: #15803d;
@@ -39,6 +39,84 @@
   --ss-nav-link: #e2e8f0;
   --ss-nav-selection: rgba(255, 255, 255, 0.15);
   --ss-shadow-panel: 0 12px 30px rgba(15, 23, 42, 0.08);
+  --ss-on-action: #ffffff;
+  --ss-shadow-color: #0f172a;
+  --ss-panel: #1e293b;
+  --ss-panel-inset: #0f172a;
+  --ss-panel-raised: #334155;
+  --ss-panel-border: #475569;
+  --ss-panel-text: #f8fafc;
+  --ss-panel-secondary: #cbd5e1;
+  --ss-panel-muted: #a8b5c7;
+  --ss-panel-action: #93c5fd;
+  --ss-panel-success: #86efac;
+  --ss-panel-warning: #fde68a;
+  --ss-panel-danger: #fca5a5;
+  --ss-panel-accent: #c4b5fd;
+  --ss-panel-info: #7dd3fc;
+  --ss-success-border: #86efac;
+  --ss-warning-border: #fcd34d;
+  --ss-danger-border: #fca5a5;
+  --ss-info-border: #7dd3fc;
+  --ss-action-border: #93c5fd;
+  --ss-panel-info-surface: #1e3a5f;
+  --ss-panel-warning-surface: #422d13;
+  --ss-panel-accent-surface: #3b2a5c;
+  --ss-workspace-paper: #fefbff;
+  --ss-workspace-divider: #efeaf8;
+  --ss-workspace-border: #c9bde6;
+  --ss-workspace-disabled: #eceaf1;
+  --ss-workspace-disabled-border: #dcd8e5;
+  --ss-workspace-disabled-text: #8b8799;
+  --ss-workspace-reference: #cfc6e3;
+  --ss-workspace-pending: #9c90b8;
+  --ss-workspace-seed-tint: #f1edfb;
+  --ss-dialog-scrim: rgba(27, 16, 51, 0.38);
+  --ss-dialog-shadow: rgba(50, 10, 110, 0.25);
+  --ss-annotation: #be185d;
+  --ss-annotation-strong: #9f1239;
+  --ss-excluded: #a52a2a;
+  --ss-edge-valid: #047857;
+  --ss-edge-invalid: var(--ss-danger);
+  --ss-port-data: #3b82f6;
+  --ss-port-target: #f59e0b;
+  --ss-port-model: #a855f7;
+  --ss-port-number: #10b981;
+  --ss-port-visualization: #ec4899;
+  --ss-port-config: #64748b;
+  /* Sheet color choices are persisted user annotations, not plot classes. */
+  --ss-sheet-blue: #3b82f6;
+  --ss-sheet-green: #22c55e;
+  --ss-sheet-amber: #f59e0b;
+  --ss-sheet-red: #ef4444;
+  --ss-sheet-brown: #8b4513;
+  --ss-sheet-slate: #64748b;
+  /* Node category identities remain distinct. Both gradient stops support
+   * normal-size white titles; these are not operational status colors. */
+  --ss-node-data: #2563eb;
+  --ss-node-data-end: #1d4ed8;
+  --ss-node-synthesis: #0e7490;
+  --ss-node-synthesis-end: #155e75;
+  --ss-node-preprocess: #15803d;
+  --ss-node-preprocess-end: #166534;
+  --ss-node-selection: #0f766e;
+  --ss-node-selection-end: #115e59;
+  --ss-node-exploratory: #7e22ce;
+  --ss-node-exploratory-end: #6b21a8;
+  --ss-node-regression: #7c3aed;
+  --ss-node-regression-end: #6d28d9;
+  --ss-node-classify: #b45309;
+  --ss-node-classify-end: #92400e;
+  --ss-node-clustering: #be185d;
+  --ss-node-clustering-end: #9d174d;
+  --ss-node-validation: #a16207;
+  --ss-node-validation-end: #854d0e;
+  --ss-node-visualize: #c2410c;
+  --ss-node-visualize-end: #9a3412;
+  --ss-node-export: #475569;
+  --ss-node-export-end: #334155;
+  --ss-node-plugin: #be185d;
+  --ss-node-plugin-end: #9d174d;
 
   /* Existing accent family, shared with hosted Optimize. This does not turn
    * blue OSS controls purple or introduce an Optimize dependency into OSS. */
@@ -55,7 +133,7 @@
 
   /* PrimeVue 3 is a compiled CSS theme, not a v4 preset. Bridge its public
    * variables without pretending that all vendor literals use variables. */
-  --ss-control-primary: #3b82f6;
+  --ss-control-primary: var(--ss-action);
   --ss-control-primary-text: #ffffff;
   --ss-control-muted: #6b7280;
   --ss-control-border: #dfe7ef;

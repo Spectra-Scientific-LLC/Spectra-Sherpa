@@ -313,7 +313,7 @@ onMounted(() => {
 <style scoped>
 .audit-page {
   background: var(--workspace-background);
-  color: #0f172a;
+  color: var(--ss-text-strong);
   min-height: 100%;
   padding: 0 1rem 1.5rem;
 }
@@ -324,10 +324,10 @@ onMounted(() => {
 
 .notice {
   align-items: center;
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
+  background: var(--ss-warning-surface);
+  border: 1px solid var(--ss-warning-surface);
   border-radius: 8px;
-  color: #9a3412;
+  color: var(--ss-warning);
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
@@ -335,7 +335,7 @@ onMounted(() => {
 }
 
 .notice-action {
-  color: #7c2d12;
+  color: var(--ss-warning);
   font-weight: 800;
   margin-left: auto;
   text-decoration: underline;
@@ -349,8 +349,8 @@ onMounted(() => {
 }
 
 .status-panel {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--ss-surface);
+  border: 1px solid var(--ss-border);
   border-radius: 8px;
   padding: 16px;
 }
@@ -364,9 +364,9 @@ onMounted(() => {
 }
 
 .status.error {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #991b1b;
+  background: var(--ss-danger-surface);
+  border: 1px solid var(--ss-danger-surface);
+  color: var(--ss-danger);
 }
 
 @media (max-width: 980px) {

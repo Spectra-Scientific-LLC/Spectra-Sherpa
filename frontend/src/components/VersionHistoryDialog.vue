@@ -143,12 +143,12 @@ const onOpenAsNewSheet = async (versionId: number) => {
 .vh-empty {
   padding: 24px 8px;
   text-align: center;
-  color: #6b7280;
+  color: var(--ss-text-muted);
   font-size: 0.9rem;
 }
 
 .vh-error {
-  color: #b91c1c;
+  color: var(--ss-danger);
 }
 
 .vh-loading i {
@@ -168,7 +168,7 @@ const onOpenAsNewSheet = async (versionId: number) => {
   align-items: center;
   gap: 16px;
   padding: 10px 4px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--ss-surface-subtle);
 }
 
 .vh-row:last-child {
@@ -188,8 +188,8 @@ const onOpenAsNewSheet = async (versionId: number) => {
 
 .vh-version-tag {
   font-family: "SF Mono", "Monaco", "Menlo", "Courier New", monospace;
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--ss-accent-faint);
+  color: var(--ss-accent);
   padding: 1px 8px;
   border-radius: 4px;
   font-size: 0.78rem;
@@ -198,13 +198,13 @@ const onOpenAsNewSheet = async (versionId: number) => {
 
 .vh-version-time {
   font-size: 0.85rem;
-  color: #6b7280;
+  color: var(--ss-text-muted);
 }
 
 .vh-row-description {
   margin-top: 4px;
   font-size: 0.85rem;
-  color: #374151;
+  color: var(--ss-action-text);
   word-break: break-word;
 }
 </style>

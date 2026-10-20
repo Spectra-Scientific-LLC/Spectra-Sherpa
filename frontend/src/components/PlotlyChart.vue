@@ -256,7 +256,7 @@ const render = (layoutOnly = false): Promise<boolean> => {
       try {
         if (layoutOnly && !needsFullRender) {
           const flat: Record<string, unknown> = {};
-          for (const [key, val] of Object.entries(cloneForPlotly(props.layout || {}))) {
+          for (const [key, val] of Object.entries(cloneForPlotly(displayed.value.layout))) {
             if (val && typeof val === "object" && !Array.isArray(val)) {
               for (const [subKey, subVal] of Object.entries(val as Record<string, unknown>))
                 flat[`${key}.${subKey}`] = subVal;
@@ -366,7 +366,7 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 320px;
 }
-.plotly-preview-notice { padding: .25rem .5rem; font-size: .8rem; color: var(--text-color-secondary, #64748b); }
+.plotly-preview-notice { padding: .25rem .5rem; font-size: .8rem; color: var(--text-color-secondary, var(--ss-text-muted)); }
 
 .plotly-canvas {
   width: 100%;
@@ -381,8 +381,8 @@ onBeforeUnmount(() => {
   right: 12px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.08);
-  color: #0f172a;
+  background: color-mix(in srgb, var(--ss-panel-inset) 8%, transparent);
+  color: var(--ss-text-strong);
   font-size: 0.9rem;
   z-index: 2;
 }

@@ -1,4 +1,5 @@
 import { downloadBlob } from "@/utils/download";
+import { themeToken } from "@/theme/interfaceTheme";
 
 /** Canvas equivalent of the computed linear gradients used by node headers. */
 export function headerPaint(
@@ -38,7 +39,7 @@ export function paintCanvasBackground(
   tile.width = tile.height = spacing;
   const dots = tile.getContext("2d");
   if (!dots) return;
-  dots.fillStyle = style.getPropertyValue("--workflow-grid-color").trim() || "#e5e7eb";
+  dots.fillStyle = style.getPropertyValue("--workflow-grid-color").trim() || themeToken("border");
   dots.beginPath();
   dots.arc(spacing / 2, spacing / 2, 1, 0, Math.PI * 2);
   dots.fill();
@@ -188,7 +189,7 @@ export async function saveCanvasPng(surface: HTMLElement, name: string): Promise
     for (const port of node.querySelectorAll(".port")) {
       const box = rect(port);
       ctx.fillStyle = getComputedStyle(port).backgroundColor;
-      ctx.strokeStyle = "#0f172a";
+      ctx.strokeStyle = themeToken("panel-inset");
       ctx.beginPath();
       ctx.arc(box.x + box.width / 2, box.y + box.height / 2, box.width / 2, 0, Math.PI * 2);
       ctx.fill();

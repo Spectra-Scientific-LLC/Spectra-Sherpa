@@ -1,71 +1,88 @@
 # Interface and scientific plot themes
 
-PR 2 establishes the shared color authority without a layout redesign or a
-brand/palette change. This is an incremental migration in one linked
-OSS/monorepo PR pair. The initial implementation is **not full GUI coverage**.
+One public theme serves the OSS application and hosted modules. This is a
+color-authority migration, not a layout redesign, component-library upgrade,
+universal purple rebrand, or change to scientific computation.
 
 ## Authorities
 
 | Concern | Owner | Consumers |
 | --- | --- | --- |
-| Text, surfaces, action/focus, border, disabled and status colors | `frontend/src/assets/tokens.css` | Shared application shell, PrimeVue public variables, hosted Optimize aliases |
-| Categorical palettes | `frontend/src/theme/plotTheme.ts` | Category-color maps, shared plot display layout, report capture |
-| Standalone print plot background/text | `PRINT_PLOT_THEME` in the same module | Report plot capture |
-| Sequential/diverging scales, limits, scientific reference geometry | Scientific presentation producers | Passed through unchanged; not replaced with categorical palettes |
-| Remaining literals | `frontend/theme-color-baseline.json` | Migration inventory only, enforced by `theme_authority.test.ts` |
+| Text, surfaces, controls, focus, status and node-category colors | `frontend/src/assets/tokens.css` | Vue styles, application shell, hosted Optimize aliases |
+| Installed PrimeVue 3 control states | `frontend/src/assets/controls.css` | Inputs, tables, checkboxes, messages and keyboard focus |
+| Resolved interface values and offline CSS | `frontend/src/theme/interfaceTheme.ts` | Canvas export, sheet-color choices, standalone HTML reports |
+| Categorical palettes and scientific reference styling | `frontend/src/theme/plotTheme.ts` | Shared projections, source previews, diagnostic workbenches and report capture |
+| Reactive category assignment | `frontend/src/utils/colors.ts` | Already-open and newly opened categorical projections |
 
-Import the public tokens after the installed PrimeVue 3 stylesheet and before
-application CSS. PrimeVue 3 uses a compiled theme; bridging its public variables
-does not rewrite literals inside the vendor stylesheet. Do not introduce a
-PrimeVue 4 preset or upgrade the component library as part of this migration.
+Import tokens after the installed PrimeVue 3 stylesheet and before application
+CSS. PrimeVue 3 is a compiled stylesheet, not a v4 preset. Its public variables
+and explicit control-state bridge consume the same tokens. Hosted modules use
+the public `--ss-*` properties; `--opt-*` names are compatibility aliases, not
+another palette. OSS never imports proprietary code.
 
-Existing blue actions and purple workspace/Optimize accents remain distinct.
-Select semantic roles for new CSS. Do not name tokens after components or hex
-values. Hosted modules consume the host's public custom properties; OSS must
-not import proprietary code or keep a second Optimize palette.
+Choose a role, not a shade. Light-page text uses `--ss-text-*`; dark panels use
+`--ss-panel-*`. A muted label is not disabled text. Node-category gradients,
+port types, operational status and user-selected sheet colors have separate
+roles. Saved sheet-color selections are not rewritten when plot preferences
+change. Existing blue actions and purple workspace accents remain distinct.
 
-## Plot policy
+## Scientific encoding
 
-`categoricalPalette()` preserves the default palette and offers the existing
-colorblind-friendly and high-contrast choices. `createCategoryColorMap()` reads
-the reactive preference, so consumers in a computed projection update both
-existing and newly opened categorical plots. `themedPlotLayout()` supplies the
-same categorical policy for screen and print, with explicit standalone print
-colors. It does not recolor explicit trace colors by guessing their meaning.
+`categoricalPalette()` and `seriesPalette()` retain the established default
+families and apply the user's colorblind-friendly or high-contrast preference.
+Call them inside the projection/computed, not at module initialization, so an
+already-open chart changes with the preference. Source spectra, selected
+features, synthesis species, classes, clusters, library overlays and saved
+diagnostics follow this path.
 
-In particular, numeric marker arrays, heatmap scales and their limits, excluded
-sample styling, thresholds and reference geometry are not categorical series.
-Neither palette selection nor theme application changes values, sample IDs,
-units, selection, fitted results or retained evidence. A categorical palette
-is not a replacement for a sequential or zero-centered diverging scale.
+`SCIENTIFIC_COLORS` names non-categorical roles. Numeric marker arrays,
+sequential/diverging scales and their limits, excluded observations, thresholds,
+reference lines and evaluation-role colors do not become categories. Never
+guess a role from an old hex color, trace name, array size or node label.
+As an approved compatibility exception, unannotated server-built traces with explicit colors retain those colors;
+`layout.colorway` applies only where a producer has not supplied a color.
 
-## Ratchet and remaining work in this pair
+Theme application changes no values, axes, sample IDs, masks, selection,
+fitted state, units or retained evidence. Palette choice alone does not certify
+an arbitrary figure as accessible. Keep labels, symbols, line styles and hover
+identification alongside color.
 
-Run `npm run check:theme` in `frontend`. The ordinary unit suite runs the same
-check. It counts hex/RGB/HSL literals per file and value outside the two color
-authorities, excluding tests. Removing an old literal cannot pay for a new
-literal elsewhere. The inventory is deliberately not a source-hash gate.
+## Screen and offline exports
 
-After a reviewed migration, regenerate with:
+`themedPlotLayout()` supplies explicit light plot paper and readable title,
+axis and legend text. Full renders, layout-only redraws, PNG downloads and
+report capture use that same policy. Scientific reference geometry and scale
+limits remain unchanged. Static SVG validation figures use `PRINT_PLOT_THEME`.
 
-```sh
-node scripts/theme-colors.mjs src theme-color-baseline.json --write
-```
+Standalone HTML embeds the public token stylesheet; it does not fetch a theme
+or require an internet connection. `themeToken()` resolves the bundled CSS for
+Canvas/SVG consumers, refusing unknown or cyclic aliases. It is not a separate
+handwritten color table. Canvas PNG export reads computed node gradients and
+surfaces so header colors and the workspace background survive export.
 
-Review the inventory diff. Counts should decrease; do not raise them merely to
-silence a failure. The baseline captures legacy debt, including some colors in
-scientific producers that require semantic classification before migration.
-It is not a contrast certification or a ban on scientifically required scales.
+## Enforcement and review
 
-Before this PR pair is ready to merge:
+Run `npm run check:theme` and the ordinary frontend unit suite. The inventory
+of hex/RGB/HSL and common named colors is empty outside the token
+and plot authorities. New colors belong in a reviewed semantic role; do not
+raise the baseline to permit a consumer-owned palette. Tests also check token
+references, live categorical changes, unchanged numeric scales and reference
+traces, layout-only redraws and standalone print values.
 
-- Complete component-by-component literal migration and the PrimeVue control
-  state bridge, preserving layout and checking accessible contrast.
-- Classify and migrate remaining explicit categorical trace colors; preserve
-  status, reference, sequential and diverging encodings. Verify live preference
-  changes rather than assuming `layout.colorway` overrides explicit colors.
-- Bring standalone SVG/report styles into the compatible print theme.
-- Verify Data, Workflow, Runs, Report and hosted Optimize in Chrome, including
-  existing/new plots, independent Data Views, image export and offline reports.
-- Record local checks, paired-source parity and remaining exceptions before
-  requesting reviewers A/B's approval. No packaging or merge is authorized.
+Contrast tests require at least 4.5:1 for declared normal-text/surface pairs,
+dark-panel text, status messages, primary controls and both gradient stops of
+every node header. Disabled controls are distinct from ordinary muted labels.
+Input boundaries and focus rings require at least 3:1 against their declared
+light surfaces; decorative separators are not control boundaries.
+These tests are not a claim of full WCAG conformance: inheritance, overlays,
+dynamic backgrounds, keyboard focus and real pixels still need Chrome review.
+
+For theme changes, inspect Data, Workflow/Inspector, Runs, Report and affected
+hosted components. Switch accessibility preferences on an existing categorical
+plot and reopen it; independently inspect Data View. Download a plot and canvas
+PNG and open an offline report. Record which actual datasets, runs and figures
+were checked, and separate synthetic component fixtures from live scientific
+execution. Do not claim a passing plot as a passing table.
+
+See the [PR 2 qualification record](theme-qualification.md) for observed
+coverage, compatibility exceptions and remaining limitations.

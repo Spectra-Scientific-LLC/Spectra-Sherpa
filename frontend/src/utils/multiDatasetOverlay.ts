@@ -1,28 +1,8 @@
+import { seriesPalette } from "@/utils/colors";
 import type { DatasetPlotMember, DatasetPlotSource, SherpaDatasetDict } from "@/types";
 
 const LINE_DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"];
-const TRACE_COLORS = [
-  "#2563eb",
-  "#dc2626",
-  "#16a34a",
-  "#d97706",
-  "#7c3aed",
-  "#db2777",
-  "#0891b2",
-  "#ea580c",
-  "#0f766e",
-  "#4f46e5",
-  "#be123c",
-  "#65a30d",
-  "#0284c7",
-  "#c026d3",
-  "#4d7c0f",
-  "#0d9488",
-  "#c2410c",
-  "#6366f1",
-  "#e11d48",
-  "#059669",
-];
+
 
 export interface MultiDatasetOverlayResult {
   traces: Record<string, unknown>[];
@@ -466,7 +446,7 @@ export function buildMultiDatasetOverlay(
         activeCurve?.experimentId === admittedSource.source.experimentId &&
         exactFileName(activeCurve.fileName) === fileName;
       if (!identityColors.has(colorKey)) {
-        identityColors.set(colorKey, TRACE_COLORS[identityColors.size % TRACE_COLORS.length]);
+        identityColors.set(colorKey, seriesPalette("overlay")[identityColors.size % seriesPalette("overlay").length]);
       }
       traces.push({
         type: "scatter",

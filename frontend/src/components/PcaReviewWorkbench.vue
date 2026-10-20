@@ -412,6 +412,8 @@
 </template>
 
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import { computed, ref, watch } from "vue";
 import DatasetCurationPanel from "@/components/DatasetCurationPanel.vue";
 import Dialog from "primevue/dialog";
@@ -573,13 +575,13 @@ watch([query, selectedOnly, descending, pages], () => {
   page.value = 0;
 });
 const config = { responsive: true, displaylogo: false, modeBarButtonsToRemove: ["autoScale2d"] };
-const palette = ["#0072B2", "#009E73", "#D55E00", "#CC79A7", "#E69F00", "#56B4E9", "#222222"];
+
 const groupColors = computed(
   () =>
     new Map(
       [...new Set(review.value?.rows.map((r) => r.group) || [])]
         .sort()
-        .map((g, i) => [g, palette[i % palette.length]]),
+        .map((g, i) => [g, seriesPalette("diagnostics")[i % seriesPalette("diagnostics").length]]),
     ),
 );
 function traces(x: (r: ReviewRow) => number | null, y: (r: ReviewRow) => number | null) {
@@ -662,7 +664,7 @@ const diagnosticLayout = computed(() => ({
             y0: 0,
             y1: 1,
             yref: "paper",
-            line: { color: "#555" },
+            line: { color: SCIENTIFIC_COLORS.referenceLine },
           },
           {
             type: "line",
@@ -671,7 +673,7 @@ const diagnosticLayout = computed(() => ({
             y0: 0,
             y1: 1,
             yref: "paper",
-            line: { color: "#555", dash: "dash" },
+            line: { color: SCIENTIFIC_COLORS.referenceLine, dash: "dash" },
           },
           {
             type: "line",
@@ -680,7 +682,7 @@ const diagnosticLayout = computed(() => ({
             xref: "paper",
             y0: review.value.q_limit,
             y1: review.value.q_limit,
-            line: { color: "#555" },
+            line: { color: SCIENTIFIC_COLORS.referenceLine },
           },
         ]
       : [],
@@ -854,18 +856,18 @@ th,
 td {
   text-align: left;
   padding: 0.45rem;
-  border-bottom: 1px solid var(--surface-border, #ddd);
+  border-bottom: 1px solid var(--surface-border, var(--ss-border));
 }
 tr.selected {
-  outline: 2px solid #0072b2;
+  outline: 2px solid var(--ss-info);
   outline-offset: -2px;
-  background: #0072b21a;
+  background: color-mix(in srgb, var(--ss-info) 10.196%, transparent);
 }
 tr.excluded td {
   font-style: italic;
 }
 .review-error {
-  color: var(--red-600, #a52a2a);
+  color: var(--red-600, var(--ss-excluded));
 }
 @media (max-width: 900px) {
   .review-plots {

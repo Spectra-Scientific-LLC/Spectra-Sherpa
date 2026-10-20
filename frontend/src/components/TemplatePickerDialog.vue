@@ -946,30 +946,30 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
 
 <style scoped>
 .tp-block-label { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-.tp-block-label input { min-width: 8rem; padding: 4px 6px; border: 1px solid #94a3b8; border-radius: 4px; }
+.tp-block-label input { min-width: 8rem; padding: 4px 6px; border: 1px solid var(--ss-border-strong); border-radius: 4px; }
 .tp-row-unavailable { padding: 8px 0; }
-.tp-unavailable-summary { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; color: #94a3b8; cursor: help; }
+.tp-unavailable-summary { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; color: var(--ss-text-muted); cursor: help; }
 .tp-unavailable-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tp-unavailable-status { flex: 0 0 auto; font-size: 0.7rem; }
-.tp-unavailable-tooltip { display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 20; padding: 10px; border-radius: 6px; background: #0f172a; color: #f1f5f9; border: 1px solid #64748b; font-size: 0.8125rem; line-height: 1.4; }
+.tp-unavailable-tooltip { display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 20; padding: 10px; border-radius: 6px; background: var(--ss-panel-inset); color: var(--ss-panel-text); border: 1px solid var(--ss-border-strong); font-size: 0.8125rem; line-height: 1.4; }
 .tp-unavailable-summary:hover .tp-unavailable-tooltip, .tp-unavailable-summary:focus .tp-unavailable-tooltip { display: block; }
 
 .tp-status {
   padding: 20px 8px;
   text-align: center;
-  color: #6b7280;
+  color: var(--ss-text-muted);
   font-size: 0.9rem;
 }
 
 .tp-status-error {
-  color: #b91c1c;
+  color: var(--ss-danger);
 }
 
 .tp-status-warning {
   margin-top: 16px;
-  color: #b45309;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
+  color: var(--ss-warning);
+  background: var(--ss-warning-surface);
+  border: 1px solid var(--ss-warning-surface);
   border-radius: 6px;
   padding: 10px 12px;
   text-align: left;
@@ -977,7 +977,7 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
 
 .tp-tagline {
   margin: 0 0 12px;
-  color: #4b5563;
+  color: var(--ss-text-body);
   font-size: 0.9rem;
 }
 
@@ -990,13 +990,13 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #6b7280;
+  color: var(--ss-text-muted);
   margin: 12px 0 6px;
 }
 
 .tp-group-count {
   font-weight: 400;
-  color: #9ca3af;
+  color: var(--ss-text-muted);
   margin-left: 4px;
 }
 
@@ -1012,7 +1012,7 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
   align-items: center;
   gap: 16px;
   padding: 10px 4px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--ss-surface-subtle);
 }
 
 .tp-row:last-child {
@@ -1038,7 +1038,7 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
   gap: 8px;
   font-size: 0.92rem;
   font-weight: 500;
-  color: #111827;
+  color: var(--ss-text-strong);
 }
 
 .tp-needs-data {
@@ -1046,8 +1046,8 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--ss-warning-surface);
+  color: var(--ss-warning);
   padding: 1px 6px;
   border-radius: 3px;
 }
@@ -1055,13 +1055,13 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
 .tp-row-description {
   margin: 4px 0 0;
   font-size: 0.82rem;
-  color: #4b5563;
+  color: var(--ss-text-body);
   line-height: 1.4;
 }
 
 .tp-row-requirement {
   margin: 5px 0 0;
-  color: #92400e;
+  color: var(--ss-warning);
   font-size: 0.78rem;
   line-height: 1.35;
 }
@@ -1072,7 +1072,7 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
 
 .tp-group-sep {
   border: none;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--ss-border);
   margin: 12px 0 0;
 }
 </style>

@@ -45,7 +45,7 @@ const call = computed(() =>
 <style scoped>
 .peak-execution-details {
   padding: 0.75rem;
-  border: 1px solid var(--surface-border, #475569);
+  border: 1px solid var(--surface-border, var(--ss-panel-border));
   border-radius: 6px;
   margin: 0.75rem 0;
 }
