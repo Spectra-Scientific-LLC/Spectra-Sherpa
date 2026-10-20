@@ -153,14 +153,24 @@ export async function settledPlotScreenshot(page: Page, path: string): Promise<B
     ).map(animation => animation.finished.catch(() => undefined)));
   });
   await page.mouse.move(0, 0);
-  return canvas.screenshot({
-    animations: "disabled",
-    // macOS may rasterize SVG text differently as dialog compositing layers
-    // change. Fix only the antialiasing mode, not fonts, geometry or content.
-    // Text, curves and colors remain subject to the same pixel comparison.
-    style: ".plotly-canvas, .plotly-canvas * { -webkit-font-smoothing: antialiased !important; }",
-    path,
+  // Dialogs can leave the same SVG in different compositor tiles after reopen.
+  // Retained Ubuntu artifacts show edge-coverage differences of 2–7 channel
+  // levels confined to an upper strip, consistent with compositor tiling,
+  // despite identical trace coordinates.
+  // Give the real rendered canvas one stable layer, not a cloned/exported plot.
+  // This changes neither content nor layout; retain the exact pixel assertion.
+  const captureStyle = await page.addStyleTag({
+    content: ".plotly-canvas { will-change: transform !important; } " +
+      ".plotly-canvas, .plotly-canvas * { -webkit-font-smoothing: antialiased !important; }",
   });
+  try {
+    await canvas.evaluate(() => new Promise<void>(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+    return await canvas.screenshot({ animations: "disabled", path });
+  } finally {
+    await captureStyle.evaluate(el => { el.parentNode?.removeChild(el); });
+  }
 }
 
 /** Compare decoded pixels, not browser PNG compression/metadata bytes. */
