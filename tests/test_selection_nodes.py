@@ -436,7 +436,8 @@ def test_train_test_split_generate_python_preserves_export_contract():
     assert "plan_train_test_split" in code
     assert "materialize_split_outputs" in code
     assert "_y_input = None" in code
-    assert "bind_split_target(_X_input, _y_input)" in code
+    assert "prepare_split_source(input_data, _y_input)" in code
+    assert "source_indices=_source_indices" in code
 
 
 def test_train_test_split_generate_python_binds_the_named_group_holdout():
