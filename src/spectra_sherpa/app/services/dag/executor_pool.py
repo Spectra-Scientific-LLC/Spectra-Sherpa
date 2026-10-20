@@ -11,6 +11,8 @@ import sys
 import tempfile
 import threading
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -24,8 +26,8 @@ from .transport import reject_spectrochempy_transport
 logger = logging.getLogger(__name__)
 
 
-def _isolated_call(output_path: str, function, args: tuple) -> None:
-    """Private child-to-parent transport; never reads customer-supplied pickle."""
+def _watch_parent() -> None:
+    """Exit when the actual owning process exits, including hard backend exits."""
     parent = multiprocessing.parent_process()
     if parent is not None:
         # The sentinel is an OS-owned handle to our actual spawning process,
@@ -37,6 +39,11 @@ def _isolated_call(output_path: str, function, args: tuple) -> None:
             os._exit(1)
 
         threading.Thread(target=stop_when_parent_exits, daemon=True, name="scientific-worker-owner").start()
+
+
+def _isolated_call(output_path: str, function, args: tuple) -> None:
+    """Private child-to-parent transport; never reads customer-supplied pickle."""
+    _watch_parent()
     try:
         payload = (True, function(*args))
     except Exception as exc:
@@ -45,12 +52,145 @@ def _isolated_call(output_path: str, function, args: tuple) -> None:
         pickle.dump(payload, stream, protocol=pickle.HIGHEST_PROTOCOL)
 
 
+def _workflow_call(directory: str, control) -> None:
+    """Serve sequential nodes for exactly one execution, then be discarded.
+
+    Control carries only readiness notifications. Pickles are private files
+    written by the owning API process or this child, never customer files.
+    Each node still creates its own instance, runtime binding and event loop.
+    """
+    _watch_parent()
+    root = Path(directory)
+    try:
+        while control.recv():
+            with (root / "request").open("rb") as stream:
+                function, args = pickle.load(stream)  # nosec B301: own parent, private 0700 directory
+            try:
+                # Fresh processes previously gave nodes independent unseeded
+                # streams. Do not make later nodes depend on earlier RNG use.
+                import random
+
+                import numpy as np
+
+                random.seed()
+                np.random.seed()
+                payload = (True, function(*args))
+            except Exception as exc:
+                payload = (False, exc)
+            with (root / "result").open("wb") as stream:
+                pickle.dump(payload, stream, protocol=pickle.HIGHEST_PROTOCOL)
+            control.send(True)
+            del function, args, payload
+    except EOFError:
+        pass
+    finally:
+        control.close()
+
+
+class _WorkflowWorker:
+    """Lazy, single-execution lease; no reuse after failure or scope exit."""
+
+    def __init__(self, pool):
+        self._pool = pool
+        self._process = None
+        self._control = None
+        self._directory = None
+        self._owns_slot = False
+        self._closed = False
+        self._busy = False
+
+    async def _start(self):
+        await self._pool._slots.acquire()
+        self._owns_slot = True
+        if self._closed or self._pool._closed:
+            raise RuntimeError("Workflow worker is shut down")
+        self._directory = tempfile.TemporaryDirectory(prefix="sherpa-workflow-")
+        self._control, child_control = self._pool._context.Pipe()
+        self._process = self._pool._context.Process(target=_workflow_call, args=(self._directory.name, child_control))
+        try:
+            self._process.start()
+            self._pool._active.add(self._process)
+        finally:
+            child_control.close()
+
+    async def run(self, function, *args, timeout: float):
+        if self._closed or self._pool._closed:
+            raise RuntimeError("Workflow worker is shut down")
+        if self._busy:
+            raise RuntimeError("Workflow worker requires sequential node execution")
+        self._busy = True
+        started = perf_counter()
+        try:
+            # Includes queueing, first-node bootstrap and result transport.
+            async with asyncio.timeout(timeout):
+                if self._process is None:
+                    await self._start()
+                root = Path(self._directory.name)
+                with (root / "request").open("wb") as stream:
+                    pickle.dump((function, args), stream, protocol=pickle.HIGHEST_PROTOCOL)
+                self._control.send(True)
+                while True:
+                    if self._closed or self._pool._closed:
+                        raise RuntimeError("Workflow worker is shut down")
+                    if self._control.poll():
+                        break
+                    if not self._process.is_alive():
+                        raise RuntimeError("Scientific worker exited without a result")
+                    await asyncio.sleep(0.005)
+                try:
+                    self._control.recv()
+                except (EOFError, OSError) as exc:
+                    raise RuntimeError("Scientific worker exited without a result") from exc
+                with (root / "result").open("rb") as stream:
+                    success, result = pickle.load(stream)  # nosec B301: own child, private 0700 directory
+                if not success:
+                    raise result
+                if isinstance(result, NodeResult) and "worker_execution" in result.diagnostics:
+                    result.diagnostics["worker_execution"].update(
+                        lifetime="workflow", dispatch_seconds=perf_counter() - started
+                    )
+                return result
+        except BaseException:
+            # A failed or cancelled child cannot serve another node, even if
+            # a caller catches the exception. Never retry in the API process.
+            self.close()
+            raise
+        finally:
+            self._busy = False
+
+    def close(self):
+        self._closed = True
+        self.release_idle_worker()
+
+    def release_idle_worker(self):
+        """Release resources; a still-open outer scope may lazily start again."""
+        if self._process is not None:
+            if self._process.pid is not None:
+                if self._process.is_alive():
+                    self._process.kill()
+                self._process.join()
+            self._pool._active.discard(self._process)
+            self._process.close()
+            self._process = None
+        if self._control is not None:
+            self._control.close()
+            self._control = None
+        if self._directory is not None:
+            self._directory.cleanup()
+            self._directory = None
+        if self._owns_slot:
+            self._pool._slots.release()
+            self._owns_slot = False
+
+
 class IsolatedWorkerPool:
-    """Bound concurrency with a separately owned, cancellable process per call.
+    """Bound concurrency with separately owned, cancellable processes.
 
     A ProcessPoolExecutor future cannot stop a running task. Here timeout and
     cancellation reap precisely that task before releasing its capacity slot.
-    Each task gets a fresh process, so no user state survives into another task.
+    Each workflow gets a fresh process; sequential nodes share only that
+    execution's worker. Standalone calls still get a fresh process per call.
+    No process or user state survives into another workflow execution.
     On Linux a clean forkserver preloads the scientific registry once; it never
     executes a user task or inherits the API process's sessions/data.
     """
@@ -68,8 +208,31 @@ class IsolatedWorkerPool:
         self._context = multiprocessing.get_context(method)
         self._active = set()
         self._closed = False
+        self._workflow: ContextVar[_WorkflowWorker | None] = ContextVar("scientific_workflow_worker", default=None)
+
+    @asynccontextmanager
+    async def workflow(self):
+        """Own a lazily started worker until this execution leaves its scope."""
+        previous = self._workflow.get()
+        if previous is not None and not previous._closed:
+            if previous._busy:
+                raise RuntimeError("Cannot nest workflow execution during an active node dispatch")
+            # A completed-node callback can execute another workflow. Do not
+            # retain the outer capacity slot while awaiting that inner scope.
+            # Its state is discarded, not shared with the inner execution.
+            previous.release_idle_worker()
+        worker = _WorkflowWorker(self)
+        token = self._workflow.set(worker)
+        try:
+            yield
+        finally:
+            worker.close()
+            self._workflow.reset(token)
 
     async def run(self, function, *args, timeout: float):
+        workflow = self._workflow.get()
+        if workflow is not None:
+            return await workflow.run(function, *args, timeout=timeout)
         # Queue time counts against the same budget as computation.
         async with asyncio.timeout(timeout):
             async with self._slots:

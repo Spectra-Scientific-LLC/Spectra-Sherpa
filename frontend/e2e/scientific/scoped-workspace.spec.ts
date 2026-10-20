@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { createDataset, instantiate, runWorkflow } from "./journeys";
+import { createDataset, EXECUTION_TIMEOUT_MS, instantiate, runWorkflow } from "./journeys";
 
 // This is a transport-controlled UI race, not qualification of NIST data or
 // synthesis science. No provider is contacted and no synthetic file is claimed.
@@ -299,25 +299,34 @@ test("switching sheets during retained Data View loading cannot open the previou
 
 test("leaving an accepted run preserves its successful sheet status without painting the new sheet", async ({
   page, request,
-}) => {
+}, testInfo) => {
   const iris = await createDataset(request, "Iris accepted run scope", {
     source: "sklearn", name: "iris",
   });
   const mixture = await addMixture(request, iris.project);
   const first = await instantiate(request, iris, "pca");
   const second = await instantiate(request, mixture, "pca");
-  let release!: () => void, received!: () => void;
+  let release!: () => void, received!: () => void, completed!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
   const intercepted = new Promise<void>(resolve => { received = resolve; });
-  let result: { status: string; run_id: number } | undefined;
+  const computed = new Promise<void>(resolve => { completed = resolve; });
+  let result: {
+    status: string;
+    run_id: number;
+    diagnostics?: Record<string, { worker_execution?: unknown }>;
+  } | undefined;
+  let executionMs = 0;
   let executionRequests = 0;
   const pattern = `**/api/v1/workflows/${first.id}/execute`;
   await page.route(pattern, async route => {
     executionRequests += 1;
-    const response = await route.fetch();
+    const started = performance.now();
+    received();
+    const response = await route.fetch({ timeout: EXECUTION_TIMEOUT_MS });
     expect(response.ok(), await response.text()).toBeTruthy();
     result = await response.json();
-    received();
+    executionMs = performance.now() - started;
+    completed();
     await held;
     await route.fulfill({ response });
   });
@@ -325,20 +334,35 @@ test("leaving an accepted run preserves its successful sheet status without pain
     await page.goto(`/workflow?workflow_id=${first.id}&project_id=${iris.project.id}`);
     await page.getByRole("button", { name: /^Run(?:\s|$)/ }).first().click();
     await intercepted;
-    expect(result?.status).toBe("completed");
-    expect(result?.run_id).toBeGreaterThan(0);
     const origin = page.locator(".sheet-tab").filter({ hasText: first.name });
     const destination = page.locator(".sheet-tab").filter({ hasText: second.name });
     await expect(origin.locator(".pi-spinner")).toBeVisible();
+    const switchStarted = performance.now();
     await destination.click();
     await expect(destination).toHaveClass(/active/);
     await expect(page.locator(".canvas-container")).toHaveAttribute("aria-busy", "false");
+    const sheetSwitchMs = performance.now() - switchStarted;
+    await computed;
+    expect(result?.status).toBe("completed");
+    expect(result?.run_id).toBeGreaterThan(0);
     release();
     await expect(origin.locator(".status-icon.success")).toBeVisible();
     await expect(origin.locator(".status-icon.error")).toHaveCount(0);
     await expect(destination.locator(".status-icon")).toHaveCount(0);
     await expect(destination).toHaveClass(/active/);
     expect(executionRequests).toBe(1);
+    await testInfo.attach("execution-and-sheet-switch-timing", {
+      body: JSON.stringify({
+        executionMs,
+        sheetSwitchMs,
+        workers: Object.fromEntries(
+          Object.entries(result?.diagnostics ?? {})
+            .filter(([, value]) => value.worker_execution)
+            .map(([nodeId, value]) => [nodeId, value.worker_execution]),
+        ),
+      }, null, 2),
+      contentType: "application/json",
+    });
   } finally {
     release();
     await page.unrouteAll({ behavior: "wait" });
