@@ -37,6 +37,5 @@ block's recorded value envelope, which `617262_1TP_C-1_A5.0` -- a real,
 published acquisition -- does not do, and refused every same-type duplicate
 pairing outright rather than attempting to disambiguate it by value, which
 `629266_1TP_A-1_C1.0` and `BF_lo_01_soil_cal.1` both exercise. Both are fixed;
-see `docs/evidence/native-opus-reader-conformance.json` and the OPUS
-implementation record in
-`docs/plan/canonical-dag-managed-optimization-plan.md`.
+the current fixtures and native-reader tests retain these regression cases.
+The upstream license and source identity above remain the attribution authority.

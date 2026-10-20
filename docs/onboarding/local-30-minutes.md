@@ -37,8 +37,8 @@ archive needs the frontend build; release wheels and prepared Python source
 distributions include the built Workbench. A GitHub source archive is not the
 same artifact as a Python source distribution (`sdist`).
 
-Use the same helper with `--wheel /absolute/path/to/spectra_sherpa-0.6.3-py3-none-any.whl`
-for an exact built wheel, or `--version 0.6.3` only after that version is published on
+Use the same helper with `--wheel /absolute/path/to/the-reviewed-candidate.whl`
+for an exact built wheel, or `--version VERSION` only after that exact version is published on
 your pip index. These targets are mutually exclusive. The helper is a source
 checkout script, not a command installed by the wheel. Add `--extras scp,hitran,nist`
 or `--base` for automation without prompts, and `--dry-run` to inspect the command.
@@ -146,7 +146,7 @@ and Ollama. For OpenAI:
 export CHAT_ENDPOINT_PROVIDER="openai_compatible"
 export CHAT_ENDPOINT_URL="https://api.openai.com/v1"
 export CHAT_ENDPOINT_KEY="sk-..."          # your OpenAI key
-export CHAT_ENDPOINT_MODEL="gpt-4o-mini"   # any OpenAI chat model
+export CHAT_ENDPOINT_MODEL="YOUR_MODEL"  # a model compatible with this transport
 poetry run spectra-sherpa
 ```
 

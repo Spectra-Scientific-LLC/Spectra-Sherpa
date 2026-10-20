@@ -4,7 +4,7 @@ SpectraSherpa is a local-first spectroscopy platform with extension points for h
 
 ## Main Layers
 
-- **Vue frontend**: the browser UI for Data, Workflows, Reports, Admin/Cloud surfaces, and interactive plots.
+- **Vue frontend**: the browser UI for Data, Workflows, Runs, Reports, Deploy and interactive plots.
 - **FastAPI backend**: project, dataset, workflow, model, export, and local API routes.
 - **Workflow DAG engine**: executes connected nodes in dependency order and records run outputs.
 - **Node registry**: enumerates the reviewed built-in canonical nodes with declared inputs, outputs, parameters, and policies.
@@ -24,17 +24,17 @@ flowchart TB
     DAG --> MODELS[(Model artifacts)]
     DAG --> EXPORTS[Reports and exports]
     API --> EXT[Extension contracts]
-    EXT --> CLOUD[Cloud auth, Advisor, Guidance, demo policy]
+    EXT --> HOST[Separately supplied hosted services]
 ```
 
 ## OSS and Cloud Boundary
 
-The OSS package owns the scientific platform and its closed canonical registry. Cloud adds managed service behavior through server-side composition and deployment configuration. The cloud docs describe hosted usage; developer implementation details belong under OSS Developers and Architecture.
+The OSS package owns the scientific platform and its closed canonical registry. Cloud adds managed service behavior through server-side composition and deployment configuration. Only shared extension contracts belong in OSS contributor documentation; private implementation and hosted operating guides belong in the monorepo.
 
 This boundary is important for users and builders:
 
 - Local OSS users get the spectroscopy workbench, workflow engine, node library, local projects, local model artifacts, exports, and optional BYOK chat support.
-- Enterprise/demo Cloud users get the managed browser deployment, account policy, centrally configured AI, Sherpa Advisor, Ambient Guidance, demo limits, and collaboration surfaces.
+- Hosted services supply their own accounts, policy and managed assistance. Their availability is not an OSS capability.
 - Developers contribute scientific operations through source review as built-in canonical nodes. The installed OSS application does not discover or execute runtime plugins.
 
 ## Example: One Analysis Moving Through the System

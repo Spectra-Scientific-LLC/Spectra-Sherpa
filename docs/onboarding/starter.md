@@ -1,8 +1,7 @@
 # Start from a goal
 
 The **Starter** tab, the first tab on the Dashboard, is for when you know what
-you want to do but not which screen to open. It opens automatically the first
-time you sign in.
+you want to do but not which screen to open. Open it from the Dashboard; local OSS requires no sign-in.
 
 ## Describe your goal
 
@@ -57,14 +56,8 @@ picker opens on the planned starter once you send your data to Workflow.
 The goal is part of the project. It is saved with project versions and
 included when you export and import the project.
 
-## On a managed deployment
+## Hosted boundary
 
-Managed deployments can use the Advisor model to read goals that the keyword
-rules do not recognise, and to choose among compatible datasets. The goal text
-is sent to the model only when your AI disclosure setting allows it. The model
-can only choose among the analyses and datasets Starter offers; the steps
-themselves are always built by the app.
-
-Ambient Guidance also follows the plan: its suggestions point to the next
-unfinished step of the active project's goal. Guidance receives the kind of
-analysis and the next step, never the text you typed.
+Local goal planning uses the installed analysis and dataset rules. Managed
+Advisor-assisted planning and Guidance belong to separate hosted services;
+they are not required to use Starter locally.

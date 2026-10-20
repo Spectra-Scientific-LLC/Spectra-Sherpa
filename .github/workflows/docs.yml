@@ -30,6 +30,8 @@ jobs:
 
       - run: pip install "mkdocs<2" "mkdocs-material<9.7" mkdocs-jupyter
 
+      - run: python scripts/check_public_docs.py
+
       - run: mkdocs build --strict
 
       - uses: actions/upload-pages-artifact@v5

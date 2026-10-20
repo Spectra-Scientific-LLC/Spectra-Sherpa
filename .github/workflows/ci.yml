@@ -427,7 +427,9 @@ jobs:
         run: pip install "mkdocs<2" "mkdocs-material<9.7" mkdocs-jupyter
 
       - name: Build docs
-        run: mkdocs build --strict
+        run: |
+          python scripts/check_public_docs.py
+          mkdocs build --strict
 
       - name: Check help destinations in built documentation
         run: python scripts/check_built_help.py --site-dir site

@@ -12,6 +12,9 @@ This statement covers the open-source Spectra Sherpa workbench in two forms:
 - **Python package**: `spectra-sherpa` installed with `pip`, or run from source
   (Part C).
 
+Installer-specific descriptions apply to a matching published installer; this
+statement does not establish availability of an installer for v0.6.4.
+
 Part A applies to both. Spectra Scientific hosted products (Pro, Team, Hybrid)
 are separate products with their own terms and privacy notices.
 
@@ -43,14 +46,21 @@ of these features:
   - a short description of which part of the application is in view, with no
     data values.
 
-  Datasets and results are sent only if you type or paste them into a message.
+  In basic chat, dataset values and results are sent only when you type or paste
+  them. A separate, explicitly requested **Data Story** sends a bounded summary
+  of the parsed dataset and your supplied context to the configured provider.
   The provider's terms and privacy policy govern that data. Nothing is sent
   until you configure a provider.
 - **NIST Chemistry WebBook** (`webbook.nist.gov`). This is used only after you
   enable NIST queries in **Settings → Integrations → Data & Privacy** and
   request data.
 
-Part C lists additional options available only in the Python package.
+- **HITRAN.** When the clients are available, you configure your own key and
+  enable HITRAN queries, requested line-data acquisition connects to HITRAN.
+  Installing a client alone does not enable or authorize downloads.
+
+Acquisition requires the relevant client capability. Python installations choose
+extras; the desktop build includes HITRAN clients but excludes the NIST extra.
 
 Spectra Sherpa never downloads Eigenvector Research data. If you download
 those files yourself and import them, Spectra Sherpa verifies their recorded
@@ -95,8 +105,9 @@ The installers add these protections on top of Part A.
   hosted service is not included in the installers. The application refuses
   to enable such a connection, even if an older configuration file asks for
   it.
-- **Online features are limited to Part A.** The installers do not download
-  HITRAN or Eigenvector data.
+- **Online features are limited to Part A.** Desktop builds include HITRAN
+  clients for explicitly configured acquisition. They do not download Eigenvector
+  data; acquire those files independently.
 - **Saved API keys** are encrypted with a key protected by your operating
   system for your user account. If you copy the profile to another computer or
   account, the keys cannot be read there and you enter them again. If your
@@ -111,8 +122,9 @@ The installers add these protections on top of Part A.
   versions, the operating system, the processor architecture and a timestamp.
   It is never sent anywhere.
 - **Internal communication.** The application window and its calculation
-  engine communicate only inside your computer. Other devices, and other
-  programs on your computer, cannot use that channel.
+  engine communicate locally over an authenticated loopback channel. The
+  desktop backend requires its launch token; local communication is not a
+  guarantee against a compromised operating-system account.
 - **Deletion:**
   - **Application → Delete all local data…** permanently erases everything
     Spectra Sherpa stored in your profile, including saved keys, and restarts

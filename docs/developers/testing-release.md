@@ -37,9 +37,8 @@ model decomposition. Follow the [artifact acceptance contract](scientific-result
 ## Workspace Navigation Review
 
 Use the [GUI workspace design](gui-workspace-design.md) for page/subtab layout,
-project and campaign ownership, action placement and Advisor attention. Its
-acceptance journeys cover Data, canvas sheets, all four Runs tabs, campaign
-stages, local deployment and report generation. For a moved control, verify its
+project ownership and action placement. Scientific browser journeys cover Data,
+canvas sheets, saved Runs, local model application and reports. For a moved control, verify its
 old capability has a reachable destination, with the same object authority and
 profile restrictions. Include deep links, Back/Forward, project changes, pending
 responses and narrow layouts. A functionality map is design evidence, not proof
@@ -53,7 +52,12 @@ Only after that verification should a maintainer manually run the public **Publi
 
 ## Documentation Rule
 
-Do not ship aspirational docs in the main sidebar. If a workflow is not verified enough for a new user, keep it out of the public onboarding path.
+Do not ship internal vision, strategy or historical planning documents in the
+OSS tree, even outside navigation: MkDocs also builds unlisted Markdown pages.
+Run `python scripts/check_public_docs.py` before building. The explicit
+`docs-publication.json` inventory requires audience review for new pages;
+it does not certify scientific claims. Keep methodology and contributor
+contracts, and distinguish candidate instructions from published releases.
 
 ## Cross-platform scientific evidence
 

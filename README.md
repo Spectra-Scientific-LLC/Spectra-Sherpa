@@ -14,7 +14,9 @@ workflows. Import supported scientific files, inspect their axes and metadata,
 then use PCA, PLS, MCR-ALS, SIMCA, PLS-DA, variable selection, calibration
 transfer, and validation without hiding the data path behind a notebook.
 
-The source tree is **0.6.3**; see the [0.6.3 notes](docs/releases/0.6.3.md).
+This branch is preparing the **v0.6.4 candidate (unreleased)**. The package
+version bump and publication follow separate release qualification. Historical
+[0.6.3 notes](docs/releases/0.6.3.md) describe that tag, not this candidate.
 Source version alone does not establish PyPI or desktop-installer availability;
 check the [published package](https://pypi.org/project/spectra-sherpa/) before
 installing.
@@ -26,9 +28,9 @@ python -m pip install spectra-sherpa
 spectra-sherpa
 ```
 
-Try the **[hosted Demo](https://demo.spectrascientific.ai)** by registering
-with your email. Demo uses supplied or registered reference datasets; use local
-OSS or hosted Pro for your own data. Local OSS includes BYOK chat; managed
+The **[hosted Demo](https://demo.spectrascientific.ai)** is a separate service
+with its own access policy and supplied/reference datasets. Use local OSS for
+your own supported files. Local OSS includes BYOK chat; managed
 Advisor and optimization campaigns are hosted features.
 
 📖 [Documentation](https://docs.spectrascientific.ai) · 🧭 [Choose your path](docs/onboarding/choose-your-path.md) · 🧩 [Node Library](docs/nodes/index.md)
@@ -39,7 +41,7 @@ A single open workbench for the chemometrics you actually run, built around five
 
 - **A first-class chemometric toolkit.** Preprocessing, decomposition, calibration, classification, variable selection, and calibration transfer are core features, purpose-built for spectroscopy. (Full list below.)
 - **Numbers you can defend.** Native PLS and PLS-DA share one cited Sherpa SIMPLS authority, while optional SpectroChemPy operations retain their declared upstream runtime. MCR-ALS is checked against synthetic ground truth and reference workflows.
-- **Reproducible by construction.** Every workflow is versioned on save and every run is an immutable, provenance-tracked record, so a result always traces back to its exact recipe and data.
+- **Inspect saved evidence.** Workflow versions and retained run records preserve the recorded recipe and result context. Reproduction also requires the original inputs and compatible runtime; a saved recipe alone cannot guarantee it.
 - **From exploration to production.** Export supported workflows to standalone Python or a Jupyter notebook; trained models are first-class artifacts you can batch-apply and deploy.
 - **Open and local-first.** AGPL-3.0, reads CSV, JCAMP-DX, NumPy, MATLAB
   v4/v5/v7.3 and qualified Eigenvector DataSet Objects, qualified Galactic
@@ -48,8 +50,8 @@ A single open workbench for the chemometrics you actually run, built around five
 
 Built to be an open foundation that labs and instrument makers can standardize
 on, extend, and embed. For third-party reference data, the user obtains the
-source file directly from its provider. SpectraSherpa does not retrieve, proxy,
-cache, or redistribute that provider file. Local and paid users can select it
+source file directly from its provider. SpectraSherpa does not download Eigenvector files on your behalf or
+redistribute them; your imported copy is stored locally for analysis. Local and paid users can select it
 through the normal upload path; a policy-constrained deployment can instead
 admit only a registered byte-identical reference. See the
 [dataset and provider guide](docs/workflows/datasets-and-providers.md).
@@ -76,28 +78,10 @@ HITRAN downloads require your personal key in **Settings → API Keys** and
 **Settings → Integrations → HITRAN/HAPI Queries** enabled. Network access is
 optional and disabled by default locally.
 
-<details>
-<summary>Build from the public source release</summary>
-
-Requires Git, Python 3.11 or 3.12, and Node.js 22. Use this path if the tag is
-available before the PyPI upload completes:
-
-```bash
-git clone --branch spectra-sherpa-v0.6.3 https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
-cd Spectra-Sherpa
-python -m pip install poetry
-poetry env use python3.11
-poetry install --extras "scp hitran nist"
-npm --prefix frontend ci
-npm --prefix frontend run build
-poetry run spectra-sherpa
-```
-
-For base-only installation, omit `--extras`. Keep wanted extras in subsequent
-`poetry install` commands. For guided choices, run
-`python scripts/install_local.py --source .` from the public checkout.
-
-</details>
+For the unreleased candidate, use the exact reviewed source revision and the
+[local installation guide](docs/onboarding/local-30-minutes.md). Build its
+frontend before installing; a Git source archive is not a prepared Python wheel.
+Do not assume that `pip install spectra-sherpa` installs this candidate.
 
 Run the canonical Python example:
 

@@ -41,21 +41,12 @@ executable, plugin, or shell command. The optional SpectroChemPy boundary does
 not discover or download data; it is invoked only when a scientist executes
 EFA, MCR-ALS, or SIMPLISMA.
 
-## Hybrid jobs
+## Hosted boundary
 
-Hybrid does not broaden this into remote code execution. The scientist starts
-and consents to one disclosed job. The device then admits a declarative,
-version-pinned canonical DAG against the locally installed registry and the
-device's local node and capability allowlists. Only the intersection is
-eligible to run. The job executes under the governed worker's process,
-resource, timeout, cancellation, and evidence controls.
-
-Consent authorizes that bounded job; it does not authorize new code. Hybrid
-must reject Python, shell, wheels, source archives, pickles, callable paths,
-plugin identifiers, dependency-install instructions, containers, or any node
-that is absent from the local allowlist. The preview shown before consent must
-name the DAG, data binding, local nodes, resource envelope, and permitted
-egress. Cancellation and the local kill switch remain authoritative.
+Private deployment clients are not included in OSS. Shared contracts do not
+grant a remote caller permission to install code or bypass the canonical
+registry. Hosted policies and deployment-specific operation guides belong to
+the separate service documentation.
 
 ## Release boundary
 

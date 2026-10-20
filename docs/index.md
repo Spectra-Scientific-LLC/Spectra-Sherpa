@@ -1,40 +1,54 @@
-# SpectraSherpa
+# SpectraSherpa OSS
 
-SpectraSherpa is a free open-source spectroscopy workbench for building reproducible analysis workflows. The current release is centered on **FTIR, NIR, Raman, and UV-VIS spectroscopy**: import files, inspect the data matrix, track provenance, preprocess spectra, run chemometrics, save models, and export results.
+SpectraSherpa is a local workbench and Python SDK for spectroscopy and
+chemometrics. Import spectra or feature tables, inspect samples and axes,
+build an analysis, compare results, and export a reproducible record.
+Local scientific workflows need neither an account nor an AI provider.
+
+These guides describe the **v0.6.4 candidate (unreleased)**.
+Publication follows local and staging qualification; a source checkout is not
+an available PyPI release or desktop installer. Follow
+[Local onboarding](onboarding/local-30-minutes.md) for the matching installation
+route. Changes on development branches are recorded separately in the changelog.
 
 <figure class="ss-hero-figure">
-  <img src="assets/workflow-canvas-hero.png" alt="SpectraSherpa workflow canvas showing connected data, model, plot, comparison, and table nodes." />
+  <img src="assets/workflow-canvas-hero.png" alt="Connected data, analysis, plot, and table nodes in the workflow canvas." />
 </figure>
 
-## Choose Your Path
+## Start with your task
 
-| Goal | Start Here |
+| Task | Guide |
 | --- | --- |
-| Install and run on your computer | [Local onboarding](onboarding/local-30-minutes.md) |
-| Bring in your first dataset | [Import Your First Dataset](onboarding/import-first-dataset.md) |
-| Walk through a full calibration | [Your First Calibration](onboarding/first-calibration.md) |
-| Compare cloud and local OSS | [Demo, Pro and local OSS](introduction/cloud-vs-local.md) |
-| Check supported formats | [Supported File Types](introduction/file-types.md) |
-| See what is built today | [Current Capabilities](introduction/capabilities.md) |
-| Contribute a canonical node | [Contributing](developers/contributing.md) and [Developer Setup](developers/setup.md) |
+| Install the local application | [Local onboarding](onboarding/local-30-minutes.md) |
+| Load spectra and reference values | [Import your first dataset](onboarding/import-first-dataset.md) |
+| Explore structure and unusual samples | [PCA](chemometrics/pca.md) |
+| Build and evaluate a calibration | [Your first calibration](onboarding/first-calibration.md) |
+| Compare preprocessing or model settings | [Compare calibration workflows](workflows/optimize-saved-result.md) |
+| Share results or continue in Python | [Reports and exports](workflows/reports-exports.md) |
+| Work from a notebook or script | [Python workflows](onboarding/python-canonical-workflows.md) |
 
-## Two Ways to Run
+## What is included
 
-- **Local OSS** runs on your own machine with no login. You can inspect and modify the source, load your own data without hosted demo limits, and add optional extras for specialized algorithms, reference data, or HITRAN/HAPI synthesis.
-- **Demo and Pro** are hosted offerings with managed accounts, profile policy,
-  Sherpa Advisor, and Ambient Guidance. Enterprise is an internal runtime mode.
+The local workbench provides projects, datasets, visual workflows, saved runs,
+model application, tables, plots, and reports. Scientific methods include
+preprocessing, PCA, PLS, classification, variable selection, calibration
+transfer, and peak/library comparison. EFA, MCR-ALS, and SIMPLISMA require the
+optional SpectroChemPy runtime.
 
-## What Is Built Today
+Use [Current capabilities](introduction/capabilities.md) and
+[Supported file types](introduction/file-types.md) to check prerequisites.
+Optional reference acquisition and AI chat require explicit configuration.
+Managed Advisor and Optimize services are not included in OSS; see
+[Product boundaries](introduction/cloud-vs-local.md).
 
-SpectraSherpa combines a visual workflow builder, spectroscopy-aware data handling, import transparency, preprocessing, PCA, PLS, classification, SIMCA QC, MCR-ALS, peak/library workflows, model artifacts, reports, exports, NIST reference data, and optional HITRAN/HAPI synthesis. Vendor readers are exposed only after native qualification; the detailed scope is maintained in [Current Capabilities](introduction/capabilities.md).
+## Interpret and document the result
 
-The v0.6.0 validation baseline also keeps grouped and repeated validation,
-retained evidence, report figures, recorded independence evidence, and
-analytical qualification claims visibly separate. Start with [Validation and
-Model Application](chemometrics/validation-application.md) and [Reports and
-Exports](workflows/reports-exports.md) when a result needs more than an
-exploratory interpretation.
+Keep the evaluated population, units, preprocessing and validation design
+with every reported metric. A successful run does not establish predictive
+performance or laboratory qualification. See
+[Validation and model application](chemometrics/validation-application.md).
 
-## Scientific Foundations
-
-SpectraSherpa builds on scientific software and data resources maintained by the broader community, including [SpectroChemPy](attributions/spectrochempy.md), [NIST](attributions/nist.md), [HITRAN/HAPI](attributions/hitran.md), NumPy, SciPy, pandas, and scikit-learn. Cite upstream resources when they contribute to your analysis, and review [License](introduction/license.md) before redistribution or hosted use.
+Cite the methods and [upstream resources](attributions/index.md) used in your
+analysis. Source contributors can use the [architecture](architecture/index.md)
+and [developer guides](developers/contributing.md); those describe the checked-out
+source and do not announce new released features.

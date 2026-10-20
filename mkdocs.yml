@@ -6,7 +6,7 @@ edit_uri: edit/main/docs/
 nav:
   - Introduction:
       - What SpectraSherpa Is: index.md
-      - Demo, Pro and local OSS: introduction/cloud-vs-local.md
+      - Local OSS and hosted boundaries: introduction/cloud-vs-local.md
       - Current Capabilities: introduction/capabilities.md
       - Supported File Types: introduction/file-types.md
       - License: introduction/license.md
@@ -36,7 +36,7 @@ nav:
       - Projects, Datasets, and Runs: workflows/projects-datasets-runs.md
       - Preprocessing Spectra: workflows/preprocessing.md
       - Reports and Exports: workflows/reports-exports.md
-      - Optimize a Saved Result (Demo and Pro): workflows/optimize-saved-result.md
+      - Compare Calibration Workflows: workflows/optimize-saved-result.md
       - Reference Libraries and Synthesis: workflows/references-synthesis.md
   - Chemometrics:
       - Overview: chemometrics/index.md

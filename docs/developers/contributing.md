@@ -38,8 +38,8 @@ failure classes, shared helpers and regression tests that preserve scientific
 authority across Windows, macOS and Linux.
 
 For page layout, navigation, subtabs, action placement and Advisor context, use
-the [GUI workspace design](gui-workspace-design.md). It is the proposed target
-arrangement; its appendix distinguishes required changes from shipped behavior.
+the [GUI workspace contract](gui-workspace-design.md). It separates current
+contributor rules from product proposals; it is not a redesign backlog.
 Map every moved function to a destination and preserve its identity, capability
 and scientific scope. Keep dated UI audits as evidence rather than competing
 design authorities.

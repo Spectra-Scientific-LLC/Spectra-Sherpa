@@ -22,7 +22,7 @@ The Data tab has five areas. Four of them bring data in; the fifth is where ever
 
 Upload, Import, Synthesis, and Library all save their result into the same place — **My Dataset**, the project's reusable dataset store. Whichever path you use, the result is a named entry there.
 
-You package data once and reuse it. A workflow does not read a file directly — its **Data Source** node selects a **My Dataset** entry. So the common pattern is:
+For the usual GUI path, save a selection in **My Dataset** and bind the workflow's data source to it. The node registry and Python SDK also support explicitly bound file/data sources; My Dataset is not a claim that every workflow must use a database entry. The common GUI pattern is:
 
 > bring data in once → it lands in **My Dataset** → point one or more workflows at it.
 
@@ -133,8 +133,8 @@ modeling.
 A dataset is more than a grid of numbers. A few properties decide whether a model is meaningful:
 
 - **Data role.** *Spectra* (`X_spectra`) means the columns are ordered points on a physical axis — wavenumber, wavelength, time, or m/z — and are plotted as continuous spectra. *Feature table* (`X_features`) means the columns are independent variables and are summarized as distributions. The role is set at upload (CSV data shape) or inferred from the axis, and you can correct it.
-- **Spectral axis and units.** For spectra, the feature axis carries values plus a title and units. SpectraSherpa maps `nm`/`µm` to **Wavelength** and otherwise treats the axis as **Wavenumber** (cm⁻¹); confirm or override this in **Metadata** so downstream steps (derivatives, alignment) behave correctly.
-- **Sample identity.** Sample IDs travel with the dataset (from a CSV's first column, file metadata, or auto-generated). They are what lets spectra and reference values from **separate files** be joined by identity rather than by row order.
+- **Spectral axis and units.** Confirm the coordinate quantity as well as its units. Wavelength, absolute wavenumber, and Raman shift are different quantities; an unlabeled numeric axis does not establish any of them. Supply missing source metadata explicitly before an operation that requires it.
+- **Sample identity.** Inspect retained identifiers separately from display labels and generated row positions. A readable label or matching row count does not prove that two files describe the same specimens. Use an explicit, unique identifier mapping when attaching a sample table, and verify the resulting order.
 - **Targets.** A target can be embedded as a column in the same file (set the target column at upload) or attached from a separate source in the workflow using the **Attach Target** node. Either way, confirm the target type — continuous for regression, categorical for classification.
 
 ## Calibration Caution

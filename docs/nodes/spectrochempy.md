@@ -2,14 +2,13 @@
 
 SpectroChemPy support is optional.
 
-> **0.6.0 release lifecycle.** Install 0.6.0 from PyPI only after the public
-> index reports that exact version. Before the public tag exists, use only the
-> exact monorepo commit named by the qualification record. After the tag exists
-> but before PyPI reports 0.6.0, use the exact `spectra-sherpa-v0.6.0` source
-> tag. Source version text alone is not publication evidence.
+> **Installation target.** These guides describe the unreleased v0.6.4
+> candidate. Commands below install the latest *published* package, not that
+> candidate. For candidate qualification, install the exact reviewed checkout
+> with the required extras using [Local onboarding](../onboarding/local-30-minutes.md).
 
 ```bash
-pip install "spectra-sherpa[scp]==0.6.0"
+pip install "spectra-sherpa[scp]"
 ```
 
 ## What It Enables

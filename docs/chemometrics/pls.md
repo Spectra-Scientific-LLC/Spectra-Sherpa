@@ -17,7 +17,7 @@ Partial Least Squares regression models the relationship between spectra and qua
 
 ## Choosing Settings
 
-- **Number of components (latent variables)**: the one decision that matters most. Too few underfits broad spectral features; too many fits noise and replicate structure. Choose by grouped cross-validation — the minimum (or the one-standard-error rule near the minimum) of RMSECV — never by training fit, which improves monotonically.
+- **Number of components (latent variables)**: too few can underfit; too many can fit noise. Compare counts using cross-validation appropriate to the sampling design, keeping related specimens together when groups exist. A minimum-error or explicitly chosen simpler-model rule is a selection decision, not proof of performance on new samples. Do not select from training-fit error alone.
 - **PLS1 vs PLS2**: PLS1 fits one response; PLS2 fits several jointly. Prefer PLS2 when responses share spectral structure and you want one model; expect slightly different coefficients than separate PLS1 fits. Multi-response results keep one complete metric set per named response — errors in different units are never blended.
 - **Scaling**: the canonical node offers a `scale` option (autoscaling). For spectra, prefer explicit preprocessing (SNV, MSC, derivatives) and leave autoscaling off unless you have a reason; autoscaling amplifies noise-dominated channels.
 - **Solver**: Sherpa's native PLS uses de Jong's SIMPLS algorithm for both PLS1 and PLS2, so Workbench, SDK, exports, and managed runs share one numerical authority.
@@ -33,7 +33,7 @@ Partial Least Squares regression models the relationship between spectra and qua
 
 **VIP scores** rank variables by their contribution to the model; the common rule of thumb treats VIP > 1 as influential. Use VIP to prune or understand a model, not as a band assignment — a high-VIP region can be influential because it corrects an artifact, not because the analyte absorbs there.
 
-**Regression coefficients** should make chemical sense: sign and shape should correspond to known analyte bands (or known interferents the model is correcting). Wigly, high-frequency coefficients late in component selection are an overfitting symptom.
+**Regression coefficients** should be interpreted alongside preprocessing, correlated bands, and known interferents. Their signs are not direct band assignments. Unstable, high-frequency coefficients can indicate sensitivity to noise; compare them across defensible validation fits.
 
 ## Validation Caution
 

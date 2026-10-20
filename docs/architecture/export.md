@@ -76,7 +76,9 @@ redistributed; set `SPECTRA_REFERENCE_DIR` to the exact downloaded member or
 to a bounded directory containing exactly one size-and-SHA match. The filename
 and absolute directory are never scientific authorities.
 
-For example, an exported preprocessing step should look like an explicit operation:
+The following is pseudocode illustrating explicit operations, not runnable SDK
+code. Use the [canonical Python guide](../onboarding/python-canonical-workflows.md)
+for executable examples:
 
 ```python
 spectra = load_dataset("data/spectra.csv")
@@ -115,11 +117,11 @@ spectra-sherpa object import project.sherpa
 
 Hosted APIs that require authentication can pass `--api-url` and `--token`.
 
-The current package mode is `full`. A future metadata-only mode is scaffolded in the manifest but is not yet a supported export option.
+The supported project package mode is `full`.
 
 Import keeps the normal per-file upload cap for each restored data or model member. A full project archive can be larger than a single file because it may include several uploaded files plus model artifacts; the current aggregate uncompressed archive budget is ten times the configured single-file upload limit.
 
-Compatibility policy: the beta object reader currently accepts only exact object-version `0.1`; project payload revisions are distinguished by `project_payload_version`. Treat this as the first implementation contract, not a long-term compatibility promise. Future object revisions should add an explicit min/max reader range before changing the manifest schema.
+Compatibility policy: the beta object reader currently accepts only exact object-version `0.1`; project payload revisions are distinguished by `project_payload_version`. Treat this as the first implementation contract, not a long-term compatibility promise.
 
 ## Signed Campaign Review Packages and local application
 
@@ -141,14 +143,8 @@ provider-obtained file when reproducing work that needs that source. Ordinary
 customer files may be included when the selected export and deployment policy
 permit it. Neither package signing nor a scientific checksum grants data rights.
 
-## Extension Pattern
+## Contributor boundary
 
-Use export extensions when a lab or partner needs a specific handoff format:
-
-- regulated report packet
-- LIMS-friendly CSV tables
-- instrument-method transfer package
-- model-review archive
-- customer-facing PDF/HTML report bundle
-
-The extension should state which node outputs it supports and what metadata is required. If required metadata is missing, export should fail clearly and explain what the user must add.
+New export formats require source review, declared supported outputs and explicit
+metadata requirements. The installed application does not load arbitrary export
+plugins. Do not describe a proposed handoff format as an available export.

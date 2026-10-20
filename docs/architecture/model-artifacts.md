@@ -17,7 +17,9 @@ For a PLS calibration, the artifact should answer practical questions such as:
 
 SpectraSherpa stores model artifacts as **readable metadata plus numeric state**.
 
-The readable part is a manifest. Think of it as the model's label, recipe, and compatibility contract:
+The readable part is a manifest. The schematic below illustrates the kinds of
+context it records; it is not the actual serializer schema or a valid artifact
+to construct by hand:
 
 ```json
 {

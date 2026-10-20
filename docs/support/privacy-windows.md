@@ -15,9 +15,12 @@ statement governs.*
 3. **The app goes online only for features you turn on:**
    - **AI assistant, with your own key.** Your typed message, the workflow name
      and a short hint about which part of the app is in view go directly to
-     the provider you chose. Your data is sent only if you type or paste it.
-   - **NIST WebBook.** Used only after you enable it and request data.
-   - **Nothing else.** The app never downloads HITRAN or Eigenvector data.
+     the provider you chose. Basic chat includes data you type or paste. A separately requested Data
+     Story sends a bounded parsed-dataset summary and your supplied context.
+   - **HITRAN.** Bundled clients acquire requested line data only after you
+     configure your key and enable queries. The frozen desktop build excludes
+     the optional NIST client.
+   - **Eigenvector.** The app does not download these datasets.
      Eigenvector files you download yourself are checked by SHA-256 when you
      import them.
 4. **Your saved API keys** are encrypted and protected by Windows Data
@@ -42,8 +45,9 @@ statement governs.*
      you.
 9. **Security.**
    - The app's window and its calculation engine communicate only inside your
-     PC. Other devices and other programs can't use that channel.
+     PC over an authenticated loopback channel protected by a launch token.
+     This does not protect against a compromised operating-system account.
    - We digitally sign our installer and application files so you can confirm
      they come from us and haven't been altered.
 
-**Contact:** [LEGAL ENTITY NAME] · [privacy@spectrascientific.ai]
+**Contact:** Spectra Scientific LLC · [privacy@spectrascientific.ai](mailto:privacy@spectrascientific.ai)
