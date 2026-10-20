@@ -18,7 +18,9 @@
                 selectedNode ? selectedNode.label || getNodeLabel(selectedNode.type) : "Inspector"
               }}
             </h3>
-            <span v-if="selectedNode" class="node-id" data-testid="inspector-node-instance">
+            <details v-if="selectedNode" class="node-identity">
+              <summary>Node identity</summary>
+            <span class="node-id" data-testid="inspector-node-instance">
               Instance ID: {{ selectedNode.id }}
             </span>
             <span
@@ -29,6 +31,7 @@
             >
               Canonical node: {{ selectedNode.type }}
             </span>
+            </details>
           </div>
         </div>
         <div class="header-actions">
@@ -870,7 +873,7 @@
           <RepeatedValidationSummary :record="asObject(selectedPortOutput?.value)" />
           <PLSDAPermutationSummary :record="asObject(selectedPortOutput?.value)" />
           <!-- Data shape summary - always show for any output -->
-          <div v-if="selectedNodeType !== 'output.export'" class="data-shape-summary">
+          <div v-if="selectedNodeType !== 'output.export' && selectedResultDimensions.length" class="data-shape-summary">
             <template v-if="selectedResultDimensions.length">
               <span
                 v-for="dimension in selectedResultDimensions"
@@ -880,7 +883,6 @@
                 <strong>{{ dimension.size }}</strong> {{ formatDimensionRole(dimension.role) }}
               </span>
             </template>
-            <span v-else class="shape-stat">{{ selectedResultFormLabel }}</span>
           </div>
 
           <div v-if="selectedOutputPreviewNotice" class="persisted-preview-notice">
@@ -951,14 +953,6 @@
               class="p-button-sm p-button-outlined"
               @click="openDataTable"
             />
-            <span
-              v-if="
-                selectedPresentation && !selectedOutputSupportsPlot && !selectedOutputSupportsTable
-              "
-              class="no-params"
-            >
-              {{ selectedResultNoninteractiveNote }}
-            </span>
           </div>
 
           <!-- Statistics output (compact inline) -->
@@ -2087,24 +2081,6 @@ const selectedResultDimensions = computed(() => {
   }
   return selectedScientificDescriptor.value?.dimensions ?? [];
 });
-
-const selectedResultFormLabel = computed(() => {
-  const kind = selectedPresentation.value?.presentation.kind;
-  if (kind === "scalar") return "Scalar scientific result";
-  if (["metric_record", "statistics_summary", "validation_result"].includes(kind ?? "")) {
-    return "Structured scientific metrics";
-  }
-  if (kind?.includes("model")) return "Fitted scientific model";
-  return "Structured scientific result";
-});
-
-const selectedResultNoninteractiveNote = computed(() =>
-  selectedPresentation.value?.presentation.kind === "scalar"
-    ? "This scalar result is reported in the selected result summary above."
-    : selectedPresentation.value?.presentation.kind?.includes("model")
-      ? "This fitted model record is summarized by its scientific diagnostics above."
-      : "This structured result is available in its summary and full metadata; it is not a fitted model.",
-);
 
 const selectedResultShowsMetadata = computed(() => {
   const kind = selectedPresentation.value?.presentation.kind;

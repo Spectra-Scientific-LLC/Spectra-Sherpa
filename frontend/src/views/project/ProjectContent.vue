@@ -74,7 +74,6 @@
       <section class="current-section">
         <div class="current-head">
           <div class="current-head__main">
-            <span class="eyebrow">Current Project</span>
             <h2 class="current-name">{{ activeProject.name }}</h2>
             <p v-if="activeProject.description" class="current-desc">
               {{ activeProject.description }}
@@ -289,7 +288,7 @@
             <div class="object-row__main">
               <strong>{{ workflow.name }}</strong>
               <small>
-                <span v-if="workflow.created_from_template_name"
+                <span v-if="workflow.created_from_template_name && workflow.created_from_template_name !== workflow.name"
                   >from {{ workflow.created_from_template_name }}</span
                 >
                 <span v-else-if="workflow.created_from_workflow_name"

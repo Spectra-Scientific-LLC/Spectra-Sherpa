@@ -445,7 +445,9 @@ def test_current_gate_status_keeps_external_work_and_publication_locked() -> Non
         "41e0a3093f8ab341a34ce72edba3d4eb16cdf0c8",
     ):
         assert authority in status
-    assert "0.6.0 Current Gate Status" in plan_index
+    assert "0.6-current-gate-status.md" in plan_index
+    assert "Historical implementation and qualification records" in plan_index
+    assert "../dev/current-roadmap.md" in plan_index
     assert "Access-code registration" not in project_memory
     assert "Six-digit single-use email-passcode registration" in project_memory
     assert "eventual signed release artifact" not in release

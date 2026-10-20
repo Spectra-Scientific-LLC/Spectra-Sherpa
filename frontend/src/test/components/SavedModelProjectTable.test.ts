@@ -8,9 +8,24 @@ vi.mock('@/api/client', () => ({default: {get: vi.fn()}}));
 vi.mock('@/utils/download', () => ({downloadJson: vi.fn()}));
 
 describe('saved-model project comparison', () => {
+  it('does not imply missing response-prediction evidence for PCA', async () => {
+    vi.mocked(api.get).mockResolvedValue({data: {rows: [{
+      artifact_uid: 'pca', name: 'PCA', model_type: 'pca',
+      regression_metrics_applicable: false, analytical_qualification_applicable: false,
+      metrics: {rmsep: null}, gaps: [], qualification: {state: 'unavailable'},
+    }], comparable_groups: []}});
+    const wrapper = mount(Table, {props: {projectId: 4}});
+    await flushPromises();
+    expect(wrapper.findAll('tbody td').filter(cell => cell.text() === 'n/a').length).toBeGreaterThanOrEqual(5);
+    expect(wrapper.find('tbody').text()).not.toContain('Analytical qualification');
+    expect(wrapper.find('tbody').text()).not.toContain('RMSEP');
+    expect(wrapper.find('tbody').text()).toContain('Operational readiness pending');
+  });
+
   it('shows exact CV and unavailable independent evidence, then opens one saved model', async () => {
     vi.mocked(api.get).mockResolvedValue({data: {rows: [{
       artifact_uid: 'a', name: 'Protein PLS', model_type: 'pls', target_names: ['Protein'],
+      regression_metrics_applicable: true, analytical_qualification_applicable: true,
       target_units: ['wt %'], training_dataset_id: 12, preprocessing: [{op_id: 'preprocess.snv'}],
       components: 3, calibration_count: 24, validation: {method: 'group_kfold', folds: 3},
       metrics: {rmsec: 0.34, rmsecv: 0.51, rmsep: null, r2_calibration: 0.92, q2_cv: 0.76},
@@ -44,6 +59,7 @@ describe('saved-model project comparison', () => {
   it('labels starter held-out regression separately from independent RMSEP', async () => {
     vi.mocked(api.get).mockResolvedValue({data: {rows: [{
       artifact_uid: 'pls', name: 'PLS', model_type: 'pls',
+      regression_metrics_applicable: true, analytical_qualification_applicable: true,
       held_out_validation: {role: 'within_dataset_held_out_test', count: 9, rmse: 0.42},
       metrics: {rmsep: null},
     }], comparable_groups: []}});
@@ -77,6 +93,7 @@ describe('saved-model project comparison', () => {
   it('names the assessed external view when it differs from the selected dataset', async () => {
     vi.mocked(api.get).mockResolvedValue({data: {rows: [{
       artifact_uid: 'b', name: 'External Protein', model_type: 'pls',
+      regression_metrics_applicable: true, analytical_qualification_applicable: true,
       metrics: {rmsep: 0.8}, independent_test_count: 20, bias: 0.1, coverage: 0.85,
       coverage_denominator: 17, qualification: {state: 'stale_for_selected_dataset', validation_view_id: 41},
     }], comparable_groups: []}});

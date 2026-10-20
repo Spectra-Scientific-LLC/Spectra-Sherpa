@@ -15,6 +15,7 @@ const STRUCTURED_CONTAINER_KEYS = new Set([
   "worker_execution",
   "worker_pid",
   "execution_id",
+  "fitted_state_serializer",
 ]);
 
 const EMPTY_STRINGS = new Set(["", "nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity", "none", "null"]);
@@ -133,13 +134,14 @@ export const buildDiagnosticEntries = (diagnostics: Record<string, unknown> | nu
       : `${selected.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} variables retained` }
     : diagnostics;
   return Object.entries(displayDiagnostics)
-    .filter(([key]) => !(hasSelectionCount && key === "n_total"))
+    .filter(([key]) => !(hasSelectionCount && key === "n_total") && !key.endsWith("_definition"))
     .filter(([key, value]) => !STRUCTURED_CONTAINER_KEYS.has(key) && !isEmptyDiagnosticValue(value))
     .map(([key, value]) => ({
       key,
       label: formatDiagnosticLabel(key),
       displayValue: formatDiagnosticValue(value),
-      detail: buildDetail(value),
+      detail: typeof diagnostics[`${key.replace(/_percent$/, "")}_definition`] === "string"
+        ? String(diagnostics[`${key.replace(/_percent$/, "")}_definition`]) : buildDetail(value),
     }))
     .filter((entry) => entry.displayValue.length > 0);
 };

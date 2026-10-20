@@ -10,13 +10,11 @@
     <!-- App Authentication Key — local and explicitly composed products only (not enterprise managed-auth) -->
     <div v-if="isFeatureEnabled('apiTokenSettings')" class="key-section">
       <div class="section-header">
-        <h3>App Authentication Key</h3>
+        <h3>Application access <MethodHelp topic="applicationAccess" label="Configure application access" /></h3>
         <span class="badge required">Required</span>
       </div>
       <p class="description">
-        This key must match the <code>APP_API_KEY</code> environment variable set on the backend.
-        The default for local development is <code>local-key</code>.
-        It is stored in your browser only — never sent to any external service.
+        Stored in this browser; sent only to your Sherpa backend.
       </p>
       <div class="field">
         <label for="app-key">App API Key</label>
@@ -50,7 +48,7 @@
     <!-- BYO Chat Config — local/OSS mode only. -->
     <div v-if="appMode === 'local'" class="key-section">
       <div class="section-header">
-        <h3>BYO Chat Configuration <MethodHelp topic="localChat" label="Configure local chat" /></h3>
+        <h3>BYO Chat <MethodHelp topic="localChat" label="Configure local chat" /></h3>
         <Tag v-if="byoChatConfigured" severity="success" value="Configured" />
         <span v-else class="badge optional">Optional</span>
       </div>
@@ -186,7 +184,7 @@
     <!-- HITRAN key for FTIR synthesis live downloads. -->
     <div class="key-section">
       <div class="section-header">
-        <h3>HITRAN API Key <MethodHelp topic="hitran" label="HITRAN synthesis setup" /></h3>
+        <h3>HITRAN <MethodHelp topic="hitran" label="HITRAN synthesis setup" /></h3>
         <Tag v-if="isHitranKeySaved" severity="success" value="Saved" />
         <span v-else class="badge optional">Optional</span>
       </div>

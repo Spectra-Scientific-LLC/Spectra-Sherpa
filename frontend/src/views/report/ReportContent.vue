@@ -31,7 +31,7 @@
         {{
           reportStore.reportData
             ? `${reportStore.reportData.runs?.length || 0} retained runs`
-            : "Choose report inputs"
+            : ""
         }}
       </WorkspaceContextItem>
     </WorkspaceContext>
@@ -239,10 +239,8 @@
           kind="empty"
           variant="page"
           icon="pi pi-file-pdf"
-          message="Select a workflow to generate a report"
-        >
-          <p>Select inputs in Setup, then generate the report.</p>
-        </WorkspaceState>
+          message="Choose inputs in Setup, then generate the report."
+        />
       </TabPanel>
     </WorkspaceTabs>
   </section>

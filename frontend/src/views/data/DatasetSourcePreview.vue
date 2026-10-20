@@ -2,7 +2,7 @@
   <section class="source-preview">
     <div v-if="!sourceRef && !acquisitionRequired" class="preview-empty">
       <i class="pi pi-table"></i>
-      <span>Select a data source name to preview the matrix and metadata before adding it.</span>
+      <span>Choose a source to preview.</span>
     </div>
     <template v-else-if="acquisitionRequired">
       <header class="source-preview-title">

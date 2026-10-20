@@ -540,7 +540,7 @@ describe("Persistent run inspection", () => {
       return original(url);
     });
     const { wrapper } = await open('?project=1&view=Summary');
-    expect(wrapper.get('.run-detail__heading h2').text()).toBe('Inspect');
+    expect(wrapper.find('.run-detail__heading h2').exists()).toBe(false);
     expect((wrapper.get('[aria-label="Run name"]').element as HTMLInputElement).value).toBe('Saved PCA');
     expect(wrapper.get('[aria-label="Run actions"]').find('[aria-label="Back to Runs"]').exists()).toBe(true);
     expect(wrapper.get('.summary').element.lastElementChild?.getAttribute('aria-label')).toBe('Incomplete durable evidence');

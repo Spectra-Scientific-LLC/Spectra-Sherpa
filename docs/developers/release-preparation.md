@@ -30,6 +30,14 @@ Move reviewed Unreleased changes into a dated section and update the release
 guide, navigation and README together. Installation instructions must distinguish
 the published package from a source candidate.
 
+For v0.6.4, verify the public-index baseline explicitly: source-only versions
+are not PyPI upgrade checkpoints. Cover the 0.6.0 → 0.6.4 upgrade in the release
+guide, including the KNN/SIMCA retraining decision, PLS-DA serializer and
+calibration-versus-validation changes, and the database migration adding
+`project.goal`. Preserve the 0.6.0 saved-model compatibility reference; do not
+silently substitute a source-only release. Exercise these changes on a backed-up
+copy of an older profile, not the scientist's only working copy.
+
 Obtain explicit maintainer approval before tagging or publishing. PyPI
 publication does not imply a native installer is available; desktop packaging
 has its own authorization and qualification gates.

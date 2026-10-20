@@ -126,11 +126,6 @@
         <div class="source-side-layout">
           <!-- ============ REFERENCE DATASETS (top, prominent) ============ -->
           <div class="ref-catalog-section source-list-pane">
-            <h3 class="ref-catalog-title">
-              <i class="pi pi-database"></i>
-              Reference Datasets
-            </h3>
-
             <WorkspaceState
               v-if="dataStore.referenceCatalogLoading"
               kind="loading"
@@ -483,14 +478,7 @@
               />
             </div>
             <div class="upload-form">
-              <div class="upload-intro">
-                <div>
-                  <h3>Add scientific files</h3>
-                  <p>
-                    Select files, a whole folder, or a ZIP. Every admitted spectrum is previewed
-                    before it is added.
-                  </p>
-                </div>
+              <div v-if="stagedUploadMembers.length" class="upload-intro">
                 <Tag
                   v-if="stagedUploadMembers.length"
                   :value="`${stagedUploadMembers.length} ready`"
@@ -535,8 +523,7 @@
                 />
               </div>
               <small class="field-hint"
-                >Choose files or a folder. ZIPs expand automatically; supported members load and
-                refused members are reported below.</small
+                >Files, folders or ZIPs.</small
               >
               <div v-if="stagedUploadMembers.length" class="selected-member-rows upload-members">
                 <div
@@ -730,16 +717,7 @@
         </template>
         <section v-if="!qualified" class="library-panel">
           <div class="library-header">
-            <div>
-              <h3 class="library-title">
-                <i class="pi pi-book"></i>
-                Reference Library
-              </h3>
-              <p>
-                Search local reference entries and packaged compound records. Use Import for
-                datasets you want to copy into My Dataset.
-              </p>
-            </div>
+            <MethodHelp topic="referenceLibrary" label="Reference library and dataset import" />
             <span class="library-count">{{ filteredLibrary.length }} entries</span>
           </div>
           <div class="library-toolbar">
@@ -1641,6 +1619,7 @@ import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
+import MethodHelp from "@/components/MethodHelp.vue";
 import PlotSelectionCheckbox from "@/components/data/PlotSelectionCheckbox.vue";
 import DataContentsPanel from "./DataContentsPanel.vue";
 import DataStoryCard from "./DataStoryCard.vue";
@@ -2476,6 +2455,15 @@ watch(
     if (prev == null) {
       return;
     }
+    // A deep link admits its project once. Explicit subsequent selection must
+    // survive reload/back rather than replaying the old URL's project.
+    if ([route.query.project, route.query.project_id].some(value => value !== undefined && value !== String(next))) {
+      const query = { ...route.query };
+      delete query.project;
+      delete query.project_id;
+      await router.replace({ path: route.path, query });
+      if (projectStore.currentProjectId !== next) return;
+    }
     const ticket = navigation.bootstrap.begin();
     persistDataDraftNow(currentDataDraftStorageKey);
     currentDataDraftStorageKey = dataDraftStorageKey();
@@ -3199,7 +3187,7 @@ const activeProviderRoleSummary = computed(() => {
 });
 
 const plotSelectionSummary = computed(() => {
-  if (plottedFileCount.value === 0) return "Choose datasets or files.";
+  if (plottedFileCount.value === 0) return "";
   return `${plottedFileCount.value} file${plottedFileCount.value === 1 ? "" : "s"} selected.`;
 });
 
@@ -3406,7 +3394,7 @@ const synthesisStateLabel = computed(() =>
 
 const synthesisStateDetail = computed(() =>
   selectedExperiment.value
-    ? "Create time-series mixtures for downstream models"
+    ? "FTIR · Beer–Lambert mixtures"
     : "Select or create a dataset record first",
 );
 
@@ -3465,7 +3453,7 @@ const activeSubtabDetail = computed(() => {
     case TAB_IMPORT:
       return qualified.value
         ? "Local catalog references and exact registered uploads"
-        : "Browse reference datasets — Add to My Dataset";
+        : "";
     case TAB_SYNTHESIS:
       return synthesisStateDetail.value;
     case TAB_UPLOAD:
@@ -3473,13 +3461,11 @@ const activeSubtabDetail = computed(() => {
         ? `Ready to add ${selectedFile.value.name}`
         : stagedUploadMembers.value.length
           ? `${stagedUploadMembers.value.length} staged file${stagedUploadMembers.value.length === 1 ? "" : "s"}`
-          : "Stage + file → Add to My Dataset";
+          : "";
     case TAB_LIBRARY:
-      return selectedLibraryKeys.size
-        ? "Review basket — Add to My Dataset"
-        : "Browse pure-compound reference spectra";
+      return "";
     case TAB_MULTI_WELL:
-      return "Multi-well experiment acquisition plan";
+      return "";
     case TAB_MY_DATASET:
       return (
         inspectedDatasetShape.value ||

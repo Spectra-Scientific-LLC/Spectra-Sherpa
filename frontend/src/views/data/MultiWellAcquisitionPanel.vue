@@ -1,11 +1,7 @@
 <template>
-  <section class="multi-well" aria-labelledby="multi-well-title">
+  <section class="multi-well" aria-label="Multi-well acquisition plan">
     <header class="plan-header">
       <div>
-        <div class="title-row">
-          <h3 id="multi-well-title">Multi-well experiment</h3>
-          <Tag value="Acquisition plan" severity="info" />
-        </div>
         <span>{{ planStatus }}</span>
       </div>
       <div class="actions">
@@ -591,7 +587,7 @@ const planStatus = computed(() =>
       ? `Loading ${props.experimentName || "dataset"}`
       : dirty.value
         ? "Unsaved changes"
-        : `${draft.value.wells.length} wells saved with ${props.experimentName || "dataset"}`,
+        : `${draft.value.wells.length} wells saved`,
 );
 
 function clonePlan(data: AcquisitionPlan) {

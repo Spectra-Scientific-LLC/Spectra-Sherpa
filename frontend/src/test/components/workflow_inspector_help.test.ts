@@ -100,6 +100,26 @@ describe("WorkflowInspector node help", () => {
     expect(wrapper.find('a[href$="#component-selection"]').exists()).toBe(true);
   });
 
+  it("does not misclassify a retained MCR fitted record as not a model", async () => {
+    const wrapper = mountInspector();
+    const value = { n_components: 3, fitted_state_serializer: "spectrasherpa.model-artifact.mcr-als/2" };
+    await wrapper.setProps({
+      selectedNode: { ...selectedNode, type: "model.mcr_als", label: "Fit MCR-ALS" },
+      nodeOutput: { data: [], metadata: { diagnostics: value },
+        ports: { model: { value, metadata: { diagnostics: value } } },
+        presentation_contract: { digest: "d".repeat(64), payload: {
+          schema_version: "spectrasherpa-node-presentation/1", default_presentation: "model",
+          presentations: [{ presentation_id: "model", label: "Fitted MCR-ALS Decomposition",
+            kind: "metric_record", source_ports: ["model"], modes: ["record"] }],
+        } },
+      },
+    });
+    expect(wrapper.text()).not.toContain("not a fitted model");
+    expect(wrapper.text()).not.toContain("Structured scientific result");
+    expect(wrapper.get("details.node-identity").attributes("open")).toBeUndefined();
+    expect(wrapper.get('[data-testid="inspector-canonical-node-type"]').text()).toContain("model.mcr_als");
+  });
+
   it("fails closed when the selected node contract has no safe help authority", async () => {
     nodeMetadata.execution_contract.payload.help_reference = "../../private.md";
     const wrapper = mountInspector();

@@ -1,7 +1,9 @@
 /* eslint-disable vue/one-component-per-file */
-import { flushPromises, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, reactive } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+enableAutoUnmount(afterEach);
 
 import api from "@/api/client";
 import type { ReferenceDatasetOption } from "@/stores/workflow-types";
@@ -4014,6 +4016,20 @@ describe("DataContent file inspection", () => {
       await flushPromises();
       expect(mocks.dataStore.fetchExperiments).toHaveBeenCalledOnce();
     } finally { wrapper.unmount(); }
+  });
+
+  it.each(["project", "project_id"])("retires the %s deep-link pin on a real project switch", async key => {
+    mocks.route.query = { [key]: "4", tab: "import" };
+    mocks.projectStore.currentProjectId = 4;
+    mocks.projectStore.fetchProject.mockResolvedValueOnce({ id: 4 });
+    const wrapper = mountDataContent();
+    await flushPromises();
+    mocks.routerReplace.mockClear();
+    mocks.projectStore.currentProjectId = 7;
+    await flushPromises();
+    expect(mocks.routerReplace).toHaveBeenCalledWith({ path: mocks.route.path, query: { tab: "import" } });
+    expect(mocks.route.query).toEqual({ tab: "import" });
+    wrapper.unmount();
   });
 
   it("does not resume Data bootstrap after unmount during project admission", async () => {

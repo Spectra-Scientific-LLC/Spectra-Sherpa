@@ -134,7 +134,6 @@
       <TabPanel header="Archive">
         <div class="projects-section archived-section">
           <div class="section-header">
-            <h2>Archive</h2>
           </div>
           <WorkspaceState v-if="!projectStore.archivedProjects.length" kind="empty" variant="page" message="No archived projects." />
           <div v-else class="projects-grid">

@@ -87,6 +87,14 @@ The old `KILL_PORT_ON_START`, `KILL_PORT_FORCE`, and `KILL_PORT_GRACE_SECONDS`
 settings no longer enable process termination; remove them from older `.env`
 files. Desktop launches retain their ephemeral-port behavior.
 
+## Application access
+
+When **Settings → API Keys** shows an App API Key field, its value must match
+the backend's `APP_API_KEY`. Use the key configured by your launcher or
+administrator; do not change it merely to match a placeholder. The browser
+stores this key locally and sends it to your Sherpa backend, not to a chat
+provider. Managed sign-in deployments do not use this local-key setup.
+
 ## Add Optional Extras Only If Needed
 
 Include **all extras you want to keep** in every `poetry install` invocation:

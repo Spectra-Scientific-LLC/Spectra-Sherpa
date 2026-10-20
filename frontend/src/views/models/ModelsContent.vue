@@ -170,8 +170,7 @@
         <TabPanel header="Inspect">
           <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" @renamed="refreshRuns" />
           <div v-else class="empty-state">
-            <h2>Inspect</h2>
-            <p class="empty-state__title">Select a run name in History to inspect its saved results.</p>
+            <p class="empty-state__title">Choose a run in History.</p>
             <Button label="Open History" icon="pi pi-arrow-left" class="p-button-text" @click="activeTabId = 'run_history'" />
           </div>
         </TabPanel>
@@ -838,18 +837,18 @@ const activeSubtabDetail = computed(() => {
   switch (activeTab.value) {
     case TAB_RUN_HISTORY:
       return runsStore.runs.length
-        ? "Inspect saved workflow results"
+        ? ""
         : "Run a workflow to build history";
     case TAB_COMPARE:
-      return "Inspect differences across saved runs";
+      return "";
     case TAB_INSPECT:
-      return "Review retained results, validation and execution evidence";
+      return "";
     case TAB_MODELS:
       return selectedModel.value
         ? modelSubtitle(selectedModel.value)
-        : "Click a model to inspect";
+        : "";
     case TAB_BATCH:
-      return "Select models and prediction data";
+      return "";
     default:
       return "";
   }

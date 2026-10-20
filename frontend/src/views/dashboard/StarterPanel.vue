@@ -94,8 +94,7 @@
       <header class="goal-starter__header">
         <h2 id="goal-starter-new-title">{{ activePlan ? "Start a new goal" : "What would you like to do?" }}</h2>
         <p class="goal-starter__hint">
-          Describe it in your own words. Mention your data if you have some in mind, for example
-          “predict moisture in my corn NIR spectra”, and Starter suggests a dataset to begin with.
+          Mention your data if known, for example “predict moisture in corn NIR spectra”.
         </p>
       </header>
       <label for="goal-starter-text" class="sr-only">Your goal</label>
