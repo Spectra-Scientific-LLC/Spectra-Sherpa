@@ -1,5 +1,10 @@
 # Local OSS and hosted-product boundaries
 
+!!! abstract "Summary"
+    **Local OSS** is the free, open-source package you install and run on your
+    own computer, with no account. Hosted Demo and Pro are separate services. This
+    page states what the local package includes and what it does not.
+
 Local OSS runs on your computer without a hosted account. It includes the
 scientific Workbench, Python SDK, local projects, workflows, saved results and
 supported exports. Its limits are your installed capabilities, machine resources

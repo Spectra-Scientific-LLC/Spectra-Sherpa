@@ -1,5 +1,8 @@
 # Testing and Release Hygiene
 
+!!! abstract "Summary"
+    For maintainers: the release hygiene rules that keep documentation matched to shipped behavior.
+
 Release documentation should match shipped behavior.
 
 ## Before Release

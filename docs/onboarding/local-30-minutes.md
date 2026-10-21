@@ -1,5 +1,8 @@
 # Local onboarding
 
+!!! abstract "Summary"
+    Install SpectraSherpa on your own computer and run a first analysis in about 30 minutes: install the app, run a starter PCA workflow on an example dataset, then point it at your own file.
+
 Use this path when you want SpectraSherpa running on your own machine. You will install the app, add optional extras only if you need them, run a starter PCA workflow, and then point that workflow at your own data.
 
 ## Install

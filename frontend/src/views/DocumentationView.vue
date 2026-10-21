@@ -51,7 +51,7 @@ const sections: DocSection[] = [
         path: "/",
       },
       {
-        title: "Demo, Pro and local OSS",
+        title: "Local OSS and hosted boundaries",
         desc: "Choose hosted evaluation or local compute",
         path: "/introduction/cloud-vs-local/",
       },
@@ -80,6 +80,11 @@ const sections: DocSection[] = [
         title: "Local onboarding",
         desc: "Install and run the OSS app locally",
         path: "/onboarding/local-30-minutes/",
+      },
+      {
+        title: "Build a Workflow on the Canvas",
+        desc: "Where to click: add, connect, configure, run",
+        path: "/workflows/build-a-workflow/",
       },
       {
         title: "Import Your First Dataset",

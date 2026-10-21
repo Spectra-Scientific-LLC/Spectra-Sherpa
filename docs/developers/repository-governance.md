@@ -1,5 +1,8 @@
 # Repository governance
 
+!!! abstract "Summary"
+    For contributors: where each kind of truth lives in the repository and the checks that enforce it.
+
 Start with [Where truth lives](../AUTHORITIES.md). Each row separates the owner,
 normative document, enforcing check and consumers. Consumers derive from that
 owner; new projections do not become competing authorities.

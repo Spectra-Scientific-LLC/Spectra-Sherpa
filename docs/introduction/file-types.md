@@ -1,5 +1,10 @@
 # Supported File Types
 
+!!! abstract "Summary"
+    Which instrument and data files SpectraSherpa can read, and which it
+    writes. If your file type is listed, you can import it from
+    **Data > Upload** — see [Data Import](../workflows/data-import.md).
+
 File support is determined by the installed native ingestion registry. Optional
 algorithm extras do not change which source files can be parsed.
 

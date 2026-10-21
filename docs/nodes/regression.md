@@ -1,5 +1,8 @@
 # Regression Nodes
 
+!!! abstract "Summary"
+    Reference: nodes that predict numbers from spectra — PLS model fitting, application, and evaluation.
+
 Regression nodes predict quantitative targets from spectra or features.
 
 ## Training and Prediction Nodes

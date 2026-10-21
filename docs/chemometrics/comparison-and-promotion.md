@@ -1,5 +1,8 @@
 # Compare results and review a final model
 
+!!! abstract "Summary"
+    Compare runs fairly and decide when a model is ready to promote: same data, same folds, recorded evidence. Works locally without an account.
+
 This journey works locally without an account, provider key or Advisor. The
 initial common-evaluation implementation supports retained PLS regression
 recipes. Other retained results remain inspectable; missing evidence is shown

@@ -1,5 +1,8 @@
 # Contributing
 
+!!! abstract "Summary"
+    How to contribute: the quality bars, the review process, and where to start.
+
 Contributions should improve the scientific reliability, usability, and maintainability of SpectraSherpa.
 
 Scientific operations enter the installed product through source review and

@@ -1,5 +1,8 @@
 # Peak Finding and Library Comparison
 
+!!! abstract "Summary"
+    Peak finding and library comparison: connecting multivariate results back to individual spectral bands and tentative chemical assignments.
+
 Peak and library workflows help connect multivariate results back to spectral features.
 
 ## Peak Finding

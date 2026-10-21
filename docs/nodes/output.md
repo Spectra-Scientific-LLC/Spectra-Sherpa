@@ -1,5 +1,8 @@
 # Output Nodes
 
+!!! abstract "Summary"
+    Reference: nodes that present or export results — plots, tables, reports, and export files.
+
 Output nodes make workflow results visible or exportable.
 
 ## Nodes

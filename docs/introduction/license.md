@@ -1,5 +1,8 @@
 # License
 
+!!! abstract "Summary"
+    SpectraSherpa's open-source license is AGPLv3.0: free to download, run, study, modify, and share under the license terms. This page is a practical orientation for users and contributors; it is not legal advice.
+
 The open-source SpectraSherpa package is licensed under **AGPLv3.0**. In plain language, SpectraSherpa OSS is free open-source software: you can download it, run it, study the source, modify it, and share it under the license terms.
 
 This page is a practical orientation, not legal advice. For binding language, read the official [GNU AGPLv3.0 license text](https://www.gnu.org/licenses/agpl-3.0.html).

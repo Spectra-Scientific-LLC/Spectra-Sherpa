@@ -1,5 +1,12 @@
 # Spectra Sherpa (open source) Privacy Statement
 
+!!! abstract "Summary"
+    The short version, for convenience only: your data stays on your computer,
+    the app collects nothing and sends no telemetry, and optional network
+    features stay off unless you enable them. The binding legal text is the
+    statement below; if this summary and the statement differ, the statement
+    governs.
+
 **Publisher:** Spectra Scientific LLC ("Spectra Scientific", "we")
 **Effective date:** October 1, 2026 · **Version:** 1.0
 

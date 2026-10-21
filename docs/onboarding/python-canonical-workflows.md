@@ -1,5 +1,8 @@
 # Canonical Workflows from Python
 
+!!! abstract "Summary"
+    For Python users: the same analyses the visual Workbench runs, driven from a script or notebook with the SDK. The Python API is not a separate implementation — it uses the same node registry.
+
 The default `spectra-sherpa` installation contains both the visual Workbench
 and the Python API. They use the same typed node registry and `DAGExecutor`;
 the Python API is not a second implementation of the science.

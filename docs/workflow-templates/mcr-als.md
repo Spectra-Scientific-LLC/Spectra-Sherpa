@@ -1,5 +1,8 @@
 # MCR-ALS Starter
 
+!!! abstract "Summary"
+    The MCR-ALS starter: resolving mixture spectra into components. Requires the optional SpectroChemPy add-on.
+
 Use MCR-ALS when mixture spectra contain overlapping components and you want resolved spectra and concentration-like profiles.
 
 ## When To Use It

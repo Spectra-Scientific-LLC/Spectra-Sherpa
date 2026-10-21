@@ -1,5 +1,8 @@
 # Templates
 
+!!! abstract "Summary"
+    Templates are ready-made workflow recipes: pick one, bind your dataset, run. This page explains how templates work and how to choose one; each starter has its own page.
+
 Templates are runnable workflow starters. A good template is not just a graph of nodes; it is a scientific story with an input, a processing path, a primary plot or metric, and a next decision.
 
 Use templates when you want to move quickly from a dataset to a defensible first result. After the first run, edit the workflow: change preprocessing, adjust model settings, add validation nodes, or replace the starter data with your own imported dataset.

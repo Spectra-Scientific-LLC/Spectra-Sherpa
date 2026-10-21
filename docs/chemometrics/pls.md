@@ -1,5 +1,8 @@
 # PLS Calibration
 
+!!! abstract "Summary"
+    PLS regression: the default method for predicting a number (moisture, concentration) from spectra. Covers choosing latent variables, reading validation metrics, and avoiding overfitting.
+
 Partial Least Squares regression models the relationship between spectra and quantitative targets. It is the default calibration method for spectroscopy because it tolerates strongly collinear spectral channels and small sample counts better than ordinary regression.
 
 ## Use PLS For
@@ -30,6 +33,13 @@ Partial Least Squares regression models the relationship between spectra and qua
 - VIP scores
 - regression coefficients by spectral variable
 - X and Y scores/loadings
+
+![Predicted versus measured values](../assets/pls-predicted-vs-measured.png)
+
+*Illustrative synthetic data. The plot to expect from a PLS calibration:
+calibration (cross-validation) predictions in one color, held-out test
+predictions in another, against the ideal line. An honest model shows similar
+scatter in both; a much tighter calibration cloud is an overfitting warning.*
 
 **VIP scores** rank variables by their contribution to the model; the common rule of thumb treats VIP > 1 as influential. Use VIP to prune or understand a model, not as a band assignment — a high-VIP region can be influential because it corrects an artifact, not because the analyte absorbs there.
 

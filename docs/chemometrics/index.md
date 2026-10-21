@@ -1,8 +1,11 @@
 # Chemometrics Overview
 
-SpectraSherpa focuses on practical chemometrics workflows for spectra. New here?
-Walk through [Your First Calibration](../onboarding/first-calibration.md) — one
-dataset, one PCA, one validated PLS model, one report.
+!!! abstract "Summary"
+    A practical map of the chemometrics in SpectraSherpa — what each method family answers and which page explains it. New to chemometrics? Do [Your First Calibration](../onboarding/first-calibration.md) first.
+
+SpectraSherpa focuses on practical chemometrics workflows for spectra. Your First
+Calibration takes one dataset through one PCA, one validated PLS model, and one
+report.
 
 ## Main Questions
 

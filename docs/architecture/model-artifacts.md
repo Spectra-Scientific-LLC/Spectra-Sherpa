@@ -1,5 +1,8 @@
 # Model Artifacts
 
+!!! abstract "Summary"
+    How trained models are saved, versioned, reviewed, and reapplied — the bridge from a good run to a reusable calibration.
+
 Model artifacts persist trained models. They are the bridge between "this workflow run looked good" and "this calibration or classifier can be reviewed, versioned, reapplied, or handed to another system."
 
 ## What a Model Artifact Is

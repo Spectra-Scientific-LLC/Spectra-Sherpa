@@ -1,5 +1,8 @@
 # Theme migration qualification
 
+!!! abstract "Summary"
+    For maintainers: how the theme migration was qualified — visual policy without computation changes.
+
 PR 2 covers semantic interface colors, PrimeVue 3 states, scientific plot
 palette policy and offline export styling. It does not change computation or
 remove capabilities. See [the authority guide](theme-authority.md).

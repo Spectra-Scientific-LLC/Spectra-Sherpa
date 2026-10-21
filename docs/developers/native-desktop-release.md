@@ -1,5 +1,8 @@
 # Windows and macOS: live signing and installer validation
 
+!!! abstract "Summary"
+    Maintainer runbook: Windows and macOS signing and installer validation, from credential setup to approval.
+
 Use this document from credential setup through approval of the actual downloaded
 installers. It covers **Windows x64** and **Apple Silicon macOS (arm64)** from one
 public OSS commit. Ubuntu 24.04 x86-64 AppImage build and acceptance are covered in

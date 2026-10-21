@@ -1,5 +1,8 @@
 # Data Nodes
 
+!!! abstract "Summary"
+    Reference: nodes that bring data into a workflow — loading datasets, files, and references, and splitting samples into calibration and test sets.
+
 ## `data.collection_load`
 
 Loads the exact project-owned collection members selected in **My Dataset**.

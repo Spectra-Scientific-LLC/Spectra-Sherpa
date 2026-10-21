@@ -1,5 +1,8 @@
 # Governed Public Reference Datasets
 
+!!! abstract "Summary"
+    For maintainers: the registry that qualifies the public reference datasets used by examples and tests.
+
 `src/spectra_sherpa/data/reference_datasets_v3.json` is the qualification contract
 for public datasets used by examples and qualification. Each entry binds a
 stable identity to its artifact or packaged source, content digest, attribution

@@ -1,5 +1,8 @@
 # LLM Provider Extension
 
+!!! abstract "Summary"
+    For deployers: the contract for connecting an AI provider. The open-source package defines the interface; it does not ship a managed AI service.
+
 The OSS package defines the AI provider contract. It does not ship a managed LLM service.
 
 ## Extension Responsibility

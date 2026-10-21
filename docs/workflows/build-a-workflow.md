@@ -1,0 +1,100 @@
+# Build a Workflow on the Canvas
+
+!!! abstract "Summary"
+    The Workflow tab is where analysis happens: you place processing and
+    modeling steps ("nodes") on a canvas, connect them, and press **Run**.
+    This page shows the layout and the exact clicks for the common tasks.
+    Building and running workflows in Local OSS needs no account or
+    subscription.
+
+A workflow is a small directed graph: data enters through a **Data Source**
+node, flows through preprocessing and modeling nodes, and ends at output
+nodes that produce plots, tables, and saved models. You never write code to
+use it — but everything you build is inspectable, saved, and repeatable.
+
+## The Builder at a Glance
+
+![Schematic of the Workflow Builder layout](../assets/workflow-canvas-map.png)
+
+*Schematic, not a screenshot: 1 add a node · 2 connect its ports · 3 set its
+parameters · 4 Run.*
+
+| Area | Where | What it is for |
+| --- | --- | --- |
+| **Add Nodes / Node Catalog** | left panel | Every available step, grouped by category, with search. |
+| **Canvas** | center | Your workflow. Each node is a card showing its label, status, and ports. |
+| **Inspector** | right panel | Parameters, help, and input/output preview for the selected node. |
+| **Top bar** | top | **Analysis Starter**, **Run**, **Save**, **Compare runs**, **Export**, and (local app) **Audit**. Workflow warnings appear just below it. |
+
+## Your First Workflow, Step by Step
+
+1. **Open the Workflow tab** in the workspace.
+2. **Click "Analysis Starter"** (top bar) and pick a template, or start blank.
+   A template adds the right nodes in the right order and asks you to bind
+   your data; it is the fast path. See [Templates](../workflow-templates/index.md).
+3. **Add a node:** in the left **Add Nodes** panel, search or open a category,
+   then **click the node's card**. It appears on the canvas. (Clicking, not
+   dragging, is how nodes are added.)
+4. **Connect two nodes:** input ports sit on a node's top edge and output
+   ports on its bottom edge. **Click an output port** of the upstream node
+   (hover shows its name and data type), then **click a compatible input
+   port** of the downstream node. A connection line appears; click a line to
+   delete it.
+5. **Set parameters:** click a node to select it, then use the **Inspector**
+   on the right. Every parameter has a default; the **?** next to the node
+   name opens its help page. If the Inspector warns that an input is missing,
+   the connection in step 4 is what fixes it. To remove the node, click
+   **Delete** in the Inspector, press <kbd>Delete</kbd>, or right-click it and
+   choose **Delete Node**. An **Undo** banner appears right after a delete.
+6. **Click Run.** Changes are saved automatically (the top bar shows
+   **Unsaved changes**, then **Saved**); **Save** saves at once. The button
+   reads **Run (Mod)** when the workflow has changed since its last run, so
+   the results on screen no longer match it. When the run finishes, select a
+   node to see its plots and tables in the Inspector.
+
+A workflow never reads a file directly: the **Data Source** node points at an
+entry in **My Dataset**. Bring data in first — see
+[Data Import](data-import.md) — then bind it here.
+
+## Reading the Canvas While It Runs
+
+- Each node card shows its state: **Pending**, **Running**, **Completed**,
+  **Error**, or **Stale** (completed, but an upstream change means it must
+  run again). An error is often a deliberate refusal, not a crash: select the
+  node and read the reason in the Inspector — for example a missing required
+  input or a dataset that does not meet the node's admission rule.
+- **Workflow warnings** appear in a strip under the top bar and collect every
+  admission or identity concern the run surfaced. Read them before trusting
+  results; they are part of the result.
+- Every run is kept on the **Runs** page. **Compare runs** (top bar) opens its
+  history, where you pick saved runs to compare; comparing never re-runs the
+  workflow.
+- When auditing is turned on, **Audit** (top bar) opens the
+  workflow's trail: what ran, with which parameters, and which data.
+
+## Common Tasks
+
+| I want to… | Do this |
+| --- | --- |
+| Start from a known-good recipe | **Analysis Starter** → pick a template → bind your dataset |
+| Change which dataset a workflow uses | Select the **Data Source** node → change the **My Dataset** entry in the Inspector |
+| Compare two preprocessing choices | Right-click the sheet tab → **Duplicate**, change one node, run both sheets, then **Compare runs** — see [Compare Results](../chemometrics/comparison-and-promotion.md) |
+| Reuse a workflow on another project | **Export** (top bar) gives a portable workflow file; import it there |
+| Understand what a node does | Select it → Inspector help, or look it up in the [Node Library](../nodes/index.md) |
+| Compare calibration settings fairly | [Compare calibration workflows](optimize-saved-result.md) — one sheet per alternative, same folds |
+
+## When Something Refuses to Run
+
+Refusals are deliberate and explain themselves: a node that needs a target
+column says so; a split that would mix replicates of one specimen across
+calibration and test refuses and tells you to declare specimen identity.
+Fix the cause — bind the missing input or declare the field — rather than
+working around it. The refusal is the tool protecting your conclusion; see
+[Designing Validation](../chemometrics/validation-design.md).
+
+## Related Pages
+
+- [Data Import](data-import.md) — getting files into My Dataset
+- [Templates](../workflow-templates/index.md) — the starter recipes
+- [Node Library](../nodes/index.md) — every node, its ports, and its parameters
+- [Reports and Exports](reports-exports.md) — turning a run into a document

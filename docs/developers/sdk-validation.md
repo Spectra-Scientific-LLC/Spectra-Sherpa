@@ -1,5 +1,8 @@
 # SDK Validation Contract
 
+!!! abstract "Summary"
+    For SDK users: the validation contract — metric definitions, split-plan identities, uncertainty records, and evidence readers.
+
 The SDK exposes metric definitions, split-plan identities, uncertainty
 records, canonical evidence readers, and managed-confirmation verification.
 It does **not** accept an arbitrary estimator and does not own a second

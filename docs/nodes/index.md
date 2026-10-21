@@ -1,5 +1,8 @@
 # Node Library
 
+!!! abstract "Summary"
+    Reference for every building block available on the workflow canvas, grouped by task. Each page combines plain-language guidance with exact generated tables of ports, parameters, and defaults.
+
 Workflow nodes are the building blocks of SpectraSherpa analyses. They are grouped by what they do rather than by implementation package.
 
 This section documents the built-in nodes from the current workflow registry. Each category page combines scientific guidance with a generated registry reference for exact ports, type URIs, parameters, defaults, and selectable options.

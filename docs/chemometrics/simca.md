@@ -1,5 +1,8 @@
 # SIMCA QC
 
+!!! abstract "Summary"
+    SIMCA: class-modeling for quality control — "is this sample consistent with the reference material?" Each class gets its own model, and "none of the above" is a valid answer.
+
 SIMCA (Soft Independent Modeling by Class Analogy) models whether a sample is consistent with one or more reference classes. Unlike discriminant methods, each class gets its own PCA model and its own acceptance region — SIMCA can answer "none of the above," which is exactly what QC needs.
 
 ## Use SIMCA QC For

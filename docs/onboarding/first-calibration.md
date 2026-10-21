@@ -1,5 +1,8 @@
 # Your First Calibration
 
+!!! abstract "Summary"
+    A complete worked example, start to finish: download a public teaching dataset (Corn NIR), explore it with PCA, build and validate a PLS calibration for moisture, and produce a shareable report.
+
 This walkthrough takes you from a downloaded teaching dataset to a validated
 PLS calibration and a shareable report. It uses the **Corn NIR** dataset from
 Eigenvector Research: 80 corn specimens measured on three NIR spectrometers

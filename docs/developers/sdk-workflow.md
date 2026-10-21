@@ -1,5 +1,8 @@
 # Portable Workflow Contract
 
+!!! abstract "Summary"
+    For SDK users: the portable workflow format that can be inspected, exported, included in evidence, and sent to a managed service.
+
 `spectra_sherpa.sdk.workflow` defines the small, open workflow representation
 that can be inspected, exported, included in evidence, and sent to a managed
 Runner. The version-1 DAG is the workflow inside an independently executable

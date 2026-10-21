@@ -1,5 +1,8 @@
 # Adding a Scientific Node
 
+!!! abstract "Summary"
+    For contributors: how to add a new workflow node — a reviewed scientific contract, not a plugin — from scaffold to qualification.
+
 A SpectraSherpa node is a reviewed scientific contract, not a dynamically
 loaded plugin. This guide uses a moving-median despiking operation as a small,
 real example. The operation replaces each ordinate with the median inside an

@@ -1,5 +1,10 @@
 # Compare calibration workflows in local OSS
 
+!!! abstract "Summary"
+    A seven-step recipe for comparing preprocessing or model choices fairly in
+    the local app (one duplicated sheet per alternative, identical folds) and
+    what to record with each metric.
+
 Compare a small number of scientifically motivated alternatives while keeping
 the dataset, target and validation design fixed. Local OSS uses workflow sheets
 and saved runs for this task; hosted Optimize campaigns are a separate service.

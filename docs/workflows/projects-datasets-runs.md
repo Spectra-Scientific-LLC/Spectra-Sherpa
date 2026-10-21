@@ -1,5 +1,8 @@
 # Projects, Datasets, and Runs
 
+!!! abstract "Summary"
+    How work is organized: a project holds datasets, workflows, and runs; a run is one executed workflow with everything recorded. Includes batch execution and how the pieces fit together.
+
 SpectraSherpa organizes work around projects.
 
 ## Project

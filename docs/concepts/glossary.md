@@ -1,5 +1,8 @@
 # Glossary
 
+!!! abstract "Summary"
+    Plain definitions of the terms used across the app and these docs — datasets, runs, nodes, validation — each linked to the page where you use it.
+
 These terms describe contracts a scientist can observe in SpectraSherpa. Each
 definition links to the next practical place to use it.
 

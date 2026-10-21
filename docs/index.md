@@ -1,5 +1,10 @@
 # SpectraSherpa OSS
 
+!!! abstract "Summary"
+    **New here?** Start with [Choose Your Path](onboarding/choose-your-path.md).
+    For methods, use the [Chemometrics Guide](chemometrics/index.md); for a node's
+    exact parameters and ports, the [Node Library](nodes/index.md).
+
 SpectraSherpa is a local workbench and Python SDK for spectroscopy and
 chemometrics. Import spectra or feature tables, inspect samples and axes,
 build an analysis, compare results, and export a reproducible record.

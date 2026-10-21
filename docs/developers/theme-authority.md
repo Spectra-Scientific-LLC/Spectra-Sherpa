@@ -1,5 +1,8 @@
 # Interface and scientific plot themes
 
+!!! abstract "Summary"
+    For developers: the single color and theme authority shared by the app, exports, and hosted modules.
+
 One public theme serves the OSS application and hosted modules. This is a
 color-authority migration, not a layout redesign, component-library upgrade,
 universal purple rebrand, or change to scientific computation.

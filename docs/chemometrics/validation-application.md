@@ -1,5 +1,8 @@
 # Validation and Model Application
 
+!!! abstract "Summary"
+    Reading validation results and applying a model to new data: metrics, prediction intervals, qualification checks, and what each warning means.
+
 Designing the validation comes first — see
 [Designing Validation](validation-design.md) for grouped splits, fold-local
 preprocessing, and metric definitions. This page covers reading and applying

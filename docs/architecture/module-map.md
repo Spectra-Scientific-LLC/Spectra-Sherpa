@@ -1,5 +1,8 @@
 # Module Map
 
+!!! abstract "Summary"
+    Which part of the codebase owns which task, with the dependency rules between them. The first stop for developers looking for where to make a change.
+
 Use this map to find the public layer that owns the task you are trying to do.
 Dependencies point inward: interfaces and applications may call scientific
 contracts, but scientific contracts do not import hosted policy or UI code.

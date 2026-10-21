@@ -1,5 +1,8 @@
 # MCR-ALS and Curve Resolution
 
+!!! abstract "Summary"
+    MCR-ALS and curve resolution: separating mixture spectra into component spectra and concentration profiles without pure references. Requires the optional SpectroChemPy add-on.
+
 Multivariate Curve Resolution by Alternating Least Squares estimates component spectra and concentration-like profiles from mixture data, without reference spectra for the pure components.
 
 MCR-ALS, EFA, and SIMPLISMA run through the optional SpectroChemPy runtime: install with `spectra-sherpa[scp]` (see [Optional SpectroChemPy Nodes](../nodes/spectrochempy.md)).

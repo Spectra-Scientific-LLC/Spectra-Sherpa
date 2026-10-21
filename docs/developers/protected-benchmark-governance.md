@@ -1,5 +1,8 @@
 # Protected Benchmark Governance
 
+!!! abstract "Summary"
+    For maintainers: the governance contract for protected benchmarks — published rules without publishing the protected data.
+
 SpectraSherpa publishes the governance contract for protected benchmarks
 without publishing the protected spectra, labels, sample metadata, storage
 locations, or credentials. This keeps validation claims inspectable while

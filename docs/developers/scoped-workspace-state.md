@@ -1,5 +1,8 @@
 # Scoped workspace state
 
+!!! abstract "Summary"
+    For developers: how asynchronous work stays bound to the user, project, and object that started it — no stale responses overwriting current work.
+
 Asynchronous work belongs to the user session, project and object that started
 it. Changing selection must not let an older response restore another dataset,
 sheet or run. The frontend uses the existing Pinia stores and one request

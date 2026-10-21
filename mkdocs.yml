@@ -4,111 +4,112 @@ repo_url: https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa
 repo_name: Spectra-Scientific-LLC/Spectra-Sherpa
 edit_uri: edit/main/docs/
 nav:
-  - Introduction:
+  - 1. Introduction:
       - What SpectraSherpa Is: index.md
-      - Local OSS and hosted boundaries: introduction/cloud-vs-local.md
-      - Current Capabilities: introduction/capabilities.md
-      - Supported File Types: introduction/file-types.md
-      - License: introduction/license.md
-  - Concepts:
-      - Glossary: concepts/glossary.md
-  - Onboarding:
-      - Choose Your Path: onboarding/choose-your-path.md
-      - Start from a Goal: onboarding/starter.md
-      - Local onboarding: onboarding/local-30-minutes.md
-      - Import Your First Dataset: onboarding/import-first-dataset.md
-      - Your First Calibration: onboarding/first-calibration.md
-      - Scientific Assistance: onboarding/scientific-assistance.md
-      - Canonical Workflows from Python: onboarding/python-canonical-workflows.md
-      - Migrate to 0.6: onboarding/migrate-to-0.6.md
-  - Releases:
-      - SpectraSherpa 0.6.3: releases/0.6.3.md
-      - SpectraSherpa 0.6.2: releases/0.6.2.md
-      - SpectraSherpa 0.6.1: releases/0.6.1.md
-      - SpectraSherpa 0.6.0: releases/0.6.0.md
-  - Support:
-      - Desktop Downloads and Installation: support/local_install.md
-      - Privacy Statement: support/privacy.md
-      - "Privacy Summary: Windows": support/privacy-windows.md
-  - Data Workflows:
-      - Data Import: workflows/data-import.md
-      - Datasets and Providers: workflows/datasets-and-providers.md
-      - Projects, Datasets, and Runs: workflows/projects-datasets-runs.md
-      - Preprocessing Spectra: workflows/preprocessing.md
-      - Reports and Exports: workflows/reports-exports.md
-      - Compare Calibration Workflows: workflows/optimize-saved-result.md
-      - Reference Libraries and Synthesis: workflows/references-synthesis.md
-  - Chemometrics:
+      - 1.1. Local OSS and Hosted Boundaries: introduction/cloud-vs-local.md
+      - 1.2. Current Capabilities: introduction/capabilities.md
+      - 1.3. Supported File Types: introduction/file-types.md
+      - 1.4. License: introduction/license.md
+  - 2. Getting Started:
+      - 2.1. Choose Your Path: onboarding/choose-your-path.md
+      - 2.2. Start from a Goal: onboarding/starter.md
+      - 2.3. Install Locally (30 minutes): onboarding/local-30-minutes.md
+      - 2.4. Import Your First Dataset: onboarding/import-first-dataset.md
+      - 2.5. Your First Calibration: onboarding/first-calibration.md
+      - 2.6. Scientific Assistance: onboarding/scientific-assistance.md
+      - 2.7. Canonical Workflows from Python: onboarding/python-canonical-workflows.md
+      - 2.8. Migrate to 0.6: onboarding/migrate-to-0.6.md
+  - 3. Working with Data:
+      - 3.1. Build a Workflow on the Canvas: workflows/build-a-workflow.md
+      - 3.2. Data Import: workflows/data-import.md
+      - 3.3. Datasets and Providers: workflows/datasets-and-providers.md
+      - 3.4. Projects, Datasets, and Runs: workflows/projects-datasets-runs.md
+      - 3.5. Preprocessing Spectra: workflows/preprocessing.md
+      - 3.6. Reports and Exports: workflows/reports-exports.md
+      - 3.7. Compare Calibration Workflows: workflows/optimize-saved-result.md
+      - 3.8. Reference Libraries and Synthesis: workflows/references-synthesis.md
+  - 4. Chemometrics Guide:
       - Overview: chemometrics/index.md
-      - PCA and Exploratory Analysis: chemometrics/pca.md
-      - PLS Calibration: chemometrics/pls.md
-      - Classification: chemometrics/classification.md
-      - SIMCA QC: chemometrics/simca.md
-      - MCR-ALS and Curve Resolution: chemometrics/mcr-als.md
-      - Peak Finding and Library Comparison: chemometrics/peaks-library.md
-      - Designing Validation: chemometrics/validation-design.md
-      - Validation and Model Application: chemometrics/validation-application.md
-      - Compare Results and Review a Model: chemometrics/comparison-and-promotion.md
-  - Node Library:
-      - Overview: nodes/index.md
-      - Data Nodes: nodes/data.md
-      - Preprocessing Nodes: nodes/preprocessing.md
-      - Exploratory Nodes: nodes/exploratory.md
-      - Regression Nodes: nodes/regression.md
-      - Classification Nodes: nodes/classification.md
-      - Selection and Validation Nodes: nodes/selection-validation.md
-      - Output Nodes: nodes/output.md
-      - Optional SpectroChemPy Nodes: nodes/spectrochempy.md
-  - Templates:
+      - 4.1. PCA and Exploratory Analysis: chemometrics/pca.md
+      - 4.2. PLS Calibration: chemometrics/pls.md
+      - 4.3. Classification: chemometrics/classification.md
+      - 4.4. SIMCA QC: chemometrics/simca.md
+      - 4.5. MCR-ALS and Curve Resolution: chemometrics/mcr-als.md
+      - 4.6. Peak Finding and Library Comparison: chemometrics/peaks-library.md
+      - 4.7. Designing Validation: chemometrics/validation-design.md
+      - 4.8. Validation and Model Application: chemometrics/validation-application.md
+      - 4.9. Compare Results and Review a Model: chemometrics/comparison-and-promotion.md
+  - 5. Workflow Templates:
       - Templates: workflow-templates/index.md
-      - PCA Starter: workflow-templates/pca.md
-      - PLS Calibration Starter: workflow-templates/pls-calibration.md
-      - Classification Starters: workflow-templates/classification.md
-      - MCR-ALS Starter: workflow-templates/mcr-als.md
-      - Peak ID and Library Comparison: workflow-templates/peaks-library.md
-  - Architecture:
+      - 5.1. PCA Starter: workflow-templates/pca.md
+      - 5.2. PLS Calibration Starter: workflow-templates/pls-calibration.md
+      - 5.3. Classification Starters: workflow-templates/classification.md
+      - 5.4. MCR-ALS Starter: workflow-templates/mcr-als.md
+      - 5.5. Peak ID and Library Comparison: workflow-templates/peaks-library.md
+  - 6. Node Library:
+      - Overview: nodes/index.md
+      - 6.1. Data Nodes: nodes/data.md
+      - 6.2. Preprocessing Nodes: nodes/preprocessing.md
+      - 6.3. Exploratory Nodes: nodes/exploratory.md
+      - 6.4. Regression Nodes: nodes/regression.md
+      - 6.5. Classification Nodes: nodes/classification.md
+      - 6.6. Selection and Validation Nodes: nodes/selection-validation.md
+      - 6.7. Output Nodes: nodes/output.md
+      - 6.8. Optional SpectroChemPy Nodes: nodes/spectrochempy.md
+  - 7. Concepts:
+      - 7.1. Glossary: concepts/glossary.md
+  - 8. Releases:
+      - 8.1. SpectraSherpa 0.6.3: releases/0.6.3.md
+      - 8.2. SpectraSherpa 0.6.2: releases/0.6.2.md
+      - 8.3. SpectraSherpa 0.6.1: releases/0.6.1.md
+      - 8.4. SpectraSherpa 0.6.0: releases/0.6.0.md
+  - 9. Support:
+      - 9.1. Desktop Downloads and Installation: support/local_install.md
+      - 9.2. Privacy Statement: support/privacy.md
+      - "9.3. Privacy Summary: Windows": support/privacy-windows.md
+  - 10. Architecture:
       - System Overview: architecture/index.md
-      - Module Map: architecture/module-map.md
-      - Code Execution Boundary: architecture/code-execution-boundary.md
-      - SherpaDataset Foundation: architecture/sherpa-dataset.md
-      - Workflow Execution: architecture/workflows.md
-      - Model Artifacts: architecture/model-artifacts.md
-      - Export Design: architecture/export.md
-  - OSS Developers:
-      - Developer Setup: developers/setup.md
-      - Generated Contracts and References: developers/generated-contracts.md
-      - Scoped Workspace State: developers/scoped-workspace-state.md
-      - Contributing: developers/contributing.md
-      - Scientific Result Surface Contract: developers/scientific-result-surface-contract.md
-      - Analytical Qualification: developers/analytical-qualification.md
-      - Instrument QC: developers/instrument-qc.md
-      - PLS Applicability Screening: developers/pls-applicability-screening.md
-      - Prediction Uncertainty: developers/prediction-uncertainty.md
-      - Scientific Query Admission: developers/scientific-query-admission.md
-      - Adding a Scientific Node: developers/adding-a-node.md
-      - LLM Provider Extension: developers/llm-provider.md
-      - SDK Validation Contract: developers/sdk-validation.md
-      - Portable Workflow Contract: developers/sdk-workflow.md
-      - Executable Workflow Capsules: developers/workflow-capsule.md
-      - Public Reproducibility Benchmark: developers/public-benchmark.md
-      - Protected Benchmark Governance: developers/protected-benchmark-governance.md
-      - Testing and Release Hygiene: developers/testing-release.md
-      - Windows Portability: developers/windows-portability.md
-      - Windows and macOS Signing Runbook: developers/native-desktop-release.md
-      - Ubuntu desktop release: developers/ubuntu-desktop-release.md
-  - Attributions:
+      - 10.1. Module Map: architecture/module-map.md
+      - 10.2. Code Execution Boundary: architecture/code-execution-boundary.md
+      - 10.3. SherpaDataset Foundation: architecture/sherpa-dataset.md
+      - 10.4. Workflow Execution: architecture/workflows.md
+      - 10.5. Model Artifacts: architecture/model-artifacts.md
+      - 10.6. Export Design: architecture/export.md
+  - 11. Developers:
+      - 11.1. Developer Setup: developers/setup.md
+      - 11.2. Generated Contracts and References: developers/generated-contracts.md
+      - 11.3. Scoped Workspace State: developers/scoped-workspace-state.md
+      - 11.4. Contributing: developers/contributing.md
+      - 11.5. Scientific Result Surface Contract: developers/scientific-result-surface-contract.md
+      - 11.6. Analytical Qualification: developers/analytical-qualification.md
+      - 11.7. Instrument QC: developers/instrument-qc.md
+      - 11.8. PLS Applicability Screening: developers/pls-applicability-screening.md
+      - 11.9. Prediction Uncertainty: developers/prediction-uncertainty.md
+      - 11.10. Scientific Query Admission: developers/scientific-query-admission.md
+      - 11.11. Adding a Scientific Node: developers/adding-a-node.md
+      - 11.12. LLM Provider Extension: developers/llm-provider.md
+      - 11.13. SDK Validation Contract: developers/sdk-validation.md
+      - 11.14. Portable Workflow Contract: developers/sdk-workflow.md
+      - 11.15. Executable Workflow Capsules: developers/workflow-capsule.md
+      - 11.16. Public Reproducibility Benchmark: developers/public-benchmark.md
+      - 11.17. Protected Benchmark Governance: developers/protected-benchmark-governance.md
+      - 11.18. Testing and Release Hygiene: developers/testing-release.md
+      - 11.19. Windows Portability: developers/windows-portability.md
+      - 11.20. Windows and macOS Signing Runbook: developers/native-desktop-release.md
+      - 11.21. Ubuntu desktop release: developers/ubuntu-desktop-release.md
+  - 12. Attributions:
       - Scientific and Software Attributions: attributions/index.md
-      - Scientific Python: attributions/scientific-python.md
-      - SpectroChemPy: attributions/spectrochempy.md
-      - Eigenvector Research: attributions/eigenvector.md
-      - NIST: attributions/nist.md
-      - HITRAN and HAPI: attributions/hitran.md
-      - Bruker OPUS: attributions/brukeropus.md
-      - Native OMNIC: attributions/native-omnic.md
-      - Native SPC: attributions/native-spc.md
-      - Native WDF: attributions/native-wdf.md
-      - Open Specy: attributions/open-specy.md
-      - OPUSReader2: attributions/opusreader2.md
+      - 12.1. Scientific Python: attributions/scientific-python.md
+      - 12.2. SpectroChemPy: attributions/spectrochempy.md
+      - 12.3. Eigenvector Research: attributions/eigenvector.md
+      - 12.4. NIST: attributions/nist.md
+      - 12.5. HITRAN and HAPI: attributions/hitran.md
+      - 12.6. Bruker OPUS: attributions/brukeropus.md
+      - 12.7. Native OMNIC: attributions/native-omnic.md
+      - 12.8. Native SPC: attributions/native-spc.md
+      - 12.9. Native WDF: attributions/native-wdf.md
+      - 12.10. Open Specy: attributions/open-specy.md
+      - 12.11. OPUSReader2: attributions/opusreader2.md
 theme:
   name: material
   logo: assets/ss-logo.png
@@ -132,6 +133,9 @@ theme:
     - search.highlight
     - search.suggest
     - content.action.edit
+    - navigation.footer
+    - toc.follow
+    - content.code.copy
 extra_css:
   - styles/site.css
 plugins:

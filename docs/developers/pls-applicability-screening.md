@@ -1,5 +1,8 @@
 # Portable PLS applicability screening
 
+!!! abstract "Summary"
+    For developers: how a saved PLS model can provisionally screen new observations, and the limits of that screening.
+
 Canonical SIMPLS state serializer 9 retains the numerical basis for provisional
 screening of new observations. It does not establish analytical qualification,
 independent validation coverage, or an instrument acceptance policy.

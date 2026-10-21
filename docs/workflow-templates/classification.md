@@ -1,5 +1,8 @@
 # Classification Starters
 
+!!! abstract "Summary"
+    The classification starters (KNN, PLS-DA, SIMCA): what each contains and how to pick between them.
+
 Classification starters cover KNN, PLS-DA, and SIMCA workflows.
 
 ## When To Use Them

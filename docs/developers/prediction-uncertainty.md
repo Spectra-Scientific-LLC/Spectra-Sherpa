@@ -1,5 +1,8 @@
 # Reference measurements and prediction intervals
 
+!!! abstract "Summary"
+    For developers: the optional prediction-interval product for frozen PLS pipelines — what it adds beyond point predictions.
+
 Prediction intervals are an optional, separate calibration product for a frozen
 canonical PLS application pipeline. A fitted model alone produces **point
 predictions only**. An interval record never changes the model or its signed

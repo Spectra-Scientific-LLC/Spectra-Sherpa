@@ -1,5 +1,8 @@
 # System Overview
 
+!!! abstract "Summary"
+    How SpectraSherpa is structured, in one page: the local app, the workflow engine, and where hosted services attach. For curious users and new developers.
+
 SpectraSherpa is a local-first spectroscopy platform with extension points for hosted services.
 
 ## Main Layers

@@ -1,5 +1,8 @@
 # Canonical Workflow Capsules
 
+!!! abstract "Summary"
+    For SDK users: the canonical workflow capsule format accepted by `ss.workflow.load` — one portable scientific contract.
+
 `ss.workflow.load(...)` accepts one portable scientific contract: the current
 canonical typed-DAG capsule (`spectra-canonical-workflow-capsule/4`). Prototype
 PLS capsules and transitional canonical versions are rejected without
