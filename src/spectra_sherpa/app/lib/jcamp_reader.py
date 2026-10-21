@@ -30,6 +30,7 @@ from spectra_sherpa.ingestion_errors import ParserLimitError
 
 _JCAMP_EXTENSIONS = {".jdx", ".dx", ".jcamp"}
 _MAX_JCAMP_DATA_LINE_CHARACTERS = 64 * 1024
+NIST_QUANT_IR_AXIS_POLICY = "nist-quant-ir-fixed-grid-v1"
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,7 @@ def _decode_packed_token(token: str) -> tuple[str, float]:
 class JCAMPData:
     """Parsed JCAMP-DX file contents."""
 
-    __slots__ = ("x", "y", "headers", "title", "xunits", "yunits", "data_type")
+    __slots__ = ("x", "y", "headers", "title", "xunits", "yunits", "data_type", "axis_reconciliation")
 
     def __init__(
         self,
@@ -187,6 +188,7 @@ class JCAMPData:
         xunits: str,
         yunits: str,
         data_type: str,
+        axis_reconciliation: dict[str, Any] | None = None,
     ) -> None:
         self.x = x
         self.y = y
@@ -195,6 +197,7 @@ class JCAMPData:
         self.xunits = xunits
         self.yunits = yunits
         self.data_type = data_type
+        self.axis_reconciliation = axis_reconciliation
 
 
 def count_declared_jcamp_points(text: str) -> int:
@@ -271,7 +274,7 @@ def read_jcamp(filepath: str | Path) -> JCAMPData:
     return parse_jcamp(text)
 
 
-def parse_jcamp(text: str) -> JCAMPData:
+def parse_jcamp(text: str, *, axis_policy: str = "strict") -> JCAMPData:
     """
     Parse JCAMP-DX content from a string.
 
@@ -285,6 +288,9 @@ def parse_jcamp(text: str) -> JCAMPData:
     JCAMPData
         Parsed spectral data with headers and axis information.
     """
+    if axis_policy not in {"strict", NIST_QUANT_IR_AXIS_POLICY}:
+        raise ValueError("Unknown JCAMP axis policy")
+    reconciliation: dict[str, Any] = {}
     headers: dict[str, str] = {}
     data_lines: list[str] = []
     data_format: str | None = None
@@ -325,11 +331,23 @@ def parse_jcamp(text: str) -> JCAMPData:
         raise ValueError("No XYDATA, XYPOINTS, or PEAK TABLE block found in JCAMP-DX file")
 
     # Parse scaling factors
+    if axis_policy == NIST_QUANT_IR_AXIS_POLICY:
+        for key in ("XFACTOR", "YFACTOR"):
+            factor = float(headers.get(key, "1"))
+            if not np.isfinite(factor) or factor <= 0 or (key == "XFACTOR" and factor != 1):
+                raise ValueError("NIST reconciliation requires unscaled wavenumbers and positive finite YFACTOR")
     xfactor = _safe_float(headers.get("XFACTOR", "1.0"), 1.0)
     yfactor = _safe_float(headers.get("YFACTOR", "1.0"), 1.0)
 
     if data_format == "XYDATA":
-        x, y = _parse_xydata(data_lines, headers, xfactor or 1.0, yfactor or 1.0)
+        x, y = _parse_xydata(
+            data_lines,
+            headers,
+            xfactor or 1.0,
+            yfactor or 1.0,
+            axis_policy=axis_policy,
+            reconciliation=reconciliation,
+        )
     elif data_format in ("XYPOINTS", "PEAK TABLE"):
         x, y = _parse_xypoints(data_lines, xfactor or 1.0, yfactor or 1.0)
     else:
@@ -348,6 +366,7 @@ def parse_jcamp(text: str) -> JCAMPData:
         xunits=xunits,
         yunits=yunits,
         data_type=data_type,
+        axis_reconciliation=reconciliation or None,
     )
 
 
@@ -356,6 +375,9 @@ def _parse_xydata(
     headers: dict[str, str],
     xfactor: float,
     yfactor: float,
+    *,
+    axis_policy: str = "strict",
+    reconciliation: dict[str, Any] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Parse ``(X++(Y..Y))`` compressed format.
@@ -367,6 +389,21 @@ def _parse_xydata(
     lastx = _safe_float(headers.get("LASTX"), None)
     npoints = _safe_int(headers.get("NPOINTS"), None)
     deltax = _safe_float(headers.get("DELTAX"), None)
+    nist_policy = axis_policy == NIST_QUANT_IR_AXIS_POLICY
+    if nist_policy:
+        if (
+            firstx is None
+            or lastx is None
+            or npoints is None
+            or npoints < 2
+            or deltax is None
+            or not np.isfinite([firstx, lastx, deltax, xfactor, yfactor]).all()
+            or xfactor != 1.0
+            or yfactor <= 0
+            or not re.fullmatch(r"[0-9]+", headers.get("NPOINTS", ""))
+            or headers.get("XUNITS", "").upper() not in {"CM-1", "CM^-1", "1/CM"}
+        ):
+            raise ValueError("NIST axis reconciliation requires complete finite wavenumber-grid declarations")
 
     # Collect all Y values. DIF tokens encode deltas from the previous Y value
     # and DUP tokens repeat the last delta, so decoding must carry state across
@@ -393,7 +430,7 @@ def _parse_xydata(
         if expected_x is not None and not np.isclose(line_x, expected_x, rtol=1e-5, atol=1e-8):
             checkpoint_mismatch_count += 1
             logger.debug(
-                "JCAMP XYDATA checkpoint mismatch: expected %g, got %g; using explicit line checkpoint",
+                "JCAMP XYDATA checkpoint mismatch: expected %g, got %g; validating declared grid",
                 expected_x,
                 line_x,
             )
@@ -427,8 +464,8 @@ def _parse_xydata(
 
     if checkpoint_mismatch_count:
         logger.info(
-            "JCAMP XYDATA used explicit line checkpoints for %d line(s) because header FIRSTX/DELTAX "
-            "does not match the data line checkpoints.",
+            "JCAMP XYDATA has %d line checkpoints inconsistent with header FIRSTX/DELTAX; "
+            "fixed-grid validation follows.",
             checkpoint_mismatch_count,
         )
 
@@ -442,6 +479,29 @@ def _parse_xydata(
     if n == 0:
         raise ValueError("No data points parsed from XYDATA block")
 
+    x = _xydata_axis(headers, xfactor, checkpoints, all_x, n, axis_policy=axis_policy, reconciliation=reconciliation)
+    y = np.array(all_y, dtype=np.float64)
+    if nist_policy and not np.isfinite(y).all():
+        raise ValueError("NIST spectrum contains non-finite intensity values")
+    return x, y
+
+
+def _xydata_axis(
+    headers: dict[str, str],
+    xfactor: float,
+    checkpoints: list[tuple[int, float]],
+    all_x: list[float],
+    n: int,
+    *,
+    axis_policy: str,
+    reconciliation: dict[str, Any] | None,
+) -> np.ndarray:
+    """Resolve the declared axis once; provider exceptions remain explicit."""
+    firstx = _safe_float(headers.get("FIRSTX"), None)
+    lastx = _safe_float(headers.get("LASTX"), None)
+    npoints = _safe_int(headers.get("NPOINTS"), None)
+    deltax = _safe_float(headers.get("DELTAX"), None)
+    nist_policy = axis_policy == NIST_QUANT_IR_AXIS_POLICY
     # A complete fixed-grid declaration is the strongest axis authority for
     # X++(Y..Y): it carries both endpoints and exact cardinality. Supplier
     # writers commonly round DELTAX and line checkpoints independently, so
@@ -456,19 +516,54 @@ def _parse_xydata(
         global_step = (lastx - firstx) / (n - 1)
         if not np.isfinite(global_step) or global_step == 0:
             raise ValueError("JCAMP fixed-grid endpoints do not define a finite monotonic axis")
+        # Explicit provider exception, never inferred from file headers. The
+        # tested NIST writer shifts checkpoints by one sample and rounds DELTAX
+        # inconsistently. Permit at most one interval plus 1% for text rounding;
+        # larger shifts, reversed checkpoints and malformed grids still refuse.
+        provider_bound = abs(global_step) * 1.01
+        delta_drift = 0.0 if deltax is None else abs(deltax - global_step) * (n - 1)
         if deltax is not None:
             declared_tolerance = max(
                 _numeric_text_resolution(headers.get("DELTAX")),
                 abs(global_step) * 1e-12,
             )
-            if abs(deltax - global_step) > declared_tolerance:
+            if nist_policy and (deltax * global_step <= 0 or delta_drift > provider_bound):
+                raise ValueError("NIST DELTAX drift exceeds the one-interval reconciliation bound")
+            if not nist_policy and abs(deltax - global_step) > declared_tolerance:
                 raise ValueError("JCAMP DELTAX contradicts FIRSTX/LASTX/NPOINTS fixed grid")
         checkpoint_tolerance = abs(global_step) * 0.05
+        max_checkpoint_error = 0.0
+        previous_checkpoint = None
         for point_index, checkpoint in checkpoints:
             expected = firstx + point_index * global_step
-            if not np.isfinite(checkpoint) or abs(checkpoint - expected) > checkpoint_tolerance:
+            error = abs(checkpoint - expected)
+            bound = provider_bound if nist_policy else checkpoint_tolerance
+            if not np.isfinite(checkpoint) or error > bound:
                 raise ValueError("JCAMP XYDATA line checkpoint contradicts the declared fixed grid")
+            if nist_policy and (
+                (point_index == 0 and error > abs(global_step) * 0.01)
+                or (previous_checkpoint is not None and (checkpoint - previous_checkpoint) * global_step <= 0)
+            ):
+                raise ValueError("NIST line checkpoints do not preserve the declared origin and direction")
+            max_checkpoint_error = max(max_checkpoint_error, error)
+            previous_checkpoint = checkpoint
         x = np.linspace(firstx * xfactor, lastx * xfactor, n, dtype=np.float64)
+        if nist_policy and reconciliation is not None:
+            reconciliation.update(
+                {
+                    "policy": NIST_QUANT_IR_AXIS_POLICY,
+                    "axis_authority": "FIRSTX/LASTX/NPOINTS",
+                    "original_declarations": {
+                        key: headers[key] for key in ("FIRSTX", "LASTX", "NPOINTS", "DELTAX", "XUNITS")
+                    },
+                    "resolved_step": global_step,
+                    "max_checkpoint_error": max_checkpoint_error,
+                    "declared_step_endpoint_drift": delta_drift,
+                    "maximum_allowed_error": provider_bound,
+                    "checkpoint_count": len(checkpoints),
+                    "values_reordered_or_interpolated": False,
+                }
+            )
     elif complete_grid and n == 1:
         assert firstx is not None and lastx is not None
         if not np.isclose(firstx, lastx, rtol=0.0, atol=_numeric_text_resolution(headers.get("LASTX"))):
@@ -483,8 +578,7 @@ def _parse_xydata(
     else:
         x = np.arange(n, dtype=np.float64)
 
-    y = np.array(all_y, dtype=np.float64)
-    return x, y
+    return x
 
 
 def _numeric_text_resolution(value: object) -> float:

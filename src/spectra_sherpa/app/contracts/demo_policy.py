@@ -13,6 +13,11 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
+# Closed provider identifiers eligible for server-attested synthesis. This is
+# not permission to upload arrays: the host must attest acquisition and verify
+# the actor-bound receipt before preview, synthesis, save and execution.
+MANAGED_SYNTHESIS_SOURCES = frozenset({"hitran", "hitran_xsec", "nist_quant_ir"})
+
 
 class DemoPolicy:
     """Read-only snapshot of demo restrictions.

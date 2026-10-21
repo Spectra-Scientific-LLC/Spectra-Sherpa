@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
-from spectra_sherpa.app.contracts.demo_policy import run_managed_synthesis
+from spectra_sherpa.app.contracts.demo_policy import MANAGED_SYNTHESIS_SOURCES, run_managed_synthesis
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.security import check_egress_permission
 from spectra_sherpa.app.db.session import async_session
@@ -46,8 +46,8 @@ _HITRAN_SOURCES = {"hitran", "hitran_xsec"}
 
 
 def _require_source(source: str) -> None:
-    if app_config.site_profile == "demo" and source not in _HITRAN_SOURCES:
-        raise HTTPException(status_code=403, detail="Demo synthesis supports HITRAN sources only")
+    if app_config.site_profile == "demo" and source not in MANAGED_SYNTHESIS_SOURCES:
+        raise HTTPException(status_code=403, detail="Demo synthesis requires an approved spectral provider")
 
 
 async def _attest_spectrum(spectrum, session, user, *, temperature_k, pressure_atm):
@@ -113,7 +113,7 @@ async def _check_synthesis_egress(
 async def list_synthesis_sources() -> SynthesisSourcesResponse:
     sources = synthesis_service.list_sources()
     if app_config.site_profile == "demo":
-        sources = [item for item in sources if item["id"] in _HITRAN_SOURCES]
+        sources = [item for item in sources if item["id"] in MANAGED_SYNTHESIS_SOURCES]
     return SynthesisSourcesResponse(sources=sources)
 
 

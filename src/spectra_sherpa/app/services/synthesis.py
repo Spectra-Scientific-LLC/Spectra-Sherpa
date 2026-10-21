@@ -30,6 +30,7 @@ from spectra_sherpa.app.core.path_security import resolve_existing_file_path
 from spectra_sherpa.app.lib import synthetic_npz
 from spectra_sherpa.app.lib.axes import SpectralAxis
 from spectra_sherpa.app.lib.curves import evaluate_catmull_rom_samples
+from spectra_sherpa.app.lib.jcamp_reader import NIST_QUANT_IR_AXIS_POLICY
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
 from spectra_sherpa.app.lib.wavenumber_grid import (
     SAME_GRID_EPS_CM1,
@@ -1483,7 +1484,7 @@ async def _get_nist_component_spectrum(
         await _download_nist_quant_ir_jcamp(summary.cas, index=index, destination=staged_path)
     source_path = cache_path if staged_path is None else staged_path
     try:
-        ingested = ingest(source_path)
+        ingested = ingest(source_path, parser_options={"axis_policy": NIST_QUANT_IR_AXIS_POLICY})
         if ingested.format_id != "jcamp-dx" or ingested.variant != "dx-text" or len(ingested.assets) != 1:
             raise SynthesisError("NIST did not return exactly one JCAMP-DX spectrum")
         dataset = ingested.assets[0].dataset
@@ -1511,6 +1512,12 @@ async def _get_nist_component_spectrum(
         resolution_cm1=variant.resolution_cm1,
         apodization=variant.apodization,
         cached=cached,
+        metadata={
+            "source_sha256": ingested.source_members[0].sha256,
+            "jcamp_headers": dict(dataset.extra.get("jcamp.headers", {})),
+            "axis_reconciliation": dataset.extra.get("jcamp.axis_reconciliation"),
+            "ingestion_warnings": list(ingested.warnings),
+        },
     )
 
 
@@ -2753,6 +2760,11 @@ def _build_recipe(
                 "concentration_max_ppm": component.concentration_max_ppm,
                 "control_points": [point.model_dump() for point in component.control_points],
                 "spectrum_units": _component_units(component.spectrum),
+                "source_provenance": {
+                    key: component.spectrum.metadata[key]
+                    for key in ("source_sha256", "jcamp_headers", "axis_reconciliation", "ingestion_warnings")
+                    if key in component.spectrum.metadata
+                },
             }
             for component in request.components
         ],

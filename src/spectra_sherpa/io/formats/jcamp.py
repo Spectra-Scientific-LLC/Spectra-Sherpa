@@ -8,7 +8,12 @@ from pathlib import Path
 import numpy as np
 
 from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
-from spectra_sherpa.app.lib.jcamp_reader import JCAMPData, count_declared_jcamp_points, parse_jcamp
+from spectra_sherpa.app.lib.jcamp_reader import (
+    NIST_QUANT_IR_AXIS_POLICY,
+    JCAMPData,
+    count_declared_jcamp_points,
+    parse_jcamp,
+)
 from spectra_sherpa.app.lib.sherpa_dataset import DomainContext, SherpaDataset
 from spectra_sherpa.ingestion_errors import ParserLimitError, UnreadableSpectrumError, UnsupportedFormatVariantError
 from spectra_sherpa.io.base import BoundedSource
@@ -72,7 +77,11 @@ def _dataset(jcamp: JCAMPData, *, source_name: Path) -> SherpaDataset:
         ),
         title=title,
         units=_optional_text(jcamp.yunits),
-        extra={"jcamp.data_type": jcamp.data_type, "jcamp.headers": dict(jcamp.headers)},
+        extra={
+            "jcamp.data_type": jcamp.data_type,
+            "jcamp.headers": dict(jcamp.headers),
+            **({"jcamp.axis_reconciliation": jcamp.axis_reconciliation} if jcamp.axis_reconciliation else {}),
+        },
         data_role="X_spectra",
     )
 
@@ -83,7 +92,7 @@ class JcampPlugin:
     description = "Open spectroscopy interchange format"
     extensions = (".jdx", ".dx", ".jcamp")
     parser_id = "spectrasherpa.jcamp"
-    parser_version = "2"
+    parser_version = "3"
 
     def probe(self, source: BoundedSource) -> ProbeResult:
         prefix = source.probe_prefix()
@@ -109,8 +118,9 @@ class JcampPlugin:
         limits: ParserLimits,
         parser_options: Mapping[str, str] | None = None,
     ) -> IngestionResult:
-        if parser_options:
-            raise UnsupportedFormatVariantError("JCAMP-DX does not admit parser options")
+        if parser_options and dict(parser_options) != {"axis_policy": NIST_QUANT_IR_AXIS_POLICY}:
+            raise UnsupportedFormatVariantError("JCAMP-DX admits only explicit NIST Quant IR axis reconciliation")
+        axis_policy = NIST_QUANT_IR_AXIS_POLICY if parser_options else "strict"
         try:
             require_jcamp_working_set(
                 source_bytes=source.size_bytes,
@@ -127,7 +137,7 @@ class JcampPlugin:
                 limits=limits,
                 format_id=self.format_id,
             )
-            dataset = _dataset(parse_jcamp(text), source_name=source.path)
+            dataset = _dataset(parse_jcamp(text, axis_policy=axis_policy), source_name=source.path)
         except ParserLimitError:
             raise
         except Exception as exc:
@@ -139,6 +149,11 @@ class JcampPlugin:
             variant="dx-text",
             parser_id=self.parser_id,
             parser_version=self.parser_version,
+            warnings=(
+                ("NIST axis reconciled from FIRSTX/LASTX/NPOINTS; original declarations and discrepancies retained.",)
+                if dataset.extra.get("jcamp.axis_reconciliation")
+                else ()
+            ),
             assets=(
                 dataset_asset(
                     dataset,
