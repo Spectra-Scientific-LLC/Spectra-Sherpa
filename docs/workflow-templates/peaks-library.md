@@ -1,5 +1,8 @@
 # Peak ID and Library Comparison
 
+!!! abstract "Summary"
+    The peak-identification and library-comparison path: from spectra to bands, tentative assignments, and reference evidence.
+
 Use this interpretation path when you want to connect spectra back to local
 bands, tentative chemical assignments, and reference-spectrum evidence.
 

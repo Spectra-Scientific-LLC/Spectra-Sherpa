@@ -1,5 +1,9 @@
 # Migrate to SpectraSherpa 0.6
 
+!!! abstract "Summary"
+    For users of versions before 0.6: what changed, what you must update
+    (saved workflows, models and data), and the order to do it in.
+
 > **Scope.** This guide explains the breaking transition from pre-0.6 data and
 > workflows. The current documentation targets the unreleased v0.6.4 candidate.
 > Follow [Local onboarding](local-30-minutes.md) to install an exact source

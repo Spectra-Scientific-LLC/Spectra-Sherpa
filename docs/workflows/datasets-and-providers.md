@@ -1,5 +1,8 @@
 # Datasets and Providers
 
+!!! abstract "Summary"
+    Where datasets come from (your files, built-in examples, provider references you download yourself) and the rules that keep every dataset inspectable and traceable regardless of source.
+
 SpectraSherpa keeps the scientific dataset independent of the route by which
 its source arrived. Once loaded, the same dataset supports
 inspection, masking, workflows, provenance, and export.

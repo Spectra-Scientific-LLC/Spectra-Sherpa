@@ -1,5 +1,8 @@
 # Windows portability for scientific files and evidence
 
+!!! abstract "Summary"
+    For developers: the contract for code that must behave identically on Windows, macOS, and Linux.
+
 This is the reusable developer contract for code that runs on Windows, macOS
 and Linux. It was established while correcting the Windows failures found by
 the v0.6 cohesion qualification. A passing Unix suite does not establish Windows

@@ -1,5 +1,8 @@
 # Scientific browser acceptance
 
+!!! abstract "Summary"
+    For maintainers: the browser journeys that qualify what a scientist can actually inspect — beyond "the run completed".
+
 These journeys qualify **what a scientist can inspect**, not merely whether a
 workflow returned `completed`. They run against the production frontend and a
 real disposable local backend. API calls arrange projects, import sources and

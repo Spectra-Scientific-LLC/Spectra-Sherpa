@@ -1,5 +1,8 @@
 # PCA Starter
 
+!!! abstract "Summary"
+    The PCA starter: the recommended first workflow for any new spectral dataset. What it contains, what to look at, and what to do next.
+
 Use the PCA starter as the first workflow for most spectral datasets.
 
 ## When To Use It

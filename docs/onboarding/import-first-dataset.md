@@ -1,5 +1,8 @@
 # Import Your First Dataset
 
+!!! abstract "Summary"
+    How to bring your first file into the app, what makes a good first dataset (10–50 spectra), and how to check that axes, values, and metadata were read correctly before you trust them.
+
 Start with a small, representative FTIR, NIR, Raman, or UV-VIS dataset. Ten to fifty spectra are enough to verify file reading, axes, metadata, and plots before you import a full calibration set.
 
 ## Recommended First Files

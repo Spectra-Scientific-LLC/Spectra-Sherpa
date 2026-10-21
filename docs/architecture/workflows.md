@@ -1,5 +1,8 @@
 # Workflow Execution
 
+!!! abstract "Summary"
+    How workflows execute: the graph model, node contracts, and what happens when you press Run. For SDK users and developers.
+
 SpectraSherpa workflows are directed graphs.
 
 ## Execution Flow

@@ -1,5 +1,8 @@
 # Selection and Validation Nodes
 
+!!! abstract "Summary"
+    Reference: nodes for choosing variables, splitting samples, and estimating reliability — cross-validation, variable selection, and component selection.
+
 Selection and validation nodes help choose variables, split samples, and estimate model reliability.
 
 ## Sample Partitioning

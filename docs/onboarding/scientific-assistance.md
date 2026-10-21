@@ -1,5 +1,11 @@
 # Scientific assistance during an analysis
 
+!!! abstract "Summary"
+    What the optional AI assistant does and does not do: workflows calculate
+    results from your data; the assistant helps you interpret them. In Local OSS
+    it is basic chat through a provider you configure. Its suggestions are
+    advisory; check them against your measurements.
+
 Scientific calculations and AI assistance have different roles. Workflows
 calculate results from your data and recorded settings. Sherpa helps you ask
 questions, interpret those results and decide what to examine next. Review its
@@ -68,5 +74,5 @@ validation design. AI can help translate a result; it cannot supply missing
 metadata, choose a defensible claim boundary, or certify a method.
 
 For local versus managed availability, see
-[Demo, Pro and local OSS](../introduction/cloud-vs-local.md). For experimental design,
+[Local OSS and hosted boundaries](../introduction/cloud-vs-local.md). For experimental design,
 see [Validation and Model Application](../chemometrics/validation-application.md).

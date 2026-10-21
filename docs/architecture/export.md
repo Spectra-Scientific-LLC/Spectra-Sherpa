@@ -1,5 +1,8 @@
 # Export Design
 
+!!! abstract "Summary"
+    How exports preserve values and context so results remain interpretable outside the app.
+
 Exports should preserve both values and context.
 
 ## What Export Is For

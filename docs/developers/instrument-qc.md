@@ -1,5 +1,8 @@
 # Instrument QC and maintenance evidence
 
+!!! abstract "Summary"
+    For developers: the report-only instrument QC monitoring contract for watched PLS applications — it never alters predictions.
+
 This is **report-only monitoring of declared control tolerances** for canonical
 PLS folder-watch applications. It never holds predictions, changes slope/bias,
 corrects a model, or represents statistical process control or laboratory

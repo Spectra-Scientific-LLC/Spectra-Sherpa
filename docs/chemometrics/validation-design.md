@@ -1,5 +1,8 @@
 # Designing Validation
 
+!!! abstract "Summary"
+    How to design a validation you can trust: train/test splits, cross-validation, keeping replicates of one specimen together, and why the design matters more than decimal places.
+
 Validation estimates how a model performs on samples it has not seen. For
 spectra, the design of the validation matters more than the number of decimal
 places in the metric: a poorly designed split can make a useless model look
@@ -19,6 +22,13 @@ replicate spectra of one specimen are highly correlated; putting one in
 training and one in test makes prediction artificially easy and inflates your
 estimated performance. This is the single most common source of over-optimistic
 chemometrics results.
+
+![Specimen holdout versus naive row splitting](../assets/specimen-holdout.png)
+
+*Illustrative synthetic data. Each label (S1–S8) is one specimen with three
+replicate spectra. Left: a naive row split leaks replicates of the same
+specimen into both sides. Right: a specimen-level holdout keeps every replicate
+together, so the test set is genuinely unseen.*
 
 ## Choose the design that matches your question
 

@@ -1,5 +1,8 @@
 # Exploratory Nodes
 
+!!! abstract "Summary"
+    Reference: nodes for exploring data without targets — PCA, clustering, peak finding, and related diagnostics.
+
 Exploratory nodes reveal structure before supervised modeling.
 
 ## PCA, Decomposition, and Curve Resolution

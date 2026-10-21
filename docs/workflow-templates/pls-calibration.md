@@ -1,5 +1,8 @@
 # PLS Calibration Starter
 
+!!! abstract "Summary"
+    The PLS calibration starter: from spectra with known target values to a validated predictive model with a held-out test set.
+
 Use the PLS calibration starter when spectra have quantitative target values.
 
 ## When To Use It

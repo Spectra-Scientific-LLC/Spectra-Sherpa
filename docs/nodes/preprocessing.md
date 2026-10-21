@@ -1,5 +1,8 @@
 # Preprocessing Nodes
 
+!!! abstract "Summary"
+    Reference: nodes that transform spectra before modeling — scatter correction, derivatives, smoothing, baseline handling, alignment, and clipping.
+
 Preprocessing nodes transform spectra before modeling.
 
 Most preprocessing nodes accept a `SpectralDataset` port and return a transformed `SpectralDataset` port. At runtime, those ports carry `SherpaDataset` objects with spectral axes and processing history, so reports and exported workflows can show what happened before modeling.

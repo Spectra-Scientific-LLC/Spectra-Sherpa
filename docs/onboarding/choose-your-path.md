@@ -1,5 +1,10 @@
 # Choose your working surface
 
+!!! abstract "Summary"
+    Pick a surface: the local Workbench, Python or Jupyter, or the desktop
+    application. All of them run the same scientific nodes, so your results do
+    not depend on which one you choose.
+
 The local Workbench and Python SDK use the same canonical scientific nodes.
 Choose a surface, not a different implementation of the calculation.
 

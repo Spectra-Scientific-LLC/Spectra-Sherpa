@@ -1,5 +1,10 @@
 # Current Capabilities
 
+!!! abstract "Summary"
+    What the v0.6.4 candidate can do, organized by scientific task, with what
+    to check before interpreting each result. Also lists the optional extras and
+    what the local package does not include.
+
 This page describes the **SpectraSherpa OSS v0.6.4 candidate (unreleased)**.
 Source availability, Python-package publication and desktop-installer publication
 are separate. See [installation](../onboarding/local-30-minutes.md).

@@ -1,5 +1,8 @@
 # Analytical qualification evidence
 
+!!! abstract "Summary"
+    For developers: how deploy-ready applications record qualification evidence, and why "deployable" is not "validated for intended use".
+
 A deploy-ready application is operationally usable. It is not thereby validated
 for a laboratory's intended use. Qualification records keep three authorities
 separate: computed validation evidence, operator declarations, and an explicit

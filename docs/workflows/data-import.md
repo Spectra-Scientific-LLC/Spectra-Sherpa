@@ -1,5 +1,8 @@
 # Data Import
 
+!!! abstract "Summary"
+    How data gets in: upload your own files, import curated reference datasets, generate synthetic spectra, or search the NIST/HITRAN libraries. Everything lands in My Dataset, which workflows read from. Includes what to check before trusting an import.
+
 The **Data** tab is where spectra enter SpectraSherpa. It turns your files, reference entries, examples, or generated spectra into a dataset that a workflow can analyze — and it makes the contents of that dataset visible before you commit to modeling.
 
 For the ownership and admission rules shared by local files, paid uploads,

@@ -1,5 +1,8 @@
 # Scientific Result Surface Contract
 
+!!! abstract "Summary"
+    For developers: the contract every scientific result surface (plot, table, report) must satisfy.
+
 For the surrounding page layout, subtabs, navigation and action placement, use
 the [GUI workspace design](gui-workspace-design.md). This contract continues to
 govern the scientific meaning of every surface within that arrangement.

@@ -1,5 +1,8 @@
 # SherpaDataset Foundation
 
+!!! abstract "Summary"
+    SherpaDataset: the single data container that flows through every workflow — spectra, axes, targets, metadata, and provenance. For SDK users and developers.
+
 `SherpaDataset` is the concrete data object passed through workflow nodes and exposed through the Python SDK. It is the runtime container for spectroscopy data, targets, axes, metadata, provenance, and domain context.
 
 The node library often says `SpectralDataset` in input and output tables. That name is a semantic port contract, not a separate Python class. A `SpectralDataset` port expects a `SherpaDataset` whose data role and feature axis describe spectra, such as FTIR/NIR wavenumbers, Raman shifts, or UV-Vis wavelengths.

@@ -1,5 +1,8 @@
 # Developer Setup
 
+!!! abstract "Summary"
+    Set up a development environment for the open-source package: prerequisites, install, and a first test run.
+
 Use this path for OSS development.
 
 ```bash

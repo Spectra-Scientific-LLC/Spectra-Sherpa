@@ -1,5 +1,8 @@
 # Classification Nodes
 
+!!! abstract "Summary"
+    Reference: nodes that assign samples to classes — KNN, PLS-DA, SIMCA, and their evaluation.
+
 Classification nodes assign spectra or feature rows to classes.
 
 ## Nodes

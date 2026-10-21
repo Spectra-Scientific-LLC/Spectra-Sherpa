@@ -1,5 +1,8 @@
 # Scientific query scope and active attention
 
+!!! abstract "Summary"
+    For developers: the rules governing how scientific questions are admitted and answered, one useful call per ordinary turn.
+
 ## One useful call per ordinary turn
 
 The first answer/proposal call also checks broad relevance. There is no preliminary

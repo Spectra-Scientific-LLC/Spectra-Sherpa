@@ -1,5 +1,8 @@
 # Spectra Sherpa for Windows: Privacy Summary
 
+!!! abstract "Summary"
+    A plain-language summary of the privacy statement as it applies to the Windows desktop app. If this summary and the full statement differ, the full statement governs.
+
 *Derived from the canonical [Spectra Sherpa (open source) Privacy
 Statement](privacy.md), Parts A and B. If the two differ, the canonical
 statement governs.*

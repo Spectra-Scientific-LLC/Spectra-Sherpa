@@ -1,5 +1,8 @@
 # Classification
 
+!!! abstract "Summary"
+    Classification methods (KNN, PLS-DA, SIMCA) and how to choose between them based on the question you are asking — including the difference between "which class?" and "does this sample belong at all?"
+
 SpectraSherpa includes several classification workflows. Choose by the shape of your question, not by habit:
 
 | Question | Method |

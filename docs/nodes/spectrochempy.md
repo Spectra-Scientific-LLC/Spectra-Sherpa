@@ -1,5 +1,8 @@
 # Optional SpectroChemPy Nodes
 
+!!! abstract "Summary"
+    Reference: optional nodes powered by SpectroChemPy (MCR-ALS, EFA, SIMPLISMA) — what they add, how to install the extra, and the current support limits.
+
 SpectroChemPy support is optional.
 
 > **Installation target.** These guides describe the unreleased v0.6.4

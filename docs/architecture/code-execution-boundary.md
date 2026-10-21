@@ -1,5 +1,8 @@
 # Code Execution Boundary
 
+!!! abstract "Summary"
+    What code SpectraSherpa will and will not run: only reviewed, built-in workflow nodes execute — no arbitrary plugins or downloaded code.
+
 SpectraSherpa OSS is a closed scientific application. It executes operations
 from the canonical node registry shipped in the installed SpectraSherpa
 release. It does not discover Python files in user directories, load plugin

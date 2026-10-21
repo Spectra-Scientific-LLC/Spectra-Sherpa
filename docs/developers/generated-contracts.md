@@ -1,5 +1,8 @@
 # Generated contracts and references
 
+!!! abstract "Summary"
+    For contributors: which files are generated from backend authorities (API types, node reference tables) and how to regenerate them instead of editing by hand.
+
 Backend schemas and node metadata own public transport and node-reference
 definitions. Generated files are projections, not new authorities. Frontend
 view models may remain handwritten where they express presentation state.

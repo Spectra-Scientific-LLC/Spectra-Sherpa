@@ -1,5 +1,8 @@
 # Reference Libraries and Synthesis
 
+!!! abstract "Summary"
+    Reference spectra and simulation tools: search NIST/HITRAN libraries, register downloaded reference files, and generate synthetic mixture spectra for teaching or method development.
+
 SpectraSherpa includes reference and synthesis workflows for infrared-oriented analysis.
 
 ## NIST Library

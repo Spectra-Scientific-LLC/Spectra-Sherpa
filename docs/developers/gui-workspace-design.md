@@ -1,5 +1,10 @@
 # OSS workspace presentation contract
 
+!!! abstract "Summary"
+    For contributors: the presentation contract for the local workspace
+    interface. It is not a roadmap or a release guarantee; installed behavior is
+    described in the user guides.
+
 This contributor reference governs changes to the local OSS interface.
 It is not a product roadmap or a guarantee that a proposed layout is released.
 For the installed application, use the versioned user guides.

@@ -1,5 +1,8 @@
 # Scientific and Software Attributions
 
+!!! abstract "Summary"
+    The open-source software and public data resources SpectraSherpa builds on, with citation guidance. Attribution is part of scientific traceability.
+
 SpectraSherpa builds on open-source scientific software and public scientific data resources. Attribution is part of scientific traceability: if a reader, algorithm, reference spectrum, or synthetic spectrum materially supports an analysis, cite the upstream resource as well as SpectraSherpa when appropriate.
 
 ## Software

@@ -1,5 +1,10 @@
 # PCA and Exploratory Analysis
 
+!!! abstract "Summary"
+    How to read a PCA model: scores, loadings, explained variance, Hotelling
+    T² and Q residuals, how many components to keep, and when to move on to PLS
+    or classification.
+
 Principal Component Analysis summarizes variation in a spectral matrix through a smaller set of components. It needs no response values and is useful for exploring sample structure, preprocessing effects, and unusual observations. Exploratory PCA does not establish predictive performance; component selection and outlier decisions still need a design appropriate to the scientific question.
 
 ## Use PCA For
@@ -23,6 +28,13 @@ Principal Component Analysis summarizes variation in a spectral matrix through a
 - **Loadings**: spectral variables contributing to each PC. A loading that looks like noise or a baseline artifact tells you the PC models an artifact, not chemistry.
 - **Explained variance / scree**: how much variance each PC captures.
 - **Hotelling T² and Q residuals**: T² measures distance *inside* the model plane (an unusual but explained sample); Q measures distance *to* the plane (a sample with structure the model does not capture). A high-Q sample is often the more alarming one — its spectrum does not look like the others at all.
+
+![Scores and loadings of a PCA model](../assets/pca-scores-loadings.png)
+
+*Illustrative synthetic data. Left: a score map — points are samples; clusters,
+gradients, and outliers live here. Right: a loading vector — peaks show which
+spectral regions drive the component; a loading that looks like noise means the
+component models an artifact, not chemistry.*
 
 ## Choosing the Number of Components
 

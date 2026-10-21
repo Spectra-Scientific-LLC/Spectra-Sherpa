@@ -1,5 +1,8 @@
 # Start from a goal
 
+!!! abstract "Summary"
+    The Starter tab turns a sentence about what you want to do into a suggested analysis, a compatible dataset, and a checklist that tracks your progress. It opens automatically the first time you use the app and is the easiest way to begin.
+
 The **Starter** tab, the first tab on the Dashboard, is for when you know what
 you want to do but not which screen to open. Open it from the Dashboard; local OSS requires no sign-in.
 

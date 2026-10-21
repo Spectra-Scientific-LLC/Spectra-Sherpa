@@ -1,5 +1,10 @@
 # Preprocessing Spectra
 
+!!! abstract "Summary"
+    The common preprocessing steps (scatter correction, derivatives,
+    smoothing, centering, region selection), a practical order to apply them,
+    and when each one helps or hurts.
+
 Preprocessing should make spectral variation easier to model without hiding scientific problems.
 
 ## Common Steps
@@ -10,6 +15,14 @@ Preprocessing should make spectral variation easier to model without hiding scie
 - normalization or scaling
 - mean centering or autoscaling before multivariate models
 - spectral region selection
+
+![The same spectra before and after SNV](../assets/preprocessing-snv.png)
+
+*Illustrative synthetic data. Left: raw spectra with offset and scale drift —
+the same chemistry at different baselines. Right: after Standard Normal Variate
+(SNV), each spectrum is centered and scaled to itself, so shape becomes
+comparable. Preprocessing like this helps when the drift is physical (scatter,
+path length), not chemical.*
 
 ## Practical Order
 

@@ -1,5 +1,8 @@
 # Reports and Exports
 
+!!! abstract "Summary"
+    Turn a finished run into something shareable: reports, tables, figures, and export files, with what each contains and how claims are scoped. Also covers short summaries and display/export defaults.
+
 Reports and exports are the bridge between an interactive workflow and a reusable scientific record.
 
 The application follows one computation lifecycle: **Workflows** define and

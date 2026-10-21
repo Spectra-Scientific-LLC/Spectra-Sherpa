@@ -1,5 +1,8 @@
 # Ubuntu AppImage build and acceptance
 
+!!! abstract "Summary"
+    Maintainer runbook: building and accepting the Ubuntu 24.04 AppImage.
+
 The Ubuntu target is **Ubuntu 24.04 LTS, x86-64**, using the same OSS frontend,
 Python backend and Electron window as Windows/macOS. It produces one
 `SpectraSherpa-VERSION-ubuntu-x86_64.AppImage`. It has release checksums and GitHub

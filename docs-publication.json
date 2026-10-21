@@ -100,6 +100,7 @@
     "docs/workflow-templates/pca.md",
     "docs/workflow-templates/peaks-library.md",
     "docs/workflow-templates/pls-calibration.md",
+    "docs/workflows/build-a-workflow.md",
     "docs/workflows/data-import.md",
     "docs/workflows/datasets-and-providers.md",
     "docs/workflows/optimize-saved-result.md",

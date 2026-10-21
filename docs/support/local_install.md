@@ -1,5 +1,11 @@
 # Desktop downloads and installation
 
+!!! abstract "Summary"
+    How to find and verify a published desktop installer for Windows, macOS or
+    Linux. The desktop app runs the local workbench in its own window, with no
+    separate Python and no cloud account; first check that your version has
+    installers.
+
 The desktop application runs the local SpectraSherpa workbench in its own application window, without a browser or separate
 Python installation. Local scientific work does not require a cloud account.
 
@@ -91,7 +97,7 @@ SpectroChemPy to this frozen desktop installer.
 
 BYOK Assistance is optional. Use the workbench's provider/key settings for your
 chosen provider; no AI key is bundled. Leave it unconfigured for offline
-scientific work. See [Demo, Pro and local OSS](../introduction/cloud-vs-local.md) for
+scientific work. See [Local OSS and hosted boundaries](../introduction/cloud-vs-local.md) for
 the distinction between local Assistance and paid Sherpa Advisor.
 
 ## Uninstall while retaining your work
