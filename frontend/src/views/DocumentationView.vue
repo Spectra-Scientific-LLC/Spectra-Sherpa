@@ -113,6 +113,11 @@ const sections: DocSection[] = [
         path: "/chemometrics/",
       },
       {
+        title: "Quick Reference",
+        desc: "Task to starter, nodes, settings, metrics and guide",
+        path: "/chemometrics/quick-reference/",
+      },
+      {
         title: "PCA",
         desc: "Exploratory structure, scores, loadings, and diagnostics",
         path: "/chemometrics/pca/",

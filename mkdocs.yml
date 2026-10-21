@@ -30,15 +30,16 @@ nav:
       - 3.8. Reference Libraries and Synthesis: workflows/references-synthesis.md
   - 4. Chemometrics Guide:
       - Overview: chemometrics/index.md
-      - 4.1. PCA and Exploratory Analysis: chemometrics/pca.md
-      - 4.2. PLS Calibration: chemometrics/pls.md
-      - 4.3. Classification: chemometrics/classification.md
-      - 4.4. SIMCA QC: chemometrics/simca.md
-      - 4.5. MCR-ALS and Curve Resolution: chemometrics/mcr-als.md
-      - 4.6. Peak Finding and Library Comparison: chemometrics/peaks-library.md
-      - 4.7. Designing Validation: chemometrics/validation-design.md
-      - 4.8. Validation and Model Application: chemometrics/validation-application.md
-      - 4.9. Compare Results and Review a Model: chemometrics/comparison-and-promotion.md
+      - 4.1. Quick Reference: chemometrics/quick-reference.md
+      - 4.2. PCA and Exploratory Analysis: chemometrics/pca.md
+      - 4.3. PLS Calibration: chemometrics/pls.md
+      - 4.4. Classification: chemometrics/classification.md
+      - 4.5. SIMCA QC: chemometrics/simca.md
+      - 4.6. MCR-ALS and Curve Resolution: chemometrics/mcr-als.md
+      - 4.7. Peak Finding and Library Comparison: chemometrics/peaks-library.md
+      - 4.8. Designing Validation: chemometrics/validation-design.md
+      - 4.9. Validation and Model Application: chemometrics/validation-application.md
+      - 4.10. Compare Results and Review a Model: chemometrics/comparison-and-promotion.md
   - 5. Workflow Templates:
       - Templates: workflow-templates/index.md
       - 5.1. PCA Starter: workflow-templates/pca.md

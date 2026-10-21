@@ -26,6 +26,7 @@ route. Changes on development branches are recorded separately in the changelog.
 | --- | --- |
 | Install the local application | [Local onboarding](onboarding/local-30-minutes.md) |
 | Load spectra and reference values | [Import your first dataset](onboarding/import-first-dataset.md) |
+| Find the starter, nodes and metrics for a task | [Chemometrics quick reference](chemometrics/quick-reference.md) |
 | Explore structure and unusual samples | [PCA](chemometrics/pca.md) |
 | Build and evaluate a calibration | [Your first calibration](onboarding/first-calibration.md) |
 | Compare preprocessing or model settings | [Compare calibration workflows](workflows/optimize-saved-result.md) |

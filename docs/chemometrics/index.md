@@ -9,6 +9,9 @@ report.
 
 ## Main Questions
 
+For a one-table map from task to starter, nodes, settings and metrics, see the
+[Quick Reference](quick-reference.md).
+
 - What structure is visible in my spectra? Use [PCA](pca.md).
 - Can spectra predict a concentration or property? Use [PLS regression](pls.md).
 - Can spectra assign a known class? Use [KNN, PLS-DA, or SIMCA](classification.md).
