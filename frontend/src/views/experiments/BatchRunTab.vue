@@ -1,8 +1,7 @@
 <template>
   <div class="batch-run-tab">
-<h3>Batch <MethodHelp topic="batch" label="Batch execution modes" /></h3>
     <fieldset :disabled="submitting || loading">
-      <legend>Execution mode</legend>
+      <legend>Execution mode <MethodHelp topic="batch" label="Batch execution modes" /></legend>
       <label><input v-model="mode" type="radio" value="apply_model" /> Apply trained model — no refit</label>
       <label><input v-model="mode" type="radio" value="run_workflow" /> Run workflow — train/evaluate</label>
     </fieldset>

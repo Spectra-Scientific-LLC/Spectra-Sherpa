@@ -11,7 +11,7 @@ SIMCA (Soft Independent Modeling by Class Analogy) models whether a sample is co
 
 ## When to Prefer Something Else
 
-- You want maximum separation between well-sampled, balanced classes: PLS-DA is the sharper discriminant.
+- You want maximum separation between well-sampled, balanced classes: consider PLS-DA and compare held-out performance; it is not universally better.
 - Classes are defined by one or two samples: SIMCA class models need enough members to estimate within-class variance; a class built from three spectra is a suggestion, not a model.
 
 ## Core Diagnostics
@@ -24,7 +24,7 @@ SIMCA decisions usually combine:
 
 ## Choosing Settings
 
-- **Components per class**: each class model gets its own PC count, chosen from that class's cross-validation. Classes with different complexity deserve different counts.
+- **Components**: the current node uses one requested PC count for every class model. It does not choose separate class-specific counts by cross-validation. Compare candidate settings using an explicit validation design; each class needs enough independent calibration members.
 - **Confidence level**: 95% is the conventional starting point. Tighter limits catch more deviants and reject more good samples — pick the level from the cost of each error in your process, not from default settings.
 
 ## Interpretation

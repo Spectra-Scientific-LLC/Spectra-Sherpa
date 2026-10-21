@@ -17,8 +17,10 @@ not been published. Unsigned Actions smoke artifacts are development candidates.
 | Windows x64 | `SpectraSherpa-VERSION-windows-x86_64.exe` |
 
 Check **About This Mac** for Apple Silicon. This is not a universal binary.
-The native release targets Windows x64 and Apple Silicon macOS only; Intel Mac
-and Linux users can use the [pip installation](../onboarding/local-30-minutes.md).
+Windows x64 and Apple Silicon macOS are native build targets; the Ubuntu
+candidate has separate acceptance requirements below. If matching installers
+are absent, use the [Python installation](../onboarding/local-30-minutes.md).
+No v0.6.4 installer availability is implied.
 Consult the selected release's clean-machine acceptance notes for supported OS
 versions. CI build hosts alone do not establish desktop compatibility.
 

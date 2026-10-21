@@ -73,6 +73,14 @@ def _source(**changes):
     return {"data_selection_revisions": [{"source_node_id": "input", "revision_number": 1}], **changes}
 
 
+def test_pca_has_no_response_regression_or_reference_qualification_gaps():
+    row = project_model_row(_model(model_type="pca"), {"model_type": "pca"})
+    assert row["regression_metrics_applicable"] is False
+    assert row["analytical_qualification_applicable"] is False
+    assert row["gaps"] == []
+    assert row["operational_deploy_ready"] is False
+
+
 def test_exact_cv_projection_keeps_development_and_independent_results_separate():
     row = project_model_row(
         _model(), _manifest(), curve=_curve(), run_source=_source(), exclusions={"excluded": ["s3"]}

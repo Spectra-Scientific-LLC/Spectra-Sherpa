@@ -1,44 +1,46 @@
-# 0.6.4 preparation — not release authorization
+# Release preparation
 
-The version bump belongs to a separate linked OSS/monorepo release-prep pair.
-This checklist and the Unreleased changelog prepare that work; they do not
-declare a released version, successful qualification, or permission to publish.
+This is a contributor checklist, not a release announcement or authorization
+to publish. The v0.6.4 candidate remains unreleased until its review,
+qualification and publication gates are complete.
 
-## Required order
+## Candidate and evidence
 
-1. Merge the reviewed cohesion repairs, including OSS #123 / monorepo #1336.
-   A structured target-authority refusal must be part of the candidate used
-   for manual validation, not added after that candidate is qualified.
-2. Close the macOS full-suite reopen regression on the final candidate.
-   Run the full public browser qualification on Linux, Windows and macOS.
-   PR smoke, a local Chrome pass, or a rerun of an older revision is not
-   equivalent. Keep numerical, identity, inclusion and visual assertions.
-3. Prepare the lockstep 0.6.4 version update across the packages and frontend
-   metadata, using the 0.6.3 release-prep inventory as a starting point and
-   checking the actual current tree. Do not assume the old file count is exact.
-4. Move the reviewed Unreleased narrative into the dated release section.
-   Include all six cohesion pairs: identity/units, theme tokens, browser
-   qualification, generated contracts, evidence/governance and scoped state.
-   Add `docs/releases/0.6.4.md`, documentation navigation and README references
-   in that release-prep pair; run the existing static release checks.
-5. Verify paired publication, generated contracts, evidence, compatibility and
-   hosted CI on the final release-prep heads. Preserve the Pro hosted compute
-   indicator and its intentional test differences.
-6. Manually validate the fixed, versioned artifact. Record its exact source and
-   artifact identity. If it changes, qualify the changed candidate; do not
-   relabel earlier evidence.
+1. Include reviewed fixes before selecting the candidate for manual validation.
+   Record the exact source revision and built artifact identity.
+2. Run the full public scientific browser qualification on Linux, Windows and
+   macOS. PR smoke or a successful run on an older revision does not qualify
+   the candidate. Preserve independent table, plot, identity, inclusion, units
+   and export assertions.
+3. Investigate reproducible failures before proceeding. Use retained images
+   and environment versions to distinguish rendering changes from capture
+   defects; do not raise pixel tolerances simply to make a test pass.
+4. Check generated contracts, reference documentation, evidence and saved-model
+   compatibility against the candidate. Generation alone is not qualification.
+5. Validate fresh installation, upgrade, save/reopen, report/CSV export and
+   local model application. Optional dependencies must be explicit.
+6. If the candidate changes, rerun affected qualification and record the new
+   identity. Do not relabel earlier evidence.
 
-## Explicit open gates
+## Version and publication
 
-- Repeated red-main macOS browser failures block manual release validation.
-  Diagnose retained images and environment versions before changing rendering
-  capture. Do not raise pixel tolerances merely to make the test pass.
-- Target-authority refusal issues remain open until the repair is merged and
-  verified. No maintainer deferral is recorded.
-- Monorepo #1337 tracks the audit-chainer serialization investigation.
-  Do not call it harmless without determining whether events are lost. Actual
-  silent audit-event loss escalates the trust-surface severity.
-- Desktop packaging remains paused through October 31, 2026, inclusive, and
-  requires explicit approval to resume afterward. Source tests are distinct
-  from packaging. No tag, publish, deploy or packaging action is authorized
-  by this checklist.
+Prepare version metadata and release notes in a dedicated release change.
+Check the actual package/frontend version inventory, not an assumed file count.
+Move reviewed Unreleased changes into a dated section and update the release
+guide, navigation and README together. Installation instructions must distinguish
+the published package from a source candidate.
+
+For v0.6.4, verify the public-index baseline explicitly: source-only versions
+are not PyPI upgrade checkpoints. Cover the 0.6.0 → 0.6.4 upgrade in the release
+guide, including the KNN/SIMCA retraining decision, PLS-DA serializer and
+calibration-versus-validation changes, and the database migration adding
+`project.goal`. Preserve the 0.6.0 saved-model compatibility reference; do not
+silently substitute a source-only release. Exercise these changes on a backed-up
+copy of an older profile, not the scientist's only working copy.
+
+Obtain explicit maintainer approval before tagging or publishing. PyPI
+publication does not imply a native installer is available; desktop packaging
+has its own authorization and qualification gates.
+
+See [Testing and release](testing-release.md) and
+[Repository governance](repository-governance.md).

@@ -261,6 +261,9 @@ def project_model_row(
     cv = _mapping(curve.get("cross_validation"))
     validation = _selected_row(cv.get("rows"), selected) if cv.get("status") == "available" else {}
     classification = model.model_type == "plsda"
+    # This retained overview supports PLS response-error/qualification receipts.
+    # PCA reconstruction error is not response prediction error (RMSEP).
+    regression = model.model_type == "pls"
     heldout = _mapping(heldout)
     single = len(names) == 1
     measured: dict[str, float | None] = {
@@ -341,9 +344,9 @@ def project_model_row(
     measured["rmsep"] = _number(exact_external.get("rmse"))
     interval_coverage = external.get("interval_coverage")
     gaps = []
-    if not classification and measured["rmsep"] is None:
+    if regression and measured["rmsep"] is None:
         gaps.append("Independent-test RMSEP and count unavailable")
-    if not classification and (_number(exact_external.get("bias")) is None or not isinstance(interval_coverage, list)):
+    if regression and (_number(exact_external.get("bias")) is None or not isinstance(interval_coverage, list)):
         gaps.append("Independent bias or interval coverage evidence unavailable")
     if classification and classification_metrics["held_out_balanced_accuracy"] is None:
         gaps.append("Exact held-out classification evaluation unavailable")
@@ -351,10 +354,8 @@ def project_model_row(
         gaps.append("Exact selected-component calibration error unavailable")
     if measured["rmsecv"] is None and model.model_type == "pls":
         gaps.append("Executed model-bound CV error unavailable")
-    if not reference_method and not classification:
+    if not reference_method and regression:
         gaps.append("Reference method unavailable")
-    if qualification.get("state") != "accepted_under_declared_policy":
-        gaps.append("Current model-bound analytical qualification unavailable")
     return {
         "artifact_uid": model.artifact_uid,
         "artifact_integrity_hash": model.integrity_hash,
@@ -368,6 +369,8 @@ def project_model_row(
         },
         "name": model.display_name or model.name,
         "model_type": model.model_type,
+        "regression_metrics_applicable": regression,
+        "analytical_qualification_applicable": regression or classification,
         "source_run_id": model.source_run_id,
         "workflow_id": model.workflow_id,
         "training_dataset_id": model.training_dataset_id,

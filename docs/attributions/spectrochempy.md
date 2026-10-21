@@ -2,14 +2,13 @@
 
 SpectroChemPy is an optional SpectraSherpa dependency and an important spectroscopy software foundation. Upstream provides readers, example datasets, coordinate-aware data structures, and scientific algorithms. SpectraSherpa uses it only behind a private matrix adapter for EFA, MCR-ALS, and SIMPLISMA. The extra exposes no upstream readers, example-data catalog, or public dataset conversion API.
 
-> **0.6.0 release lifecycle.** Install 0.6.0 from PyPI only after the public
-> index reports that exact version. Before the public tag exists, use only the
-> exact monorepo commit named by the qualification record. After the tag exists
-> but before PyPI reports 0.6.0, use the exact `spectra-sherpa-v0.6.0` source
-> tag. Source version text alone is not publication evidence.
+> **Installation target.** These guides describe the unreleased v0.6.4
+> candidate. Commands below install the latest *published* package, not that
+> candidate. For candidate qualification, install the exact reviewed checkout
+> with the required extras using [Local onboarding](../onboarding/local-30-minutes.md).
 
 ```bash
-pip install "spectra-sherpa[scp]==0.6.0"
+pip install "spectra-sherpa[scp]"
 ```
 
 SpectraSherpa uses the extra only for those three specialized algorithms.
@@ -18,15 +17,10 @@ SpectraSherpa uses the extra only for those three specialized algorithms.
 
 The current SpectraSherpa release pins exactly
 [SpectroChemPy 0.8.1](https://pypi.org/project/spectrochempy/0.8.1/).
-A **SpectroChemPy 0.12.x** compatibility update, qualified against **0.12.8**
-for EFA, MCR-ALS, and SIMPLISMA, is pending release. Its
-[qualification record](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/pull/101)
-includes numerical, saved-model replay, and runtime checks. Cite the version
-installed in the environment that produced your results. SpectraSherpa supports
-Python `>=3.11,<3.13`.
-
-See the [upstream project](https://www.spectrochempy.fr/) and the
-[0.12.8 package](https://pypi.org/project/spectrochempy/0.12.8/) for the pending update.
+Cite the version installed in the environment that produced your results.
+SpectraSherpa supports Python `>=3.11,<3.13`. See the
+[upstream project](https://www.spectrochempy.fr/) for its own release history;
+an upstream version is not automatically a qualified Sherpa dependency.
 
 ## How to Cite SpectroChemPy
 

@@ -113,9 +113,7 @@ def test_public_frontend_docker_builds_from_locked_source() -> None:
 
 def test_clean_source_launch_instructions_generate_the_ignored_frontend() -> None:
     paths = (
-        PACKAGE_ROOT / "README.md",
         PACKAGE_ROOT / "docs/onboarding/local-30-minutes.md",
-        PACKAGE_ROOT / "docs/onboarding/choose-your-path.md",
         PACKAGE_ROOT / "docs/releases/0.6.0.md",
         PACKAGE_ROOT / "docs/developers/setup.md",
         PACKAGE_ROOT / "docs/onboarding/migrate-to-0.6.md",
@@ -124,3 +122,9 @@ def test_clean_source_launch_instructions_generate_the_ignored_frontend() -> Non
         source = path.read_text(encoding="utf-8")
         assert "npm --prefix frontend ci" in source, path
         assert "npm --prefix frontend run build" in source, path
+
+    # Landing pages point to the canonical install guide rather than copying
+    # its commands. The guide above must still build the ignored frontend.
+    for path in (PACKAGE_ROOT / "README.md", PACKAGE_ROOT / "docs/onboarding/choose-your-path.md"):
+        source = path.read_text(encoding="utf-8")
+        assert "local-30-minutes.md" in source, path

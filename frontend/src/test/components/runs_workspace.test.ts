@@ -92,7 +92,8 @@ describe("Runs workspace", () => {
     m.query.tab = "inspect";
     const view = mountView(); await flushPromises();
     expect(view.findAll('[role="tab"]')[1].attributes("aria-selected")).toBe("true");
-    expect(view.text()).toContain("Select a run name in History");
+    expect(view.text()).toContain("Choose a run in History");
+    expect(view.findAll('h2').some(heading => heading.text() === 'Inspect')).toBe(false);
     expect(view.findComponent({ name: "RunDetailContent" }).exists()).toBe(false);
     view.unmount();
   });

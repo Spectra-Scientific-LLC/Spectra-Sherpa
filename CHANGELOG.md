@@ -33,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixes pending release qualification
 
+- Data links honor their explicit project before restoring the linked dataset,
+  including after reopening. A remembered different project no longer leaves
+  My Dataset empty; invalid or unavailable project links report a refusal.
 - Direct PLS starter requests without selected target authority are refused
   before managed-candidate persistence, rather than failing with a server error
   or leaving partial records (OSS #123 / monorepo #1336).

@@ -7,6 +7,21 @@ import {
 } from "@/utils/diagnostics";
 
 describe("diagnostics formatting", () => {
+  it("does not suppress a new field just because its name ends in definition", () => {
+    expect(buildDiagnosticEntries({ population_definition: "independent specimens" }))
+      .toEqual([{ key: "population_definition", label: "Population Definition", displayValue: "independent specimens", detail: undefined }]);
+  });
+
+  it("keeps MCR fit values compact and formulas in hover without altering retained metadata", () => {
+    const metadata = { n_components: 3, residual_rms: 0.005532, lof_percent: 10.99,
+      lof_definition: "100 * sqrt(sum(residual^2) / sum(X^2))",
+      fitted_state_serializer: "spectrasherpa.model-artifact.mcr-als/2" };
+    const entries = buildDiagnosticEntries(metadata);
+    expect(entries.map(entry => entry.key)).toEqual(["n_components", "residual_rms", "lof_percent"]);
+    expect(entries[2].detail).toBe(metadata.lof_definition);
+    expect(metadata.fitted_state_serializer).toBe("spectrasherpa.model-artifact.mcr-als/2");
+  });
+
   it("filters empty and non-finite values from compact diagnostic entries", () => {
     const entries = buildDiagnosticEntries({
       train_accuracy: 0.987654,

@@ -5,7 +5,7 @@ import { useDatasetDefinitions } from "@/views/data/composables/useDatasetDefini
 import { useDatasetReadinessSelection } from "@/views/data/composables/useDatasetReadinessSelection";
 import { useDatasetReadinessPreview } from "@/views/data/composables/useDatasetReadinessPreview";
 import { useDatasetInspection } from "@/views/data/composables/useDatasetInspection";
-import { useDatasetNavigation } from "@/views/data/composables/useDatasetNavigation";
+import { resolveDatasetProject, useDatasetNavigation } from "@/views/data/composables/useDatasetNavigation";
 import { useSynthesisPreview, useSynthesisSave } from "@/views/data/composables/useSynthesisExecution";
 import { useSynthesisSearch } from "@/views/data/composables/useSynthesisSearch";
 import type { ExperimentFileAssets } from "@/types";
@@ -34,6 +34,42 @@ const choice = {
 };
 
 describe("Data request boundaries", () => {
+  it.each([{ project: "4" }, { project_id: "4" }, { project: "4", project_id: "4" }])(
+    "admits the declared project without using recency: %j", async query => {
+      const project = { fetchProject: vi.fn().mockResolvedValue({ id: 4 }),
+        ensureProjectForBrowserTab: vi.fn(), error: null };
+      expect(await resolveDatasetProject(query, project)).toBe(true);
+      expect(project.fetchProject).toHaveBeenCalledExactlyOnceWith(4);
+      expect(project.ensureProjectForBrowserTab).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["", "0", "-1", "4oops", "4.5", "4e2", "9007199254740992", null, ["4", "5"]])(
+    "rejects invalid explicit projects without falling back: %j", async value => {
+      const project = { fetchProject: vi.fn(), ensureProjectForBrowserTab: vi.fn(), error: null };
+      await expect(resolveDatasetProject({ project: value }, project)).rejects.toThrow("invalid project");
+      expect(project.fetchProject).not.toHaveBeenCalled();
+      expect(project.ensureProjectForBrowserTab).not.toHaveBeenCalled();
+    },
+  );
+  it("rejects conflicting project aliases", async () => {
+    const project = { fetchProject: vi.fn(), ensureProjectForBrowserTab: vi.fn(), error: null };
+    await expect(resolveDatasetProject({ project: "3", project_id: "4" }, project)).rejects.toThrow("invalid project");
+    expect(project.fetchProject).not.toHaveBeenCalled();
+    expect(project.ensureProjectForBrowserTab).not.toHaveBeenCalled();
+  });
+  it("uses restoration only without an explicit project", async () => {
+    const project = { fetchProject: vi.fn(), ensureProjectForBrowserTab: vi.fn(), error: null };
+    expect(await resolveDatasetProject({}, project)).toBe(true);
+    expect(project.ensureProjectForBrowserTab).toHaveBeenCalledOnce();
+    expect(project.fetchProject).not.toHaveBeenCalled();
+  });
+  it.each([null, "Forbidden"])("does not fall back after a superseded or refused admission: %s", async error => {
+    const project = { fetchProject: vi.fn().mockResolvedValue(null), ensureProjectForBrowserTab: vi.fn(), error };
+    const result = resolveDatasetProject({ project: "4" }, project);
+    if (error) await expect(result).rejects.toThrow("unavailable");
+    else expect(await result).toBe(false);
+    expect(project.ensureProjectForBrowserTab).not.toHaveBeenCalled();
+  });
   it.each(["user", "project", "dataset", "sheet"])("drops saved definitions after %s A → B → A", async (field) => {
     const scope = reactive<Record<string, number>>({ user: 1, project: 2, dataset: 3, sheet: 4 });
     const state = setup(() => useDatasetDefinitions(() => Object.values(scope)));

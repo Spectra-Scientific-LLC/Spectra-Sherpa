@@ -37,8 +37,8 @@ archive needs the frontend build; release wheels and prepared Python source
 distributions include the built Workbench. A GitHub source archive is not the
 same artifact as a Python source distribution (`sdist`).
 
-Use the same helper with `--wheel /absolute/path/to/spectra_sherpa-0.6.3-py3-none-any.whl`
-for an exact built wheel, or `--version 0.6.3` only after that version is published on
+Use the same helper with `--wheel /absolute/path/to/the-reviewed-candidate.whl`
+for an exact built wheel, or `--version VERSION` only after that exact version is published on
 your pip index. These targets are mutually exclusive. The helper is a source
 checkout script, not a command installed by the wheel. Add `--extras scp,hitran,nist`
 or `--base` for automation without prompts, and `--dry-run` to inspect the command.
@@ -86,6 +86,14 @@ own before retrying. Startup never terminates a process discovered on a port.
 The old `KILL_PORT_ON_START`, `KILL_PORT_FORCE`, and `KILL_PORT_GRACE_SECONDS`
 settings no longer enable process termination; remove them from older `.env`
 files. Desktop launches retain their ephemeral-port behavior.
+
+## Application access
+
+When **Settings → API Keys** shows an App API Key field, its value must match
+the backend's `APP_API_KEY`. Use the key configured by your launcher or
+administrator; do not change it merely to match a placeholder. The browser
+stores this key locally and sends it to your Sherpa backend, not to a chat
+provider. Managed sign-in deployments do not use this local-key setup.
 
 ## Add Optional Extras Only If Needed
 
@@ -146,7 +154,7 @@ and Ollama. For OpenAI:
 export CHAT_ENDPOINT_PROVIDER="openai_compatible"
 export CHAT_ENDPOINT_URL="https://api.openai.com/v1"
 export CHAT_ENDPOINT_KEY="sk-..."          # your OpenAI key
-export CHAT_ENDPOINT_MODEL="gpt-4o-mini"   # any OpenAI chat model
+export CHAT_ENDPOINT_MODEL="YOUR_MODEL"  # a model compatible with this transport
 poetry run spectra-sherpa
 ```
 

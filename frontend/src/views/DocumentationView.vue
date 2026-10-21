@@ -1,7 +1,6 @@
 <template>
   <section class="documentation-content">
     <WorkspaceHeader title="Documentation" />
-    <ProductMap />
 
     <div class="doc-tab">
       <div v-for="section in sections" :key="section.title" class="doc-group">
@@ -27,7 +26,6 @@
 
 <script setup lang="ts">
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
-import ProductMap from "@/components/ProductMap.vue";
 import { DOCS_BASE_URL as DOCS_BASE } from "@/utils/documentation";
 
 interface DocLink {
@@ -167,7 +165,7 @@ const sections: DocSection[] = [
       },
       {
         title: "Optional SpectroChemPy Nodes",
-        desc: "EFA, MCR-ALS, and SIMPLISMA through the private optional matrix adapter",
+        desc: "EFA, MCR-ALS and SIMPLISMA (requires the scp extra)",
         path: "/nodes/spectrochempy/",
       },
     ],

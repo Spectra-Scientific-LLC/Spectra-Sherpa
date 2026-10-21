@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import runpy
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -16,6 +19,40 @@ from spectra_sherpa.app.services.dag.node_base import node_registry
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "frontend/e2e/scientific/fixtures"
+
+
+def test_browser_launcher_uses_fresh_credentials_and_disposable_loopback_profiles(monkeypatch) -> None:
+    launcher = runpy.run_path(str(ROOT / "scripts/scientific_browser_server.py"))
+    keys: list[str] = []
+    profiles: list[Path] = []
+
+    def run(app: str, **kwargs) -> None:
+        assert app == "spectra_sherpa.app.main:create_app"
+        assert kwargs["factory"] is True
+        assert kwargs["host"] == "127.0.0.1"
+        assert kwargs["port"] == 8041
+        assert os.environ["APP_MODE"] == os.environ["SITE_PROFILE"] == "local"
+        assert os.environ["EGRESS_ENABLED"] == "false"
+        profile = Path(os.environ["DATA_DIR"])
+        assert profile.is_dir()
+        assert os.environ["DATABASE_URL"] == f"sqlite+aiosqlite:///{profile}/spectra_platform.db"
+        keys.append(os.environ["APP_API_KEY"])
+        profiles.append(profile)
+
+    # No real server/build is needed for this lifecycle contract test.
+    with monkeypatch.context() as scoped:
+        scoped.setattr(os, "environ", os.environ.copy())
+        scoped.setattr(sys, "path", sys.path.copy())
+        scoped.setattr(sys, "argv", ["scientific_browser_server.py"])
+        scoped.setattr(Path, "is_file", lambda self: True)
+        scoped.setitem(sys.modules, "uvicorn", SimpleNamespace(run=run))
+        launcher["main"]()
+        launcher["main"]()
+
+    assert len(set(keys)) == 2
+    assert all(len(key) >= 32 for key in keys)
+    assert len(set(profiles)) == 2
+    assert all(not profile.exists() for profile in profiles)
 
 
 @pytest.mark.parametrize("name", ["mixture-ir", "moisture-nir"])

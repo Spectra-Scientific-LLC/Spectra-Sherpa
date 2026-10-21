@@ -1,10 +1,6 @@
 <template>
   <div class="synthesis-panel">
     <div class="synthesis-toolbar">
-      <div>
-        <h3>FTIR Synthesis</h3>
-        <p>Build source-locked Beer-Lambert mixtures and save them as My Dataset entries.</p>
-      </div>
       <Button
         label="Guide"
         icon="pi pi-book"

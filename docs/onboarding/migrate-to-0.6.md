@@ -1,10 +1,9 @@
 # Migrate to SpectraSherpa 0.6
 
-> **Release availability.** Install 0.6.0 from PyPI only after the public index
-> reports that exact version. Before the public tag exists, use only the
-> exact monorepo commit named by the qualification record. After the tag exists but
-> before PyPI reports 0.6.0, use the exact `spectra-sherpa-v0.6.0` source tag.
-> A source version or tag alone does not establish PyPI or desktop availability.
+> **Scope.** This guide explains the breaking transition from pre-0.6 data and
+> workflows. The current documentation targets the unreleased v0.6.4 candidate.
+> Follow [Local onboarding](local-30-minutes.md) to install an exact source
+> candidate; a tag alone does not establish PyPI or installer availability.
 
 Version 0.6 makes the product boundary simpler: the default package contains
 the native Workbench and Python SDK together, scientific execution is
@@ -54,11 +53,12 @@ poetry run python -m spectra_sherpa.examples.canonical_workflow
 
 ## In-place upgrade after publication
 
-Perform an in-place upgrade only after PyPI reports 0.6.0 and the release map
-records its exact artifact, and only when you have retained the backup above:
+Perform an in-place upgrade only after the intended version is published,
+and only when you have retained the backup above. Substitute that published
+version for `VERSION`; this is not a command to fetch the unreleased candidate:
 
 ```bash
-python -m pip install --upgrade "spectra-sherpa==0.6.0"
+python -m pip install --upgrade "spectra-sherpa==VERSION"
 spectra-sherpa
 ```
 
@@ -83,9 +83,8 @@ default product installation.
   confirmation quarantine are removed. Use canonical workflow validation and
   managed confirmation authorities.
 - `UPLOAD_ALLOWED`, `DATA_UPLOAD_ALLOWED`, and the retired Python import aliases
-  have no effect. The free hosted trial accepts only exact server-issued Avatar
-  and Corn starters; subscription cloud and Enterprise Hybrid own customer-data
-  upload and import journeys.
+  have no effect. Local OSS accepts supported customer files; hosted admission
+  policies are separate from local ingestion.
 - SCP, HITRAN, and NIST are independent optional capabilities. No missing
   capability invokes a substitute algorithm.
 - Current PLS and PLS-DA use the cited Sherpa SIMPLS authority. Old fitted

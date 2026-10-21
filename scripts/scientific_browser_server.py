@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -30,7 +31,8 @@ def main() -> None:
             DATABASE_URL=f"sqlite+aiosqlite:///{profile}/spectra_platform.db",
             EGRESS_ENABLED="false",
             MPLCONFIGDIR=f"{profile}/mpl",
-            APP_API_KEY="browser-acceptance-only",
+            # Disposable launch credential; never reuse a published fixture key.
+            APP_API_KEY=secrets.token_urlsafe(32),
         )
         import uvicorn
 

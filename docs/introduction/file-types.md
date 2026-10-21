@@ -29,7 +29,8 @@ interferogram, phase, or other typed results; the Workbench inventories them
 and saves the scientist's exact result choice in the canonical DAG. Series and
 3-D OPUS blocks are recognized and refused rather than flattened.
 
-The always-running bundled corpus contains one licensed real acquisition.
+The bundled corpus contains six licensed real acquisitions (one OpenSpecy
+file and five opusreader2 fixtures); see the reader attributions.
 Additional qualified multi-asset layouts are exact-hash external references
 because their source corpus does not grant redistribution permission; those
 bytes must be acquired and executed during release qualification. Support is
@@ -118,16 +119,15 @@ families remain demand-gated, and Thermo Paradigm/OMNICxi containers (`.srsx`,
 
 ## Optional SpectroChemPy Algorithms
 
-> **0.6.0 release lifecycle.** Install 0.6.0 from PyPI only after the public
-> index reports that exact version. Before the public tag exists, use only the
-> exact monorepo commit named by the qualification record. After the tag exists
-> but before PyPI reports 0.6.0, use the exact `spectra-sherpa-v0.6.0` source
-> tag. Source version text alone is not publication evidence.
+> **Installation target.** These guides describe the unreleased v0.6.4
+> candidate. Commands below install the latest *published* package, not that
+> candidate. For candidate qualification, install the exact reviewed checkout
+> with the required extras using [Local onboarding](../onboarding/local-30-minutes.md).
 
 After 0.6 publication, install with:
 
 ```bash
-pip install "spectra-sherpa[scp]==0.6.0"
+pip install "spectra-sherpa[scp]"
 ```
 
 This enables the three [SpectroChemPy](https://www.spectrochempy.fr/)-backed
@@ -142,7 +142,7 @@ extra does not add source-file readers.
 Install with:
 
 ```bash
-pip install "spectra-sherpa[hitran]==0.6.0"
+pip install "spectra-sherpa[hitran]"
 ```
 
 This enables HITRAN/HAPI synthesis support. The current package supports [hitran-api](https://pypi.org/project/hitran-api/) `>=1.3.0.0,<2` and [hitran-api2](https://pypi.org/project/hitran-api2/) `>=0.2.2,<1`. See the official [HITRAN HAPI page](https://hitran.org/hapi/) and [HAPI manual](https://hitran.org/static/hapi/hapi_manual.pdf) for upstream API details.

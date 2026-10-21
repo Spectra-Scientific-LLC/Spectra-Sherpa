@@ -18,8 +18,8 @@ and explicit refusal of series/3-D blocks.
 
 ## Conformance-corpus boundary
 
-Nine redistribution-qualified OPUS acquisitions are bundled and therefore run
-in every checkout: one from Open Specy (`open-specy.md`) and eight from
+Six redistribution-qualified OPUS acquisitions are bundled and therefore run
+in every checkout: one from Open Specy (`open-specy.md`) and five from
 opusreader2 (`opusreader2.md`), covering singular, duplicate-pairing, and
 several out-of-scope block-type layouts. Three additional exact-hash OPUS
 acquisitions cover the two-asset reference and six-asset sample layouts, but

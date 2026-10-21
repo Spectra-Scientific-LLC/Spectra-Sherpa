@@ -15,14 +15,12 @@ The machinery consists of:
 - `scripts/verify_protected_benchmarks.py`, the semantic and data-absence
   verifier used by tests and packaging CI.
 
-The closed preregistration schema is the P1 template: it enumerates every
-field that must be frozen while rejecting undeclared additions. P2 supplies
-the first real instance rather than committing a fictional example that
-could be mistaken for protected-set evidence.
+The closed preregistration schema enumerates the fields that must be frozen
+and rejects undeclared additions. A schema is not an applied benchmark study.
 
-The committed registry is intentionally empty at the P1 stage. An empty,
-valid registry proves that the governance machinery exists; it does **not**
-claim that a protected dataset exists or close the P2 applied-evidence gate.
+An empty valid registry establishes the governance machinery only, not the
+existence of protected data or a completed blind study. Inspect the committed
+registry for actual entries and their recorded status.
 
 ## Public and protected tracks
 
@@ -133,14 +131,14 @@ The verifier:
 The OSS security preflight and publication workflows run the same check after
 building wheel and source distributions.
 
-## P2 registration
+## Registering real evidence
 
-P2 adds the first real `provisional_internal` entry only after a scientific
+Add a real `provisional_internal` entry only after a scientific
 benchmark steward and data custodian can supply the required provenance,
 custody, split, non-use, and protocol attestations. The raw artifacts remain
 outside the repository.
 
 If no suitable lab-owned set exists, the registry stays empty. Frozen public
 and synthetic fixtures may still prove the M3/M4 engineering machinery;
-partner acquisition becomes the gate for P2, the protected blind study, and
-every external quantitative or comparative Harness claim.
+a separately authorized acquisition and study are needed before an external
+quantitative or comparative performance claim.

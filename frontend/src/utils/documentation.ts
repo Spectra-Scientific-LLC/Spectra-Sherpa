@@ -14,6 +14,8 @@ export const METHOD_TOPICS = {
   previewSelection: "workflows/data-import/#preview-and-workflow-selection",
   localChat: "onboarding/scientific-assistance/#local-basic-chat",
   hitran: "workflows/references-synthesis/#hitranhapi-synthesis",
+  referenceLibrary: "workflows/references-synthesis/#nist-library",
+  applicationAccess: "onboarding/local-30-minutes/#application-access",
 } as const;
 export type MethodTopic = keyof typeof METHOD_TOPICS;
 export function resolveMethodHelpUrl(topic: unknown): string | null {

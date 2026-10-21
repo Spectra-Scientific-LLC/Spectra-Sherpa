@@ -45,6 +45,13 @@ Vue effect scope. Project-scoped stores register their reset with
 `projectScopeRegistry`; registration also ends with the owning scope.
 Session changes invalidate project-owned state even when object IDs repeat.
 
+Data page entry admits an explicit `project` or `project_id` query before
+restoring dataset state. Remembered/recent project selection is a fallback only
+when neither is present. Conflicting, malformed or unavailable project links
+must not silently restore another project's datasets. Admission uses the
+project store's latest-selection rule; leaving the page invalidates the
+component's pending bootstrap.
+
 Capture a write's destination and payload before awaiting. A selection change
 does not undo a server write already accepted. It does prevent stale UI effects
 and any subsequent writes that have not started. Never reread the current

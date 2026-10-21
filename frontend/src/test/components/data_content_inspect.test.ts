@@ -1,7 +1,9 @@
 /* eslint-disable vue/one-component-per-file */
-import { flushPromises, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, reactive } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+enableAutoUnmount(afterEach);
 
 import api from "@/api/client";
 import type { ReferenceDatasetOption } from "@/stores/workflow-types";
@@ -3998,6 +4000,62 @@ describe("DataContent file inspection", () => {
         summary: "Upload Disabled",
       }),
     );
+  });
+
+  it.each(["project", "project_id"])("waits for explicit %s admission before loading Data", async (key) => {
+    mocks.route.query = { [key]: "4", tab: "import" };
+    let finish!: (value: { id: number }) => void;
+    mocks.projectStore.fetchProject.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const wrapper = mountDataContent();
+    try {
+      await flushPromises();
+      expect(mocks.projectStore.fetchProject).toHaveBeenCalledExactlyOnceWith(4);
+      expect(mocks.projectStore.ensureProjectForBrowserTab).not.toHaveBeenCalled();
+      expect(mocks.dataStore.fetchExperiments).not.toHaveBeenCalled();
+      finish({ id: 4 });
+      await flushPromises();
+      expect(mocks.dataStore.fetchExperiments).toHaveBeenCalledOnce();
+    } finally { wrapper.unmount(); }
+  });
+
+  it.each(["project", "project_id"])("retires the %s deep-link pin on a real project switch", async key => {
+    mocks.route.query = { [key]: "4", tab: "import" };
+    mocks.projectStore.currentProjectId = 4;
+    mocks.projectStore.fetchProject.mockResolvedValueOnce({ id: 4 });
+    const wrapper = mountDataContent();
+    await flushPromises();
+    mocks.routerReplace.mockClear();
+    mocks.projectStore.currentProjectId = 7;
+    await flushPromises();
+    expect(mocks.routerReplace).toHaveBeenCalledWith({ path: mocks.route.path, query: { tab: "import" } });
+    expect(mocks.route.query).toEqual({ tab: "import" });
+    wrapper.unmount();
+  });
+
+  it("does not resume Data bootstrap after unmount during project admission", async () => {
+    mocks.route.query = { project: "4" };
+    let finish!: (value: { id: number }) => void;
+    mocks.projectStore.fetchProject.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const wrapper = mountDataContent();
+    await flushPromises();
+    wrapper.unmount();
+    finish({ id: 4 });
+    await flushPromises();
+    expect(mocks.dataStore.fetchExperiments).not.toHaveBeenCalled();
+  });
+
+  it("reports invalid project links without loading another project's datasets", async () => {
+    mocks.route.query = { project: "4oops" };
+    const wrapper = mountDataContent();
+    try {
+      await flushPromises();
+      expect(mocks.projectStore.fetchProject).not.toHaveBeenCalled();
+      expect(mocks.projectStore.ensureProjectForBrowserTab).not.toHaveBeenCalled();
+      expect(mocks.dataStore.fetchExperiments).not.toHaveBeenCalled();
+      expect(mocks.toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: "error", summary: "Project unavailable", detail: expect.stringContaining("invalid project"),
+      }));
+    } finally { wrapper.unmount(); }
   });
 
   it("ignores the boot project resolution but resets Data state on a real project switch", async () => {

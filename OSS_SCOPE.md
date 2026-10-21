@@ -9,12 +9,12 @@ the stability surface it commits to for external packages.
 ## What OSS owns
 
 - **DAG workflow engine** — Node registry, scheduler, executor, type system
-- **60+ processing nodes** — Preprocessing, PCA, PLS, MCR-ALS, classification, clustering, validation, synthesis, deployment
-- **File I/O** — CSV, JDX, SPC, SPA, SPG, OPUS, MAT, Excel readers
+- **Canonical scientific nodes** — Preprocessing, PCA, PLS, classification, clustering, validation, synthesis, and model application; EFA, MCR-ALS, and SIMPLISMA require the optional SCP runtime. See the [node reference](docs/nodes/index.md) for the checked-out version.
+- **File I/O** — Bounded native readers for the qualified formats in [Supported File Types](docs/introduction/file-types.md). Export Excel worksheets to CSV; the OSS ingestion registry does not provide a general Excel reader.
 - **Dataset management** — Experiments, versioned files, project organization
 - **Model artifacts** — Train, persist, reload calibration models
-- **Python/Jupyter export** — Generate standalone scripts from any workflow
-- **Plugin system** — Custom nodes via drop-in Python files or packages
+- **Python/Jupyter export** — Export supported canonical workflows with explicit data bindings and runtime requirements; unavailable operations are refused rather than approximated.
+- **Source-level contribution** — Add reviewed built-in nodes and tests in a source build. The installed registry is frozen; it does not load drop-in files or runtime plugins.
 - **BYO chat proxy** — Single-turn HTTP transports for OpenAI-compatible endpoints, Anthropic's native Messages API, and Ollama (`CHAT_ENDPOINT_PROVIDER`, `CHAT_ENDPOINT_URL`, `CHAT_ENDPOINT_KEY`). No vendor SDK imports, no tools, no persistence.
 - **Local BYO Data Story** — A single-turn use of that same chat proxy. The frontend sends bounded parsed scientific facts and the user's question, never the raw spectra matrix; it has no tools or conversation memory. The managed Sherpa Data Story remains server-owned and entitlement-gated.
 - **AI Provider Protocol** — `AIServiceProvider` type surface and registry seam (`set/get/reset_sherpa_advisor`) for extension injection

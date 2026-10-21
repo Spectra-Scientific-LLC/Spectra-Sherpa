@@ -1,7 +1,6 @@
 <template>
   <section class="run-detail">
     <header class="run-detail__heading">
-      <h2>Inspect</h2>
       <div v-if="detail" class="run-detail__identity">
         <input
           v-model="runNameDraft"

@@ -2,8 +2,7 @@
   <section class="model-overview" aria-label="Saved model comparison">
     <header>
       <div>
-        <h3>Saved model comparison</h3>
-        <p>One row per saved model. CV describes development; an independent test is shown only when retained.</p>
+        <h3>Saved models <MethodHelp topic="qualification" label="Validation and analytical qualification" /></h3>
       </div>
       <button type="button" :disabled="loading || !rows.length" @click="exportRows">Export this page's evidence</button>
     </header>
@@ -12,7 +11,7 @@
     <p v-else-if="!rows.length">{{ offset ? 'No more saved models on this page. Go to the previous page.' : 'No saved models in this project.' }}</p>
     <div v-else class="model-overview__scroll">
       <table>
-        <caption>Exact saved model evidence; missing values are unavailable, not zero.</caption>
+        <caption>— unavailable · n/a not applicable</caption>
         <thead>
           <tr>
             <th scope="col">Model</th><th scope="col">Target / units</th><th scope="col">Source</th>
@@ -37,10 +36,10 @@
             <td>{{ row.calibration_count ?? '—' }}</td>
             <td :title="row.held_out_validation ? undefined : row.validation?.unavailable_reason || undefined">{{ validation(row) }}</td>
             <td>{{ classificationAccuracy(row) }}</td>
-            <td>{{ row.model_type === 'plsda' ? 'n/a' : metric(row.metrics?.rmsec) }}</td>
-            <td>{{ row.model_type === 'plsda' ? 'n/a' : metric(row.metrics?.rmsecv) }}</td>
-            <td :title="row.model_type === 'plsda' ? undefined : row.metrics?.rmsep == null ? 'No exact external validation evaluation is retained for this model.' : `Executed external validation on ${row.independent_test_count} complete specimens in view #${row.qualification?.validation_view_id}.`">{{ row.model_type === 'plsda' ? 'n/a' : metric(row.metrics?.rmsep) }}</td>
-            <td>{{ row.model_type === 'plsda' ? 'n/a' : `${metric(row.metrics?.r2_calibration)} / ${metric(row.metrics?.q2_cv)}` }}</td>
+            <td>{{ !row.regression_metrics_applicable ? 'n/a' : metric(row.metrics?.rmsec) }}</td>
+            <td>{{ !row.regression_metrics_applicable ? 'n/a' : metric(row.metrics?.rmsecv) }}</td>
+            <td :title="!row.regression_metrics_applicable ? undefined : row.metrics?.rmsep == null ? 'No exact external validation evaluation is retained for this model.' : `Executed external validation on ${row.independent_test_count} complete specimens in view #${row.qualification?.validation_view_id}.`">{{ !row.regression_metrics_applicable ? 'n/a' : metric(row.metrics?.rmsep) }}</td>
+            <td>{{ !row.regression_metrics_applicable ? 'n/a' : `${metric(row.metrics?.r2_calibration)} / ${metric(row.metrics?.q2_cv)}` }}</td>
             <td>{{ row.independent_test_count ?? '—' }}<small v-if="row.model_type !== 'plsda' && row.independent_test_count != null">External view #{{ row.qualification?.validation_view_id }}<span v-if="row.qualification?.state === 'stale_for_selected_dataset'"> · differs from selected dataset</span></small></td>
             <td :title="row.reference_quality?.reason || undefined">
               Calibration: {{ row.reference_quality?.method || 'Unknown' }}
@@ -49,8 +48,8 @@
               <small>External: {{ row.external_reference_quality?.method_id || 'Unavailable' }}<span v-if="row.external_reference_quality?.version"> v{{ row.external_reference_quality.version }}</span></small>
             </td>
             <td>{{ row.applicability_method || 'Unavailable' }}</td>
-            <td :title="row.model_type === 'plsda' ? undefined : row.coverage == null ? 'Observed interval coverage unavailable.' : 'Observed interval coverage among screened available validation rows; no population coverage claim.'">
-              <template v-if="row.model_type === 'plsda'">n/a</template>
+            <td :title="!row.regression_metrics_applicable ? undefined : row.coverage == null ? 'Observed interval coverage unavailable.' : 'Observed interval coverage among screened available validation rows; no population coverage claim.'">
+              <template v-if="!row.regression_metrics_applicable">n/a</template>
               <template v-else>Bias {{ row.bias == null ? '—' : metric(row.bias) }}
               <small>Observed coverage {{ row.coverage == null ? '—' : metric(row.coverage) }}<span v-if="row.coverage_denominator != null"> ({{ row.coverage_denominator }}/{{ row.independent_test_count }} rows available)</span></small></template>
             </td>
@@ -58,8 +57,8 @@
             <td :title="row.comparison_reason || undefined">{{ groupLabel(row) }}</td>
             <td>
               <span>{{ row.operational_deploy_ready ? 'Operationally deploy-ready' : 'Operational readiness pending' }}</span>
-              <small>Analytical qualification: {{ row.qualification?.state || 'unavailable' }}</small>
-              <small>{{ row.gaps?.join('; ') || row.unavailable_reason || 'No gaps recorded' }}</small>
+              <small v-if="row.analytical_qualification_applicable">Analytical qualification: {{ row.qualification?.state || 'unavailable' }}</small>
+              <small v-if="row.gaps?.length || row.unavailable_reason">{{ row.gaps?.join('; ') || row.unavailable_reason }}</small>
             </td>
             <td :title="row.evidence?.component_curve_sha256 || undefined">Artifact {{ row.artifact_uid }} · run #{{ row.evidence?.source_run_id ?? '—' }}<small>Curve {{ row.evidence?.component_curve_sha256?.slice(0, 12) || 'unavailable' }}</small></td>
           </tr>
@@ -81,10 +80,13 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import api from '@/api/client';
+import MethodHelp from '@/components/MethodHelp.vue';
 import { downloadJson } from '@/utils/download';
 
 type Row = {
   artifact_uid: string; name: string; model_type: string; unavailable_reason?: string;
+  regression_metrics_applicable?: boolean;
+  analytical_qualification_applicable?: boolean;
   target_names?: string[]; target_units?: (string | null)[]; training_dataset_id?: number | null;
   preprocessing?: {op_id?: string}[] | null; components?: number | null; calibration_count?: number | null;
   validation?: {method?: string | null; folds?: number | null; unavailable_reason?: string | null};

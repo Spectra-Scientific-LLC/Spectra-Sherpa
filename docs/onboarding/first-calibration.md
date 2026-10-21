@@ -42,8 +42,9 @@ Choose **Next: Workflow**, open **Analysis Starter**, and select **PCA
 Exploration & Outlier Diagnostics** with your retained Corn selection. PCA
 answers "is this dataset coherent?" before you invest in calibration:
 
-- **Scores**: do samples cluster by instrument view, batch, or lot? Strong
-  instrument clustering tells you calibration transfer may matter later.
+- **Scores**: look for gradients, clusters, and unusual specimens within M5.
+  This selected view contains one instrument; it cannot show separation between
+  M5, MP5, and MP6. Comparing instruments is a separate, explicitly aligned study.
 - **Loadings**: do the influential regions look like real corn NIR bands
   (O–H combination and overtone regions for moisture), not noise or edges?
 - **Hotelling T² and Q residuals**: flag candidate outliers. Mask a suspected
@@ -88,11 +89,9 @@ Use this protocol for the current Corn M5 calibration:
    Report development RMSECV and held-out RMSEP with their populations and
    declared target units. If units are absent, report **target units not declared**.
 
-The Optimize guide's historical 0.2340 → 0.0549 figures are RMSECV from
-all-data development CV on 80 specimens, with target units not declared in the
-historical evidence. They are not scores for current training-only CV on 60
-specimens and do not establish independent test performance. See
-[Optimize a Saved Result](../workflows/optimize-saved-result.md).
+For a controlled local comparison, keep the same training population and
+validation folds across candidate workflows. See
+[Compare calibration workflows](../workflows/optimize-saved-result.md).
 
 Read [Designing Validation](../chemometrics/validation-design.md) for how to
 choose between random, grouped, and nested designs, and why row-level
@@ -102,8 +101,8 @@ Kennard–Stone-style splits refuse grouped input.
 
 - **RMSECV / RMSEP** — typical prediction error, in target units. Compare it
   against the reference method's reproducibility, not against zero.
-- **Bias** — mean of (predicted − observed). Near zero is expected in CV;
-  large bias in a holdout means systematic offset.
+- **Bias** — mean of (predicted − observed). Cross-validation does not guarantee
+  zero bias; inspect systematic offsets alongside the error spread.
 - **SEP** — bias-corrected spread of errors; the honest "how wrong am I
   typically" number.
 - **R²** — fraction of target variance explained; meaningless without the

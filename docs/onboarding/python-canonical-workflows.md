@@ -244,17 +244,16 @@ The default installation includes the Workbench, canonical native DAG, Python
 API, and supported Plotly renderer. Jupyter remains owned by your notebook
 environment; SpectraSherpa does not install or manage it.
 
-> **0.6.0 release lifecycle.** Install 0.6.0 from PyPI only after the public
-> index reports that exact version. Before the public tag exists, use only the
-> exact monorepo commit named by the qualification record. After the tag exists
-> but before PyPI reports 0.6.0, use the exact `spectra-sherpa-v0.6.0` source
-> tag. Source version text alone is not publication evidence.
+> **Installation target.** These guides describe the unreleased v0.6.4
+> candidate. Commands below install the latest *published* package, not that
+> candidate. For candidate qualification, install the exact reviewed checkout
+> with the required extras using [Local onboarding](../onboarding/local-30-minutes.md).
 
 | What you tried | Required action |
 |---|---|
-| A SpectroChemPy-backed node such as EFA, MCR-ALS, or SIMPLISMA | After 0.6 publication: `pip install 'spectra-sherpa[scp]==0.6.0'` |
-| NIST WebBook acquisition | After 0.6 publication: `pip install 'spectra-sherpa[nist]==0.6.0'` |
-| HITRAN acquisition or synthesis | After 0.6 publication: `pip install 'spectra-sherpa[hitran]==0.6.0'`, then configure the required HITRAN credentials |
+| A SpectroChemPy-backed node such as EFA, MCR-ALS, or SIMPLISMA | `pip install 'spectra-sherpa[scp]'` |
+| NIST WebBook acquisition | `pip install 'spectra-sherpa[nist]'` |
+| HITRAN acquisition or synthesis | `pip install 'spectra-sherpa[hitran]'`, then configure the required HITRAN credentials |
 | An application-owned dataset source from Python | Bind arrays with `deploy.input`, or run the application-owned source in the Workbench |
 | An imported fitted-artifact application from Python | Load the Campaign Review Package and provide its read-only artifact adapter through `ExecutionRuntime` |
 

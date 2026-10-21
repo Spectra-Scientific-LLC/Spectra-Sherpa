@@ -1,6 +1,6 @@
 # PCA and Exploratory Analysis
 
-Principal Component Analysis reduces a spectral matrix into latent variables that explain major sources of variation. It is the right first model for almost every new spectral dataset: it needs no labels, no targets, and no validation design, yet it exposes most of the problems that would quietly sabotage a later calibration.
+Principal Component Analysis summarizes variation in a spectral matrix through a smaller set of components. It needs no response values and is useful for exploring sample structure, preprocessing effects, and unusual observations. Exploratory PCA does not establish predictive performance; component selection and outlier decisions still need a design appropriate to the scientific question.
 
 ## Use PCA For
 
@@ -28,7 +28,7 @@ Principal Component Analysis reduces a spectral matrix into latent variables tha
 
 - Read the scree plot: keep components up to the elbow, and check the cumulative explained variance.
 - Inspect the last component you plan to keep: if its loadings look like noise, you have gone too far.
-- More components do not hurt exploration, but any downstream model (SIMCA class limits, outlier thresholds) inherits your choice — record why you picked it.
+- Extra components can emphasize noise and change apparent outliers. Record the component count and its rationale; downstream class limits and diagnostics depend on that choice.
 
 ## Scaling
 

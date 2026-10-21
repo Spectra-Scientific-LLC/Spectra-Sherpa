@@ -2,14 +2,13 @@
 
 HITRAN/HAPI support is an optional extra for pip users and is included in desktop installers. It serves a different role than NIST. NIST supports reference and quantitative infrared workflows around public compiled data. HITRAN/HAPI supports line-by-line gas-phase spectral synthesis when the clients, API key, and network access are configured.
 
-> **0.6.0 release lifecycle.** Install 0.6.0 from PyPI only after the public
-> index reports that exact version. Before the public tag exists, use only the
-> exact monorepo commit named by the qualification record. After the tag exists
-> but before PyPI reports 0.6.0, use the exact `spectra-sherpa-v0.6.0` source
-> tag. Source version text alone is not publication evidence.
+> **Installation target.** These guides describe the unreleased v0.6.4
+> candidate. Commands below install the latest *published* package, not that
+> candidate. For candidate qualification, install the exact reviewed checkout
+> with the required extras using [Local onboarding](../onboarding/local-30-minutes.md).
 
 ```bash
-pip install "spectra-sherpa[hitran]==0.6.0"
+pip install "spectra-sherpa[hitran]"
 ```
 
 Desktop users do not need this pip command: the installer includes both clients, their licenses and matching source archives. See [desktop packaging](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/blob/main/desktop/README.md#included-hitran-clients).

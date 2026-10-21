@@ -228,12 +228,11 @@
     />
 
     <WorkspaceContext label="Workflow workspace context" layout="workflow">
-      <WorkspaceContextItem label="Active Sheet" :value="activeSheetName" wrap />
+      <WorkspaceContextItem label="Active Sheet" :value="activeSheetName" :title="`Created ${sheetCreationTime}`" wrap />
       <WorkspaceContextItem label="Canvas" :value="canvasSummaryLabel" />
       <WorkspaceContextItem label="Dataset" :value="portfolioName" wrap>
         {{ portfolioSummary }}
       </WorkspaceContextItem>
-      <WorkspaceContextItem label="Creation Time" :value="sheetCreationTime" wrap />
     </WorkspaceContext>
 
     <!-- Execution status banner -->

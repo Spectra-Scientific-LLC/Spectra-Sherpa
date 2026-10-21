@@ -22,8 +22,8 @@ Every file's decoded assets are cross-checked against an independently
 installed copy of `brukeropus` 1.4.3 -- the project this reader's own binary
 layout is adapted from (see `brukeropus.md`) -- and agree exactly on shape,
 values, and, for the duplicate-absorbance files, on which occurrence is
-canonical. Exact digests, per-asset shapes, and value checksums are recorded
-in `docs/evidence/native-opus-reader-conformance.json`.
+canonical. The public fixtures live in `tests/fixtures/opus/`; regression
+checks are in `tests/test_native_opus_reader.py`.
 
 `BF_lo_01_soil_cal.1` is authored by an opusreader2 copyright holder and tied
 to a published, peer-reviewed dataset. Three other upstream files were
@@ -37,6 +37,5 @@ block's recorded value envelope, which `617262_1TP_C-1_A5.0` -- a real,
 published acquisition -- does not do, and refused every same-type duplicate
 pairing outright rather than attempting to disambiguate it by value, which
 `629266_1TP_A-1_C1.0` and `BF_lo_01_soil_cal.1` both exercise. Both are fixed;
-see `docs/evidence/native-opus-reader-conformance.json` and the OPUS
-implementation record in
-`docs/plan/canonical-dag-managed-optimization-plan.md`.
+the current fixtures and native-reader tests retain these regression cases.
+The upstream license and source identity above remain the attribution authority.

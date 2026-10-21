@@ -159,7 +159,6 @@
       <summary>
         <span>
           <strong>Active dataset: {{ contentsTitle }}</strong>
-          <small>Source · acquisition · samples · quality · portfolio</small>
         </span>
       </summary>
       <div class="explore-content">
