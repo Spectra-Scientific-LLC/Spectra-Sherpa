@@ -235,6 +235,72 @@ def test_concurrent_publication_obeys_shared_user_quota(monkeypatch):
         assert retention.read_output(1, item)["value"] == "x" * 100
 
 
+def test_independent_processes_publish_under_one_user_quota(monkeypatch):
+    """Exercise the native OS lock, not an in-process mutex or a mocked lock."""
+    from spectra_sherpa.app.schemas.run_evidence import OutputEvidence
+
+    monkeypatch.setattr(retention, "USER_BYTES_LIMIT", 500)
+    script = """
+import json, sys
+from dataclasses import replace
+from pathlib import Path
+from spectra_sherpa.app.services import run_output_retention as retention
+retention.settings = replace(retention.settings, data_dir=Path(sys.argv[1]))
+retention.USER_BYTES_LIMIT = 500
+print('ready', flush=True)
+assert sys.stdin.readline().strip() == 'start'
+admitted = []
+for index in range(4):
+    try:
+        item = retention.retain_output(1, {'worker': int(sys.argv[2]), 'index': index, 'value': 'x' * 100})
+    except ValueError as exc:
+        assert 'quota' in str(exc), str(exc)
+    else:
+        admitted.append(item.model_dump())
+print(json.dumps(admitted), flush=True)
+"""
+    processes = []
+    ready_readers = ThreadPoolExecutor(max_workers=4)
+    try:
+        for index in range(4):
+            processes.append(
+                subprocess.Popen(
+                    [sys.executable, "-c", script, str(retention.settings.data_dir), str(index)],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            )
+        # Release all initialized interpreters together; creation cannot warm
+        # the first-use lock or serialize the publication workload.
+        ready = [ready_readers.submit(process.stdout.readline) for process in processes]
+        for result in ready:
+            assert result.result(timeout=30).strip() == "ready"
+        for process in processes:
+            process.stdin.write("start\n")
+            process.stdin.flush()
+        admitted = []
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=45)
+            assert process.returncode == 0, stderr
+            admitted.extend(OutputEvidence.model_validate(item) for item in json.loads(stdout))
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+        ready_readers.shutdown(wait=True)
+        for process in processes:
+            process.communicate(timeout=10)
+    assert 0 < len(admitted) < 16
+    assert sum(item.byte_count for item in admitted) <= retention.USER_BYTES_LIMIT
+    directory = retention._user_directory(1)
+    assert len(list(directory.glob("*.json"))) == len(admitted)
+    assert not list(directory.glob(".pending-*"))
+    for item in admitted:
+        assert retention.read_output(1, item)["value"] == "x" * 100
+
+
 def test_reclamation_keeps_referenced_and_recent_outputs():
     retained = retention.retain_output(1, [1])
     abandoned = retention.retain_output(1, [2])
@@ -572,8 +638,8 @@ def test_full_resolution_supplied_spectral_overlay_retains_all_coordinates():
 
 
 def test_usage_snapshot_matches_enforcement_and_deduplicates(monkeypatch):
-    # Windows byte-range locking needs a one-byte lock file. The same
-    # physical overhead is counted by both usage reporting and enforcement.
+    # Historical Windows stores may retain a one-byte lock file. Whatever
+    # physical overhead exists is counted by reporting and enforcement alike.
     empty_usage = retention.retained_results_usage(1)["usedBytes"]
     first = retention.retain_output(1, {"value": [1, 2, 3]})
     retention.retain_output(1, {"value": [1, 2, 3]})
