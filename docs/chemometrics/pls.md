@@ -36,10 +36,15 @@ Partial Least Squares regression models the relationship between spectra and qua
 
 ![Predicted versus measured values](../assets/pls-predicted-vs-measured.png)
 
-*Illustrative synthetic data. The plot to expect from a PLS calibration:
-calibration (cross-validation) predictions in one color, held-out test
-predictions in another, against the ideal line. An honest model shows similar
-scatter in both; a much tighter calibration cloud is an overfitting warning.*
+*Illustrative synthetic data. Cross-validation predictions for the calibration
+samples in one color, predictions for a held-out test set in another, against
+the ideal line. Cross-validation predictions come from models that did not see
+each predicted sample; a calibration fit (predicting the samples the model was
+trained on) is a different, more optimistic population and is not shown. The
+two clouds need not match: test scatter can differ because of overfitting, but
+also because the test samples cover a different range, batch, instrument
+condition or reference-value precision. Compare errors for the population each
+one describes, and keep that population with the metric.*
 
 **VIP scores** rank variables by their contribution to the model; the common rule of thumb treats VIP > 1 as influential. Use VIP to prune or understand a model, not as a band assignment — a high-VIP region can be influential because it corrects an artifact, not because the analyte absorbs there.
 

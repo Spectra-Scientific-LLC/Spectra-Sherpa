@@ -111,7 +111,7 @@ A **My Dataset** entry is a named dataset scoped to your project. It collects th
 Because datasets live in the project, not inside a single workflow:
 
 - one dataset can feed **multiple workflows (sheets)** in the same project;
-- you can **duplicate a workflow** and keep the same dataset, or point its Data Source node at a different My Dataset entry;
+- you can **duplicate a workflow** and keep the same dataset, or, when its source is a **Collection Load** node, choose a different saved selection in its Inspector **Dataset** list;
 - your data stays scoped to you (and your project) — it is not shared implicitly.
 
 ## Inspect Before You Model

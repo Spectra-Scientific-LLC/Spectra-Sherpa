@@ -170,13 +170,13 @@ def snv_before_after() -> None:
 
 
 def pls_calibration_fit() -> None:
-    """Predicted vs measured with calibration and held-out samples separated."""
+    """Predicted vs measured: cross-validation predictions and held-out test predictions."""
     true = np.linspace(2, 18, 40)
     cal = RNG.normal(true, 0.55)
     true_test = np.linspace(3, 17, 12)
     test = RNG.normal(true_test, 0.85)
     fig, ax = plt.subplots(figsize=(5.2, 4.4), dpi=150)
-    ax.scatter(true, cal, c=ACCENT, s=26, label="calibration (CV)", zorder=3)
+    ax.scatter(true, cal, c=ACCENT, s=26, label="cross-validation (calibration samples)", zorder=3)
     ax.scatter(true_test, test, c=WARM, s=34, marker="s", label="held-out test", zorder=3)
     lim = (1, 19)
     ax.plot(lim, lim, color=MUTED, linewidth=1.0, linestyle="--", label="ideal: predicted = measured")
@@ -184,7 +184,7 @@ def pls_calibration_fit() -> None:
     ax.set_ylim(lim)
     ax.set_xlabel("measured (reference) value")
     ax.set_ylabel("predicted value")
-    ax.set_title("A calibration you can trust separates\ncalibration fit from held-out performance", fontsize=9.5, color=INK)
+    ax.set_title("Cross-validation and held-out test predictions\nare different populations", fontsize=9.5, color=INK)
     ax.legend(fontsize=8, frameon=False, loc="upper left")
     _style(ax)
     fig.tight_layout()
