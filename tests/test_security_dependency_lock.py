@@ -129,9 +129,7 @@ def test_frontend_lock_excludes_vulnerable_vitest_mocker() -> None:
     lock = json.loads(FRONTEND_LOCK.read_text(encoding="utf-8"))
     for name in ("vitest", "@vitest/mocker"):
         versions = [
-            Version(item["version"])
-            for path, item in lock["packages"].items()
-            if path.endswith(f"node_modules/{name}")
+            Version(item["version"]) for path, item in lock["packages"].items() if path.endswith(f"node_modules/{name}")
         ]
         assert versions, f"{name} must be covered by the security floor"
         assert all(version >= Version("4.1.12") for version in versions)
