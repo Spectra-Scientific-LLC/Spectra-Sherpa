@@ -7,8 +7,8 @@
     Building and running workflows in Local OSS needs no account or
     subscription.
 
-A workflow is a small directed graph: data enters through a **Data Source**
-node, flows through preprocessing and modeling nodes, and ends at output
+A workflow is a small directed graph: data enters through a source node
+(usually **Collection Load**), flows through preprocessing and modeling nodes, and ends at output
 nodes that produce plots, tables, and saved models. You never write code to
 use it — but everything you build is inspectable, saved, and repeatable.
 
@@ -52,9 +52,11 @@ parameters · 4 Run.*
    the results on screen no longer match it. When the run finishes, select a
    node to see its plots and tables in the Inspector.
 
-A workflow never reads a file directly: the **Data Source** node points at an
-entry in **My Dataset**. Bring data in first — see
-[Data Import](data-import.md) — then bind it here.
+A workflow never reads a file directly. A **Collection Load** node is bound to
+a saved selection in **My Dataset**: bring data in first — see
+[Data Import](data-import.md) — then select the node and choose that selection
+in the Inspector's **Dataset** list. **Collection Load** is the only source node
+offered in **Add Nodes**.
 
 ## Reading the Canvas While It Runs
 
@@ -77,7 +79,7 @@ entry in **My Dataset**. Bring data in first — see
 | I want to… | Do this |
 | --- | --- |
 | Start from a known-good recipe | **Analysis Starter** → pick a template → bind your dataset |
-| Change which dataset a workflow uses | Select the **Data Source** node → change the **My Dataset** entry in the Inspector |
+| Change which dataset a workflow uses | **Collection Load** source: select it and choose another saved selection in the Inspector's **Dataset** list. Other source nodes (File Load, Load Group, NIST Library) come from templates or imported workflows and have no dataset list: add a **Collection Load** node, choose the dataset, connect its outputs where the old source's were, then delete the old source. Or start again from **My Dataset** and open **Analysis Starter**, which binds the current selection |
 | Compare two preprocessing choices | Right-click the sheet tab → **Duplicate**, change one node, run both sheets, then **Compare runs** — see [Compare Results](../chemometrics/comparison-and-promotion.md) |
 | Reuse a workflow on another project | **Export** (top bar) gives a portable workflow file; import it there |
 | Understand what a node does | Select it → Inspector help, or look it up in the [Node Library](../nodes/index.md) |
