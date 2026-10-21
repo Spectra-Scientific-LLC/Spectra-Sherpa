@@ -94,7 +94,7 @@ plotly = ">=5.24,<7"
 beautifulsoup4 = {version = "^4.12.3", optional = true}
 # Pinned with numpy and scipy above; see the managed-profile note there.
 scikit-learn = "1.9.0"
-pypdf = ">=6.19.0,<7.0.0"
+pypdf = ">=6.21.1,<7.0.0"
 jsonschema = "^4.20.0"
 # greenlet is required at runtime by SQLAlchemy 2.x async on every platform —
 # AsyncEngine.connect() bridges sync internals via greenlet_spawn regardless of

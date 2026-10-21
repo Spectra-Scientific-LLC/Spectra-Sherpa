@@ -30,7 +30,7 @@ def test_python_lock_retains_reviewed_security_floors_and_scp_authority() -> Non
         "jupyterlab": "4.5.10",
         "mistune": "3.3.0",
         "pillow": "12.3.0",
-        "pypdf": "6.19.0",
+        "pypdf": "6.21.1",
         "setuptools": "83.0.0",
         "soupsieve": "2.8.4",
     }
@@ -67,7 +67,10 @@ def test_pypdf_install_paths_exclude_versions_before_the_reviewed_security_floor
     for constraint in (declared, runtime):
         assert Version("6.16.2") not in constraint
         assert Version("6.18.1") not in constraint
-        assert Version("6.19.0") in constraint
+        assert Version("6.19.0") not in constraint
+        assert Version("6.20.1") not in constraint
+        assert Version("6.21.0") not in constraint
+        assert Version("6.21.1") in constraint
         assert _python_versions()["pypdf"] in constraint
         assert Version("7.0.0") not in constraint
 
@@ -120,3 +123,15 @@ def test_frontend_lock_excludes_braces_and_its_retired_suppression() -> None:
     assert not any(path.split("/")[-1] == "braces" for path in lock["packages"])
     ignore = (PACKAGE_ROOT / "scripts/audit-ignore.toml").read_text(encoding="utf-8")
     assert "GHSA-vfj7-8cjw-p6xm" not in ignore
+
+
+def test_frontend_lock_excludes_vulnerable_vitest_mocker() -> None:
+    lock = json.loads(FRONTEND_LOCK.read_text(encoding="utf-8"))
+    for name in ("vitest", "@vitest/mocker"):
+        versions = [
+            Version(item["version"])
+            for path, item in lock["packages"].items()
+            if path.endswith(f"node_modules/{name}")
+        ]
+        assert versions, f"{name} must be covered by the security floor"
+        assert all(version >= Version("4.1.12") for version in versions)
