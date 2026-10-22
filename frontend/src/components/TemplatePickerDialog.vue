@@ -390,7 +390,8 @@ const bindingFromNode = (node: WorkflowNode | undefined): TemplateDataBinding | 
       allFiles: false,
       assetId: typeof params.asset_id === "string" && params.asset_id ? params.asset_id : null,
       datasetViewId: parseNumberParam(params.dataset_view_id),
-      datasetViewSha256: typeof params.dataset_view_sha256 === "string"
+      // Load nodes persist "" for "no saved definition"; API bindings use null.
+      datasetViewSha256: typeof params.dataset_view_sha256 === "string" && params.dataset_view_sha256
         ? params.dataset_view_sha256 : null,
       targetAuthority: targetAuthorityFromParams(params.target_authority),
       groupColumn:

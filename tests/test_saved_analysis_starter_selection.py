@@ -114,3 +114,17 @@ async def test_denied_dataset_never_reads_saved_metadata(monkeypatch):
     with pytest.raises(PermissionError):
         await routes._validate_binding(session, 7, binding(), 9, use_saved_analysis_selection=True)
     session.get.assert_not_awaited()
+
+
+def test_binding_reads_the_load_node_empty_view_digest_as_absent():
+    """Load nodes persist "" for "no saved definition"; clients may echo it back."""
+    from pydantic import ValidationError
+
+    absent = routes.DataBindingSpec(
+        source="experiment", experiment_id=1, file_ids=[2], stage="raw", dataset_view_sha256=""
+    )
+    assert absent.dataset_view_sha256 is None
+    # Still paired: an id with an empty digest is refused, as is a malformed digest.
+    for overrides in ({"dataset_view_id": 3, "dataset_view_sha256": ""}, {"dataset_view_sha256": "abc"}):
+        with pytest.raises(ValidationError):
+            routes.DataBindingSpec(source="experiment", experiment_id=1, file_ids=[2], stage="raw", **overrides)
