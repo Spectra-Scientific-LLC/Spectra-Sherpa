@@ -683,8 +683,9 @@ async def save_synthesis_result(
 
     ``commit=False`` leaves the rows flushed in the caller's transaction so a
     host can bind further authority (for example an execution grant) and commit
-    once. Such callers own rollback; ``written_paths`` receives every created
-    file or directory so they can remove them when the transaction fails.
+    once. Such callers own rollback; ``written_paths`` receives every file or
+    directory this call creates, before it is written, so a caller can remove
+    exactly those on a confirmed rollback. Pre-existing paths are never listed.
     """
     result = synthesize(request)
     if request.project_id is not None:
@@ -703,6 +704,7 @@ async def save_synthesis_result(
         experiment = await create_experiment(
             session,
             flush_only=not commit,
+            created_paths=written_paths,
             user_id=current_user.id,
             name=request.name or _default_dataset_name(result),
             description="Synthetic FTIR dataset generated from component spectra",
@@ -720,8 +722,6 @@ async def save_synthesis_result(
             project_id=request.project_id,
         )
         experiment_id = experiment.id
-        if written_paths is not None:
-            written_paths.append(experiment_dir(experiment_id))
     else:
         existing = (
             await session.execute(
@@ -737,6 +737,8 @@ async def save_synthesis_result(
             raise SynthesisError("Experiment does not belong to the requested project")
 
     base = experiment_dir(experiment_id) / SYNTHETIC_STAGE
+    if written_paths is not None and not base.exists():
+        written_paths.append(base)
     base.mkdir(parents=True, exist_ok=True)
     stem = _safe_stem(request.name or _default_dataset_name(result))
     npz_path, recipe_path = _unique_synthesis_artifact_paths(base, stem)
