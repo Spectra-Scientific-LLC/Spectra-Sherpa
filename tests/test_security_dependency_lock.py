@@ -42,6 +42,8 @@ def test_python_lock_retains_reviewed_security_floors_and_scp_authority() -> Non
 def test_frontend_lock_retains_current_yaml_and_expansion_floors() -> None:
     lock = json.loads(FRONTEND_LOCK.read_text(encoding="utf-8"))
     packages = lock["packages"]
+    for name in ("vitest", "@vitest/mocker"):
+        assert Version(packages[f"node_modules/{name}"]["version"]) >= Version("4.1.12")
     js_yaml = [Version(item["version"]) for path, item in packages.items() if path.endswith("node_modules/js-yaml")]
     expansions = [
         Version(item["version"]) for path, item in packages.items() if path.endswith("node_modules/brace-expansion")
