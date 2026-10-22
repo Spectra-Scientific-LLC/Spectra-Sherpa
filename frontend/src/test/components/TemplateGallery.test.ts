@@ -32,6 +32,23 @@ const template = (
 });
 
 describe("TemplateGallery explicit qualification states", () => {
+  it("still loads the compatibility matrix while a template load is in flight", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useWorkflowStore(pinia);
+    store.templatesLoading = true;
+    const fetchTemplates = vi.spyOn(store, "fetchTemplates").mockResolvedValue([]);
+    const fetchMatrix = vi.spyOn(store, "fetchCompatibilityMatrix").mockResolvedValue(null as never);
+
+    mount(TemplateGallery, {
+      global: { plugins: [pinia], stubs: { Button: true, Message: true, ProgressSpinner: true } },
+    });
+    await flushPromises();
+
+    expect(fetchTemplates).not.toHaveBeenCalled();
+    expect(fetchMatrix).toHaveBeenCalledOnce();
+  });
+
   it("shows the exact pending authority and disables only non-ready starters", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

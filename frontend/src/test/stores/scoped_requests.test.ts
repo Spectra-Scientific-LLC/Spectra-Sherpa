@@ -393,6 +393,30 @@ describe("store-owned scope, independent of mounted pages", () => {
     expect(data.catalogLoading).toBe(false);
   });
 
+  it("keeps account-wide starter catalogs across a project switch, including late replies", async () => {
+    const workflow = useWorkflowStore();
+    const templates = deferred<{ data: unknown }>();
+    const matrix = deferred<{ data: unknown }>();
+    vi.mocked(api.get).mockReturnValueOnce(templates.promise).mockReturnValueOnce(matrix.promise);
+    const pendingTemplates = workflow.fetchTemplates(undefined, true);
+    const pendingMatrix = workflow.fetchCompatibilityMatrix();
+    useProjectStore().currentProjectId = 2;
+    templates.resolve({ data: { templates: [{ id: 1, slug: "pca" }] } });
+    matrix.resolve({ data: { datasets: [{ dataset_id: "sklearn:iris" }], matrix: [] } });
+    await Promise.all([pendingTemplates, pendingMatrix]);
+    expect(workflow.templates.map(item => item.slug)).toEqual(["pca"]);
+    expect(workflow.templatesLoading).toBe(false);
+    expect(workflow.compatibilityMatrix?.datasets[0].dataset_id).toBe("sklearn:iris");
+
+    useProjectStore().currentProjectId = 3;
+    expect(workflow.templates).toHaveLength(1);
+    expect(workflow.compatibilityMatrix).not.toBeNull();
+
+    useAuthStore().token = "session-two";
+    expect(workflow.templates).toEqual([]);
+    expect(workflow.compatibilityMatrix).toBeNull();
+  });
+
   it("notifies registered views on same-user token rotation", () => {
     const reset = vi.fn();
     registerProjectScopeReset(reset);

@@ -31,8 +31,9 @@
 .p-checkbox .p-checkbox-box, .p-radiobutton .p-radiobutton-box {
   background: var(--ss-surface); border-color: var(--ss-text-muted);
 }
-.p-checkbox .p-checkbox-box.p-highlight,
-.p-radiobutton .p-radiobutton-box.p-highlight,
+/* PrimeVue 3.53 marks the checked state on the component root, not the box. */
+.p-checkbox.p-highlight .p-checkbox-box,
+.p-radiobutton.p-highlight .p-radiobutton-box,
 .p-inputswitch.p-highlight .p-inputswitch-slider {
   background: var(--ss-action); border-color: var(--ss-action);
 }

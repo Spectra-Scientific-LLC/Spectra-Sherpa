@@ -2836,7 +2836,7 @@ const onDeleteNode = (nodeId: string) => {
   background: var(--ss-panel-inset);
 }
 
-.toolbar-state-control :deep(.p-checkbox-box.p-highlight) {
+.toolbar-state-control :deep(.p-checkbox.p-highlight .p-checkbox-box) {
   border-color: var(--ss-action-border);
   background: var(--ss-action);
 }

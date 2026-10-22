@@ -103,7 +103,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const lastExecutionResultDescriptors = ref<Record<string, NodeScientificValueDescriptors>>({});
   const lastExecutionPresentations = ref<Record<string, ExecutedPresentationRecord>>({});
   const workflowWarnings = ref<string[]>([]);
-  const workspaceIdentity = () => [useAuthStore().user?.id, useAuthStore().token, useProjectStore().currentProjectId];
+  const sessionIdentity = () => [useAuthStore().user?.id, useAuthStore().token];
+  const workspaceIdentity = () => [...sessionIdentity(), useProjectStore().currentProjectId];
   const workflowOwnership = useScopedRequest(workspaceIdentity);
   const loadScope = useScopedRequest(workspaceIdentity, () => { isLoading.value = false; });
   const saveScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
@@ -111,8 +112,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const executionScope = useScopedRequest(workspaceIdentity, () => { preparingExecution.value = false; }, { abortOnInvalidate: false });
   const choiceScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
   const datasetCatalogScope = useScopedRequest(workspaceIdentity, () => { availableDatasets.value = null; });
-  const templateScope = useScopedRequest(workspaceIdentity, () => { templatesLoading.value = false; templatesError.value = null; templates.value = []; });
-  const compatibilityScope = useScopedRequest(workspaceIdentity, () => { compatibilityLoading.value = false; compatibilityError.value = null; compatibilityMatrix.value = null; });
+  // The template catalog and compatibility matrix are not project-owned (their
+  // endpoints take no project), so a project switch must not discard them.
+  const templateScope = useScopedRequest(sessionIdentity, () => { templatesLoading.value = false; templatesError.value = null; templates.value = []; });
+  const compatibilityScope = useScopedRequest(sessionIdentity, () => { compatibilityLoading.value = false; compatibilityError.value = null; compatibilityMatrix.value = null; });
   async function recordActiveWorkflowChoice(projectId: number | null | undefined, id: number): Promise<void> {
     if (projectId == null || projectId !== useProjectStore().currentProjectId) return;
     const request = choiceScope.begin();

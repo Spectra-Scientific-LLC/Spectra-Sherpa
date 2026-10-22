@@ -5,6 +5,10 @@ import { resolve } from "node:path";
 // @ts-expect-error -- small build-tool module intentionally has no browser type declarations.
 import { inventoryColors, colorRegressions } from "../../../scripts/theme-colors.mjs";
 import { computed } from "vue";
+import { mount } from "@vue/test-utils";
+import PrimeVue from "primevue/config";
+import Checkbox from "primevue/checkbox";
+import RadioButton from "primevue/radiobutton";
 import { createCategoryColorMap, seriesPalette } from "@/utils/colors";
 import { themeToken, standaloneThemeCss } from "@/theme/interfaceTheme";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
@@ -119,5 +123,27 @@ describe("semantic theme authority", () => {
     for (const background of ["surface", "surface-subtle", "surface-workspace"])
       for (const foreground of ["border-input", "focus"])
         expect(contrast(foreground, background), `${foreground} on ${background}`).toBeGreaterThanOrEqual(3);
+  });
+
+  it("styles checked checkboxes and radios on the root PrimeVue actually marks", () => {
+    // White-on-white icons otherwise make checked and unchecked identical.
+    for (const [component, props] of [[Checkbox, { modelValue: true, binary: true }], [RadioButton, { modelValue: "a", value: "a" }]] as const) {
+      const wrapper = mount(component as never, { props, global: { plugins: [PrimeVue] } });
+      expect(wrapper.classes()).toContain("p-highlight");
+      expect(wrapper.find("[class$='-box']").classes()).not.toContain("p-highlight");
+    }
+    const controls = readFileSync(resolve(root, "assets/controls.css"), "utf8");
+    expect(controls).toContain(".p-checkbox.p-highlight .p-checkbox-box");
+    expect(controls).toContain(".p-radiobutton.p-highlight .p-radiobutton-box");
+    const stale: string[] = [];
+    const scan = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = resolve(dir, entry.name);
+        if (entry.isDirectory()) { if (entry.name !== "test") scan(path); }
+        else if (/\.(css|vue)$/.test(entry.name) && /(checkbox|radiobutton)-box\.p-highlight/.test(readFileSync(path, "utf8"))) stale.push(path);
+      }
+    };
+    scan(root);
+    expect(stale).toEqual([]);
   });
 });

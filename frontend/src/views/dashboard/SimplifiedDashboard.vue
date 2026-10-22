@@ -455,6 +455,12 @@ function onStarterOverview(overview: StarterOverview): void {
 
 async function startFromGoal(request: StarterStartRequest): Promise<void> {
   const { plan, dataset } = request;
+  // A session change after mount clears the catalogs; reload them before
+  // resolving the plan rather than reporting its choices as unlisted.
+  await Promise.allSettled([
+    workflowStore.templates.length ? undefined : workflowStore.fetchTemplates(undefined, true),
+    dataset?.kind === "reference" ? workflowStore.fetchCompatibilityMatrix() : undefined,
+  ]);
   const template = plan.template_slug
     ? workflowStore.templates.find((candidate) => candidate.slug === plan.template_slug)
     : undefined;
