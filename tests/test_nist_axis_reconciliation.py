@@ -154,17 +154,20 @@ def test_explicit_nist_policy_still_refuses_malformed_or_larger_contradictions(o
 
 
 @pytest.mark.asyncio
-async def test_provider_reconciliation_survives_cache_synthesis_and_npz(monkeypatch, tmp_path):
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"], ids=["LF", "CRLF"])
+async def test_provider_reconciliation_survives_cache_synthesis_and_npz(monkeypatch, tmp_path, line_ending):
     from spectra_sherpa.app.lib.synthetic_npz import load_synthetic_npz
     from spectra_sherpa.app.schemas.synthesis import SynthesisRequest
     from spectra_sherpa.app.services import synthesis as service
 
     text, axis, values = nist_style_text()
+    source_bytes = text.replace("\n", line_ending).encode("utf-8")
     downloads = []
 
     async def download(cas, *, index, destination):
         downloads.append((cas, index))
-        destination.write_text(text, encoding="utf-8")
+        # Downloads retain exact provider bytes, without OS text translation.
+        destination.write_bytes(source_bytes)
 
     monkeypatch.setattr(service, "_synthesis_cache_dir", lambda _source: tmp_path)
     monkeypatch.setattr(service, "_download_nist_quant_ir_jcamp", download)
@@ -191,7 +194,7 @@ async def test_provider_reconciliation_survives_cache_synthesis_and_npz(monkeypa
     retained = load_synthetic_npz(path)
     provenance = json.loads(retained["recipe_json"])["components"][0]["source_provenance"]
     assert provenance == first.metadata
-    assert provenance["source_sha256"] == hashlib.sha256(text.encode()).hexdigest()
+    assert provenance["source_sha256"] == hashlib.sha256(source_bytes).hexdigest()
 
 
 def _strict_jcamp(shift: int) -> str:
@@ -203,14 +206,22 @@ def _strict_jcamp(shift: int) -> str:
     )
 
 
-def test_strict_jcamp_collection_identity_is_unchanged_by_the_nist_policy(tmp_path):
+@pytest.mark.parametrize(
+    "line_ending,expected_digest",
+    [
+        ("\n", "b8342a44ed01f1719614ef3f13feafb2f461a7319e63c11f4f6c9691b26a2f79"),
+        ("\r\n", "335822ad1694e74773fa85f5a3815b29f7c0310c549d14939715c7618f16b3c4"),
+    ],
+    ids=["LF", "CRLF"],
+)
+def test_strict_jcamp_collection_identity_is_unchanged_by_the_nist_policy(tmp_path, line_ending, expected_digest):
     """Saved multi-file JCAMP bindings pin this digest; parser identity is part of it."""
     from spectra_sherpa.app.lib.collection_assembly import CollectionMember, assemble_collection
 
     members = []
     for index in range(2):
         path = tmp_path / f"s{index}.jdx"
-        path.write_text(_strict_jcamp(index))
+        path.write_bytes(_strict_jcamp(index).replace("\n", line_ending).encode("utf-8"))
         source = path.read_bytes()
         result = ingest(path)
         assert result.parser_version == "2"
@@ -219,5 +230,6 @@ def test_strict_jcamp_collection_identity_is_unchanged_by_the_nist_policy(tmp_pa
             CollectionMember(result.assets[0].dataset, path.name, len(source), hashlib.sha256(source).hexdigest())
         )
     collection = assemble_collection(members, title="c")
-    # Digest produced before the NIST policy existed (main 2db5db96).
-    assert collection.scientific_digest == "b8342a44ed01f1719614ef3f13feafb2f461a7319e63c11f4f6c9691b26a2f79"
+    # Original LF digest (main 2db5db96), plus the same source with CRLF.
+    # Collection custody intentionally binds exact source bytes, not normalized text.
+    assert collection.scientific_digest == expected_digest
