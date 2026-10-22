@@ -212,8 +212,16 @@ describe("SimplifiedDashboard analysis starters", () => {
         .findAll("button")
         .find((button) => button.text() === "New Analysis")!
         .trigger("click");
-      expect(wrapper.text()).toContain("Choose a dataset to enable Start.");
-      expect(wrapper.get('.starter-card button').attributes('disabled')).toBeDefined();
+      expect(wrapper.get('.starter-card button').attributes('disabled')).toBeUndefined();
+      expect(wrapper.get('[data-test="template-start"]').attributes('disabled')).toBeDefined();
+      await wrapper.get('.starter-card button').trigger('click');
+      await flushPromises();
+      expect(projectStore.createProject).toHaveBeenLastCalledWith(expect.objectContaining({
+        name: 'Blank project', metadata: undefined,
+      }));
+      expect(mocks.routerPush).toHaveBeenLastCalledWith('/project');
+      expect(window.sessionStorage.getItem('sherpa:data-entry-dataset-intent')).toBeNull();
+      await wrapper.findAll('button').find(button => button.text() === 'New Analysis')!.trigger('click');
       expect(wrapper.text()).toContain("Synthetic atmospheric mixture · Spectra Scientific synthetic benchmarks");
       expect(wrapper.text()).toContain("Iris · scikit-learn datasets");
       expect(wrapper.text()).toContain("Eigenvector Corn M5 · User-acquired Eigenvector datasets · Needs file import");

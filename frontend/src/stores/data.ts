@@ -1,4 +1,5 @@
 import { sherpaResponseTimeoutMs } from "@/lib/sherpaTimeouts";
+import { clearRetainedDatasetWorkspace } from "@/utils/retainedInspection";
 import { streamLocalDataStory } from "@/lib/localDataStory";
 import { buildDataStoryContext } from "@/lib/dataStoryFacts";
 import { useAppConfig } from "@/composables/useAppConfig";
@@ -534,6 +535,7 @@ export const useDataStore = defineStore("data", () => {
   }
 
   function resetProjectScope(): void {
+    clearRetainedDatasetWorkspace(useDataStore());
     catalogScope.invalidate();
     experimentsScope.invalidate();
     selectionScope.invalidate();

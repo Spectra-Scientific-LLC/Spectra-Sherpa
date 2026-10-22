@@ -1649,6 +1649,8 @@ import { workflowSelectionStage } from "@/api/adapters/datasets";
 import {
   clearRetainedInspection,
   retainedInspection,
+  retainCompleteSource,
+  retainedCompleteSource,
   retainedDatasetWorkspace,
 } from "@/utils/retainedInspection";
 
@@ -3126,9 +3128,15 @@ const sourceStoryInspection = ref<{
 } | null>(null);
 const dataStoryInspectedSource = computed(() => {
   const saved = sourceStoryInspection.value;
-  return saved?.experimentId === dataStore.activeExperimentId &&
-    saved.filesKey === originalSourceFilesKey.value ? saved.dataset : null;
+  const candidate = saved?.experimentId === dataStore.activeExperimentId &&
+    saved.filesKey === originalSourceFilesKey.value ? saved.dataset :
+    residentDatasets.get(dataStore.activeExperimentId!) ?? dataStore.fileInfo;
+  return retainedCompleteSource(candidate, completeSourceScope());
 });
+function completeSourceScope(): string {
+  return JSON.stringify([authStore.user?.id ?? "local", projectStore.currentProjectId,
+    dataStore.activeExperimentId, originalSourceFilesKey.value]);
+}
 const dataStoryUnavailableReason = computed(() => {
   if (!dataStore.fileInfo || dataStore.fileInfoLoading || plotDatasetsLoading.value ||
       dataStoryInspectedSource.value) return null;
@@ -3227,7 +3235,8 @@ const originalSourceSampleCount = computed(() => {
   const id = dataStore.activeExperimentId;
   if (id == null || !originalSourceFilesKey.value) return null;
   const receipt = sourceSampleCounts.value[id];
-  return receipt?.filesKey === originalSourceFilesKey.value ? receipt.count : null;
+  return receipt?.filesKey === originalSourceFilesKey.value ? receipt.count :
+    dataStoryInspectedSource.value?.n_samples ?? null;
 });
 
 const sourceCountRequests = useScopedRequest(() => [
@@ -4209,7 +4218,6 @@ async function onImportSelectedDatasets(): Promise<boolean> {
       { source_kind: "catalog_reference", reference_sources: Array.from(selectedRefDatasets) },
     );
     createdExperimentId = created.id;
-    await dataStore.selectExperiment(created.id);
 
     const datasets = Array.from(selectedRefDatasets).map((key) => {
       const [source, ...rest] = key.split("::");
@@ -6120,11 +6128,13 @@ async function showExperimentContents(
     if (!ticket.isCurrent()) return;
     if (
       (loadWholeCollection || sourceFiles.length === 1) &&
+      selectedStage === originalSourceFiles.value[0]?.stage &&
       inspectedDataset &&
       Number(inspectedDataset.metadata?.contents_file_count) === sourceFiles.length &&
       (originalSourceSampleCount.value == null ||
         inspectedDataset.n_samples === originalSourceSampleCount.value)
     ) {
+      retainCompleteSource(inspectedDataset, completeSourceScope());
       sourceStoryInspection.value = {
         experimentId,
         filesKey: originalSourceFilesKey.value,

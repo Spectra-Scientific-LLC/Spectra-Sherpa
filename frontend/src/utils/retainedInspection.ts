@@ -1,4 +1,19 @@
 import type { SherpaDatasetDict } from "@/types";
+import { toRaw } from "vue";
+
+// This is a receipt of an actual complete-source inspection, not a shape-based
+// inference. Weak keys retain no extra dataset after its workspace releases it.
+const completeSources = new WeakMap<object, string>();
+
+export function retainCompleteSource(dataset: SherpaDatasetDict, scope: string): void {
+  completeSources.set(toRaw(dataset), scope);
+}
+
+export function retainedCompleteSource(
+  dataset: SherpaDatasetDict | null | undefined, scope: string,
+): SherpaDatasetDict | null {
+  return dataset && completeSources.get(toRaw(dataset)) === scope ? dataset : null;
+}
 
 // Cache only while the exact admitted dataset object is retained. Replacing
 // that object after an import, edit, or refresh invalidates its derived reads.
@@ -26,12 +41,23 @@ export function retainedInspection<T>(
 }
 
 export function clearRetainedInspection(dataset: object | null): void {
-  if (dataset) requests.delete(dataset);
+  if (dataset) {
+    requests.delete(dataset);
+    completeSources.delete(toRaw(dataset));
+  }
 }
 const workspaces = new WeakMap<
   object,
   { scope: string; datasets: Map<number, SherpaDatasetDict> }
 >();
+
+/** Invalidate retained facts even when the Data page is not mounted. */
+export function clearRetainedDatasetWorkspace(owner: object): void {
+  const workspace = workspaces.get(owner);
+  workspace?.datasets.forEach(clearRetainedInspection);
+  workspace?.datasets.clear();
+  workspaces.delete(owner);
+}
 
 /** Keep loaded sources across route changes, but never across account/project scopes. */
 export function retainedDatasetWorkspace(
@@ -40,7 +66,7 @@ export function retainedDatasetWorkspace(
 ): Map<number, SherpaDatasetDict> {
   let workspace = workspaces.get(owner);
   if (!workspace || workspace.scope !== scope) {
-    workspace?.datasets.clear();
+    clearRetainedDatasetWorkspace(owner);
     workspace = { scope, datasets: new Map() };
     workspaces.set(owner, workspace);
   }

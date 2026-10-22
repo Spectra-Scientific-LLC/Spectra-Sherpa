@@ -3,9 +3,23 @@ import {
   clearRetainedInspection,
   retainedInspection,
   retainedDatasetWorkspace,
+  retainCompleteSource,
+  retainedCompleteSource,
 } from "@/utils/retainedInspection";
 
 describe("retained inspection reads", () => {
+  it("requires an exact source object and account/project/file binding", () => {
+    const source = { n_samples: 1, n_features: 1, data: [[1]] };
+    const scope = "user1:project2:experiment3:files4";
+    expect(retainedCompleteSource(source, scope)).toBeNull();
+    retainCompleteSource(source, scope);
+    expect(retainedCompleteSource(source, scope)).toBe(source);
+    expect(retainedCompleteSource({ ...source }, scope)).toBeNull();
+    expect(retainedCompleteSource(source, "user2:project2:experiment3:files4")).toBeNull();
+    expect(retainedCompleteSource(source, "user1:project5:experiment3:files4")).toBeNull();
+    clearRetainedInspection(source);
+    expect(retainedCompleteSource(source, scope)).toBeNull();
+  });
   it("retains workspace sources across routes and clears them on scope changes", () => {
     const owner = {};
     const workspace = retainedDatasetWorkspace(owner, "user-1:project-1");

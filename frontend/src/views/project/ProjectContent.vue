@@ -5,7 +5,6 @@
         <Button
           label="New Project" icon="pi pi-plus" class="p-button-sm"
           data-action="new_project"
-          :disabled="appConfig?.siteProfile === 'demo'"
           @click="editingProject = null; dialogVisible = true" />
         <Button
           v-if="isServerBacked && !qualified && projectStore.currentProjectId"
@@ -476,7 +475,6 @@ const headerActionItems = computed(() => [
   {
     label: "New Project",
     icon: "pi pi-plus",
-    disabled: appConfig.value?.siteProfile === "demo",
     command: () => { editingProject.value = null; dialogVisible.value = true; },
   },
   ...(isServerBacked.value && !qualified.value && projectStore.currentProjectId

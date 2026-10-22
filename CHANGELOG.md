@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Staging GUI corrections
 
+- Data Story retains verified complete-source facts across Data-page navigation,
+  but invalidates them on account/session, project, or source-inventory changes.
+  Reference imports select their dataset only after admission completes, avoiding
+  premature Demo file-list requests before the dataset grant exists.
+
+- Blank projects can be created before selecting data in every deployment
+  profile, including Demo. Hosted goal planning offers “Choose data later”;
+  upload restrictions, quotas and scientific execution admission are unchanged.
+
 - Prepare Export defaults to plain CSV; portable CSV remains an explicit
   round-trip option. Format changes update the filename and require freshly
   prepared bytes; JDX exports all input spectra as a ZIP.

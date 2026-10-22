@@ -291,12 +291,17 @@ describe("SimplifiedDashboard Starter tab", () => {
     });
   });
 
-  it("refuses a goal without data outside local mode", async () => {
+  it.each(["enterprise", "hybrid"])("starts a blank goal in %s without sending users to Upload", async (mode) => {
+    appMode.value = mode;
     const { projectStore } = await mountDashboard();
     mocks.starter!.emit("start", { plan: PLAN, name: "Files later", dataset: null });
     await flushPromises();
-    expect(projectStore.createProject).not.toHaveBeenCalled();
-    expect(mocks.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Choose a Dataset" }));
+    expect(projectStore.createProject).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Files later", goal: PLAN.goal, goal_plan: PLAN }),
+    );
+    expect(mocks.routerPush).toHaveBeenLastCalledWith({ path: "/data", query: { tab: "import" } });
+    expect(window.sessionStorage.getItem("sherpa:data-entry-dataset-intent")).toBeNull();
+    expect(mocks.toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: "Choose a Dataset" }));
   });
 
   it("shows the active project's goal in Starter", async () => {

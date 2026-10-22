@@ -156,9 +156,8 @@
           />
           <small id="goal-starter-dataset-help" class="goal-starter__meta">
             <template v-if="selectedIsSuggested && plan.dataset">{{ plan.dataset.reason }}</template>
-            <template v-else-if="selectedDatasetKey === OWN_FILES">You will import your files on the Data page.</template>
-            <template v-else-if="!datasetChoices.length">
-              No compatible dataset is available yet. Import your own data first.
+            <template v-else-if="selectedDatasetKey === OWN_FILES">
+              {{ isLocalMode ? "You will import your files on the Data page." : "Choose a source on the Data page." }}
             </template>
             <template v-if="selectedOption?.availability === 'exact_user_acquisition_required'">
               It needs the provider's original file before it can run.
@@ -281,7 +280,7 @@ const datasetChoices = computed(() => {
     label: `${option.label}${kindSuffix(option)}`,
     value: option.key,
   }));
-  if (props.isLocalMode) choices.push({ label: "I'll import my own files", value: OWN_FILES });
+  choices.push({ label: props.isLocalMode ? "I'll import my own files" : "Choose data later", value: OWN_FILES });
   return choices;
 });
 const selectedOption = computed(
@@ -311,7 +310,7 @@ async function requestPlan(): Promise<void> {
     const result = await planStarterGoal(goal);
     plan.value = result;
     expandedStep.value = result.steps[0]?.key ?? null;
-    selectedDatasetKey.value = result.dataset?.key ?? (props.isLocalMode ? OWN_FILES : null);
+    selectedDatasetKey.value = result.dataset?.key ?? OWN_FILES;
     projectName.value = defaultProjectName(result.goal);
   } catch (error: unknown) {
     plan.value = null;

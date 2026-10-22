@@ -190,14 +190,17 @@ describe("StarterPanel", () => {
     });
   });
 
-  it("requires a dataset outside local mode", async () => {
+  it("allows choosing data later outside local mode", async () => {
     adapter.planStarterGoal.mockResolvedValue({ ...PLAN, dataset: null, dataset_options: [] });
     const wrapper = mountPanel({ isLocalMode: false });
     await flushPromises();
     await wrapper.get('[data-test="starter-plan"]').trigger("click");
     await flushPromises();
-    expect(wrapper.get('[data-test="starter-ready"]').attributes("disabled")).toBeDefined();
-    expect(wrapper.text()).toContain("No compatible dataset is available yet");
+    expect(wrapper.get('[data-test="starter-ready"]').attributes("disabled")).toBeUndefined();
+    expect(wrapper.text()).toContain("Choose data later");
+    expect(wrapper.text()).not.toContain("You will import your files");
+    await wrapper.get('[data-test="starter-ready"]').trigger("click");
+    expect(wrapper.emitted("start")?.[0]?.[0]).toMatchObject({ dataset: null });
   });
 
   it("starts with own files in local mode when no dataset is chosen", async () => {

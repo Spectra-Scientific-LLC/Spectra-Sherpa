@@ -1,7 +1,7 @@
 import { flushPromises, shallowMount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "vue";
-const mocks = vi.hoisted(() => ({ project: null as any, get: vi.fn(), push: vi.fn(), list: vi.fn() }));
+const mocks = vi.hoisted(() => ({ project: null as any, config: { siteProfile: "demo" }, get: vi.fn(), push: vi.fn(), list: vi.fn() }));
 vi.mock("@/api/client", () => ({ default: { get: mocks.get } }));
 vi.mock("vue-router", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: vi.fn() }) }));
@@ -13,7 +13,7 @@ vi.mock("@/stores/project", async () => {
 });
 vi.mock("@/stores/workflow", () => ({ useWorkflowStore: () => ({ listWorkflows: mocks.list }) }));
 vi.mock("@/stores/advisor", () => ({ useAdvisorStore: () => ({ switchScope: vi.fn() }) }));
-vi.mock("@/composables/useAppConfig", () => ({ useAppConfig: () => ({ config: ref({}), appMode: ref("local"), isCapabilityDisabled: () => false }) }));
+vi.mock("@/composables/useAppConfig", () => ({ useAppConfig: () => ({ config: ref(mocks.config), appMode: ref("enterprise"), isCapabilityDisabled: () => false }) }));
 vi.mock("@/composables/useProjectAvailability", () => ({ useProjectAvailability: () => ({ qualified: ref(false), availability: ref(null) }) }));
 vi.mock("@/composables/useDemoMode", () => ({ useDemoMode: () => ({ isDemoMode: ref(false), uploadsLastWeek: ref(null), uploadsLimitWeek: ref(0), fetchQuota: vi.fn() }) }));
 import ProjectContent from "@/views/project/ProjectContent.vue";
@@ -37,6 +37,22 @@ describe("Project resource workspace", () => {
     expect(header.findAllComponents({ name: "Button" }).map(b => b.attributes("label"))).toEqual(expect.arrayContaining(["Edit", "Export"]));
     const button = view.findAllComponents({ name: "Button" }).find(b => b.attributes("label") === "Models")!;
     button.vm.$emit("click"); expect(mocks.push).toHaveBeenCalledWith("/runs?tab=models"); view.unmount();
+  });
+  it.each(["demo", "pro", ""])("allows a blank project from both header surfaces in %s", async (profile) => {
+    mocks.config.siteProfile = profile;
+    const view = mountView(); await flushPromises();
+    const header = view.getComponent({ name: "WorkspaceHeader" });
+    const action = header.props("actions").find((item: { label: string }) => item.label === "New Project");
+    expect(action.disabled).not.toBe(true);
+    const button = header.findAllComponents({ name: "Button" }).find(b => b.attributes("label") === "New Project")!;
+    expect(button.attributes("disabled")).toBeUndefined();
+    button.vm.$emit("click"); await flushPromises();
+    expect(view.getComponent({ name: "ProjectDialog" }).props("visible")).toBe(true);
+    view.getComponent({ name: "ProjectDialog" }).vm.$emit("update:visible", false);
+    await flushPromises();
+    action.command(); await flushPromises();
+    expect(view.getComponent({ name: "ProjectDialog" }).props("visible")).toBe(true);
+    view.unmount();
   });
   it("distinguishes failure from an empty history", async () => {
     mocks.get.mockRejectedValue(new Error("offline"));
