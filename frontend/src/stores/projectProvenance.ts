@@ -53,7 +53,7 @@ export const useProjectProvenanceStore = defineStore("projectProvenance", () => 
   let lastFetchedAt = 0;
   let inFlight: { id: number; force: boolean; promise: Promise<void>; ticket: ScopedRequestTicket } | null = null;
   const requestScope = useScopedRequest(
-    () => [useAuthStore().user?.id, useAuthStore().token, activeProjectScope.value, projectId.value],
+    () => [useAuthStore().user?.id, useAuthStore().sessionRevision, activeProjectScope.value, projectId.value],
     () => {
       summary.value = null;
       error.value = null;

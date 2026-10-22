@@ -1776,7 +1776,7 @@ const navigation = useDatasetNavigation(() => [
   workflowSourceNodeId.value, JSON.stringify(route.query),
 ]);
 const projectAdmission = useScopedRequest(() => [
-  authStore.user?.id, authStore.token, JSON.stringify(route.query), navigation.intent.value,
+  authStore.user?.id, authStore.sessionRevision, JSON.stringify(route.query), navigation.intent.value,
 ]);
 const definitions = useDatasetDefinitions(dataScopeIdentity);
 const {

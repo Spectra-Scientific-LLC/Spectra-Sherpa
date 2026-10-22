@@ -11,6 +11,24 @@ import { datasetMetadataGroupingState } from "@/utils/sampleMetadataGrouping";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe("QuickPlotModal", () => {
+  it.each(["data.file_load", "preprocess.scale"])("keeps alternate coordinate controls for %s without inventing absent labels", async (nodeType) => {
+    const wire = { data: [[1, 2, 3]], x_axis: { data: [1000, 900, 800], title: "Wavenumber", units: "cm-1",
+      alternate_scales: [{ name: "Wavelength", values: [10000, 11111, 12500], title: "Wavelength", units: "nm", source_set_index: 1 }] },
+      y_axis: { labels: ["sample-1"], alternate_label_sets: [{ name: "Names", values: ["Lavender"], source_set_index: 1 }] } };
+    const wrapper = mount(QuickPlotModal, { props: { embedded: true, modelValue: true, nodeType, nodeLabel: "Source", nodeInputs: { X: { value: wire } },
+      nodeOutput: { data: wire.data, presentation_value: wire, metadata: { scientific_presentation: scientificPresentation("spectral_dataset") },
+        ports: { default: { value: wire, data: wire.data, metadata: {} } }, primary_port: "default" } }, global: { stubs: globalStubs } });
+    const vm = wrapper.vm as any;
+    expect(wrapper.text()).toContain("Coordinate scale");
+    vm.selectedFeatureScale = "scale:Wavelength";
+    vm.selectedSampleLabels = "labels:Names";
+    await nextTick();
+    expect(vm.displayPlotData[0]).toMatchObject({ x: [10000, 11111, 12500], y: [1, 2, 3] });
+    expect(vm.displayPlotData[0].name).toContain("Lavender");
+    expect(vm.displayPlotLayout.xaxis.title).toContain("nm");
+    if (nodeType === "preprocess.scale") expect(vm.displayPlotData).toHaveLength(2);
+    wrapper.unmount();
+  });
   it("formats plot-table coordinates without changing retained data", () => {
     const wrapper = mount(QuickPlotModal, {
       props: { modelValue: true, nodeType: "model.pca", nodeLabel: "PCA", nodeOutput: { data: [], metadata: {} } },
@@ -222,6 +240,14 @@ describe("QuickPlotModal", () => {
       ["heatmap", [1100, 1000], ["input B"], [[20, 30]]],
     ]);
     expect(vm.displayPlotLayout.yaxis.domain[0]).toBeGreaterThan(vm.displayPlotLayout.yaxis2.domain[1]);
+    wrapper.findComponent({ name: "PlotlyChart" }).vm.$emit("click", { points: [{ curveNumber: 1, pointNumber: [0, 1] }] });
+    await nextTick();
+    expect(vm.matrixSlices.horizontal).toMatchObject({ x: [1100, 1000], y: [20, 30] });
+    expect(vm.matrixSlices.vertical).toMatchObject({ x: ["input B"], y: [30] });
+    expect(wrapper.find('[aria-label="Matrix slices"]').exists()).toBe(true);
+    vm.selectedPlotKey = "spectra_overlay";
+    await nextTick();
+    expect(wrapper.find('[aria-label="Matrix slices"]').exists()).toBe(false);
     wrapper.unmount();
   });
 

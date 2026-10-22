@@ -128,12 +128,11 @@ const buildApiUrl = (path: string): string => {
   return `${window.location.origin}${baseUrl}${path}`;
 };
 
-const getRequestHeaders = (): HeadersInit => {
+const getRequestHeaders = (token: string | null): HeadersInit => {
   const headers: Record<string, string> = {
     Accept: "text/event-stream",
     "Content-Type": "application/json",
   };
-  const token = localStorage.getItem("token");
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -201,7 +200,7 @@ export const useLlmStore = defineStore("llm", () => {
     isServerBacked.value ? [] : loadConversations()
   );
   const currentConversationId = ref<string | null>(null);
-  const workspaceIdentity = () => [authStore.user?.id, authStore.token, projectStore.currentProjectId];
+  const workspaceIdentity = () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId];
   const conversationLoads = useScopedRequest(workspaceIdentity);
   const conversationIndex = useScopedRequest(() => [...workspaceIdentity(), currentConversationId.value]);
   const conversationWrites = useScopedRequest(workspaceIdentity, undefined, { abortOnInvalidate: false });
@@ -219,7 +218,7 @@ export const useLlmStore = defineStore("llm", () => {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let allowReconnect = true;
   const connections = useScopedRequest(
-    () => [authStore.user?.id, authStore.token], () => stopConnection(),
+    () => [authStore.user?.id, authStore.sessionRevision], () => stopConnection(),
   );
   let policyCloseController: AbortController | null = null;
 
@@ -481,7 +480,7 @@ export const useLlmStore = defineStore("llm", () => {
           ? `Live connection opened on retry ${connectAttempt}.`
           : "Live connection opened."
       );
-      socket.send(buildAuthMessage());
+      socket.send(buildAuthMessage(authStore.token));
       emitWsTransport("auth_sent", "WebSocket authentication sent.");
       clearAuthAckTimer();
       authAckTimer = window.setTimeout(() => {
@@ -809,7 +808,7 @@ export const useLlmStore = defineStore("llm", () => {
       try {
         const response = await fetch(buildApiUrl("/chat/stream"), {
           method: "POST",
-          headers: getRequestHeaders(),
+          headers: getRequestHeaders(authStore.token),
           signal: controller.signal,
           body: JSON.stringify({ message, metadata: metadata || null, verbose: currentConfig.value?.verbose ?? true, max_paragraphs: currentConfig.value?.max_paragraphs ?? 2 }),
         });

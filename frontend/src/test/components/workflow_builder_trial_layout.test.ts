@@ -81,6 +81,7 @@ const workflowStore = reactive({
   loadWorkflow: vi.fn(),
   clearWorkflow: vi.fn(),
   updateNode: vi.fn(),
+  executeNode: vi.fn(async () => ({ status: "completed" })),
   addNode: vi.fn(),
   getNodeMetadata: vi.fn(() => ({ label: "PCA" })),
   validateNodeParams: vi.fn(() => []),
@@ -151,8 +152,9 @@ vi.mock("vue-router", () => ({
 const confirmAction = vi.hoisted(() => vi.fn(async () => false));
 vi.mock("@/composables/useConfirmAction", () => ({ useConfirmAction: () => confirmAction }));
 
+const toastAdd = vi.hoisted(() => vi.fn());
 vi.mock("primevue/usetoast", () => ({
-  useToast: () => ({ add: vi.fn() }),
+  useToast: () => ({ add: toastAdd }),
 }));
 
 vi.mock("@/stores/workbook", () => ({
@@ -971,6 +973,70 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     );
     expect(lifecycleCounts.toolbarUnmounts).toBe(0);
     expect(lifecycleCounts.inspectorUnmounts).toBe(0);
+  });
+
+  it("applies a completed trial through retained node execution after restoring its sheet", async () => {
+    workflowStore.executeNode.mockClear();
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    wrapper.getComponent(NodeDetailViewStub).vm.$emit("save", "pca_1", { n_components: 1 }, true);
+    await flushPromises();
+    expect(workflowStore.updateNode).toHaveBeenCalledWith("pca_1", { params: { n_components: 1 } });
+    expect(workbookStore.activeSheet?.workflowId).toBe(101);
+    expect(workflowStore.executeNode).toHaveBeenCalledExactlyOnceWith("pca_1");
+    wrapper.unmount();
+  });
+
+  it("does not run trial settings in a different project after a delayed save", async () => {
+    workflowStore.executeNode.mockClear();
+    let finish!: () => void;
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    workflowStore.hasUnsavedChanges = true;
+    workflowStore.saveWorkflow.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    wrapper.getComponent(NodeDetailViewStub).vm.$emit("save", "pca_1", { n_components: 1 }, true);
+    await flushPromises();
+    projectStore.currentProjectId = 2;
+    finish();
+    await flushPromises();
+    expect(workflowStore.executeNode).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("refuses a graph replaced by another tab while returning from a trial", async () => {
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    const originalNodes = workflowStore.nodes;
+    workbookStore.closeTrialTab.mockImplementationOnce(async () => {
+      workbookStore.activeIndex = 0;
+      workflowStore.nodes = originalNodes.map(node => ({ ...node, params: { n_components: 5 } }));
+    });
+    wrapper.getComponent(NodeDetailViewStub).vm.$emit("save", "pca_1", { n_components: 1 }, true);
+    await flushPromises();
+    expect(workflowStore.executeNode).not.toHaveBeenCalled();
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Apply Trial Failed", detail: expect.stringContaining("workflow changed") }));
+    workflowStore.nodes = originalNodes;
+    wrapper.unmount();
+  });
+
+  it("only lets the originating workbook execute a detached trial save", async () => {
+    const first = await mountBuilder();
+    const second = await mountBuilder();
+    await flushPromises();
+    // Exercise both real message handlers, as BroadcastChannel would.
+    const firstVm = first.vm as unknown as { openTrialTab: (data: object) => Promise<void>; handleBroadcastMessage: (event: MessageEvent) => void };
+    const secondVm = second.vm as unknown as typeof firstVm;
+    await firstVm.openTrialTab({ id: "pca_1" });
+    const payload = workbookStore.openTrialTab.mock.calls.at(-1)![0];
+    const event = new MessageEvent("message", { data: {
+      type: "node_params_updated", requestId: "detached-save", workflowId: 101,
+      nodeId: "pca_1", params: { n_components: 1 }, ownerId: payload.ownerId, execute: true,
+    } });
+    firstVm.handleBroadcastMessage(event);
+    secondVm.handleBroadcastMessage(event);
+    await flushPromises();
+    expect(workflowStore.executeNode).toHaveBeenCalledExactlyOnceWith("pca_1");
+    first.unmount(); second.unmount();
   });
 
   it("keeps a managed-candidate authority inspectable but disables ordinary execution", async () => {

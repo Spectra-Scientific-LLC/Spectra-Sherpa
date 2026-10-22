@@ -7,6 +7,7 @@ type MockConfig = { appMode: { value: string }; siteProfile: { value: string | n
 type MockAuth = {
   user: { id: number; capabilities: { admin: boolean }; is_active: boolean } | null;
   token: string | null;
+  readonly sessionRevision?: string | null;
 };
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -32,7 +33,7 @@ describe("application log access", () => {
   beforeEach(() => {
     mocks.get.mockReset().mockResolvedValue(snapshot);
     mocks.config = reactive({ appMode: { value: "enterprise" }, siteProfile: { value: "demo" } });
-    mocks.auth = reactive({ user: { id: 1, capabilities: { admin: true }, is_active: true }, token: "token" });
+    mocks.auth = reactive({ user: { id: 1, capabilities: { admin: true }, is_active: true }, token: "token" as string | null, get sessionRevision() { return this.token; } });
   });
   afterEach(() => { wrappers.splice(0).forEach((wrapper) => wrapper.unmount()); });
 

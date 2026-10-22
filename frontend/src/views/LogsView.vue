@@ -59,7 +59,7 @@ const clearLogs = () => {
   loaded.value = false;
 };
 watch(() => [appMode.value, siteProfile?.value, auth.user?.id,
-  auth.user?.capabilities?.admin, auth.user?.is_active, auth.token], clearLogs, { flush: "sync" });
+  auth.user?.capabilities?.admin, auth.user?.is_active, auth.sessionRevision], clearLogs, { flush: "sync" });
 onBeforeUnmount(clearLogs);
 
 const fetchLogs = async () => {

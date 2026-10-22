@@ -233,7 +233,7 @@ const page = ref(0);
 const scoreX = ref(0);
 const scoreY = ref(1);
 const auth = useAuthStore();
-const identity = () => [auth.user?.id, auth.token, props.artifactUid, props.projectId, props.nodeId];
+const identity = () => [auth.user?.id, auth.sessionRevision, props.artifactUid, props.projectId, props.nodeId];
 const reads = useScopedRequest(identity, () => { loading.value = false; });
 watch(
   identity,

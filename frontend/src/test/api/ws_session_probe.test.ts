@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AxiosResponse } from "axios";
-import api from "@/api/client";
+import api, { expireBrowserSession } from "@/api/client";
 import { resolveWsPolicyClose } from "@/utils/ws";
+import { startBrowserSession, readBrowserToken, readBrowserSession, SESSION_STORAGE_KEY } from '@/extension-contract/session-v1';
 
 const originalAdapter = api.defaults.adapter;
 const originalUrl = window.location.href;
@@ -13,12 +14,40 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   api.defaults.adapter = originalAdapter;
   localStorage.clear();
   window.history.replaceState(null, "", originalUrl);
 });
 
 describe("session probe through the real HTTP interceptors", () => {
+  it('does not apply logout side effects after a newer login supersedes the committed tombstone', async () => {
+    await startBrowserSession('A');
+    localStorage.setItem('api_key', 'preserved-local-fixture');
+    const expected = readBrowserSession();
+    vi.spyOn(navigator.locks, 'request').mockImplementation(((_name: string, action: () => unknown) => {
+      const cleared = action();
+      queueMicrotask(() => localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+        token:'B', loginId:'new-login', generation:0, transition:'login',
+      })));
+      return Promise.resolve(cleared);
+    }) as typeof navigator.locks.request);
+    await expireBrowserSession(expected);
+    expect(readBrowserToken()).toBe('B');
+    expect(localStorage.getItem('api_key')).toBe('preserved-local-fixture');
+    expect(window.location.pathname).toBe('/workflow');
+  });
+  it.each(['different-token', 'identical-token'])('a late HTTP401 never expires a newer %s login', async kind => {
+    await startBrowserSession('valid-session');
+    const replacement = kind === 'identical-token' ? 'valid-session' : 'replacement';
+    await expect(api.get('/auth/refresh', { adapter: async config => {
+      await startBrowserSession(replacement);
+      throw { response: { status: 401 }, config };
+    } })).rejects.toBeDefined();
+    await Promise.resolve();
+    expect(readBrowserToken()).toBe(replacement);
+    expect(window.location.pathname).toBe('/workflow');
+  });
   it("expires the current session for a confirmed 401", async () => {
     api.defaults.adapter = async (config) => {
       expect(config.validateStatus?.(401)).toBe(true);

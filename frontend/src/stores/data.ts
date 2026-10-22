@@ -508,7 +508,7 @@ export const useDataStore = defineStore("data", () => {
   const libraryDatasets = computed<LibraryDataset[]>(() => availableDatasets.value?.library ?? []);
 
   const currentProjectId = () => useProjectStore().currentProjectId;
-  const identity = () => [useAuthStore().user?.id, useAuthStore().token, currentProjectId()];
+  const identity = () => [useAuthStore().user?.id, useAuthStore().sessionRevision, currentProjectId()];
   const dataStoryScope = useScopedRequest(() => [...identity(), activeExperimentId.value], () => { dataStoryLoading.value = false; });
   const catalogScope = useScopedRequest(identity, () => { catalogLoading.value = false; });
   const experimentsScope = useScopedRequest(identity, () => { experimentsLoading.value = false; });
@@ -526,7 +526,7 @@ export const useDataStore = defineStore("data", () => {
   const referenceScope = useScopedRequest(identity, () => { referenceCatalogLoading.value = false; });
   const mutationScope = useScopedRequest(() => [...identity(), activeExperimentId.value]);
   const captureMutationScope = mutationScope.capture;
-  const accountMutation = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token]);
+  const accountMutation = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().sessionRevision]);
   async function refreshWrittenInventories(account: ScopedRequestTicket): Promise<void> {
     if (!account.isCurrent()) return;
     // Refresh the current inventory even if the user left the written dataset.
@@ -559,7 +559,7 @@ export const useDataStore = defineStore("data", () => {
   }
   registerProjectScopeReset(resetProjectScope);
   // Reset even without a mounted Data page (or a selectProject() caller).
-  watch([() => useAuthStore().user?.id, () => useAuthStore().token, currentProjectId], resetProjectScope, { flush: "sync" });
+  watch([() => useAuthStore().user?.id, () => useAuthStore().sessionRevision, currentProjectId], resetProjectScope, { flush: "sync" });
 
   // --- Actions ---
 

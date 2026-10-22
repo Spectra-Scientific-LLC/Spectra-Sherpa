@@ -14,7 +14,7 @@ const project = reactive({
   ensureProjectForBrowserTab: vi.fn(async () => {}),
   selectProject: vi.fn(async (id: number) => { project.currentProjectId = id; }),
 });
-const auth = reactive({ user: { id: 1 } as { id: number } | null, token: 'session-A' as string | null });
+const auth = reactive({ user: { id: 1 } as { id: number } | null, token: 'session-A' as string | null, get sessionRevision() { return this.token; } });
 vi.mock('@/stores/project', () => ({ useProjectStore: () => project }));
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }));
 let mounted: VueWrapper[] = [];

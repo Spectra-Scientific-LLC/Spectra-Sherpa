@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Staging GUI corrections
 
+- Quick Plot and Detailed View share declared scientific plots and controls,
+  including PCA summaries, component-selection evidence and matrix slices.
+  Saving a successful trial updates the workflow through normal retained node
+  execution; changed workbooks and unrelated tabs cannot execute that trial.
+- Same-account token renewal preserves workspace state. Logout and account
+  changes still clear it, including across browser tabs.
+
+- Concentration curve editors show the current sample-index range (0–49 for
+  50 samples), without changing normalized curve shapes or saved recipes.
+- NIST Quant IR reconciliation validates rounded steps and consistently aligned
+  or one-sample-lagged checkpoints at recorded precision. Acetone and benzene
+  variants no longer fail solely because a redundant rounded step accumulates
+  drift. Original declarations and the versioned decision remain in provenance;
+  ordinary JCAMP imports remain strict.
+
 - Data Story retains verified complete-source facts across Data-page navigation,
   but invalidates them on account/session, project, or source-inventory changes.
   Reference imports select their dataset only after admission completes, avoiding

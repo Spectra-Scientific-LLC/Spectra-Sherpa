@@ -103,7 +103,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const lastExecutionResultDescriptors = ref<Record<string, NodeScientificValueDescriptors>>({});
   const lastExecutionPresentations = ref<Record<string, ExecutedPresentationRecord>>({});
   const workflowWarnings = ref<string[]>([]);
-  const sessionIdentity = () => [useAuthStore().user?.id, useAuthStore().token];
+  const sessionIdentity = () => [useAuthStore().user?.id, useAuthStore().sessionRevision];
   const workspaceIdentity = () => [...sessionIdentity(), useProjectStore().currentProjectId];
   const workflowOwnership = useScopedRequest(workspaceIdentity);
   const loadScope = useScopedRequest(workspaceIdentity, () => { isLoading.value = false; });
@@ -477,8 +477,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
         id: n.node_id,
         type: frontendType,
         label: n.label && n.label !== frontendType ? n.label : getNodeMetadata(frontendType)?.label || undefined,
-        x: n.position_x || 100,
-        y: n.position_y || 100,
+        x: n.position_x ?? 100,
+        y: n.position_y ?? 100,
         params: { ...(n.parameters || {}) },
       };
     });
@@ -862,7 +862,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   registerProjectScopeReset(clearWorkflow);
-  watch([() => useAuthStore().user?.id, () => useAuthStore().token, () => useProjectStore().currentProjectId], clearWorkflow, { flush: "sync" });
+  watch([() => useAuthStore().user?.id, () => useAuthStore().sessionRevision, () => useProjectStore().currentProjectId], clearWorkflow, { flush: "sync" });
 
   async function listWorkflows(
     projectId: number | null = useProjectStore().currentProjectId,

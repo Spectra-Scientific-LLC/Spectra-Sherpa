@@ -114,7 +114,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
   const activeTrialSheet = computed(() =>
     activeSheet.value?.kind === "trial" ? activeSheet.value : null,
   );
-  const workspaceIdentity = () => [useAuthStore().user?.id, useAuthStore().token, useProjectStore().currentProjectId];
+  const workspaceIdentity = () => [useAuthStore().user?.id, useAuthStore().sessionRevision, useProjectStore().currentProjectId];
   const identity = () => [...workspaceIdentity(), projectId.value];
   const loadScope = useScopedRequest(identity, () => { isLoading.value = false; });
   const refreshScope = useScopedRequest(() => [...identity(), activeSheet.value?.workflowId]);
@@ -144,7 +144,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
   }
 
   registerProjectScopeReset(resetProjectScope);
-  watch([() => useAuthStore().user?.id, () => useAuthStore().token, () => useProjectStore().currentProjectId], resetProjectScope, { flush: "sync" });
+  watch([() => useAuthStore().user?.id, () => useAuthStore().sessionRevision, () => useProjectStore().currentProjectId], resetProjectScope, { flush: "sync" });
 
   function persistActiveSheet(): void {
     if (projectId.value === null || !activeSheet.value || activeSheet.value.kind === "trial")

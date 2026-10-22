@@ -9,6 +9,7 @@ import numpy as np
 
 from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
 from spectra_sherpa.app.lib.jcamp_reader import (
+    LEGACY_NIST_QUANT_IR_AXIS_POLICY,
     NIST_QUANT_IR_AXIS_POLICY,
     JCAMPData,
     count_declared_jcamp_points,
@@ -122,9 +123,12 @@ class JcampPlugin:
         limits: ParserLimits,
         parser_options: Mapping[str, str] | None = None,
     ) -> IngestionResult:
-        if parser_options and dict(parser_options) != {"axis_policy": NIST_QUANT_IR_AXIS_POLICY}:
+        axis_policy = parser_options.get("axis_policy") if parser_options else "strict"
+        if parser_options and (
+            set(parser_options) != {"axis_policy"}
+            or axis_policy not in {NIST_QUANT_IR_AXIS_POLICY, LEGACY_NIST_QUANT_IR_AXIS_POLICY}
+        ):
             raise UnsupportedFormatVariantError("JCAMP-DX admits only explicit NIST Quant IR axis reconciliation")
-        axis_policy = NIST_QUANT_IR_AXIS_POLICY if parser_options else "strict"
         try:
             require_jcamp_working_set(
                 source_bytes=source.size_bytes,
@@ -145,6 +149,13 @@ class JcampPlugin:
         except ParserLimitError:
             raise
         except Exception as exc:
+            if parser_options:
+                raise UnreadableSpectrumError(
+                    format_id=self.format_id,
+                    detail=source.exception_detail(exc),
+                    remediation="Try another NIST resolution/apodization, or report the compound and variant. "
+                    "The provider file was refused; re-importing the same file will not repair it.",
+                ) from exc
             raise UnreadableSpectrumError(format_id=self.format_id, detail=source.exception_detail(exc)) from exc
         source.require_elements(int(dataset.X.size), format_id=self.format_id)
         return ingestion_result(

@@ -81,7 +81,7 @@ const review = ref<Review | null>(null), loading = ref(false), saving = ref(fals
 const intendedUse = ref(''), rationale = ref(''), protocol = ref('exploratory');
 const endpoint = computed(() => props.canonicalArtifactId ? `/deploy/canonical-artifacts/${props.canonicalArtifactId}/promotion-review` : `/models/${props.artifactUid}/promotion-review`);
 const auth = useAuthStore();
-const identity = () => [auth.user?.id, auth.token, props.projectId, props.artifactUid, props.canonicalArtifactId, props.workflowId, props.runId];
+const identity = () => [auth.user?.id, auth.sessionRevision, props.projectId, props.artifactUid, props.canonicalArtifactId, props.workflowId, props.runId];
 const reads = useScopedRequest(identity, () => { loading.value = false; });
 const writes = useScopedRequest(identity, () => { saving.value = false; }, { abortOnInvalidate: false });
 async function load() {

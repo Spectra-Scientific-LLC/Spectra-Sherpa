@@ -9,6 +9,12 @@
     </div>
     <Transition name="collapse">
       <div v-if="expanded" class="section-content plots-content">
+        <div v-if="state.hasOutput && presentationOptions.length > 1" class="plot-controls">
+          <label for="detail-plot-presentation">Scientific result</label>
+          <Dropdown
+id="detail-plot-presentation" v-model="selectedPresentationId"
+            :options="presentationOptions" option-label="label" option-value="value" />
+        </div>
         <div v-if="!state.hasOutput" class="empty-plot-message">
           <i class="pi pi-play" />
           <span>Run the node to generate visualizations.</span>
@@ -17,6 +23,14 @@
           <i class="pi pi-chart-line" />
           <span>No visualizations available for this node type.</span>
         </div>
+        <template v-else-if="projectedPresentationIdentity(state.nodeOutput)">
+          <QuickPlotModal
+embedded :model-value="true"
+            :node-output="state.nodeOutput" :node-type="state.nodeTypeKey"
+            :node-label="nodeLabel || state.nodeTypeKey" :node-input="nodeInput"
+            :node-inputs="nodeInputs" :plot-selection="plotSelection" />
+        </template>
+        <!-- Historical uncontracted results retain their existing view. -->
         <template v-else>
           <div
             v-if="
@@ -1444,12 +1458,18 @@ import { isProjectedScientificKind, projectedPresentationIdentity } from "@/util
 import SampleMetadataStyleControls from "./SampleMetadataStyleControls.vue";
 import { scaleLibraryTraceToSamplePeaks } from "@/utils/libraryTraceScaling";
 import { NODE_DETAIL_STATE_KEY } from "../state/useNodeDetailState";
+import QuickPlotModal from "../../modals/QuickPlotModal.vue";
+import type { QuickPlotSelection } from "@/composables/useScientificPlotProjection";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 defineProps<{
   expanded: boolean;
   attentionNodeId?: string;
+  nodeLabel?: string;
+  nodeInput?: any;
+  nodeInputs?: Record<string, any>;
+  plotSelection?: QuickPlotSelection;
 }>();
 
 defineEmits<{
@@ -1465,6 +1485,8 @@ if (!detailState) {
   );
 }
 const { writable, plotSections: plotSectionsRef, plots } = detailState;
+const selectedPresentationId = writable.selectedPresentationId;
+const presentationOptions = detailState.output.presentationOptions;
 
 // Re-expose under the names the template uses. Refs auto-unwrap in template.
 const plotSections = plotSectionsRef;

@@ -1,3 +1,4 @@
+import { readBrowserToken } from '@/extension-contract/session-v1';
 import { createRouter, createWebHistory, type RouteLocation } from "vue-router";
 
 import { useAppConfig } from "@/composables/useAppConfig";
@@ -133,8 +134,8 @@ router.beforeEach(async (to, from, next) => {
 
   // Local mode: bypass all authentication (single-user desktop).
   if (appMode.value === "local") {
-    if (authStore.token || localStorage.getItem("token")) {
-      authStore.clearCredentials();
+    if (authStore.token || readBrowserToken()) {
+      await authStore.clearCredentials();
     }
     return next();
   }

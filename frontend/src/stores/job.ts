@@ -24,7 +24,7 @@ export const useJobStore = defineStore("job", () => {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let allowReconnect = true;
   let policyCloseController: AbortController | null = null;
-  const identity = () => [authStore.user?.id, authStore.token];
+  const identity = () => [authStore.user?.id, authStore.sessionRevision];
   const listRequests = useScopedRequest(identity, () => { jobs.value = []; });
   const detailRequests = useScopedRequest(identity);
   const connections = useScopedRequest(identity, stopConnection);
@@ -133,7 +133,7 @@ export const useJobStore = defineStore("job", () => {
 
     socket.addEventListener("open", () => {
       if (!request.isCurrent()) return;
-      socket.send(buildAuthMessage());
+      socket.send(buildAuthMessage(authStore.token));
     });
 
     socket.addEventListener("message", async (event) => {

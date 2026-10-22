@@ -44,6 +44,40 @@ beforeEach(() => {
 afterEach(() => { disposePinia(pinia); _clearProjectScopeRegistryForTests(); });
 
 describe("store-owned scope, independent of mounted pages", () => {
+  it("accepts a same-session delayed project read across renewal without clearing the canvas", async () => {
+    const auth = useAuthStore();
+    localStorage.setItem("token", auth.token!);
+    const project = useProjectStore();
+    const workflow = useWorkflowStore();
+    workflow.workflowId = 9;
+    workflow.hasUnsavedChanges = true;
+    const held = deferred<{ data: unknown }>();
+    vi.mocked(api.get).mockReturnValueOnce(held.promise);
+    const pending = project.fetchProject(1);
+    const signal = vi.mocked(api.get).mock.calls[0][1]?.signal;
+    expect(await auth.acceptRenewal(auth.captureSession(), "renewed")).toBe(true);
+    expect(signal?.aborted).toBe(false);
+    expect(workflow.workflowId).toBe(9);
+    held.resolve({ data: { id: 1, name: "Same project" } });
+    expect((await pending)?.id).toBe(1);
+    expect(workflow.workflowId).toBe(9);
+    expect(workflow.hasUnsavedChanges).toBe(true);
+  });
+
+  it("applies an acknowledged same-session mutation and inventory refresh across renewal", async () => {
+    const auth = useAuthStore();
+    localStorage.setItem("token", auth.token!);
+    const project = useProjectStore();
+    const held = deferred<{ data: unknown }>();
+    vi.mocked(api.put).mockReturnValueOnce(held.promise);
+    vi.mocked(api.get).mockResolvedValue({ data: [{ id: 1, name: "Renamed" }] });
+    const pending = project.updateProject(1, { name: "Renamed" });
+    expect(await auth.acceptRenewal(auth.captureSession(), "renewed")).toBe(true);
+    held.resolve({ data: { id: 1, name: "Renamed" } });
+    await pending;
+    expect(project.currentProjectId).toBe(1);
+    expect(project.projects[0].name).toBe("Renamed");
+  });
   it("shares admission for concurrent callers of the same project", async () => {
     const project = useProjectStore();
     const held = deferred<{ data: unknown }>();

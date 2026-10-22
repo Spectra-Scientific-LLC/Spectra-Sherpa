@@ -317,6 +317,7 @@
             embedded
             :initial-node-data="workbookStore.activeTrialSheet.trialData"
             @save="saveTrialParams"
+            :saving="applyingTrial"
             @close="closeActiveTrialTab"
           />
           <WorkflowCanvas
@@ -1164,7 +1165,17 @@ const createNodeId = (
 
 // Handle BroadcastChannel messages from NodeDetailView.
 // DetailView is send-only for `node_params_updated` (fired on Save and Exit).
+let trialOwnerId = crypto.randomUUID();
+watch(() => [authStore.user?.id, authStore.sessionRevision], () => {
+  trialOwnerId = crypto.randomUUID();
+}, { flush: "sync" });
 const handleBroadcastMessage = (event: MessageEvent) => {
+  if (event.data?.ownerId && event.data.ownerId !== trialOwnerId) return;
+  if (event.data?.execute && event.data.ownerId !== trialOwnerId) {
+    broadcastChannel.value?.postMessage({ type: "node_params_applied", requestId: event.data.requestId,
+      applied: false, reason: "Reopen the trial from its workflow tab." });
+    return;
+  }
   const result = _handleBroadcastMessage(
     event,
     nodes,
@@ -1184,6 +1195,10 @@ const handleBroadcastMessage = (event: MessageEvent) => {
       applied: result.applied,
       reason: result.reason ?? null,
     });
+  }
+  if (result.applied && event.data?.execute === true) {
+    // Detached detail windows use the same retained execution as embedded trials.
+    void saveTrialParams(String(event.data.nodeId), event.data.params, true, false);
   }
 };
 
@@ -1753,14 +1768,14 @@ const initializeWorkbook = async (respectDeepLink = true) => {
     await projectStore.selectProject(targetProjectId);
     if (projectStore.currentProjectId !== targetProjectId) throw new Error("The requested project could not be selected. Reload the workbook to retry.");
     const pendingStarter = readAnalysisStarterIntent();
-    const accountAtLoad = [authStore.user?.id, authStore.token];
+    const accountAtLoad = [authStore.user?.id, authStore.sessionRevision];
     await workbookStore.loadSheets(targetProjectId, {
       createIfEmpty: pendingStarter?.template_slug == null,
     });
     // Actor hydration can reset both stores during the first load. Retry that
     // known invalidation once; never accept an abandoned load as an empty graph.
     if (workbookStore.projectId !== targetProjectId && projectStore.currentProjectId === targetProjectId &&
-        accountAtLoad[0] === authStore.user?.id && accountAtLoad[1] !== authStore.token) {
+        accountAtLoad[0] === authStore.user?.id && accountAtLoad[1] !== authStore.sessionRevision) {
       await workbookStore.loadSheets(targetProjectId, { createIfEmpty: pendingStarter?.template_slug == null });
     }
     if (workbookStore.projectId !== targetProjectId ||
@@ -1811,11 +1826,11 @@ const initializeWorkbook = async (respectDeepLink = true) => {
 
 let workbookReadyForProjectSwitches = false;
 const projectWorkbookLoads = useScopedRequest(
-  () => [authStore.user?.id, authStore.token, projectStore.currentProjectId],
+  () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId],
 );
 
 watch(
-  () => [projectStore.currentProjectId, authStore.user?.id, authStore.token] as const,
+  () => [projectStore.currentProjectId, authStore.user?.id, authStore.sessionRevision] as const,
   async ([projectId]) => {
     if (
       !workbookReadyForProjectSwitches ||
@@ -2066,7 +2081,7 @@ const openTrialTab = async (nodeData: any) => {
   }
   try {
     await workbookStore.openTrialTab(
-      nodeData,
+      { ...nodeData, ownerId: trialOwnerId },
       sourceWorkflowId,
       workbookStore.activeSheet?.tabColor ?? null,
     );
@@ -2098,26 +2113,57 @@ const closeActiveTrialTab = async () => {
   }
 };
 
-const saveTrialParams = async (nodeId: string, params: Record<string, unknown>) => {
+const trialSaveScope = useScopedRequest(
+  () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId, workflowStore.workflowId],
+);
+const applyingTrial = ref(false);
+const saveTrialParams = async (
+  nodeId: string, params: Record<string, unknown>, execute = false, closeTrial = true,
+) => {
+  if (applyingTrial.value) return;
+  const request = trialSaveScope.begin();
+  const trialId = workbookStore.activeTrialSheet?.trialId;
+  const sourceWorkflowId = workflowStore.workflowId;
+  if (closeTrial && (!trialId || workbookStore.activeTrialSheet?.sourceWorkflowId !== sourceWorkflowId)) return;
+  applyingTrial.value = true;
   try {
     workflowStore.updateNode(nodeId, { params });
+    const intendedGraph = workflowDraftSignature(workflowStore);
     if (workflowStore.hasUnsavedChanges && workflowStore.workflowId !== null) {
       await workflowStore.saveWorkflow({ createVersion: false });
+    }
+    if (!request.isCurrent() || (closeTrial && workbookStore.activeTrialSheet?.trialId !== trialId)) return;
+    if (workflowStore.hasUnsavedChanges) throw new Error("Settings have not been saved. Review the draft and try again.");
+    if (closeTrial) await closeActiveTrialTab();
+    if (!request.isCurrent() || workflowStore.workflowId !== sourceWorkflowId) return;
+    if (workflowDraftSignature(workflowStore) !== intendedGraph) {
+      throw new Error("The workflow changed while applying the trial. Review its current settings before running.");
+    }
+    if (execute) {
+      // Trial outputs are previews, not retained run evidence. Re-enter the
+      // normal node execution path so canvas, Inspector and Runs agree.
+      const result = await workflowStore.executeNode(nodeId);
+      if (!request.isCurrent()) return;
+      if (result.error || result.status === "error") {
+        throw new Error(result.error || "Node execution failed");
+      }
     }
     toast.add({
       severity: "success",
       summary: "Saved",
-      detail: "Settings applied to the workflow",
+      detail: execute ? "Settings and results updated in the workflow" : "Settings applied to the workflow",
       life: 1500,
     });
-    await closeActiveTrialTab();
   } catch (err: unknown) {
+    if (!request.isCurrent()) return;
     toast.add({
       severity: "error",
-      summary: "Save Failed",
+      summary: "Apply Trial Failed",
       detail: getErrorMessage(err, "Unable to save trial settings"),
       life: 4000,
     });
+  } finally {
+    applyingTrial.value = false;
   }
 };
 

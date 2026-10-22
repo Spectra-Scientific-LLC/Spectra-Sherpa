@@ -31,7 +31,7 @@ const loading = ref(false);
 const reviewOpen = ref(false);
 const error = ref("");
 const auth = useAuthStore();
-const identity = () => [auth.user?.id, auth.token, props.projectId, props.reviewWorkflowId];
+const identity = () => [auth.user?.id, auth.sessionRevision, props.projectId, props.reviewWorkflowId];
 const requests = useScopedRequest(identity);
 watch(identity, async () => {
   const request = requests.begin();

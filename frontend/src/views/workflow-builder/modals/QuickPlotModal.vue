@@ -12,6 +12,14 @@
   >
     <p v-if="evidenceError" role="alert" class="plot-evidence-error">{{ evidenceError }}</p>
     <div class="plot-container">
+      <p v-if="axisSetError" role="alert">{{ axisSetError }}</p>
+      <AxisSetControls
+v-model:scale-value="selectedFeatureScale"
+        v-model:label-value="selectedFeatureLabels" v-model:title-value="selectedFeatureTitle"
+        :scale-options="featureScaleOptions" :label-options="featureLabelSetOptions" :title-options="featureTitleSetOptions" />
+      <AxisSetControls
+:scale-value="'__primary__'" v-model:label-value="selectedSampleLabels"
+        :title-value="'__primary__'" :scale-options="[]" :label-options="sampleLabelSetOptions" :title-options="[]" />
       <!-- Plot controls bar -->
       <div class="plot-controls">
         <!-- Plot type selector -->
@@ -216,6 +224,7 @@
           :layout="displayPlotLayout"
           :config="PLOT_CONFIG"
           :style="plotCanvasStyle"
+          @click="selectMatrixSlice"
         />
         <div v-else class="empty-plot">
           <i class="pi pi-chart-line" />
@@ -270,6 +279,10 @@
           }}</small>
         </div>
       </div>
+      <section v-if="viewMode === 'plot' && matrixSlices" aria-label="Matrix slices">
+        <PlotlyChart :data="[matrixSlices.horizontal]" :layout="sliceLayout('horizontal')" :config="PLOT_CONFIG" />
+        <PlotlyChart :data="[matrixSlices.vertical]" :layout="sliceLayout('vertical')" :config="PLOT_CONFIG" />
+      </section>
     </div>
   </component>
 </template>
@@ -278,6 +291,8 @@
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
+import AxisSetControls from "@/components/data/AxisSetControls.vue";
+import { plotMatrixSlices } from "@/utils/plotMatrixSlices";
 import SampleMetadataStyleControls from "../node-detail/panels/SampleMetadataStyleControls.vue";
 import { scientificNumber } from "@/utils/scientificEncoding";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
@@ -405,6 +420,8 @@ const {
   dataShape,
   metadataGroupingError,
   sampleColorField, sampleSymbolField, sampleColorFieldOptions, sampleSymbolFieldOptions,
+  featureScaleOptions, featureLabelSetOptions, featureTitleSetOptions, sampleLabelSetOptions, axisSetError,
+  selectedFeatureScale, selectedFeatureLabels, selectedFeatureTitle, selectedSampleLabels,
 } = useQuickPlotProjection(nodeOutputRef, nodeTypeRef, nodeInputRef, nodeInputsRef, props.plotSelection);
 
 // Offer sample styling wherever the selected plot represents exact sample rows.
@@ -669,6 +686,30 @@ const displayPlotLayout = computed(() => {
   }
   return plotLayout.value;
 });
+
+const matrixSlices = ref<ReturnType<typeof plotMatrixSlices>>(null);
+const sliceTrace = ref<any>(null);
+watch(displayPlotData, () => { matrixSlices.value = null; sliceTrace.value = null; });
+const selectMatrixSlice = (event: any) => {
+  const point = event?.points?.[0];
+  const trace = displayPlotData.value[point?.curveNumber];
+  if (!trace || !point) return;
+  matrixSlices.value = plotMatrixSlices(trace, point);
+  sliceTrace.value = matrixSlices.value ? trace : null;
+};
+const sliceLayout = (direction: "horizontal" | "vertical") => {
+  const layout = displayPlotLayout.value;
+  const trace = sliceTrace.value;
+  const axis = direction === "horizontal" ? trace?.xaxis : trace?.yaxis;
+  const key = axis ? `${axis[0]}axis${axis.slice(1)}` : direction === "horizontal" ? "xaxis" : "yaxis";
+  return {
+    height: 280,
+    title: direction === "horizontal" ? `Row: ${matrixSlices.value?.rowLabel}` : `Column: ${matrixSlices.value?.columnLabel}`,
+    xaxis: { title: layout[key]?.title },
+    yaxis: { title: trace?.colorbar?.title ?? layout.coloraxis?.colorbar?.title ?? "Value" },
+    margin: { t: 45, b: 55, l: 65, r: 25 },
+  };
+};
 
 const plotCanvasStyle = computed(() => {
   const requestedHeight = Number(displayPlotLayout.value?.height);

@@ -28,7 +28,7 @@ export const useRunsStore = defineStore("runs", () => {
   const selectedRunIds = ref<Set<number>>(new Set());
   const comparison = ref<ComparisonResult | null>(null);
   const comparisonLoading = ref(false);
-  const identity = () => [useAuthStore().user?.id, useAuthStore().token, activeProjectScope.value, listOwner.value];
+  const identity = () => [useAuthStore().user?.id, useAuthStore().sessionRevision, activeProjectScope.value, listOwner.value];
   const listScope = useScopedRequest(identity, () => { runsLoading.value = false; });
   const comparisonScope = useScopedRequest(
     () => [...identity(), ...selectedRunIds.value],
@@ -57,7 +57,7 @@ export const useRunsStore = defineStore("runs", () => {
     comparisonLoading.value = false;
   }
   registerProjectScopeReset(resetProjectScope);
-  watch([() => useAuthStore().user?.id, () => useAuthStore().token, () => activeProjectScope.value], resetProjectScope, { flush: "sync" });
+  watch([() => useAuthStore().user?.id, () => useAuthStore().sessionRevision, () => activeProjectScope.value], resetProjectScope, { flush: "sync" });
 
   // Computed
   const selectedRuns = computed(() =>

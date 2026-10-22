@@ -21,7 +21,7 @@ const props = defineProps<{ artifactUid: string; workflowId: number; sourceRunId
 type Review = { workflow_id: number; source_run_id: number | null; population: { fitted_count: number | null; held_out_count: number | null }; fitting_plan?: { state: string; declared_development_count: number | null } };
 const review = ref<Review | null>(null), loading = ref(false), error = ref('');
 const auth = useAuthStore();
-const identity = () => [auth.user?.id, auth.token, props.artifactUid, props.workflowId, props.sourceRunId];
+const identity = () => [auth.user?.id, auth.sessionRevision, props.artifactUid, props.workflowId, props.sourceRunId];
 const requests = useScopedRequest(identity);
 watch(identity, async () => {
   const request = requests.begin();

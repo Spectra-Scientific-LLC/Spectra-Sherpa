@@ -26,7 +26,7 @@ const options = ref<Destination[]>([]);
 const loading = ref(false);
 const error = ref("");
 const auth = useAuthStore();
-const identity = () => [auth.user?.id, auth.token, props.visible];
+const identity = () => [auth.user?.id, auth.sessionRevision, props.visible];
 const requests = useScopedRequest(identity);
 watch(identity, async () => {
   const request = requests.begin();

@@ -18,6 +18,15 @@ function makeState(nodeOutput: unknown) {
 }
 
 describe("useNodeOutputData", () => {
+  it("uses the retained T²/Q population rather than an empty matrix placeholder", () => {
+    const state = makeState({ data: [], presentation_value: { T2: [1, 2], Q: [0.1, 0.2] },
+      metadata: { scientific_presentation: {
+        schema_version: "spectrasherpa-node-presentation/1", contract_digest: "b".repeat(64),
+        presentation_id: "diagnostics", kind: "t2_q_diagnostics", label: "Diagnostics",
+        source_port: "diagnostic_state", source_ports: ["diagnostic_state"], modes: ["plot", "table"],
+      } } });
+    expect(state.outputSummary.value).toBe("2 samples · 2 statistics");
+  });
   it("summarizes Peak Detection evidence without inventing a matrix shape", () => {
     const state = makeState({
       data: [],

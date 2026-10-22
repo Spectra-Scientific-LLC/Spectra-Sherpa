@@ -6,31 +6,95 @@ import json
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.jcamp_reader import NIST_QUANT_IR_AXIS_POLICY, parse_jcamp
+from spectra_sherpa.app.lib.jcamp_reader import LEGACY_NIST_QUANT_IR_AXIS_POLICY, NIST_QUANT_IR_AXIS_POLICY, parse_jcamp
 from spectra_sherpa.io import UnreadableSpectrumError, UnsupportedFormatVariantError, ingest
 
 
-def nist_style_text():
-    count = 3526
-    axis = np.linspace(575.653, 3974.61, count)
+def nist_style_text(first="575.653", last="3974.61", count=3526, delta="0.9645", offset=1):
+    axis = np.linspace(float(first), float(last), count)
     values = np.arange(count) % 17 - 8
     lines = [
         "##TITLE=Original synthetic axis-regression fixture",
         "##DATA TYPE=INFRARED SPECTRUM",
         "##XUNITS=cm-1",
         "##YUNITS=(micromol/mol)-1m-1 (base 10)",
-        "##FIRSTX=575.653",
-        "##LASTX=3974.61",
-        "##NPOINTS=3526",
-        "##DELTAX=0.9645",
+        f"##FIRSTX={first}",
+        f"##LASTX={last}",
+        f"##NPOINTS={count}",
+        f"##DELTAX={delta}",
         "##XFACTOR=1.0",
         "##YFACTOR=0.01",
         "##XYDATA=(X++(Y..Y))",
     ]
     for start in range(0, count, 6):
-        checkpoint = axis[max(0, start - 1)]
+        checkpoint = axis[max(0, start - offset)]
         lines.append(f"{checkpoint:.2f} " + " ".join(str(v) for v in values[start : start + 6]))
     return "\n".join([*lines, "##END="]), axis, values * 0.01
+
+
+@pytest.mark.parametrize(
+    "first,last,count,delta",
+    [
+        ("575.169", "3975.077", 7053, "0.4820"),  # Acetone, 1 cm^-1 B-H
+        ("574.928", "3975.077", 14106, "0.2410"),  # Acetone, 0.5 cm^-1 B-H
+        ("575.171", "3974.61", 7052, "0.4820"),  # Benzene, 1 cm^-1 B-H
+        ("574.687", "3974.595", 3527, "0.9645"),  # Acetone, 2 cm^-1 Boxcar
+        ("575.653", "3974.61", 3526, "0.9645"),  # Benzene, 2 cm^-1 Boxcar
+    ],
+)
+@pytest.mark.parametrize("offset", [0, 1])
+def test_precision_policy_preserves_exact_endpoint_axis_and_values(first, last, count, delta, offset):
+    text, axis, values = nist_style_text(first, last, count, delta, offset)
+    parsed = parse_jcamp(text, axis_policy=NIST_QUANT_IR_AXIS_POLICY)
+    np.testing.assert_array_equal(parsed.x, axis)
+    np.testing.assert_array_equal(parsed.y, values)
+    assert parsed.axis_reconciliation["checkpoint_offset_samples"] == offset
+    assert parsed.axis_reconciliation["policy"] == "nist-quant-ir-fixed-grid-v2"
+    with pytest.raises(ValueError):
+        parse_jcamp(text)  # Neither provider labels nor compatible checkpoints opt ordinary imports in.
+
+
+def test_previous_policy_remains_replayable_and_refuses_acetone_drift():
+    text, _, _ = nist_style_text()
+    old = parse_jcamp(text, axis_policy=LEGACY_NIST_QUANT_IR_AXIS_POLICY)
+    assert old.axis_reconciliation["policy"] == "nist-quant-ir-fixed-grid-v1"
+    assert "checkpoint_offset_samples" not in old.axis_reconciliation
+    acetone, _, _ = nist_style_text("575.169", "3975.077", 7053, "0.4820")
+    with pytest.raises(ValueError, match="one-interval"):
+        parse_jcamp(acetone, axis_policy=LEGACY_NIST_QUANT_IR_AXIS_POLICY)
+
+
+def test_correctly_rounded_step_is_validated_against_endpoints():
+    text, axis, values = nist_style_text("100.000", "116.949", 18, "1.00", 0)
+    parsed = parse_jcamp(text, axis_policy=NIST_QUANT_IR_AXIS_POLICY)
+    np.testing.assert_array_equal(parsed.x, axis)
+    np.testing.assert_array_equal(parsed.y, values)
+
+
+def test_ambiguous_checkpoint_offset_is_refused():
+    text = (
+        "##TITLE=Original ambiguous fixture\n##XUNITS=cm-1\n##FIRSTX=100.0\n"
+        "##LASTX=100.4\n##NPOINTS=3\n##DELTAX=0.2\n##XYDATA=(X++(Y..Y))\n"
+        "100.0 1\n100.1 2\n100.3 3\n##END=\n"
+    )
+    with pytest.raises(ValueError, match="ambiguous"):
+        parse_jcamp(text, axis_policy=NIST_QUANT_IR_AXIS_POLICY)
+
+
+@pytest.mark.parametrize("corruption", ["two-samples", "mixed-offset", "coarse-checkpoint", "coarse-delta", "too-few"])
+def test_precision_policy_does_not_hide_contradictory_or_unverifiable_checkpoints(corruption):
+    text, _, _ = nist_style_text("575.169", "3975.077", 7053, "0.4820", 2 if corruption == "two-samples" else 1)
+    if corruption == "mixed-offset":
+        # Second checkpoint becomes unshifted; subsequent ones keep the lag.
+        text = text.replace("577.58 ", "578.06 ")
+    elif corruption == "coarse-checkpoint":
+        text = text.replace("577.58 ", "578 ")
+    elif corruption == "coarse-delta":
+        text = text.replace("##DELTAX=0.4820", "##DELTAX=0.5")
+    elif corruption == "too-few":
+        text = _strict_jcamp(0)
+    with pytest.raises(ValueError):
+        parse_jcamp(text, axis_policy=NIST_QUANT_IR_AXIS_POLICY)
 
 
 def test_strict_default_refuses_but_explicit_nist_policy_retains_axis_decision(tmp_path):
@@ -53,6 +117,18 @@ def test_strict_default_refuses_but_explicit_nist_policy_retains_axis_decision(t
     assert result.warnings and "reconciled" in result.warnings[0]
     with pytest.raises(UnsupportedFormatVariantError):
         ingest(path, parser_options={"axis_policy": "ignore-errors"})
+    legacy = ingest(path, parser_options={"axis_policy": LEGACY_NIST_QUANT_IR_AXIS_POLICY})
+    assert legacy.assets[0].dataset.extra["jcamp.axis_reconciliation"]["policy"] == LEGACY_NIST_QUANT_IR_AXIS_POLICY
+
+
+def test_provider_refusal_gives_provider_remedy_not_local_file_advice(tmp_path):
+    text, _, _ = nist_style_text()
+    path = tmp_path / "refused.jdx"
+    path.write_text(text.replace("##DELTAX=0.9645", "##DELTAX=-0.9645"))
+    with pytest.raises(UnreadableSpectrumError) as caught:
+        ingest(path, parser_options={"axis_policy": NIST_QUANT_IR_AXIS_POLICY})
+    assert "NIST resolution/apodization" in str(caught.value)
+    assert "Export the source again" not in str(caught.value)
 
 
 @pytest.mark.parametrize(

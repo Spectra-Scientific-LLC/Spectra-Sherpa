@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   featureFlags: {
     chatAssistant: false,
   } as Record<string, boolean>,
+  actorToken: null as string | null,
 }));
 
 vi.mock("@/api/client", () => ({
@@ -28,6 +29,7 @@ vi.mock("@/composables/useAppConfig", () => ({
 vi.mock("@/stores/auth", () => ({
   useAuthStore: () => ({
     user: { id: 1 },
+    get token() { return mocks.actorToken; },
   }),
 }));
 
@@ -71,6 +73,7 @@ describe("LLM Store local BYO chat", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     localStorage.clear();
+    mocks.actorToken = null;
     mocks.featureFlags.chatAssistant = false;
     mocks.apiGet.mockReset();
     originalFetch = globalThis.fetch;
@@ -91,6 +94,7 @@ describe("LLM Store local BYO chat", () => {
   it.each([true, false])("uses one streaming credential with bearer present=%s", async (hasBearer) => {
     mocks.featureFlags.chatAssistant = true;
     if (hasBearer) localStorage.setItem("token", "alice-token");
+    mocks.actorToken = hasBearer ? 'alice-token' : null;
     writeStoredApiKey("bob-key");
     fetchMock.mockResolvedValue(makeSseResponse({ type: "done" }));
     await useLlmStore().sendMessage("Explain PCA");

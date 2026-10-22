@@ -83,7 +83,7 @@ const syncEvidence = () => { if (!busy.value && !document.hidden) void loadHisto
 onMounted(() => { window.addEventListener("focus", syncEvidence); timer = setInterval(syncEvidence, 15000); });
 onBeforeUnmount(() => { window.removeEventListener("focus", syncEvidence); if (timer) clearInterval(timer); });
 const auth = useAuthStore();
-const identity = () => [auth.user?.id, auth.token, props.projectId, props.workflowId, props.canonicalArtifactId];
+const identity = () => [auth.user?.id, auth.sessionRevision, props.projectId, props.workflowId, props.canonicalArtifactId];
 const historyRead = useScopedRequest(identity);
 const experimentsRead = useScopedRequest(identity);
 const filesRead = useScopedRequest(() => [...identity(), experimentId.value]);

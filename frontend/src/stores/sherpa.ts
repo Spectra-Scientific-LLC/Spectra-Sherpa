@@ -126,7 +126,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   const qualified = computed(() => appMode.value === "enterprise" && siteProfile?.value === "pro");
   const projectStore = useProjectStore();
   const auth = useAuthStore();
-  const workspaceIdentity = () => [auth.user?.id, auth.token, projectStore.currentProjectId];
+  const workspaceIdentity = () => [auth.user?.id, auth.sessionRevision, projectStore.currentProjectId];
   const conversationLoads = useScopedRequest(workspaceIdentity);
   const recapRequests = useScopedRequest(workspaceIdentity);
   const conversationWrites = useScopedRequest(workspaceIdentity, undefined, { abortOnInvalidate: false });

@@ -463,7 +463,7 @@ let cache = new Map<string, Promise<any>>();
 let activeRunTicket: ScopedRequestTicket | null = null;
 let pendingRunNameSave: Promise<void> | null = null;
 const runIdentity = () => [
-  auth.user?.id, auth.token,
+  auth.user?.id, auth.sessionRevision,
   String(route.params.runId ?? ""), String(route.query.project ?? ""), project.currentProjectId,
 ];
 function clearNodeEvidence() {
@@ -787,7 +787,7 @@ onBeforeUnmount(releaseSavedRun);
 // Install this before the immediate deep-link load: project selection can
 // synchronously invalidate that first request and needs a replacement owner.
 watch(() => project.currentProjectId, () => void loadRun(false));
-watch([() => auth.user?.id, () => auth.token], () => {
+watch([() => auth.user?.id, () => auth.sessionRevision], () => {
   // A validated replacement session may reopen the same route, but must refetch
   // its retained evidence. Logout only clears it; it does not start anonymous IO.
   if (auth.user && project.currentProjectId != null) void loadRun(false);

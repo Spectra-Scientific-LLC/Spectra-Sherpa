@@ -242,6 +242,7 @@
           <div class="curve-editor__canvas">
             <ConcentrationCurveEditor
               :points="component.control_points"
+              :sample-count="settings.n_samples"
               :color="componentColor(index)"
               :title="component.name"
               hide-toolbar
@@ -756,7 +757,7 @@ interface CommonOverlapProblem {
 type SavedRecipeRecord = Record<string, unknown>;
 const synthesisBundle = ref<SynthesisBundleItem[]>([]);
 const recipeRevision = ref(0);
-const workspaceIdentity = () => [authStore.user?.id, authStore.token, projectStore.currentProjectId, recipeRevision.value];
+const workspaceIdentity = () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId, recipeRevision.value];
 const recipeIdentity = () => [...workspaceIdentity(), JSON.stringify({
   settings, seed: recipeSeed.value,
   components: selectedComponents.value.map((component) => ({

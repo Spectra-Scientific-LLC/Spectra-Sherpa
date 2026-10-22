@@ -48,6 +48,28 @@ Vue effect scope. Project-scoped stores register their reset with
 `projectScopeRegistry`; registration also ends with the owning scope.
 Session changes invalidate project-owned state even when object IDs repeat.
 
+### Renewal is not a new login
+
+Use `auth.sessionRevision`, not the bearer-token string, in workspace identity.
+An acknowledged renewal of the same validated actor preserves this revision:
+project, sheet, Inspector, drafts, retained results and live connections remain
+owned by the same login. Logout, account change, and unclassified credential
+replacement still invalidate it synchronously, including A → B → A changes.
+
+`extension-contract/session-v1.ts` owns the browser credential envelope. A
+random login marker and renewal generation distinguish login from renewal;
+they do not authenticate the user. Web Locks serialize credential commits.
+Receiving tabs validate the exact renewed credential with `/auth/me` before
+new protected work. Network errors and 429/5xx responses preserve the workspace
+but refuse dispatch until validation succeeds. Rejection or an actor mismatch
+clears the old workspace. HTTP clients bind headers and expiry handling to the
+checked credential snapshot; a delayed response cannot expire a newer login.
+
+Legacy `token` storage is read only until the first envelope is committed.
+After deployment, reload existing tabs to load the same frontend protocol;
+already-loaded older JavaScript is not upgraded by this storage migration.
+Session events and diagnostics must never record bearer tokens or API keys.
+
 Data page entry admits an explicit `project` or `project_id` query before
 restoring dataset state. Remembered/recent project selection is a fallback only
 when neither is present. Conflicting, malformed or unavailable project links

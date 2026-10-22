@@ -19,6 +19,7 @@ import {
   type ScientificPlotProjectionDeps,
 } from "@/composables/scientificPlotProjectionCore";
 import { resolvePortPayload } from "@/utils/nodeOutput";
+import { datasetAxisDisplayState, projectDatasetAxisDisplay } from "@/utils/datasetAxisSets";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel, shouldReverseFeatureAxis } from "@/utils/plotLabels";
 import {
@@ -43,7 +44,6 @@ import {
   scientificLabelSequence,
   scientificPortMetadata,
   scientificFeatureCoordinates,
-  t2QDiagnosticRows,
 } from "@/utils/scientificPlots";
 import {
   isProjectedScientificKind,
@@ -1272,7 +1272,40 @@ export function useQuickPlotProjection(
     : null);
   const sampleColorField = selection?.sampleColorField ?? ref("");
   const sampleSymbolField = selection?.sampleSymbolField ?? ref("");
-  const { projectPlot, sampleColorFieldOptions, sampleSymbolFieldOptions, metadataGroupingError: coreMetadataGroupingError } = useScientificPlotProjectionCore({
+  const selectedFeatureScale = selection?.selectedFeatureScale ?? ref("__primary__");
+  const selectedFeatureLabels = selection?.selectedFeatureLabels ?? ref("__primary__");
+  const selectedFeatureTitle = selection?.selectedFeatureTitle ?? ref("__primary__");
+  const selectedSampleLabels = selection?.selectedSampleLabels ?? ref("__primary__");
+  const withDisplayAxes = (output: any) => {
+    if (!output || [selectedFeatureScale, selectedFeatureLabels, selectedFeatureTitle, selectedSampleLabels]
+      .every(selected => selected.value === "__primary__")) return output;
+    const payload = resolvePortPayload(output.presentation_value ?? output.value ?? output.ports?.[output.primary_port] ?? output);
+    const data = payload?.data ?? output.data;
+    if (!Array.isArray(data?.[0])) return output;
+    const featureAxis = payload?.feature_axis ?? payload?.x_axis;
+    const sampleAxis = payload?.sample_axis ?? payload?.y_axis;
+    const feature = projectDatasetAxisDisplay(datasetAxisDisplayState(featureAxis, data[0].length),
+      selectedFeatureScale.value, selectedFeatureLabels.value, selectedFeatureTitle.value);
+    const sample = projectDatasetAxisDisplay(datasetAxisDisplayState(sampleAxis, data.length),
+      "__primary__", selectedSampleLabels.value, "__primary__");
+    const value = { ...payload,
+      x_axis: feature ? { ...featureAxis, ...(feature.values.length ? { data: feature.values } : {}),
+        ...(feature.labels.length ? { labels: feature.labels } : {}), title: feature.title, units: feature.units,
+        quantity: feature.quantity, axis_type: feature.axisType } : featureAxis,
+      y_axis: sample ? { ...sampleAxis, ...(sample.labels.length ? { labels: sample.labels } : {}) } : sampleAxis,
+    };
+    if (payload?.feature_axis) value.feature_axis = value.x_axis;
+    if (payload?.sample_axis) value.sample_axis = value.y_axis;
+    return { ...output, data, ...(output.value ? { value } : {}), presentation_value: value,
+      metadata: { ...output.metadata,
+        ...(feature ? { ...(feature.values.length ? { wavenumbers: feature.values } : {}),
+          ...(feature.labels.length ? { feature_names: feature.labels } : {}), x_title: feature.title, x_units: feature.units,
+          x_quantity: feature.quantity, x_axis_type: feature.axisType } : {}),
+        ...(sample?.labels.length ? { sample_labels: sample.labels, labels: sample.labels } : {}) } };
+  };
+  const { projectPlot, sampleColorFieldOptions, sampleSymbolFieldOptions, metadataGroupingError: coreMetadataGroupingError,
+    featureScaleOptions, featureLabelSetOptions, featureTitleSetOptions, sampleLabelSetOptions, axisSetError,
+  } = useScientificPlotProjectionCore({
     nodeOutput: sharedOutput,
     nodeType,
     nodeTypeKey: nodeType,
@@ -1283,10 +1316,7 @@ export function useQuickPlotProjection(
     scoreColorMode: selection?.scoreColorMode ?? ref("auto"),
     sampleColorField,
     sampleSymbolField,
-    selectedFeatureScale: selection?.selectedFeatureScale ?? ref("__primary__"),
-    selectedFeatureLabels: selection?.selectedFeatureLabels ?? ref("__primary__"),
-    selectedFeatureTitle: selection?.selectedFeatureTitle ?? ref("__primary__"),
-    selectedSampleLabels: selection?.selectedSampleLabels ?? ref("__primary__"),
+    selectedFeatureScale, selectedFeatureLabels, selectedFeatureTitle, selectedSampleLabels,
     plsdaLoadingsViewMode: ref("lines"),
     featureXAxis,
     featureYAxis,
@@ -1551,9 +1581,9 @@ export function useQuickPlotProjection(
   // ---- Plot data and layout ----
 
   const rawPlotResult = computed<{ data: any[]; layout: Record<string, any> }>(() => {
-    const output = nodeOutput.value;
+    const output = withDisplayAxes(nodeOutput.value);
     if (!output) return { data: [], layout: BASE_PLOT_LAYOUT };
-    const metadata = plotMetadata.value;
+    const metadata = { ...plotMetadata.value, ...output.metadata };
     const plotOutput = { ...output, metadata };
     const key = selectedPlotKey.value;
     const sharedPlot = projectPlot(key);
@@ -2394,7 +2424,7 @@ export function useQuickPlotProjection(
 
   const plotResult = computed<{data:any[];layout:Record<string,any>}>(() => {
     if (isPreprocessNode.value && ["spectra_overlay", "spectra_heatmap"].includes(selectedPlotKey.value)) {
-      return preprocessingComparison(primaryInput.value, retainedNodeOutput.value,
+      return preprocessingComparison(withDisplayAxes(primaryInput.value), withDisplayAxes(retainedNodeOutput.value),
         selectedPlotKey.value === "spectra_heatmap", sampleColorField.value, sampleSymbolField.value);
     }
     if (cohort.value.error) return refusedScientificPlot(cohort.value.error, BASE_PLOT_LAYOUT);
@@ -2431,16 +2461,6 @@ export function useQuickPlotProjection(
     const evidenceShape = scientificEvidenceShape(output);
     if (evidenceShape) {
       return { ...evidenceShape, range: null };
-    }
-    if (isProjectedScientificKind(output, "t2_q_diagnostics")) {
-      const rows = t2QDiagnosticRows(output.presentation_value, output.metadata || {});
-      return {
-        rows: rows.length,
-        cols: rows.length > 0 ? 2 : 0,
-        range: null,
-        rowLabel: rows.length === 1 ? "sample" : "samples",
-        colLabel: "statistics",
-      };
     }
     if (isProjectedScientificKind(output, "confusion_matrix") && Array.isArray(output?.data)) {
       return {
@@ -2623,6 +2643,8 @@ export function useQuickPlotProjection(
     regressionTargetIdx,
 
     // Axis options
+    featureScaleOptions, featureLabelSetOptions, featureTitleSetOptions, sampleLabelSetOptions, axisSetError,
+    selectedFeatureScale, selectedFeatureLabels, selectedFeatureTitle, selectedSampleLabels,
     axisOptions,
     featureAxisOptions,
     regressionTargetOptions,

@@ -44,7 +44,7 @@ const error = ref('');
 const report = ref<Report | null>(null);
 const auth = useAuthStore();
 const requests = useScopedRequest(
-  () => [auth.user?.id, auth.token, props.projectId],
+  () => [auth.user?.id, auth.sessionRevision, props.projectId],
   () => { report.value = null; error.value = ''; running.value = false; },
   { abortOnInvalidate: false },
 );

@@ -69,6 +69,13 @@ function harness(opts: {
 }
 
 describe("useNodeTrial", () => {
+  it("does not dispatch a trial after unmount during the parameter commit tick", async () => {
+    const { api, wrapper } = harness({ nodeData: { id: 1, workflowNodes: [{ id: 1, type: "model.pca" }], workflowEdges: [] } });
+    const pending = api().handleRunTrial();
+    wrapper.unmount();
+    await pending;
+    expect(postMock).not.toHaveBeenCalled();
+  });
   it("broadcastParamsUpdate writes to sessionStorage with merged params", () => {
     const { api } = harness({
       nodeData: { id: 7, type: "model.pca", params: { x: 1 } },

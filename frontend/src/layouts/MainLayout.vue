@@ -91,6 +91,7 @@
 </template>
 
 <script setup lang="ts">
+import { readBrowserToken } from '@/extension-contract/session-v1';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { setAttentionWindow } from "@/lib/sherpaAttention";
 import { useRoute } from "vue-router";
@@ -151,7 +152,7 @@ const sessionExpiryWarning = computed(
 );
 
 const updateSessionExpiry = () => {
-  sessionMinutesRemaining.value = sessionExpiryMinutesRemaining(localStorage.getItem("token"));
+  sessionMinutesRemaining.value = sessionExpiryMinutesRemaining(readBrowserToken());
 };
 
 const renewSessionNow = async () => {
@@ -162,7 +163,7 @@ const renewSessionNow = async () => {
     const renewed = await sessionRenewal.maybeRenew();
     updateSessionExpiry();
     if (renewed) return;
-    localStorage.removeItem("token");
+    await authStore.clearCredentials();
     window.location.href = `/login?reason=session-renewal&return_to=${encodeURIComponent(route.fullPath)}`;
   } finally {
     renewingSession.value = false;

@@ -17,7 +17,7 @@ const evidence = ref<EvidenceComparison | null>(null);
 const error = ref('');
 const loading = ref(false);
 const auth = useAuthStore();
-const identity = () => [auth.user?.id, auth.token, props.projectId, props.encodedReferences];
+const identity = () => [auth.user?.id, auth.sessionRevision, props.projectId, props.encodedReferences];
 const requests = useScopedRequest(identity);
 async function load() {
   const request = requests.begin();

@@ -7,7 +7,7 @@ import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 const { apiGet, toastAdd } = vi.hoisted(() => ({ apiGet: vi.fn(), toastAdd: vi.fn() }));
 vi.mock("@/api/client", () => ({ default: { get: apiGet } }));
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: toastAdd }) }));
-const auth = reactive({ user: { id: 1 }, token: "session-A" });
+const auth = reactive({ user: { id: 1 }, token: "session-A", get sessionRevision() { return this.token; } });
 const project = reactive({ currentProjectId: 1 });
 const workbook = reactive({ projectId: 1, activeSheet: { workflowId: 9, trialId: undefined as string | undefined } });
 const metadata = {

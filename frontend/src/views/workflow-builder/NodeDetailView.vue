@@ -16,7 +16,7 @@
           icon="pi pi-play"
           class="p-button-success"
           :loading="isExecuting"
-          :disabled="hasValidationErrors"
+          :disabled="hasValidationErrors || saving"
           @click="handleRunTrial"
           :title="runTrialDisabledReason || 'Run trial execution with current parameters'"
           :aria-describedby="runTrialDisabledReason ? runTrialReasonId : undefined"
@@ -31,6 +31,8 @@
           label="Save and Exit"
           icon="pi pi-check"
           class="p-button-primary"
+          :disabled="isExecuting || saving || hasValidationErrors"
+          :loading="saving"
           @click="handleSaveAndExit"
         />
         <DisabledReason :id="runTrialReasonId" :reason="runTrialDisabledReason" class="header-disabled-reason" />
@@ -91,6 +93,10 @@
         <PlotsPanel
           :attention-node-id="nodeId"
           :expanded="sections.plots"
+          :node-label="nodeLabel"
+          :node-input="inputData"
+          :node-inputs="quickPlotInputs"
+          :plot-selection="quickPlotSelection"
           @toggle="toggleSection('plots')"
           @toggle-plot="togglePlot"
           @contour-click="handleContourClick"
@@ -184,15 +190,17 @@ const props = withDefaults(
   defineProps<{
     initialNodeData?: any | null;
     embedded?: boolean;
+    saving?: boolean;
   }>(),
   {
     initialNodeData: null,
     embedded: false,
+    saving: false,
   },
 );
 
 const emit = defineEmits<{
-  (event: "save", nodeId: string, params: Record<string, unknown>): void;
+  (event: "save", nodeId: string, params: Record<string, unknown>, execute: boolean): void;
   (event: "close"): void;
 }>();
 
@@ -583,7 +591,7 @@ const handleCancel = () => {
   window.close();
 };
 
-const { isExecuting, broadcastParamsUpdate, waitForParamsAck, handleRunTrial } = useNodeTrial({
+const { isExecuting, hasSuccessfulTrial, broadcastParamsUpdate, waitForParamsAck, handleRunTrial } = useNodeTrial({
   nodeData,
   localParams,
   nodeType,
@@ -604,6 +612,7 @@ const handleSaveAndExit = async () => {
       "save",
       String(nodeData.value?.id ?? nodeId.value),
       cloneNodeDetailParams(localParams.value),
+      hasSuccessfulTrial.value,
     );
     return;
   }

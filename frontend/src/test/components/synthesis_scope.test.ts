@@ -4,6 +4,7 @@ import { flushPromises, shallowMount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import api from "@/api/client";
 import SynthesisPanel from "@/views/data/SynthesisPanel.vue";
+import ConcentrationCurveEditor from "@/components/ConcentrationCurveEditor.vue";
 import { useSynthesisStore, type SelectedComponent } from "@/stores/synthesis";
 
 const mocks = vi.hoisted(() => ({
@@ -35,11 +36,14 @@ type Panel = {
   previewSynthesis(): Promise<void>;
   reopenRecipe(recipe: Record<string, unknown>, title: string): Promise<void>;
   synthesisBundle: BundleItem[];
+  concentrationTraces: { x: number[]; y: number[] }[];
 };
 function mountPanel() {
   const pinia = createPinia();
   setActivePinia(pinia);
-  const wrapper = shallowMount(SynthesisPanel, { global: { plugins: [pinia] } });
+  const wrapper = shallowMount(SynthesisPanel, { global: {
+    plugins: [pinia], stubs: { Panel: { template: "<section><slot /></section>" } },
+  } });
   const panel = wrapper.vm.$.setupState as unknown as Panel;
   return { wrapper, panel, store: useSynthesisStore() };
 }
@@ -51,6 +55,22 @@ beforeEach(() => {
 });
 
 describe("Mounted synthesis workspace scope", () => {
+  it("binds the editor and resolved traces to the same current sample count", async () => {
+    const { wrapper, panel, store } = mountPanel();
+    await flushPromises();
+    const points = [{ x: 0, y: .1 }, { x: 50, y: .5 }, { x: 100, y: .9 }];
+    store.selectedComponents = [{ id: "acetone", name: "Acetone", source: "nist_quant_ir", variants: [],
+      spectrum: null, loading: false, native_grid: null, concentration_max_ppm: 100, control_points: points }];
+    for (const count of [50, 3, 100]) {
+      store.settings.n_samples = count;
+      await flushPromises();
+      expect(wrapper.findComponent(ConcentrationCurveEditor).props("sampleCount")).toBe(count);
+      expect(panel.concentrationTraces[0].x).toEqual(Array.from({ length: count }, (_, i) => i));
+      expect(panel.concentrationTraces[0].y).toHaveLength(count);
+      expect(store.selectedComponents[0].control_points).toEqual(points);
+    }
+    wrapper.unmount();
+  });
   it("notifies only when grid edits clear an actual selection, not catalogue hits", async () => {
     const { wrapper, panel, store } = mountPanel();
     await flushPromises();

@@ -1693,7 +1693,7 @@ const projectStore = useProjectStore();
 const authStore = useAuthStore();
 const workbookStore = useWorkbookStore();
 const workspaceIdentity = () => [
-  authStore.user?.id, authStore.token, projectStore.currentProjectId,
+  authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId,
   workbookStore.projectId, workbookStore.activeSheet?.workflowId,
   workbookStore.activeSheet?.trialId, workflowStore.workflowId,
 ];

@@ -23,7 +23,8 @@ vi.mock("@/composables/useAppConfig", () => ({
   }),
 }));
 
-const mockIdentity = reactive({ user: { id: 1 }, token: "first-session" });
+const mockIdentity = reactive({ user: { id: 1 }, token: "first-session", renewalRevision: null as string | null,
+  get sessionRevision() { return this.renewalRevision ?? this.token; } });
 const mockProject = reactive({ currentProjectId: 1 });
 vi.mock("@/stores/auth", () => ({ useAuthStore: () => mockIdentity }));
 
@@ -82,6 +83,8 @@ describe("LLM Store WebSocket handshake", () => {
   let OriginalWebSocket: typeof WebSocket;
 
   beforeEach(() => {
+    mockIdentity.renewalRevision = null;
+    mockIdentity.token = 'first-session';
     vi.useFakeTimers();
     setActivePinia(createPinia());
     apiGet.mockReset();
@@ -411,6 +414,7 @@ describe("LLM Store WebSocket handshake", () => {
   });
 
   it("recovers with a renewed token while the session probe is pending", async () => {
+    mockIdentity.renewalRevision = mockIdentity.token;
     localStorage.setItem("token", "old-session");
     let finish!: (response: unknown) => void;
     apiGet.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
@@ -420,6 +424,7 @@ describe("LLM Store WebSocket handshake", () => {
 
     sockets[0].close(1008);
     localStorage.setItem("token", "renewed-session");
+    mockIdentity.token = 'renewed-session';
     finish({ status: 401 });
     await vi.advanceTimersByTimeAsync(250);
     expect(sockets).toHaveLength(2);
@@ -438,6 +443,7 @@ describe("LLM Store WebSocket handshake", () => {
 describe("LLM Store refreshConversations project-scope cleanup", () => {
   beforeEach(() => {
     mockIdentity.token = "first-session";
+    mockIdentity.renewalRevision = null;
     mockProject.currentProjectId = 1;
     setActivePinia(createPinia());
     apiGet.mockReset();

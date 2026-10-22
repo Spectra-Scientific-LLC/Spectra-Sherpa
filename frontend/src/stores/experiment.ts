@@ -30,7 +30,7 @@ export const useExperimentStore = defineStore("experiment", () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
   const selectedExperimentId = ref<number | null>(null);
-  const accountIdentity = () => [useAuthStore().user?.id, useAuthStore().token];
+  const accountIdentity = () => [useAuthStore().user?.id, useAuthStore().sessionRevision];
   const identity = () => [...accountIdentity(), activeProjectScope.value, selectedExperimentId.value];
   const listScope = useScopedRequest(
     () => [...accountIdentity(), activeProjectScope.value],

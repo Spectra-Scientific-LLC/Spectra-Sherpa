@@ -2,6 +2,8 @@ import { mount } from "@vue/test-utils";
 import { describe, it, expect } from "vitest";
 import { ref, computed } from "vue";
 import PlotsPanel from "@/views/workflow-builder/node-detail/panels/PlotsPanel.vue";
+import QuickPlotModal from "@/views/workflow-builder/modals/QuickPlotModal.vue";
+import renderers from "@/utils/scientific-presentation-renderers.json";
 import {
   NODE_DETAIL_STATE_KEY,
   type NodeDetailState,
@@ -119,6 +121,7 @@ function makeState(
 ): NodeDetailState {
   return {
     output: {
+      presentationOptions: ref([]),
       summary: ref(""),
       hasOutput: ref(false),
       data: ref(null),
@@ -199,6 +202,52 @@ function factory(
     state,
   };
 }
+
+describe("canonical detailed plot surface", () => {
+  it.each(Object.keys(renderers.record_views))("uses the shared chart for declared record %s", (key) => {
+    const [kind, id, port] = key.split(":");
+    const { wrapper } = factory({ nodeOutput: { data: [], presentation_value: {}, metadata: {
+      scientific_presentation: { schema_version: "spectrasherpa-node-presentation/1",
+        contract_digest: "a".repeat(64), presentation_id: id, kind,
+        source_port: port, source_ports: [port], modes: ["record"] },
+    } } as any });
+    expect(wrapper.getComponent(QuickPlotModal).props("embedded")).toBe(true);
+    wrapper.unmount();
+  });
+  it.each(Object.keys(renderers.plot_kinds))("delegates %s to the actual Quick Plot component", (kind) => {
+    const output = { data: [], metadata: { scientific_presentation: {
+      schema_version: "spectrasherpa-node-presentation/1", contract_digest: "a".repeat(64),
+      presentation_id: "result", kind, source_port: "result", source_ports: ["result"],
+      modes: ["plot", "table"],
+    } } };
+    const { wrapper } = factory({ nodeOutput: output as any, nodeTypeKey: "arbitrary.new.node" });
+    const quick = wrapper.getComponent(QuickPlotModal);
+    expect(quick.props("embedded")).toBe(true);
+    expect(quick.props("nodeOutput")).toEqual(output);
+    expect(wrapper.findAllComponents(QuickPlotModal)).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("replaces component choices and plot data when a trial changes PCA output", async () => {
+    const output = (n: number) => ({ data: [[1, 2, 3].slice(0, n), [4, 5, 6].slice(0, n)],
+      metadata: { n_components: n, scientific_presentation: {
+        schema_version: "spectrasherpa-node-presentation/1", contract_digest: "a".repeat(64),
+        presentation_id: "scores", kind: "pca_scores", source_port: "scores", source_ports: ["scores"], modes: ["plot"],
+      } },
+      ports: { variable_correlations: { data: [[.1, .2, .3].slice(0, n)] },
+        explained_variance: { data: [.6, .3, .1].slice(0, n) } },
+    });
+    const { wrapper, state } = factory({ nodeOutput: output(3) as any, nodeTypeKey: "model.pca" });
+    const quick = wrapper.getComponent(QuickPlotModal);
+    expect((quick.vm as any).availablePlots.map((p: any) => p.label)).toEqual(["PCA Summary", "PCA Score Map", "Variable Correlations"]);
+    state.plots.value = { ...state.plots.value, nodeOutput: output(1) as any };
+    await wrapper.vm.$nextTick();
+    expect((quick.vm as any).axisOptions).toHaveLength(1);
+    expect((quick.vm as any).availablePlots.map((p: any) => p.label)).toEqual(["PCA Score Map", "Variable Correlations"]);
+    expect(quick.props("nodeOutput").data).toEqual([[1], [4]]);
+    wrapper.unmount();
+  });
+});
 
 describe("PlotsPanel", () => {
   it("renders an empty state when hasOutput is false", () => {
