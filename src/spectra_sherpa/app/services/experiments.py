@@ -245,6 +245,8 @@ async def create_experiment(
     description: str | None,
     metadata: dict[str, Any],
     project_id: int | None = None,
+    *,
+    flush_only: bool = False,
 ) -> Experiment:
     experiment = Experiment(
         user_id=user_id,
@@ -273,7 +275,10 @@ async def create_experiment(
             after={"name": experiment.name, "project_id": experiment.project_id},
         )
 
-        await session.commit()
+        if flush_only:
+            await session.flush()
+        else:
+            await session.commit()
     except Exception:
         await session.rollback()
         raise

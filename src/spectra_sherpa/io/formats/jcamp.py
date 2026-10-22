@@ -92,7 +92,11 @@ class JcampPlugin:
     description = "Open spectroscopy interchange format"
     extensions = (".jdx", ".dx", ".jcamp")
     parser_id = "spectrasherpa.jcamp"
-    parser_version = "3"
+    # Strict parsing is unchanged by the opt-in NIST axis policy, whose output is
+    # identified by jcamp.axis_reconciliation. parser_version is part of every
+    # collection member's scientific identity: bumping it invalidates saved
+    # multi-file JCAMP bindings, so change it only with a migration.
+    parser_version = "2"
 
     def probe(self, source: BoundedSource) -> ProbeResult:
         prefix = source.probe_prefix()

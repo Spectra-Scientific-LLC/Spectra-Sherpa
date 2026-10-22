@@ -675,7 +675,17 @@ async def save_synthesis_result(
     session: AsyncSession,
     current_user: User,
     request: SynthesisSaveRequest,
+    *,
+    commit: bool = True,
+    written_paths: list[Path] | None = None,
 ) -> SynthesisSaveResponse:
+    """Persist one synthesis result.
+
+    ``commit=False`` leaves the rows flushed in the caller's transaction so a
+    host can bind further authority (for example an execution grant) and commit
+    once. Such callers own rollback; ``written_paths`` receives every created
+    file or directory so they can remove them when the transaction fails.
+    """
     result = synthesize(request)
     if request.project_id is not None:
         project = (
@@ -692,6 +702,7 @@ async def save_synthesis_result(
     if experiment_id is None:
         experiment = await create_experiment(
             session,
+            flush_only=not commit,
             user_id=current_user.id,
             name=request.name or _default_dataset_name(result),
             description="Synthetic FTIR dataset generated from component spectra",
@@ -709,6 +720,8 @@ async def save_synthesis_result(
             project_id=request.project_id,
         )
         experiment_id = experiment.id
+        if written_paths is not None:
+            written_paths.append(experiment_dir(experiment_id))
     else:
         existing = (
             await session.execute(
@@ -727,6 +740,8 @@ async def save_synthesis_result(
     base.mkdir(parents=True, exist_ok=True)
     stem = _safe_stem(request.name or _default_dataset_name(result))
     npz_path, recipe_path = _unique_synthesis_artifact_paths(base, stem)
+    if written_paths is not None:
+        written_paths.extend((npz_path, recipe_path))
     _write_synthesis_npz(npz_path, result, title=request.name or _default_dataset_name(result))
     recipe_path.write_text(json.dumps({"recipe": result.recipe, "ground_truth": result.ground_truth}, indent=2))
 
@@ -738,6 +753,7 @@ async def save_synthesis_result(
         file_path=relative_file_path,
         file_size_bytes=npz_path.stat().st_size,
         file_type=SYNTHETIC_FILE_TYPE,
+        flush_only=not commit,
     )
     return SynthesisSaveResponse(
         experiment_id=experiment_id,

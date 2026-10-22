@@ -116,3 +116,32 @@ async def test_provider_reconciliation_survives_cache_synthesis_and_npz(monkeypa
     provenance = json.loads(retained["recipe_json"])["components"][0]["source_provenance"]
     assert provenance == first.metadata
     assert provenance["source_sha256"] == hashlib.sha256(text.encode()).hexdigest()
+
+
+def _strict_jcamp(shift: int) -> str:
+    values = " ".join(str(10 + shift + index) for index in range(5))
+    return (
+        f"##TITLE=s{shift}\n##JCAMP-DX=4.24\n##DATA TYPE=INFRARED SPECTRUM\n##XUNITS=1/CM\n"
+        "##YUNITS=ABSORBANCE\n##FIRSTX=1000\n##LASTX=1004\n##NPOINTS=5\n##DELTAX=1\n"
+        f"##XFACTOR=1\n##YFACTOR=1\n##XYDATA=(X++(Y..Y))\n1000 {values}\n##END=\n"
+    )
+
+
+def test_strict_jcamp_collection_identity_is_unchanged_by_the_nist_policy(tmp_path):
+    """Saved multi-file JCAMP bindings pin this digest; parser identity is part of it."""
+    from spectra_sherpa.app.lib.collection_assembly import CollectionMember, assemble_collection
+
+    members = []
+    for index in range(2):
+        path = tmp_path / f"s{index}.jdx"
+        path.write_text(_strict_jcamp(index))
+        source = path.read_bytes()
+        result = ingest(path)
+        assert result.parser_version == "2"
+        assert "jcamp.axis_reconciliation" not in result.assets[0].dataset.extra
+        members.append(
+            CollectionMember(result.assets[0].dataset, path.name, len(source), hashlib.sha256(source).hexdigest())
+        )
+    collection = assemble_collection(members, title="c")
+    # Digest produced before the NIST policy existed (main 2db5db96).
+    assert collection.scientific_digest == "b8342a44ed01f1719614ef3f13feafb2f461a7319e63c11f4f6c9691b26a2f79"
