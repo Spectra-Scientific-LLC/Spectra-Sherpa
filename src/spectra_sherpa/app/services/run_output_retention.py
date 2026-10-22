@@ -64,8 +64,9 @@ def _storage_lock(directory: Path):
         except ImportError:  # pragma: no cover - Windows
             import msvcrt
 
-            if os.fstat(fd).st_size == 0:
-                os.write(fd, b"0")
+            # Windows permits byte-range locks beyond EOF. Never initialize
+            # byte zero before acquiring it: another caller may already own
+            # that byte after both callers observed an empty lock file.
             os.lseek(fd, 0, os.SEEK_SET)
             msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
 
