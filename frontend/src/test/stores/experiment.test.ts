@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
 import api from "@/api/client";
+import { CanceledError } from "axios";
 import { useExperimentStore } from "@/stores/experiment";
 import type { ExperimentDetail, ExperimentFile, ExperimentSummary, VersionInfo } from "@/types";
 
@@ -75,6 +76,21 @@ describe("Experiment Store", () => {
     expect(store.experiments).toEqual([]);
     expect(store.loading).toBe(false);
     expect(store.error).toBe("Network error");
+  });
+
+  it("shares concurrent list reads and treats a superseded read as cancellation, not failure", async () => {
+    let finish!: (value: unknown) => void;
+    vi.mocked(api.get).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const store = useExperimentStore();
+    const chat = store.fetchExperiments(7);
+    const canvas = store.fetchExperiments(7);
+    expect(api.get).toHaveBeenCalledTimes(1);
+    finish({ data: [{ id: 1, name: "Selected" }] });
+    await Promise.all([chat, canvas]);
+    expect(store.experiments).toHaveLength(1);
+    vi.mocked(api.get).mockRejectedValueOnce(new CanceledError("canceled"));
+    await expect(store.fetchExperiments(8)).resolves.toBeUndefined();
+    expect(store.error).toBeNull();
   });
 
   it("selectExperiment loads experiment, files, and versions", async () => {

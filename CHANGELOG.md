@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Staging GUI corrections
+
+- Prepare Export defaults to plain CSV; portable CSV remains an explicit
+  round-trip option. Format changes update the filename and require freshly
+  prepared bytes; JDX exports all input spectra as a ZIP.
+- Guidance preserves project/workflow context, opens the intended Data tab,
+  never auto-submits imports, and refuses stale or unavailable action contexts.
+- Concurrent experiment reads share a request. Expected cancellation no longer
+  produces a background-network alert; interrupted workbook loads remain
+  visible with a retry action rather than masquerading as empty sheets.
+- Autosave refusals expose the actionable error while keeping the local draft.
+
 ### Cohesion and scientific evidence
 
 - Identity and units: typed sample IDs remain separate from editable labels.
@@ -33,6 +45,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixes pending release qualification
 
+- Prepare Export's JDX choice downloads a ZIP with one JCAMP-DX file per
+  processed input spectrum and a row/identity manifest, including for a
+  single spectrum. Values, measured axes and units remain node-owned; the
+  workbench and generated scripts materialize the same digest-verified bytes.
+- Prepare Export keeps the filename extension aligned when changing CSV,
+  JSON or JDX (ZIP) format in the Inspector or trial editor. Downloads of a retained
+  artifact are blocked when its filename or format differs from current
+  settings, with an instruction to rerun the node. Serialization remains in
+  the canonical workflow node.
+- Dashboard Starter can use the configured local BYO chat endpoint, with the
+  same validated analysis/dataset choices and rule-based fallback as hosted
+  planning. Hosted planning no longer depends on the ambient Guidance switch.
+- Local and hosted Data Story share a bounded projection of parsed source
+  facts, including recorded acquisition settings, member variation and missing
+  fields. Guidance's Data-to-Workflow action reuses the dataset handoff and
+  Analysis Starter instead of navigating to a blank sheet.
 - Data links honor their explicit project before restoring the linked dataset,
   including after reopening. A remembered different project no longer leaves
   My Dataset empty; invalid or unavailable project links report a refusal.

@@ -912,7 +912,9 @@ onMounted(async () => {
   // before /auth/me validates it.
   if (authStore.user || appMode.value === "local") {
     store.connect();
-    experimentStore.fetchExperiments();
+    void experimentStore.fetchExperiments().catch((error: unknown) => {
+      console.warn("Chat experiment list could not be loaded", error);
+    });
     sherpaStore.init();
     await loadEgressDefaults();
     if (appMode.value === "local") {

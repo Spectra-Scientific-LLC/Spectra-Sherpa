@@ -149,6 +149,10 @@
     <PromotionFitContext v-if="route.query.promotion_artifact && workflowStore.workflowId" :artifact-uid="String(route.query.promotion_artifact)" :workflow-id="workflowStore.workflowId" :source-run-id="Number(route.query.promotion_source_run) || null" />
 
     <p v-if="workflowContextLoading" role="status" aria-label="Loading workflow">Loading workflow…</p>
+    <div v-if="workbookLoadError" role="alert" class="workflow-selection-unavailable">
+      <span>{{ workbookLoadError }}</span>
+      <Button label="Reload workbook" class="p-button-sm" @click="initializeWorkbook(false)" />
+    </div>
     <p v-if="!workflowContextLoading && workflowStore.hasFoldValidationPlan" role="status" aria-label="Validated workflow export">
       This campaign-derived sheet has a cross-validation plan. A project archive preserves the sheet, but is not a deployable campaign winner.
       <template v-if="canOptimize">For an application, use a signed Model package when Optimize offers one for a selected, refitted winner.</template>
@@ -509,6 +513,7 @@ const dataSelectionReceipt = ref<DataSelectionReceipt | null>(
 // A missing receipt cannot be diagnosed until the routed project has loaded.
 // Also suppress notices retained from the previous sheet during navigation.
 const workbookContextReady = ref(false);
+const workbookLoadError = ref("");
 const workflowContextLoading = computed(() =>
   !workbookContextReady.value || workbookStore.isLoading || workflowStore.isLoading,
 );
@@ -1679,7 +1684,7 @@ const triggerAutosave = async (
         toast.add({
           severity: "error",
           summary: "Autosave Failed",
-          detail: "Your edits are kept as a local draft. Edit again to retry saving.",
+          detail: `${autosaveErrorMessage.value}. Your edits are kept as a local draft. Correct the settings and retry saving.`,
           life: 6000,
         });
         autosaveFailureToastShown.value = true;
@@ -1695,11 +1700,12 @@ const triggerAutosave = async (
   }
 };
 
-const initializeWorkbook = async () => {
+const initializeWorkbook = async (respectDeepLink = true) => {
+  workbookLoadError.value = "";
   try {
     const queryProjectId = Number(route.query.project_id);
     let targetProjectId: number | null =
-      Number.isFinite(queryProjectId) && queryProjectId > 0
+      respectDeepLink && Number.isFinite(queryProjectId) && queryProjectId > 0
         ? queryProjectId
         : projectStore.currentProjectId;
 
@@ -1737,11 +1743,23 @@ const initializeWorkbook = async () => {
     }
 
     await projectStore.selectProject(targetProjectId);
+    if (projectStore.currentProjectId !== targetProjectId) throw new Error("The requested project could not be selected. Reload the workbook to retry.");
     const pendingStarter = readAnalysisStarterIntent();
+    const accountAtLoad = [authStore.user?.id, authStore.token];
     await workbookStore.loadSheets(targetProjectId, {
       createIfEmpty: pendingStarter?.template_slug == null,
     });
-    if (route.query.workflow_id !== undefined) {
+    // Actor hydration can reset both stores during the first load. Retry that
+    // known invalidation once; never accept an abandoned load as an empty graph.
+    if (workbookStore.projectId !== targetProjectId && projectStore.currentProjectId === targetProjectId &&
+        accountAtLoad[0] === authStore.user?.id && accountAtLoad[1] !== authStore.token) {
+      await workbookStore.loadSheets(targetProjectId, { createIfEmpty: pendingStarter?.template_slug == null });
+    }
+    if (workbookStore.projectId !== targetProjectId ||
+        (workbookStore.activeSheet?.kind !== "trial" && workbookStore.activeSheet && workflowStore.workflowId !== workbookStore.activeSheet.workflowId)) {
+      throw new Error("Workbook loading was interrupted by a workspace change. Reload the workbook to retry.");
+    }
+    if (respectDeepLink && route.query.workflow_id !== undefined) {
       const requestedId = Number(route.query.workflow_id);
       const requestedIndex = workbookStore.sheets.findIndex(sheet => sheet.workflowId === requestedId);
       if (!Number.isSafeInteger(requestedId) || requestedIndex < 0) {
@@ -1772,6 +1790,7 @@ const initializeWorkbook = async () => {
     });
   } catch (err: unknown) {
     const message = getErrorMessage(err, "Unable to load workflow sheets");
+    workbookLoadError.value = message;
     console.error("[WorkflowBuilder] Workbook load failed:", err);
     toast.add({
       severity: "error",
@@ -1788,8 +1807,8 @@ const projectWorkbookLoads = useScopedRequest(
 );
 
 watch(
-  () => projectStore.currentProjectId,
-  async (projectId) => {
+  () => [projectStore.currentProjectId, authStore.user?.id, authStore.token] as const,
+  async ([projectId]) => {
     if (
       !workbookReadyForProjectSwitches ||
       projectId === null ||
@@ -1799,12 +1818,19 @@ watch(
     }
 
     const request = projectWorkbookLoads.begin();
+    workbookLoadError.value = "";
     clearPendingAutosave();
     clearPendingAutoExecute();
     resetDialogOpenedSheetUi();
     workflowStore.clearWorkflow();
 
     try {
+      if (Number(route.query.project_id) !== projectId) {
+        const query: typeof route.query = { ...route.query, project_id: String(projectId) };
+        for (const key of ["project", "workflow_id", "selection", "fromDataSelection", "addNode"]) delete query[key];
+        await router.replace({ path: route.path, query });
+        if (!request.isCurrent()) return;
+      }
       await workbookStore.loadSheets(projectId);
       if (
         !request.isCurrent() ||
@@ -1830,6 +1856,7 @@ watch(
     } catch (err: unknown) {
       if (!request.isCurrent()) return;
       const message = getErrorMessage(err, "Unable to load workflow sheets");
+      workbookLoadError.value = message;
       console.error("[WorkflowBuilder] Project workbook load failed:", err);
       toast.add({
         severity: "error",

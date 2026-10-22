@@ -64,7 +64,7 @@
           :get-param-error="getParamError"
           @toggle="toggleSection('settings')"
           @reset="resetToDefaults"
-          @update-param="(name, v) => (localParams[name] = v)"
+          @update-param="updateLocalParameter"
         />
 
         <PeakExecutionDetails
@@ -76,6 +76,7 @@
         <OutputPanel
           :expanded="sections.output"
           :node-type="nodeType"
+          :export-disabled-reason="preparedExportDownloadReason"
           @toggle="toggleSection('output')"
           @toggle-sub="toggleOutputSubsection"
           @show-full-metadata="showFullMetadata = true"
@@ -166,7 +167,7 @@ import InputPanel from "./node-detail/panels/InputPanel.vue";
 import SettingsPanel from "./node-detail/panels/SettingsPanel.vue";
 import OutputPanel from "./node-detail/panels/OutputPanel.vue";
 import PlotsPanel from "./node-detail/panels/PlotsPanel.vue";
-import { downloadExportArtifact, extractExportArtifact } from "@/utils/exportArtifact";
+import { downloadExportArtifact, extractExportArtifact, exportDownloadReason, exportFilenameForFormat, EXPORT_FORMAT_LABELS } from "@/utils/exportArtifact";
 import type { NodeOutput } from "@/utils/nodeOutput";
 import {
   availableScientificPresentations,
@@ -366,7 +367,7 @@ const mapMetadataParams = (_nodeType: string, parameters: any[]): any[] =>
     min: p.min_value,
     max: p.max_value,
     step: p.step,
-    options: p.options?.map((o: any) => (typeof o === "string" ? { label: o, value: o } : o)),
+    options: p.options?.map((o: any) => (typeof o === "string" ? { label: _nodeType === "output.export" && p.name === "format" ? EXPORT_FORMAT_LABELS[o as keyof typeof EXPORT_FORMAT_LABELS] ?? o : o, value: o } : o)),
     description: p.description,
     default: p.default,
     required: p.required,
@@ -528,10 +529,23 @@ const openQuickPlot = () => {
   showQuickPlotModal.value = true;
 };
 
+function updateLocalParameter(name: string, value: unknown): void {
+  localParams.value[name] = value;
+  if (nodeType.value === "output.export" && name === "format") {
+    const filename = exportFilenameForFormat(localParams.value.filename, value);
+    if (filename !== null) localParams.value.filename = filename;
+  }
+}
+
+const preparedExportDownloadReason = computed(() =>
+  nodeType.value === "output.export"
+    ? exportDownloadReason(extractExportArtifact(nodeOutput.value), localParams.value) : "",
+);
+
 const exportOutput = async () => {
   if (nodeType.value === "output.export") {
     try {
-      const artifact = await downloadExportArtifact(extractExportArtifact(nodeOutput.value));
+      const artifact = await downloadExportArtifact(extractExportArtifact(nodeOutput.value), localParams.value);
       toast.add({
         severity: "success",
         summary: "Prepared export downloaded",

@@ -4,6 +4,7 @@
     <WorkspaceHeader title="Project" :actions="headerActionItems">
         <Button
           label="New Project" icon="pi pi-plus" class="p-button-sm"
+          data-action="new_project"
           :disabled="appConfig?.siteProfile === 'demo'"
           @click="editingProject = null; dialogVisible = true" />
         <Button

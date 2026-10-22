@@ -6,6 +6,7 @@ import type {
   NodeScientificValueDescriptors,
 } from "@/stores/workflow-types";
 import api from "@/api/client";
+import { extractExportArtifact, exportArtifactSummary } from "@/utils/exportArtifact";
 
 export const STORAGE_KEY = "node_detail_data";
 export const BROADCAST_CHANNEL_NAME = "workflow_node_updates";
@@ -239,7 +240,9 @@ export function useNodeTrial({
         };
 
         let outputSummary = "Trial completed";
-        if (output.data && Array.isArray(output.data)) {
+        const prepared = exportArtifactSummary(extractExportArtifact(output));
+        if (prepared) outputSummary = prepared.label;
+        else if (output.data && Array.isArray(output.data)) {
           const rows = output.data.length;
           const cols = Array.isArray(output.data[0]) ? output.data[0].length : 1;
           outputSummary = `Output: ${rows} × ${cols} matrix`;

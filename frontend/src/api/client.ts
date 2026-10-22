@@ -3,6 +3,7 @@ import { updateDemoQuotaFromRateLimit } from "@/composables/demoModeState";
 import { useNotifier } from "@/composables/useNotifier";
 import { clearStoredApiKey, readStoredApiKey } from "@/utils/authStorage";
 import { isDemoUpgradeError, redactSensitiveText } from "@/utils/errors";
+import { enableGuiTrace, resetGuiTrace, traceGui, traceOperation } from "@/lib/guiTrace";
 
 // Use relative URL in production (nginx proxies to backend)
 // Use absolute URL in development for Vite dev server
@@ -25,6 +26,8 @@ const ASYNC_ERROR_PATH_HINTS = [
 ];
 const ASYNC_ERROR_DEDUPE_WINDOW_MS = 15000;
 const asyncErrorDedup = new Map<string, number>();
+const traceStarts = new WeakMap<object, number>();
+let traceCredential: string | null | undefined;
 
 function normalizeUrlPath(rawUrl: string | undefined): string {
   if (!rawUrl) return "";
@@ -155,13 +158,32 @@ api.interceptors.request.use((config) => {
 
   // Send one credential: a stale machine key must not replace the JWT actor.
   const apiKey = readStoredApiKey();
+  const credential = token || apiKey;
+  if (traceCredential !== credential) { resetGuiTrace(); traceCredential = credential; }
   if (token) {
     config.headers.delete("X-API-Key");
   } else if (apiKey) {
     config.headers["X-API-Key"] = apiKey;
   }
 
+  if (config.url !== "/logs/workspace-events") {
+    traceStarts.set(config, performance.now());
+    traceGui(traceOperation(config.url, config.method), "start");
+  }
   return config;
+});
+
+api.interceptors.response.use(response => {
+  if (response.config.url !== "/logs/workspace-events") {
+    traceGui(traceOperation(response.config.url, response.config.method), "ok", {
+      status: response.status, elapsed_ms: Math.min(3600000, Math.round(performance.now() - (traceStarts.get(response.config) ?? performance.now()))),
+    });
+    if (response.headers["x-sherpa-gui-trace"] === "1") enableGuiTrace(body => api.post("/logs/workspace-events", body));
+  }
+  return response;
+}, error => {
+  if (error.config?.url !== "/logs/workspace-events") traceGui(traceOperation(error.config?.url, error.config?.method), axios.isCancel(error) ? "cancelled" : "error", { status: error.response?.status ?? 0 });
+  return Promise.reject(error);
 });
 
 /**
@@ -196,6 +218,9 @@ api.interceptors.response.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Scope changes deliberately abort obsolete reads; they are not outages.
+    if (axios.isCancel(error)) return Promise.reject(error);
+    if (error.config?.url === "/logs/workspace-events") return Promise.reject(error);
     // Demo mode: 429 (execution / sherpa rate limit) — refresh banner
     // limit refs from the structured detail (limit_type, limit_per_hour,
     // limit_per_day, remaining). Old payloads with just `{remaining,

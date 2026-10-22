@@ -4,6 +4,7 @@
       <Button
         v-if="!workflowSelectionContextRequested"
         label="Workflow"
+        data-action="open_workflow"
         icon="pi pi-arrow-right"
         iconPos="right"
         class="p-button-sm"
@@ -5216,6 +5217,10 @@ function workflowSelectionForExperiment(experimentId: number): PlotFileSelection
 }
 
 async function goToWorkflow(addNode?: string) {
+  if (projectStore.currentProjectId == null) {
+    toast.add({ severity: "warn", summary: "Select a project", detail: "Choose a project before opening this dataset in Workflow. Your current selection has not been changed.", life: 6000 });
+    return;
+  }
   const ticket = workflowHandoffRequests.begin();
   const experimentId = dataStore.activeExperimentId;
   const selection = experimentId == null ? null : plotFileSelections.value[experimentId];

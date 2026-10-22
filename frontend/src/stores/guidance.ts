@@ -1,10 +1,13 @@
 import { defineStore } from "pinia";
 import { computed, nextTick, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, isNavigationFailure, NavigationFailureType } from "vue-router";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useLlmStore } from "@/stores/llm";
+import { useProjectStore } from "@/stores/project";
+import { useWorkflowStore } from "@/stores/workflow";
+import { useNotifier } from "@/composables/useNotifier";
 import { resolveGuidanceAction, type GuidanceActionMeta } from "@/lib/actionOntology";
-import { waitForActionTarget } from "@/lib/actionTargets";
+import { findActionTarget, waitForActionTarget } from "@/lib/actionTargets";
 import { requestAdvisorPrompt } from "@/lib/advisorPromptActions";
 import {
   acknowledgeGuidanceNotification,
@@ -163,7 +166,7 @@ export const useGuidanceStore = defineStore("guidance", () => {
     }
     notifications.value.unshift({
       id: event.notification_id,
-      project_id: null,
+      project_id: useProjectStore().currentProjectId,
       advisor_node_id: null,
       rule_id: event.rule_id,
       kind: event.kind,
@@ -219,8 +222,9 @@ export const useGuidanceStore = defineStore("guidance", () => {
     const toast = activeToast.value;
     if (!toast) return;
     const action = resolveGuidanceAction(toast.action_id);
+    const projectId = notifications.value.find(item => item.id === toast.notification_id)?.project_id ?? useProjectStore().currentProjectId;
     await acknowledgeNotification(toast.notification_id, "clicked");
-    await runGuidanceAction(action);
+    await runGuidanceAction(action, projectId);
   }
 
   async function acknowledgeActionClick(actionId: string): Promise<void> {
@@ -237,19 +241,48 @@ export const useGuidanceStore = defineStore("guidance", () => {
   async function clickNotification(notification: GuidanceNotification): Promise<void> {
     const action = resolveGuidanceAction(notification.action_id);
     await acknowledgeNotification(notification.id, "clicked");
-    await runGuidanceAction(action);
+    await runGuidanceAction(action, notification.project_id);
   }
 
-  async function runGuidanceAction(action: ReturnType<typeof resolveGuidanceAction>): Promise<void> {
-    if (!action) return;
+  function unavailable(message: string): false {
+    error.value = message;
+    useNotifier().notifySystemEvent({ severity: "warning", title: "Action unavailable", message });
+    return false;
+  }
+
+  async function runGuidanceAction(action: ReturnType<typeof resolveGuidanceAction>, sourceProject = useProjectStore().currentProjectId): Promise<boolean> {
+    if (!action) return false;
+    const projectId = useProjectStore().currentProjectId;
+    if (sourceProject != null && sourceProject !== projectId) return unavailable("This suggestion belongs to another project. Reopen that project first.");
+    const sameProject = () => useProjectStore().currentProjectId === projectId;
+    if (["open_workflow", "add_preprocessing", "pick_template"].includes(action.actionId) && router.currentRoute.value.path === "/data") {
+      // My Dataset owns selection, target authority and readiness. Invoke its
+      // existing handoff rather than bypassing those guards with a bare route.
+      const target = findActionTarget("open_workflow");
+      if (!target || target.matches(":disabled, [aria-disabled='true']")) return unavailable("Select a ready dataset in My Dataset before opening its workflow.");
+      target.click();
+      return true;
+    }
     // Step order matters: navigate → wait for scope → click target
     // → fire prompt.  ``clickTarget`` and ``prompt`` are mutually
     // exclusive in practice (one opens a modal, the other talks to
     // the chat).  If both are set we run click first so the prompt
     // doesn't get visually obscured by the modal that follows.
     if (action.route) {
-      await router.push(action.route);
+      const query: Record<string, string> = { ...action.query };
+      if (projectId != null) query[action.route === "/workflow" ? "project_id" : "project"] = String(projectId);
+      if (action.route === "/workflow" && useWorkflowStore().workflowId != null) query.workflow_id = String(useWorkflowStore().workflowId);
+      if (action.route === "/runs") query.tab = "run_history";
+      if (action.route === "/report") {
+        const workflow = useWorkflowStore();
+        if (workflow.workflowId != null) query.workflow = String(workflow.workflowId);
+        if (workflow.restoredRunId != null) query.run = String(workflow.restoredRunId);
+      }
+      let failed;
+      try { failed = await router.push({ path: action.route, query, hash: action.hash }); }
+      catch { return unavailable("The requested page could not be loaded. Please try again."); }
       await nextTick();
+      if ((failed && !isNavigationFailure(failed, NavigationFailureType.duplicated)) || !sameProject() || router.currentRoute.value.path !== action.route) return unavailable("The requested page could not be opened in the current project.");
     }
     if (action.expectedScope) {
       // PR5 race fix: notification-drawer clicks from another tab
@@ -258,59 +291,54 @@ export const useGuidanceStore = defineStore("guidance", () => {
       // (tab, subscope) before firing any follow-on action so it
       // lands in the right topic.  Live in-tab toasts resolve
       // immediately because the scope is already correct.
-      await _waitForAdvisorScope(action.expectedScope, 2000);
+      if (!await _waitForAdvisorScope(action.expectedScope, 2000, projectId) || !sameProject()) return unavailable("The destination context is not ready. Please try again after it loads.");
     }
     if (action.clickTarget) {
-      // PR6: poll the DOM for ``[data-action="<clickTarget>"]`` and
-      // click it once it appears.  Closes the deploy-CTA gap from
-      // PR5 review — the toast CTA now actually opens the dialog
-      // instead of routing to a page the user is already on.  No-op
-      // on timeout so navigation still completes if the destination
-      // view never mounts the target (route guard reject, error,
-      // etc.).
+      // Wait for the destination's own action. A missing or disabled
+      // target is an explicit refusal, not a successful handoff.
       const target = await waitForActionTarget(action.clickTarget, 2000);
-      target?.click();
+      if (!sameProject() || !target || target.matches(":disabled, [aria-disabled='true']")) return unavailable("This action is not available in the current context.");
+      target.click();
     }
     if (action.prompt) {
       requestAdvisorPrompt(action.prompt);
     }
+    return true;
   }
 
   /** Run a Guidance action by id, e.g. from a Starter step's Go button. */
   async function runAction(actionId: string): Promise<boolean> {
     const action = resolveGuidanceAction(actionId);
     if (!action) return false;
-    await runGuidanceAction(action);
-    return true;
+    return runGuidanceAction(action);
   }
 
   function _waitForAdvisorScope(
     target: NonNullable<GuidanceActionMeta["expectedScope"]>,
     timeoutMs: number,
-  ): Promise<void> {
+    projectId: number | null,
+  ): Promise<boolean> {
     const advisorStore = useAdvisorStore();
     const matches = (): boolean => {
       const node = advisorStore.activeNode;
-      return node?.tab_key === target.tabKey && (target.subscopeKey == null || node?.subscope_key === target.subscopeKey);
+      return node?.project_id === projectId && node?.tab_key === target.tabKey && (target.subscopeKey == null || node?.subscope_key === target.subscopeKey);
     };
-    if (matches()) return Promise.resolve();
-    return new Promise<void>((resolve) => {
+    if (matches()) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
       const stop = watch(
         () => advisorStore.activeNode,
         () => {
           if (matches()) {
             stop();
             window.clearTimeout(timer);
-            resolve();
+            resolve(true);
           }
         },
       );
       const timer = window.setTimeout(() => {
-        // Timeout — proceed anyway.  Worst case the prompt lands in
-        // the prior topic; better than hanging the click forever if
-        // the destination view never mounts (network error etc.).
+        // Never send a prompt into a prior project/topic after a timeout.
         stop();
-        resolve();
+        resolve(false);
       }, timeoutMs);
     });
   }

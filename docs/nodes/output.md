@@ -29,10 +29,22 @@ For chemometrics, useful output includes the numbers and the context: sample IDs
 - Use tables for auditability: sample IDs, target values, predictions, selected variables, peak lists, and metric dictionaries.
 - Use statistics summaries for quick health checks, not as a substitute for validation nodes.
 - Use export only after confirming the dataset carries the sample and feature
-  labels, units, and role needed by the recipient. CSV and JSON preserve the
-  complete two-dimensional dataset. JCAMP-DX is admitted only for one spectrum
-  with a measured numeric feature axis and declared units; the node refuses to
-  invent a wavelength axis, spectral units, or a multi-spectrum JCAMP dialect.
+  labels, units, and role needed by the recipient. **CSV (plain)** is the default:
+  a header row followed by data rows, suitable for spreadsheets and other tools.
+  **CSV (portable)** adds Sherpa's encoded metadata preamble for round-trip
+  preservation of typed axes, units, and inclusion marks. JSON also retains
+  that scientific context. Plain CSV does not promise this metadata round trip.
+  JDX prepares a `.zip` containing one
+  JCAMP-DX file per input spectrum, in row order, plus `manifest.json` mapping
+  filenames to source rows and recorded sample metadata. Even one spectrum
+  produces a ZIP. A measured numeric feature axis and declared axis units are
+  required; the node never invents them or a multi-spectrum JCAMP dialect.
+  Every row reaching the node is exported, with inclusion marks preserved in
+  the manifest; use Filter Samples upstream to remove excluded rows.
+- After changing format or filename, rerun Prepare Export before downloading.
+  The Inspector and trial editor update the extension for the chosen format.
+  Existing saved `.jdx` filenames remain accepted and produce a `.zip` on rerun;
+  historical single-file JDX artifacts remain readable without being rewritten.
 - The DAG node prepares a closed artifact containing the filename, format,
   media type, exact content, byte length, source digest, and content digest. It
   never chooses or writes a filesystem path. The workbench download and the
@@ -115,7 +127,7 @@ Conditional visibility describes the editor; execution admission remains node-ow
 | Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | <code>filename</code> | <code>text</code> | <code>true</code> | <code>&quot;output.csv&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Safe basename including the extension required by the selected format |
-| <code>format</code> | <code>select</code> | <code>true</code> | <code>&quot;csv&quot;</code> | <code>[&quot;csv&quot;, &quot;json&quot;, &quot;jdx&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Closed serialization format |
+| <code>format</code> | <code>select</code> | <code>true</code> | <code>&quot;csv&quot;</code> | <code>[&quot;csv&quot;, &quot;portable_csv&quot;, &quot;json&quot;, &quot;jdx&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Plain CSV, portable CSV with a metadata preamble, JSON, or JDX (ZIP of all input spectra) |
 
 ### Plot (`output.plot`)
 

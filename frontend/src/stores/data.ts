@@ -1,5 +1,6 @@
 import { sherpaResponseTimeoutMs } from "@/lib/sherpaTimeouts";
 import { streamLocalDataStory } from "@/lib/localDataStory";
+import { buildDataStoryContext } from "@/lib/dataStoryFacts";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
@@ -332,70 +333,6 @@ function asStringList(value: unknown, limit = 20): string[] | null {
   return items.length > 0 ? items : null;
 }
 
-function summarizeForDataStory(datasetInfo: StoryObject): StoryObject {
-  const metadata = asObject(datasetInfo.metadata);
-  const xAxis = asObject(datasetInfo.x_axis);
-  const fileMetadata = asObject(datasetInfo.file_metadata);
-  const propertyStats = Array.isArray(datasetInfo.property_stats)
-    ? datasetInfo.property_stats.slice(0, 12)
-    : undefined;
-  const featureNames = Array.isArray(datasetInfo.feature_names)
-    ? datasetInfo.feature_names.slice(0, 20)
-    : undefined;
-  const targetNames = Array.isArray(datasetInfo.target_names)
-    ? datasetInfo.target_names.slice(0, 20)
-    : undefined;
-  const propNames = Array.isArray(metadata.prop_names)
-    ? metadata.prop_names.slice(0, 20)
-    : undefined;
-  const labels = Array.isArray(metadata.labels) ? metadata.labels.slice(0, 10) : undefined;
-  const xData = Array.isArray(xAxis.data) ? xAxis.data : [];
-
-  return {
-    label: datasetInfo.label ?? datasetInfo.title ?? fileMetadata.name ?? null,
-    source: datasetInfo.source ?? null,
-    technique: datasetInfo.technique ?? metadata.spectral_technique ?? null,
-    description: datasetInfo.description ?? null,
-    n_samples: datasetInfo.n_samples ?? null,
-    n_features: datasetInfo.n_features ?? null,
-    task_type: datasetInfo.task_type ?? null,
-    // Dataset type flags — critical for template selection
-    is_time_series: datasetInfo.is_time_series ?? metadata.is_time_series ?? null,
-    is_spectra:
-      datasetInfo.is_spectra ?? datasetInfo.is_spectroscopic ?? metadata.is_spectra ?? null,
-    x_axis: {
-      title: datasetInfo.x_title ?? xAxis.title ?? metadata.x_title ?? null,
-      units: datasetInfo.x_units ?? xAxis.units ?? metadata.x_units ?? null,
-      min: xData.length ? xData[0] : (datasetInfo.wavelength_min ?? null),
-      max: xData.length ? xData[xData.length - 1] : (datasetInfo.wavelength_max ?? null),
-    },
-    y_axis: {
-      title: datasetInfo.data_quantity ?? metadata.data_quantity ?? null,
-      units: metadata.value_units ?? null,
-    },
-    file_metadata: {
-      name: fileMetadata.name ?? datasetInfo.title ?? null,
-      author: fileMetadata.author ?? null,
-      date: fileMetadata.date ?? null,
-      // Pass through all user-edited metadata fields
-      ...fileMetadata,
-    },
-    // Warnings (e.g., non-spectroscopic data notice)
-    warning: datasetInfo.warning ?? null,
-    warnings: Array.isArray(datasetInfo.warnings) ? datasetInfo.warnings : null,
-    feature_names: featureNames,
-    target_names: targetNames,
-    property_stats: propertyStats,
-    metadata_summary: {
-      data_type: metadata.data_type ?? null,
-      spectral_technique: metadata.spectral_technique ?? null,
-      data_quantity: metadata.data_quantity ?? null,
-      value_units: metadata.value_units ?? null,
-      prop_names: propNames,
-      sample_labels: labels,
-    },
-  };
-}
 
 export function summarizeDatasetForSherpaContext(
   datasetInfo: StoryObject | null | undefined,
@@ -1304,7 +1241,7 @@ export const useDataStore = defineStore("data", () => {
         throw new Error("WebSocket not connected. Try again in a moment.");
       }
 
-      const summarized = summarizeForDataStory(datasetInfo as StoryObject);
+      const summarized = buildDataStoryContext(datasetInfo as StoryObject);
       dataStoryText.value = ""; // Show progressive text as chunks arrive
       dataStoryMemoryScopes.value = [];
 

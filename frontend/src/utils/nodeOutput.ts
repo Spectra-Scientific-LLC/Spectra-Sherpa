@@ -54,7 +54,7 @@ const isModelPlaceholder = (value: unknown): value is UnknownRecord => {
 };
 
 const isExportArtifact = (value: unknown): value is UnknownRecord =>
-  isRecord(value) && value.schema_version === "spectrasherpa-export-artifact/1";
+  isRecord(value) && ["spectrasherpa-export-artifact/1", "spectrasherpa-export-artifact/2"].includes(String(value.schema_version));
 
 interface PersistedPreview {
   data: unknown[];

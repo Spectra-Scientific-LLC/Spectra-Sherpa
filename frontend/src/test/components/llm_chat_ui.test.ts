@@ -90,7 +90,7 @@ const mocks = vi.hoisted(() => ({
   },
   experimentStore: {
     experiments: [] as Array<Record<string, unknown>>,
-    fetchExperiments: vi.fn(),
+    fetchExperiments: vi.fn(async () => undefined),
   },
   workflowStore: {
     nodes: [] as Array<Record<string, unknown>>,

@@ -102,6 +102,10 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         finally:
             _request_id_var.reset(token)
         response.headers[REQUEST_ID_HEADER] = request_id
+        from spectra_sherpa.app.core.config import settings
+
+        if settings.gui_trace:
+            response.headers["X-Sherpa-Gui-Trace"] = "1"
         return response
 
 

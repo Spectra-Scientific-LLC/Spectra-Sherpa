@@ -24,6 +24,7 @@ const advisorStoreMock = vi.hoisted(() => ({
 
 const workflowStoreMock = vi.hoisted(() => ({
   hasUnsavedChanges: false,
+  nodes: [],
   workflowId: null as number | null,
   loadWorkflow: vi.fn(),
   saveWorkflow: vi.fn(),

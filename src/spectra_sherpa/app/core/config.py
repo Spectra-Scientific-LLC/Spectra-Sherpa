@@ -107,6 +107,7 @@ class Settings:
     prediction_upload_max_user_bytes: int = _get_retention_limit("PREDICTION_UPLOAD_MAX_USER_BYTES", 512 * 1024 * 1024)
     prediction_upload_timeout_seconds: int = _get_retention_limit("PREDICTION_UPLOAD_TIMEOUT_SECONDS", 60)
     log_buffer_size: int = _get_int("LOG_BUFFER_SIZE", 1000)
+    gui_trace: bool = _get_bool("SHERPA_GUI_TRACE", False)
     log_file_path: Optional[str] = os.getenv("LOG_FILE_PATH")  # e.g., "logs/audit.log"
     log_file_max_bytes: int = _get_int("LOG_FILE_MAX_BYTES", 10 * 1024 * 1024)  # 10 MB default
     log_file_backup_count: int = _get_int("LOG_FILE_BACKUP_COUNT", 5)

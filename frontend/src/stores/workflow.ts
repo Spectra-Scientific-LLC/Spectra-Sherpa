@@ -1,5 +1,6 @@
 import { validateScientificMetadata } from "@/utils/scientificMetadataValidation";
 import { defineStore } from "pinia";
+import { traceGui } from "@/lib/guiTrace";
 import { ref, computed, watch } from "vue";
 import api from "@/api/client";
 import type { components } from "@/types/api/v1";
@@ -515,6 +516,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   function clearWorkflow() {
+    traceGui("workflow_reset", "reset", { workflow_id: workflowId.value, node_count: nodes.value.length });
     workflowOwnership.invalidate();
     loadScope.invalidate();
     saveScope.invalidate();
@@ -746,6 +748,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       const converted = fromBackendFormat((data.nodes || []).map(workflowNode), (data.edges || []).map(workflowEdge));
       nodes.value = converted.nodes;
       edges.value = converted.edges;
+      traceGui("workflow_apply", "ok", { workflow_id: data.id, node_count: converted.nodes.length });
       // A newly admitted graph must not render the preceding sheet's evidence
       // while its preflight request is still in flight.
       currentTemplateId.value = null;

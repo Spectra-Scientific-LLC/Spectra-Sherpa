@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import csv
 import hashlib
 import io
@@ -19,6 +20,7 @@ import spectra_sherpa.app.services.dag.nodes  # noqa: F401 - register built-ins
 from spectra_sherpa.app.lib.axes import FeatureAxis
 from spectra_sherpa.app.lib.export_artifact import (
     EXPORT_ARTIFACT_SCHEMA,
+    ZIP_EXPORT_ARTIFACT_SCHEMA,
     build_export_artifact,
     materialize_export_artifact,
     verify_export_artifact,
@@ -92,10 +94,10 @@ def test_export_node_publishes_one_closed_local_contract() -> None:
 
 @pytest.mark.parametrize(
     ("fmt", "filename"),
-    [("csv", "spectra.csv"), ("json", "spectra.json"), ("jdx", "spectrum.jdx")],
+    [("csv", "spectra.csv"), ("portable_csv", "spectra.csv"), ("json", "spectra.json"), ("jdx", "spectra.zip")],
 )
 def test_live_and_generated_paths_prepare_identical_verified_bytes(fmt: str, filename: str) -> None:
-    dataset = _spectra(rows=1 if fmt == "jdx" else 2)
+    dataset = _spectra(rows=2)
     node = ExportNode("export", {"filename": filename, "format": fmt})
 
     live = asyncio.run(node.execute(dataset))
@@ -103,17 +105,18 @@ def test_live_and_generated_paths_prepare_identical_verified_bytes(fmt: str, fil
 
     assert live == generated
     artifact = verify_export_artifact(live["artifact"])
-    assert artifact["schema_version"] == EXPORT_ARTIFACT_SCHEMA
+    assert artifact["schema_version"] == (ZIP_EXPORT_ARTIFACT_SCHEMA if fmt == "jdx" else EXPORT_ARTIFACT_SCHEMA)
     assert artifact["filename"] == filename
     assert artifact["format"] == fmt
-    assert artifact["byte_length"] == len(str(artifact["content"]).encode("utf-8"))
-    assert artifact["content_sha256"] == hashlib.sha256(str(artifact["content"]).encode("utf-8")).hexdigest()
+    content = base64.b64decode(artifact["content"]) if fmt == "jdx" else str(artifact["content"]).encode("utf-8")
+    assert artifact["byte_length"] == len(content)
+    assert artifact["content_sha256"] == hashlib.sha256(content).hexdigest()
     assert artifact["shape"] == list(dataset.shape)
 
 
 def test_csv_and_json_preserve_scientific_values_axes_and_units() -> None:
     dataset = _spectra()
-    csv_artifact = build_export_artifact(dataset, filename="spectra.csv", format="csv")
+    csv_artifact = build_export_artifact(dataset, filename="spectra.csv", format="portable_csv")
     json_artifact = build_export_artifact(dataset, filename="spectra.json", format="json")
 
     csv_lines = str(csv_artifact["content"]).splitlines()
@@ -140,6 +143,18 @@ def test_csv_and_json_preserve_scientific_values_axes_and_units() -> None:
     assert json_artifact["source_digest"] == dataset.scientific_digest
 
 
+def test_plain_csv_is_default_and_has_no_portable_preamble() -> None:
+    dataset = _spectra()
+    node = ExportNode("export", {})
+    artifact = asyncio.run(node.execute(dataset))["artifact"]
+    assert artifact["format"] == "csv"
+    assert artifact["content"].startswith("sample,4000,2500,1000\n")
+    assert "#spectrasherpa" not in artifact["content"]
+    portable = build_export_artifact(dataset, filename="output.csv", format="portable_csv")
+    assert portable["content"].split("\n", 1)[1] == artifact["content"]
+    assert verify_export_artifact(portable)["format"] == "portable_csv"
+
+
 def test_res15_repeated_oes_wavelength_blocks_export_with_unique_feature_identity() -> None:
     wavelengths = np.tile(np.array([250.0, 500.0, 791.5]), 3)
     labels = _metal_etch_oes_feature_labels(wavelengths)
@@ -155,7 +170,7 @@ def test_res15_repeated_oes_wavelength_blocks_export_with_unique_feature_identit
         data_role="X_spectra",
     )
 
-    artifact = build_export_artifact(dataset, filename="metal-etch-oes.csv", format="csv")
+    artifact = build_export_artifact(dataset, filename="metal-etch-oes.csv", format="portable_csv")
     rows = list(csv.reader(io.StringIO(str(artifact["content"]))))
     headers = rows[1]
     data_rows = rows[2:]
@@ -177,7 +192,7 @@ def test_csv_preserves_each_named_multi_target_response_column() -> None:
         target_names=["Carbon dioxide", "Water"],
     )
 
-    artifact = build_export_artifact(dataset, filename="mixture.csv", format="csv")
+    artifact = build_export_artifact(dataset, filename="mixture.csv", format="portable_csv")
 
     assert str(artifact["content"]).splitlines()[1:] == [
         "sample,4000,2500,1000,Carbon dioxide,Water",
@@ -243,7 +258,7 @@ def test_portable_csv_round_trip_preserves_five_dissimilar_identity_cases(tmp_pa
     ]
 
     for index, source in enumerate(cases, start=1):
-        artifact = build_export_artifact(source, filename=f"case-{index}.csv", format="csv")
+        artifact = build_export_artifact(source, filename=f"case-{index}.csv", format="portable_csv")
         path = tmp_path / str(artifact["filename"])
         path.write_bytes(str(artifact["content"]).encode("utf-8"))
 
@@ -267,7 +282,7 @@ def test_portable_csv_round_trip_preserves_five_dissimilar_identity_cases(tmp_pa
 
 
 def test_portable_csv_rejects_body_identity_tampering(tmp_path: Path) -> None:
-    artifact = build_export_artifact(_spectra(), filename="spectra.csv", format="csv")
+    artifact = build_export_artifact(_spectra(), filename="spectra.csv", format="portable_csv")
     lines = str(artifact["content"]).splitlines()
     lines[1] = lines[1].replace("sample,", "renamed,")
     path = tmp_path / "tampered.csv"
@@ -285,7 +300,7 @@ def test_portable_csv_large_axis_envelope_is_not_limited_by_csv_field_size(tmp_p
         sample_axis=SampleAxis(labels=["sample-1"]),
         data_role="X_features",
     )
-    artifact = build_export_artifact(source, filename="wide.csv", format="csv")
+    artifact = build_export_artifact(source, filename="wide.csv", format="portable_csv")
     path = tmp_path / "wide.csv"
     path.write_bytes(str(artifact["content"]).encode("utf-8"))
 
@@ -306,7 +321,7 @@ def test_portable_csv_registry_charges_decoded_envelope_before_base64_expansion(
         sample_axis=SampleAxis(labels=["sample-1"]),
         data_role="X_features",
     )
-    artifact = build_export_artifact(source, filename="wide-boundary.csv", format="csv")
+    artifact = build_export_artifact(source, filename="wide-boundary.csv", format="portable_csv")
     path = tmp_path / "wide-boundary.csv"
     path.write_bytes(str(artifact["content"]).encode("utf-8"))
 
@@ -325,7 +340,7 @@ def test_portable_csv_without_sample_axis_round_trips_without_inventing_one(tmp_
         feature_axis=FeatureAxis(labels=["first", "second"]),
         data_role="X_features",
     )
-    artifact = build_export_artifact(source, filename="axisless.csv", format="csv")
+    artifact = build_export_artifact(source, filename="axisless.csv", format="portable_csv")
     path = tmp_path / "axisless.csv"
     path.write_bytes(str(artifact["content"]).encode("utf-8"))
 
@@ -477,9 +492,11 @@ def test_portable_json_rejects_noncanonical_fields_and_constants(tmp_path: Path,
         ingest(path)
 
 
-def test_jcamp_is_one_real_spectrum_with_measured_axis_and_honest_units() -> None:
+def test_jcamp_archive_single_spectrum_keeps_measured_axis_and_honest_units() -> None:
     artifact = build_export_artifact(_spectra(rows=1), filename="spectrum.jdx", format="jdx")
-    lines = str(artifact["content"]).splitlines()
+    assert artifact["filename"] == "spectrum.zip"
+    with zipfile.ZipFile(io.BytesIO(base64.b64decode(artifact["content"]))) as archive:
+        lines = archive.read("spectrum_000001.jdx").decode().splitlines()
 
     assert "##DATA TYPE=SPECTRUM" in lines
     assert "##XUNITS=cm^-1" in lines
@@ -487,14 +504,71 @@ def test_jcamp_is_one_real_spectrum_with_measured_axis_and_honest_units() -> Non
     assert "4000, 0" in lines
     assert lines[-1] == "##END="
 
-    with pytest.raises(ValueError, match="exactly one spectrum"):
-        build_export_artifact(_spectra(rows=2), filename="spectra.jdx", format="jdx")
     without_axis = SherpaDataset(X=np.ones((1, 3)), units="absorbance")
     with pytest.raises(ValueError, match="measured numeric feature axis"):
         build_export_artifact(without_axis, filename="spectrum.jdx", format="jdx")
     without_axis_units = SherpaDataset(X=np.ones((1, 3)), feature_axis=SpectralAxis(values=[1, 2, 3]))
     with pytest.raises(ValueError, match="feature-axis units"):
         build_export_artifact(without_axis_units, filename="spectrum.jdx", format="jdx")
+
+
+@pytest.mark.parametrize("rows", [1, 3, 33])
+def test_jcamp_zip_contains_every_processed_row_and_preserves_identity(tmp_path: Path, rows: int) -> None:
+    dataset = _spectra(rows=rows)
+    dataset.sample_axis = SampleAxis(
+        labels=["../duplicate label"] * rows,
+        include_mask=[index % 2 == 0 for index in range(rows)],
+        sample_table={"sample_id": [f"stable-{i}" for i in range(rows)]},
+    )
+    artifact = build_export_artifact(dataset, filename="processed.zip", format="jdx")
+    assert artifact == build_export_artifact(dataset, filename="processed.zip", format="jdx")
+    assert artifact["media_type"] == "application/zip"
+    path = materialize_export_artifact(artifact, tmp_path)
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["content_sha256"]
+    with zipfile.ZipFile(path) as archive:
+        names = [f"spectrum_{row + 1:06d}.jdx" for row in range(rows)]
+        assert archive.namelist() == [*names, "manifest.json"]
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["source_digest"] == dataset.scientific_digest
+        assert manifest["dataset"]["shape"] == [rows, 3]
+        assert manifest["dataset"]["sample_axis"]["labels"] == dataset.sample_axis.labels
+        assert manifest["dataset"]["sample_metadata"]["sample_id"] == [f"stable-{i}" for i in range(rows)]
+        assert manifest["dataset"]["sample_axis_wire"]["include_mask"] == dataset.sample_axis.include_mask.tolist()
+        for row, name in enumerate(names):
+            assert manifest["spectra"][row] == {"filename": name, "source_row_index": row}
+            lines = archive.read(name).decode().splitlines()
+            points = np.array(
+                [[float(value) for value in line.split(",")] for line in lines if not line.startswith("##")]
+            )
+            np.testing.assert_array_equal(points[:, 0], dataset.feature_axis.values)
+            np.testing.assert_array_equal(points[:, 1], dataset.data[row])
+            assert "##XUNITS=cm^-1" in lines
+            assert "##YUNITS=absorbance" in lines
+    for changes in (
+        {"content": "!!"},
+        {"content_sha256": "0" * 64},
+        {"byte_length": 1},
+        {"filename": "../processed.zip"},
+        {"content_encoding": "utf-8"},
+        {"schema_version": EXPORT_ARTIFACT_SCHEMA},
+    ):
+        with pytest.raises(ValueError):
+            verify_export_artifact({**artifact, **changes})
+
+
+def test_legacy_single_jdx_artifact_remains_materializable(tmp_path: Path) -> None:
+    content = "##TITLE=Retained historical spectrum\n##END=\n"
+    artifact = build_export_artifact(_spectra(rows=1), filename="legacy.zip", format="jdx")
+    artifact.update(
+        schema_version=EXPORT_ARTIFACT_SCHEMA,
+        filename="legacy.jdx",
+        media_type="chemical/x-jcamp-dx",
+        content_encoding="utf-8",
+        content=content,
+        byte_length=len(content.encode()),
+        content_sha256=hashlib.sha256(content.encode()).hexdigest(),
+    )
+    assert materialize_export_artifact(artifact, tmp_path).read_text() == content
 
 
 def test_export_rejects_spreadsheet_formula_labels_and_jcamp_header_injection() -> None:

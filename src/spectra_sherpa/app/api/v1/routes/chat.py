@@ -17,21 +17,14 @@ from fastapi.responses import StreamingResponse
 
 from spectra_sherpa.app.api.deps import get_current_user
 from spectra_sherpa.app.contracts.capabilities import CHAT_ASSISTANT
-from spectra_sherpa.app.core.app_paths import get_app_data_paths
-from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.services import basic_chat
 from spectra_sherpa.app.services.chat_providers.base import ChatOutputLimitError
-from spectra_sherpa.app.services.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat")
 
-_chat_limiter = RateLimiter(
-    max_calls=30,
-    period_sec=3600,
-    state_path=get_app_data_paths(settings.data_dir).rate_limits_dir / "byo_chat_stream.json",
-)
+_chat_limiter = basic_chat.chat_limiter
 
 
 @router.post("/stream")

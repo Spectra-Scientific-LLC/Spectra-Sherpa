@@ -605,7 +605,7 @@
                     optionValue="value"
                     optionDisabled="disabled"
                     :placeholder="`Select ${param.label.toLowerCase()}`"
-                    @change="emitParams"
+                    @change="onSelectParameterChange(param.name)"
                   />
                 </template>
 
@@ -711,7 +711,7 @@
                         optionValue="value"
                         optionDisabled="disabled"
                         :placeholder="`Select ${param.label.toLowerCase()}`"
-                        @change="emitParams"
+                        @change="onSelectParameterChange(param.name)"
                       />
                     </template>
 
@@ -927,9 +927,11 @@
               icon="pi pi-download"
               label="Download Prepared File"
               class="p-button-sm p-button-outlined"
-              :disabled="!preparedExportArtifact"
+              :disabled="!!preparedExportDownloadReason"
+              :title="preparedExportDownloadReason || undefined"
               @click="downloadPreparedExport"
             />
+            <span v-if="selectedNodeType === 'output.export' && preparedExportDownloadReason" role="status">{{ preparedExportDownloadReason }}</span>
             <Button
               v-if="
                 selectedNodeType !== 'output.export' &&
@@ -1568,7 +1570,7 @@ import { buildDiagnosticEntries } from "@/utils/diagnostics";
 import { scientificMetricNotes } from "@/utils/scientificDisplay";
 import { primaryClassificationMetricSummary } from "@/utils/classificationMetrics";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";
-import { downloadExportArtifact, extractExportArtifact } from "@/utils/exportArtifact";
+import { downloadExportArtifact, extractExportArtifact, exportDownloadReason, exportFilenameForFormat, EXPORT_FORMAT_LABELS } from "@/utils/exportArtifact";
 import {
   groupColumnFromInputs,
   groupedSplitSummary,
@@ -1815,10 +1817,19 @@ watch(
   { immediate: true, deep: true },
 );
 const preparedExportArtifact = computed(() => extractExportArtifact(props.nodeOutput));
+const preparedExportDownloadReason = computed(() => exportDownloadReason(preparedExportArtifact.value, localParams.value));
+
+function onSelectParameterChange(name: string): void {
+  if (props.selectedNode?.type === "output.export" && name === "format") {
+    const filename = exportFilenameForFormat(localParams.value.filename, localParams.value.format);
+    if (filename !== null) localParams.value.filename = filename;
+  }
+  emitParams();
+}
 
 const downloadPreparedExport = async (): Promise<void> => {
   try {
-    const artifact = await downloadExportArtifact(preparedExportArtifact.value);
+    const artifact = await downloadExportArtifact(preparedExportArtifact.value, localParams.value);
     toast.add({
       severity: "success",
       summary: "Prepared export downloaded",
@@ -1848,7 +1859,7 @@ const preparedExportSummary = computed(() => {
   const shape = Array.isArray(artifact.shape) ? artifact.shape.join(" × ") : "unknown";
   return {
     filename: typeof artifact.filename === "string" ? artifact.filename : "unknown",
-    format: typeof artifact.format === "string" ? artifact.format.toUpperCase() : "unknown",
+    format: typeof artifact.format === "string" ? EXPORT_FORMAT_LABELS[artifact.format as keyof typeof EXPORT_FORMAT_LABELS] ?? artifact.format : "unknown",
     shape,
     byteLength:
       typeof artifact.byte_length === "number" ? artifact.byte_length.toLocaleString() : "unknown",
@@ -2971,6 +2982,7 @@ const groupValuesFromInputs = computed((): string[] | null => {
 
 const parameterOptions = (param: NodeParameterMetadata): any[] | undefined => {
   const normalized = normalizeOptions(param.options);
+  if (selectedNodeType.value === "output.export" && param.name === "format") return normalized?.map(option => ({ ...option, label: EXPORT_FORMAT_LABELS[option.value as keyof typeof EXPORT_FORMAT_LABELS] ?? option.label }));
   if (param.name !== "split_method" || selectedNodeType.value !== "data.train_test_split") {
     return normalized;
   }

@@ -327,6 +327,34 @@ async function mountBuilder() {
 }
 
 describe("WorkflowBuilderContent trial/detail layout", () => {
+  it("shows an interrupted load instead of an empty successful workbook", async () => {
+    workbookStore.activeIndex = 0;
+    workbookStore.loadSheets.mockImplementationOnce(async () => { workbookStore.projectId = null as unknown as number; });
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain("interrupted");
+    expect(wrapper.text()).toContain("Reload workbook");
+    wrapper.unmount();
+  });
+
+  it("retries the selected project rather than a stale project deep link", async () => {
+    workbookStore.activeIndex = 0;
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    workbookStore.loadSheets.mockRejectedValueOnce(new Error("temporary failure"));
+    projectStore.currentProjectId = 7;
+    await flushPromises();
+    expect(routeQuery.project_id).toBe("7");
+    expect(wrapper.get('[role="alert"]').text()).toContain("temporary failure");
+    routeQuery.project_id = "1"; // stale history entry must not redirect Retry
+    projectStore.selectProject.mockClear();
+    const retry = wrapper.findAll("button").find(button => button.text() === "Reload workbook")!;
+    await retry.trigger("click");
+    await flushPromises();
+    expect(projectStore.selectProject).toHaveBeenCalledWith(7);
+    expect(projectStore.selectProject).not.toHaveBeenCalledWith(1);
+    wrapper.unmount();
+  });
   it("keeps canvas input and Run unavailable until retained workbook hydration completes", async () => {
     workbookStore.activeIndex = 0;
     const wrapper = await mountBuilder();
