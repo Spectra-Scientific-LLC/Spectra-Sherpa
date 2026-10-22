@@ -1166,7 +1166,7 @@ const createNodeId = (
 // Handle BroadcastChannel messages from NodeDetailView.
 // DetailView is send-only for `node_params_updated` (fired on Save and Exit).
 let trialOwnerId = crypto.randomUUID();
-watch(() => [authStore.user?.id, authStore.sessionRevision], () => {
+watch([() => authStore.user?.id, () => authStore.sessionRevision], () => {
   trialOwnerId = crypto.randomUUID();
 }, { flush: "sync" });
 const handleBroadcastMessage = (event: MessageEvent) => {

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { assertIdentity, assertMatrix, assertReportedNumber, assertSameScreenshot, parseCsv, settledPlotScreenshot } from "./assertions";
+import { assertDefaultDisplayMatrix, assertIdentity, assertMatrix, assertReportedNumber, assertSameScreenshot, parseCsv, settledPlotScreenshot } from "./assertions";
 
 test("visual parity still rejects changed text, color and geometry @smoke", async ({ page }) => {
   await page.setContent('<div role="dialog"><div class="plotly-canvas" style="width:240px;height:80px"><svg class="main-svg" width="240" height="80" style="background:white"><text x="10" y="35" fill="black">PC 1 · Wavelength (nm)</text><path d="M10 65L80 45L150 60" stroke="blue" fill="none"/></svg></div></div>');
@@ -44,6 +44,11 @@ test("acceptance rejects blank tables, plausible transpositions and wrong exclus
     ),
   ).toThrow(/value mismatch/);
   expect(() => assertIdentity(["S1", "S2"], ["S1", "S3"])).toThrow(/inclusion authority/);
+  assertDefaultDisplayMatrix([["0.369612"]], [[0.3696116996106742]]);
+  expect(() => assertDefaultDisplayMatrix([["0.369613"]], [[0.3696116996106742]])).toThrow();
+  expect(() => assertDefaultDisplayMatrix([], [[0.3696116996106742]])).toThrow();
+  // Rounding is a display contract, never a relaxed scientific-data tolerance.
+  expect(() => assertMatrix([[0.369612]], [[0.3696116996106742]])).toThrow(/value mismatch/);
   assertReportedNumber("0.1235", 0.123456);
   expect(() => assertReportedNumber("0", 1e-15)).toThrow(/Report value/);
   expect(() => assertReportedNumber("—", 0.12)).toThrow(/missing or invalid/);

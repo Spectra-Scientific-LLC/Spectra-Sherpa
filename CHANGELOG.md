@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Staging GUI corrections
 
+- Dependency security: require pypdf 6.21.2 or later in both pip and Poetry
+  installations; no dependency-audit exceptions were added.
 - Quick Plot and Detailed View share declared scientific plots and controls,
   including PCA summaries, component-selection evidence and matrix slices.
   Saving a successful trial updates the workflow through normal retained node

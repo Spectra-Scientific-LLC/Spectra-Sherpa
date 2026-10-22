@@ -171,11 +171,8 @@ vi.mock("@/stores/workflow", () => ({
   useWorkflowStore: () => workflowStore,
 }));
 
-vi.mock("@/stores/auth", () => ({
-  useAuthStore: () => ({
-    user: { id: 1 },
-  }),
-}));
+const authStore = reactive({ user: { id: 1 }, sessionRevision: "session-1" });
+vi.mock("@/stores/auth", () => ({ useAuthStore: () => authStore }));
 
 vi.mock("@/stores/workflowBuilderConfig", () => ({
   useWorkflowBuilderConfigStore: () => workflowBuilderConfigStore,
@@ -383,6 +380,8 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
   }, 60_000);
 
   beforeEach(() => {
+    authStore.user = { id: 1 };
+    authStore.sessionRevision = "session-1";
     routeQuery.project_id = "1";
     delete routeQuery.fromDataSelection;
     delete routeQuery.selection;
@@ -1016,6 +1015,28 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     expect(workflowStore.executeNode).not.toHaveBeenCalled();
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Apply Trial Failed", detail: expect.stringContaining("workflow changed") }));
     workflowStore.nodes = originalNodes;
+    wrapper.unmount();
+  });
+
+  it("preserves trial ownership on same-actor profile refresh but revokes it on session change", async () => {
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as { openTrialTab: (data: object) => Promise<void> };
+    await vm.openTrialTab({ id: "pca_1" });
+    const owner = workbookStore.openTrialTab.mock.calls.at(-1)![0].ownerId;
+    authStore.user = { id: 1 };
+    await nextTick();
+    await vm.openTrialTab({ id: "pca_1" });
+    expect(workbookStore.openTrialTab.mock.calls.at(-1)![0].ownerId).toBe(owner);
+    authStore.sessionRevision = "session-2";
+    await nextTick();
+    await vm.openTrialTab({ id: "pca_1" });
+    const nextOwner = workbookStore.openTrialTab.mock.calls.at(-1)![0].ownerId;
+    expect(nextOwner).not.toBe(owner);
+    authStore.user = { id: 2 };
+    await nextTick();
+    await vm.openTrialTab({ id: "pca_1" });
+    expect(workbookStore.openTrialTab.mock.calls.at(-1)![0].ownerId).not.toBe(nextOwner);
     wrapper.unmount();
   });
 

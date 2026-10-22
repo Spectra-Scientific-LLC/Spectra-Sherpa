@@ -3,6 +3,7 @@ import { test, expect } from "@playwright/test";
 import {
   assertIdentity,
   assertMatrix,
+  assertDefaultDisplayMatrix,
   assertSameScreenshot,
   settledPlotScreenshot,
   closeDialog,
@@ -68,8 +69,8 @@ for (const name of ["mixture-ir", "moisture-nir"]) {
       rows.map((row) => row[1]),
       labels,
     );
-    assertMatrix(
-      rows.map((row) => row.slice(2).map(Number)),
+    assertDefaultDisplayMatrix(
+      rows.map((row) => row.slice(2)),
       values.map((row: number[]) => row.slice(0, 8)),
     );
     const csv = await downloadTable(page, dialog);
