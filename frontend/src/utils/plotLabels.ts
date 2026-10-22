@@ -82,8 +82,12 @@ export function getYAxisLabel(metadata?: PlotMetadata | null): string {
   if (/^(samples?|specimens?|acquisitions?|components?)(\s+(index|id))?$/i.test(metadata.y_title || "")) {
     // Row-coordinate units (for example acquisition seconds) are not signal units.
     if (/^(absorbance|transmittance)$/i.test(fallbackUnits || "")) return fallbackUnits![0].toUpperCase() + fallbackUnits!.slice(1);
+    if (fallbackUnits === "dimensionless") return "Intensity (dimensionless)";
+    if (fallbackUnits === "normalized") return "Normalized intensity";
     return buildAxisLabel("Intensity", fallbackUnits, "Intensity");
   }
+  if (units === "dimensionless") return `${metadata.y_title || "Response"} (dimensionless)`;
+  if (units === "normalized") return metadata.y_title ? `${metadata.y_title} (normalized)` : "Normalized response";
   return buildAxisLabel(metadata.y_title, units, "Response");
 }
 

@@ -164,9 +164,26 @@ function acquisitionSummary(metadata: StoryFacts): StoryFacts | null {
         if (item) item.count++;
         else counts.set(key, { value: cleaned, count: 1 });
       }
+      // Summarize the full parsed timestamp column before bounding examples.
+      // Do not interpret zone-less dates in the browser's local timezone.
+      const timestamps = name === "acquired_at" ? values.flatMap(value => {
+        if (typeof value !== "string" || !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return [];
+        const instant = Date.parse(value);
+        return Number.isFinite(instant) ? [instant] : [];
+      }) : [];
+      const chronological = timestamps.sort((a, b) => a - b);
+      const timestampRange = chronological.length && chronological.length === values.length ? {
+        timestamp_range: {
+          first: new Date(chronological[0]).toISOString(),
+          last: new Date(chronological[chronological.length - 1]).toISOString(),
+          elapsed_seconds: (chronological[chronological.length - 1] - chronological[0]) / 1000,
+          observed_timestamps: chronological.length,
+          scope: "All recorded timestamps in the supplied source records; not an instrument scan duration.",
+        },
+      } : {};
       return [name, { distinct_values: counts.size,
         values: [...counts.values()].slice(0, 12),
-        omitted_distinct_values: Math.max(0, counts.size - 12) }];
+        omitted_distinct_values: Math.max(0, counts.size - 12), ...timestampRange }];
     })),
     omitted_fields: Math.max(0, fields.length - 24),
   };

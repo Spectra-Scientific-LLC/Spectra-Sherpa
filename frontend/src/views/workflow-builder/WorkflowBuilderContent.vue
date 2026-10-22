@@ -995,6 +995,14 @@ type WorkflowDraftSnapshot = {
 
 const pendingRecoveryDraft = ref<ReturnType<typeof editableWorkflowGraph> | null>(null);
 
+// Recovery belongs to the sheet on which it was discovered, not the canvas
+// component's lifetime (template creation can replace that sheet in-place).
+watch(
+  () => [authStore.user?.id, workbookStore.projectId, workflowStore.workflowId],
+  () => { pendingRecoveryDraft.value = null; },
+  { flush: "sync" },
+);
+
 const currentWorkflowDraftKey = (): string | null => {
   const projectId = workbookStore.projectId;
   const currentWorkflowId = workflowStore.workflowId;

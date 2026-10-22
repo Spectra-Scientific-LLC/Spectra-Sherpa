@@ -30,6 +30,27 @@ function fixture(): ReportData {
 }
 
 describe("deterministic short scientific report", () => {
+  it("omits projection metadata and irrelevant CV context from a preparation-only short report", () => {
+    const data = fixture();
+    const run = data.runs![0];
+    run.saved_definition = { nodes: [{ node_id: "snv", label: "SNV", node_type: "preprocess.normalize" }] };
+    run.results_summary = { snv: { n_samples: 33, n_features: 1868,
+      scientific_projection: { units: "dimensionless", axes: [{ projection: { units: "cm^-1" } }] } } };
+    run.validation_summary!.rows = run.validation_summary!.summary_rows = [
+      { label: "Spectral axis (X)", value: "Wavenumber; units: cm^-1" },
+      { label: "Spectral intensity", value: "dimensionless" },
+    ];
+    run.params_snapshot = { snv: { method: "snv" } };
+    for (const output of [generateProvenanceReport(data), generateMarkdownReport(data)]) {
+      expect(output).not.toContain("scientific_projection");
+      expect(output).not.toContain("CV configuration");
+      expect(output).toContain("dimensionless");
+      expect(output).toContain("33");
+      expect(output).toContain("1868");
+    }
+    data.reportMode = "detailed";
+    expect(generateProvenanceReport(data)).toContain("scientific_projection");
+  });
   it("collapses metric metadata copies while excluding score payload copies", () => {
     const data = fixture();
     data.runs![0].results_summary = { pls: { train_accuracy: 0.95,

@@ -29,6 +29,7 @@ function deferred<T>() {
 }
 type BundleItem = { id: string; name: string; payload: { components: never[] } };
 type Panel = {
+  onSourceOrGridChange(): void;
   loadSpectrum(component: SelectedComponent): Promise<void>;
   saveSynthesis(): Promise<void>;
   previewSynthesis(): Promise<void>;
@@ -50,6 +51,22 @@ beforeEach(() => {
 });
 
 describe("Mounted synthesis workspace scope", () => {
+  it("notifies only when grid edits clear an actual selection, not catalogue hits", async () => {
+    const { wrapper, panel, store } = mountPanel();
+    await flushPromises();
+    store.searchResults = [{ id: "water", name: "Water", source: "nist_quant_ir", variants: [] }];
+    mocks.toast.mockClear();
+    panel.onSourceOrGridChange();
+    panel.onSourceOrGridChange();
+    expect(mocks.toast).not.toHaveBeenCalled();
+    store.selectedComponents = [{ id: "water", name: "Water", source: "nist_quant_ir", variants: [],
+      spectrum: null, loading: false, native_grid: null, concentration_max_ppm: 10, control_points: [] }];
+    panel.onSourceOrGridChange();
+    panel.onSourceOrGridChange();
+    expect(mocks.toast).toHaveBeenCalledTimes(1);
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ summary: "Selection cleared" }));
+    wrapper.unmount();
+  });
   it.each([400, 422])("reports definitive HTTP %s refusal with its remedy", async status => {
     const { wrapper, panel } = mountPanel();
     await flushPromises();

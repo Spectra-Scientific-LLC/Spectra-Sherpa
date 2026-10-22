@@ -70,7 +70,7 @@ export function keyResultRows(value: unknown): Row[] {
     const parts = path.split(" / ");
     // Lineage, source annotations and authority records belong to detailed
     // evidence, not paper-style endpoints (even when their leaves say "units").
-    if (parts.some(part => /^(?:provenance|processing_history|target_context|selected_authority|target_authority|dataset_package|annotation_table|parameters)(?:\[\d+\])?$/i.test(part))) return [];
+    if (parts.some(part => /^(?:scientific_projection|provenance|processing_history|target_context|selected_authority|target_authority|dataset_package|annotation_table|parameters)(?:\[\d+\])?$/i.test(part))) return [];
     // Retain per-target/class context, but not repetitive per-fold or row-level results.
     if (parts.some((part) => /^(?:per_fold|folds|residuals|predictions|(?:x_|y_)?scores|loadings|coefficients|comparison|calibration_comparison|target\[|data(?:\[|$))/i.test(part))) return [];
     const last = parts[parts.length - 1];
@@ -229,7 +229,9 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
         `${folds} folds requested; method ${settings.cv_method ?? settings.method ?? "not recorded"}; seed ${settings.random_seed ?? "not recorded"}.`]);
     }
   }
-  if (!recordedCv) context.push(["CV configuration", "No executed CV design retained"]);
+  if (!recordedCv && nodes.some(node => modelTypes.test(node.node_type))) {
+    context.push(["CV configuration", "No executed CV design retained"]);
+  }
   const preprocessing = nodes.filter(node => /^(?:preprocess|baseline|normalize|smooth|transfer)\./.test(node.node_type));
   if (preprocessing.length) context.push(["Preprocessing (saved operations)", preprocessing.map(node => {
     const settings = reportRows(run.params_snapshot?.[node.node_id]).filter(([key]) =>

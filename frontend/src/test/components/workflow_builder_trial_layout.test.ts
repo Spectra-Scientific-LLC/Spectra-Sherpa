@@ -1163,4 +1163,22 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     expect(workflowStore.hasUnsavedChanges).toBe(false);
     wrapper.unmount();
   });
+
+  it("does not offer the previous sheet's recovery draft after a starter replaces it", async () => {
+    workbookStore.activeIndex = 0;
+    const key = "spectra_sherpa_workflow_draft_v1:1:1:101";
+    localStorage.setItem(key, JSON.stringify({
+      projectId: 1, workflowId: 101, workflowName: "Recoverable previous sheet", workflowDescription: "",
+      nodes: [{ id: "unsaved", type: "preprocess.derivative", params: {}, x: 0, y: 0 }], edges: [],
+    }));
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    expect(wrapper.text()).toContain("The saved workflow is shown");
+    workflowStore.workflowId = 999;
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("Restore draft");
+    expect(localStorage.getItem(key)).not.toBeNull();
+    expect(workflowStore.setNodes).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
 });

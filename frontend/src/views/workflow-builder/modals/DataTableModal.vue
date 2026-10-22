@@ -151,15 +151,15 @@
       </div>
 
       <!-- Metadata Panel -->
-      <div v-if="hasMetadata" class="metadata-panel" role="region" aria-label="Result metadata" tabindex="0">
-        <h4>Metadata</h4>
+      <details v-if="hasMetadata" class="metadata-panel" role="region" aria-label="Result metadata" tabindex="0">
+        <summary>Metadata</summary>
         <div class="metadata-grid">
           <div v-for="(value, key) in displayMetadata" :key="key" class="metadata-item">
             <span class="metadata-key">{{ key }}:</span>
             <span class="metadata-value">{{ formatMetadataValue(value) }}</span>
           </div>
         </div>
-      </div>
+      </details>
     </div>
   </Dialog>
 </template>
@@ -1277,11 +1277,12 @@ function exportCSV() {
   border-top: 1px solid var(--ss-panel-border);
 }
 
-.metadata-panel h4 {
+.metadata-panel summary {
   margin: 0 0 12px;
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--ss-panel-text);
+  cursor: pointer;
 }
 
 .metadata-grid {

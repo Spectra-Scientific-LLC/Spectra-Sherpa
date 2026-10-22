@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import DataTableModal from "@/views/workflow-builder/modals/DataTableModal.vue";
 import QuickPlotModal from "@/views/workflow-builder/modals/QuickPlotModal.vue";
-import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
+import { DEFAULT_DISPLAY_PREFERENCES, useDisplayPreferences } from "@/composables/useDisplayPreferences";
 const stubs = {
   Dialog: { template: "<div><slot /></div>" },
   Dropdown: true,
@@ -41,7 +41,7 @@ async function csv(w: any) {
   return blob?.text();
 }
 afterEach(() => {
-  useDisplayPreferences().maxRows = 300;
+  Object.assign(useDisplayPreferences(), DEFAULT_DISPLAY_PREFERENCES);
   wrappers.splice(0).forEach((w) => w.unmount());
   vi.restoreAllMocks();
 });
@@ -214,5 +214,8 @@ it("XGSC-06 exports the active cohort with retained indices and unrounded cells"
   expect(text).toContain("1000.01,1000.03");
   expect(text).toContain("1,A,1e-8,3"); expect(text).toContain("3,C,4,6");
   expect(text).not.toContain("999"); expect(text).not.toContain("1000.02");
+  expect(w.vm.formatValue(1e-8,true)).toBe("1.00000e-8");
+  useDisplayPreferences().precision = "full";
   expect(w.vm.formatValue(1e-8,true)).toBe("1e-8");
+  expect(await csv(w)).toBe(text);
 });

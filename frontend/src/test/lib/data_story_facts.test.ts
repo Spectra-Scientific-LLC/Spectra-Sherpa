@@ -17,6 +17,30 @@ const source = {
 };
 
 describe("provider-independent parsed Data Story facts", () => {
+  it("summarizes all acquisition timestamps before truncating displayed examples", () => {
+    const metadata = { source_member_metadata: Array.from({ length: 33 }, (_, i) => ({
+      metadata: { "omnic.acquisition": { acquired_at: new Date(Date.UTC(2026, 7, 23, 23, 0, i * 150)).toISOString() } },
+    })) };
+    const acquisition = buildDataStoryContext({ metadata }).facts.acquisition as {
+      fields: { acquired_at: { values: unknown[]; omitted_distinct_values: number; timestamp_range: Record<string, unknown> } };
+    };
+    expect(acquisition.fields.acquired_at.values).toHaveLength(12);
+    expect(acquisition.fields.acquired_at.omitted_distinct_values).toBe(21);
+    expect(acquisition.fields.acquired_at.timestamp_range).toMatchObject({
+      first: "2026-08-23T23:00:00.000Z", last: "2026-08-24T00:20:00.000Z",
+      elapsed_seconds: 4800, observed_timestamps: 33,
+    });
+    const message = localStoryMessage({ metadata }, "");
+    expect(message).toContain("Never infer the full acquisition duration from truncated timestamp examples");
+    expect(message).toContain("Signal magnitude alone does not establish signal quality");
+  });
+
+  it("does not invent a range for zone-less or malformed acquisition dates", () => {
+    for (const acquired_at of [["2026-08-23T23:00:00"], ["unknown", "2026-08-23T23:00:00Z"]]) {
+      const facts = buildDataStoryContext({ metadata: { "omnic.acquisition": { acquired_at } } }).facts;
+      expect(JSON.stringify(facts.acquisition)).not.toContain("timestamp_range");
+    }
+  });
   it("sends identical scientific facts to local and hosted narration", () => {
     const context = buildDataStoryContext(source);
     const localFacts = JSON.parse(localStoryMessage(source, "How acquired?").split("Dataset facts: ")[1]);

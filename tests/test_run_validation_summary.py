@@ -23,6 +23,34 @@ def text(summary):
     return "\n".join(row["label"] + ": " + row["value"] for row in summary["rows"])
 
 
+def test_preparation_report_omits_irrelevant_cv_boilerplate_only_from_short_context():
+    run = SimpleNamespace(
+        id=1,
+        user_id=1,
+        status="completed",
+        source_metadata={},
+        diagnostics={},
+        params_snapshot={},
+        evidence_completeness=retention.retain_run_outputs(1, {}, {}),
+    )
+    definition = {
+        "nodes": [
+            {"node_id": "source", "node_type": "data.file_load"},
+            {"node_id": "snv", "node_type": "preprocess.normalize"},
+            {"node_id": "export", "node_type": "output.export"},
+        ],
+        "edges": [],
+    }
+    summary = validation_summary(run, definition)
+    compact = "\n".join(row["label"] for row in summary["summary_rows"])
+    assert "Preprocessing within folds" not in compact
+    assert "Evaluation population" not in compact
+    assert "cross-validation is not external validation" in text(summary)
+    for unknown in [None, {"nodes": [{"node_id": "historical", "node_type": "unknown.model"}]}]:
+        labels = [row["label"] for row in validation_summary(run, unknown)["summary_rows"]]
+        assert "Preprocessing within folds" in labels
+
+
 def test_large_split_matrix_does_not_consume_validation_evidence_budget():
     evidence = retention.retain_run_outputs(
         1,

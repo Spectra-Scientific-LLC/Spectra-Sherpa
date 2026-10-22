@@ -1591,7 +1591,9 @@ async function searchComponents() {
 }
 
 function onSourceOrGridChange() {
-  const hadComponents = selectedComponents.value.length > 0 || searchResults.value.length > 0;
+  // Catalogue hits are not a user selection. Only notify when this edit
+  // actually discards components; subsequent keystrokes have nothing to clear.
+  const hadComponents = selectedComponents.value.length > 0;
   if (searchDebounceTimer !== null) {
     window.clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;
