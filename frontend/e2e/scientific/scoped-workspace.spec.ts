@@ -43,6 +43,12 @@ test("editing a synthesis draft keeps its accepted save single-flight and acknow
     const panel = page.locator(".synthesis-panel");
     await panel.getByRole("button", { name: "Add", exact: true }).click();
     await panel.locator('[data-action="synthesis_load_spectrum"]').click();
+    // The Save panel starts collapsed until a preview exists. Follow the real
+    // user action instead of addressing a hidden input or forcing visibility.
+    const savePanel = panel.getByRole("button", { name: "Save", exact: true });
+    await expect(savePanel).toHaveAttribute("aria-expanded", "false");
+    await savePanel.click();
+    await expect(panel.getByLabel("Dataset name", { exact: true })).toBeVisible();
     const save = panel.locator('[data-action="synthesis_save_dataset"]');
     await expect(save).toBeEnabled();
     await panel.getByLabel("Dataset name", { exact: true }).fill("Captured synthesis");

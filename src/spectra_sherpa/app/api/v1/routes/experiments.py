@@ -1268,6 +1268,12 @@ async def import_reference_datasets_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ReferenceDatasetImportResponse:
+    from spectra_sherpa.app.db.session import begin_serialized_sqlite_write
+
+    # Import reads and writes share one savepoint. Reserve SQLite's writer
+    # before those reads so unrelated commits cannot invalidate its snapshot.
+    # PostgreSQL retains its existing transaction/locking behavior.
+    await begin_serialized_sqlite_write(session)
     experiment = await _require_experiment(session, experiment_id, current_user.id)
     _enforce_reference_import_batch(payload)
     await _enforce_reference_import_target(session, experiment_id, payload)
