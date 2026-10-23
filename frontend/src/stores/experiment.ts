@@ -2,6 +2,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
+import { isCancel } from "axios";
 import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import { activeProjectScope } from "@/stores/projectScopeRegistry";
 import { useAuthStore } from "@/stores/auth";
@@ -29,7 +30,7 @@ export const useExperimentStore = defineStore("experiment", () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
   const selectedExperimentId = ref<number | null>(null);
-  const accountIdentity = () => [useAuthStore().user?.id, useAuthStore().token];
+  const accountIdentity = () => [useAuthStore().user?.id, useAuthStore().sessionRevision];
   const identity = () => [...accountIdentity(), activeProjectScope.value, selectedExperimentId.value];
   const listScope = useScopedRequest(
     () => [...accountIdentity(), activeProjectScope.value],
@@ -47,6 +48,8 @@ export const useExperimentStore = defineStore("experiment", () => {
 
   async function refreshWrittenInventories(account: ScopedRequestTicket): Promise<void> {
     if (!account.isCurrent()) return;
+    // A write must not reuse a GET started before that write was accepted.
+    listScope.invalidate();
     await Promise.allSettled([
       fetchExperiments(activeProjectScope.value),
       useDataStore().fetchExperiments(),
@@ -69,21 +72,27 @@ export const useExperimentStore = defineStore("experiment", () => {
   }
   registerProjectScopeReset(resetProjectScope);
 
-  const fetchExperiments = async (projectId?: number | null) => {
+  let pendingList: { projectId: number | null; ticket: ScopedRequestTicket; promise: Promise<void> } | null = null;
+  const fetchExperiments = (projectId: number | null = activeProjectScope.value): Promise<void> => {
+    if (pendingList?.projectId === projectId && pendingList.ticket.isCurrent()) return pendingList.promise;
     const request = listScope.begin();
     loading.value = true;
-    try {
+    const promise = (async () => { try {
       const response = await api.get<ExperimentSummary[]>("/experiments", {
         params: projectId == null ? undefined : { project_id: projectId },
         signal: request.signal,
       });
       if (request.isCurrent()) experiments.value = response.data;
     } catch (err: any) {
+      if (!request.isCurrent() || isCancel(err)) return;
       if (request.isCurrent()) error.value = err?.message || "Failed to load experiments";
       throw err;
     } finally {
       if (request.isCurrent()) loading.value = false;
-    }
+      if (pendingList?.ticket === request) pendingList = null;
+    } })();
+    pendingList = { projectId, ticket: request, promise };
+    return promise;
   };
 
   const fetchExperiment = async (experimentId: number) => {

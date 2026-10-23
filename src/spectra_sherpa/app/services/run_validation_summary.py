@@ -9,6 +9,7 @@ from functools import partial
 from typing import Any
 
 from spectra_sherpa.app.schemas.run_evidence import RunEvidence
+from spectra_sherpa.app.services.dag.node_base import node_registry
 from spectra_sherpa.app.services.dag.nodes.classification.plsda_permutation import validated_permutation_scores
 from spectra_sherpa.app.services.dag.out_of_fold_evidence import validate_out_of_fold_evidence
 from spectra_sherpa.app.services.run_output_retention import read_output
@@ -80,12 +81,29 @@ def _split_summaries(run: Any, definition: dict) -> list[dict]:
     return summaries
 
 
+def _preparation_only(definition: dict | None) -> bool:
+    """Only suppress model-validation boilerplate for a known preparation graph."""
+    nodes = (definition or {}).get("nodes", [])
+    if not nodes:
+        return False
+    try:
+        return all(
+            node.get("node_type") != "data.train_test_split"
+            and node_registry.get_metadata(node["node_type"]).category in {"data", "preprocessing", "output"}
+            for node in nodes
+        )
+    except (KeyError, TypeError):
+        # Unknown historical operations cannot establish that validation is irrelevant.
+        return False
+
+
 def validation_summary(run: Any, definition: dict | None, *, include_row_level_plots: bool = False) -> dict:
     """Build an exportable summary, preserving explicit gaps in retained evidence."""
     rows: list[dict[str, Any]] = []
     figures: list[dict] = []
     regression_results: list[dict] = []
     summary_rows: list[dict[str, str]] = []
+    preparation_only = _preparation_only(definition)
 
     def add(label: str, value: object, *, summary: bool = False, short: object = None, row_level: bool = False) -> None:
         rows.append({"label": label, "value": str(value), "row_level": row_level})
@@ -216,7 +234,7 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
     add(
         "Evaluation population",
         "Per retained output; cross-validation is not external validation.",
-        summary=True,
+        summary=not preparation_only,
     )
     if not splits:
         add(
@@ -227,7 +245,7 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
     add(
         "Preprocessing within folds",
         "Not established by this summary; inspect retained fold execution.",
-        summary=True,
+        summary=not preparation_only,
     )
     add(
         "Missing and excluded observations",

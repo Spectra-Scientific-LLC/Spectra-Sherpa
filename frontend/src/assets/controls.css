@@ -1,5 +1,60 @@
 /* Installed PrimeVue 3 has compiled literal states. Bridge the controls that
  * cannot consume its public variables; component layout and behavior stay put. */
+/* One opt-in dark context for result panels and their teleported menus.
+ * Alias existing roles here, never repaint individual controls in consumers.
+ * Keep these scoped aliases out of tokens.css's standalone root inventory. */
+.ss-panel-theme {
+  --ss-surface: var(--ss-panel-inset);
+  --ss-surface-subtle: var(--ss-panel);
+  --ss-surface-inset: var(--ss-panel-raised);
+  --ss-text: var(--ss-panel-text);
+  --ss-text-body: var(--ss-panel-secondary);
+  --ss-text-strong: var(--ss-panel-text);
+  --ss-text-secondary: var(--ss-panel-secondary);
+  --ss-text-muted: var(--ss-panel-muted);
+  --ss-border-input: var(--ss-panel-muted);
+  --ss-border: var(--ss-panel-border);
+  --ss-border-strong: var(--ss-panel-muted);
+  --ss-action: var(--ss-panel-action);
+  --ss-action-text: var(--ss-panel-text);
+  --ss-action-hover: var(--ss-panel-text);
+  --ss-action-tint: var(--ss-panel-raised);
+  --ss-on-action: var(--ss-panel-inset);
+  --ss-control-primary-text: var(--ss-panel-inset);
+  --ss-focus: var(--ss-panel-action);
+  --ss-success: var(--ss-panel-success);
+  --ss-success-strong: var(--ss-panel-success);
+  --ss-success-surface: var(--ss-panel-inset);
+  --ss-info: var(--ss-panel-info);
+  --ss-info-strong: var(--ss-panel-info);
+  --ss-info-surface: var(--ss-panel-info-surface);
+  --ss-warning: var(--ss-panel-warning);
+  --ss-warning-strong: var(--ss-panel-warning);
+  --ss-warning-surface: var(--ss-panel-warning-surface);
+  --ss-danger: var(--ss-panel-danger);
+  --ss-danger-strong: var(--ss-panel-danger);
+  --ss-danger-surface: var(--ss-panel-inset);
+  --text-color: var(--ss-panel-text);
+  --text-color-secondary: var(--ss-panel-secondary);
+  --surface-card: var(--ss-panel);
+  --surface-border: var(--ss-panel-border);
+  color: var(--ss-panel-text);
+  background: var(--ss-panel-inset);
+}
+.ss-panel-theme.p-dialog .p-dialog-header,
+.ss-panel-theme.p-dialog .p-dialog-content,
+.ss-panel-theme.p-dialog .p-dialog-footer {
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-text);
+}
+.ss-panel-theme.p-dialog .p-dialog-header-icon { color: var(--ss-panel-secondary); }
+.ss-panel-theme .p-dropdown-item:not(.p-highlight):not(.p-disabled):hover,
+.ss-panel-theme .p-multiselect-item:not(.p-highlight):not(.p-disabled):hover,
+.ss-panel-theme .p-dropdown-item.p-focus:not(.p-highlight):not(.p-disabled),
+.ss-panel-theme .p-multiselect-item.p-focus:not(.p-highlight):not(.p-disabled) {
+  background: var(--ss-panel-raised);
+  color: var(--ss-panel-text);
+}
 .p-inputtext, .p-dropdown, .p-multiselect {
   color: var(--ss-text-body);
   background: var(--ss-surface);
@@ -31,8 +86,9 @@
 .p-checkbox .p-checkbox-box, .p-radiobutton .p-radiobutton-box {
   background: var(--ss-surface); border-color: var(--ss-text-muted);
 }
-.p-checkbox .p-checkbox-box.p-highlight,
-.p-radiobutton .p-radiobutton-box.p-highlight,
+/* PrimeVue 3.53 marks the checked state on the component root, not the box. */
+.p-checkbox.p-highlight .p-checkbox-box,
+.p-radiobutton.p-highlight .p-radiobutton-box,
 .p-inputswitch.p-highlight .p-inputswitch-slider {
   background: var(--ss-action); border-color: var(--ss-action);
 }

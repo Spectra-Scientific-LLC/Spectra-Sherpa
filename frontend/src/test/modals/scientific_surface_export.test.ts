@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import DataTableModal from "@/views/workflow-builder/modals/DataTableModal.vue";
 import QuickPlotModal from "@/views/workflow-builder/modals/QuickPlotModal.vue";
-import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
+import { DEFAULT_DISPLAY_PREFERENCES, useDisplayPreferences } from "@/composables/useDisplayPreferences";
 const stubs = {
   Dialog: { template: "<div><slot /></div>" },
   Dropdown: true,
@@ -41,7 +41,7 @@ async function csv(w: any) {
   return blob?.text();
 }
 afterEach(() => {
-  useDisplayPreferences().maxRows = 300;
+  Object.assign(useDisplayPreferences(), DEFAULT_DISPLAY_PREFERENCES);
   wrappers.splice(0).forEach((w) => w.unmount());
   vi.restoreAllMocks();
 });
@@ -98,7 +98,9 @@ describe("Scientific surface export authority", () => {
       Array.from({ length: 320 }, (_, i) => [i]),
       { sample_labels: Array.from({ length: 320 }, (_, i) => `S${i}`) },
     );
-    expect(w.text()).toContain("Showing first 300 of 320 rows");
+    expect(w.text()).toContain("320 rows");
+    expect(w.text()).toContain("300 previewed");
+    expect(w.text()).toContain("Filters apply to the first 300 rows. CSV exports all 320 active rows.");
     w.vm.searchQuery = "S319";
     await nextTick();
     expect(w.vm.tableData).toHaveLength(0);
@@ -106,7 +108,7 @@ describe("Scientific surface export authority", () => {
     await nextTick();
     expect(w.vm.tableData).toHaveLength(1);
     expect(w.vm.tableData[0]._label_full).toBe("S319");
-    expect(w.text()).toContain("CSV: 320 active rows");
+    expect(w.text()).toContain("CSV exports all 320 active rows, regardless of table filters.");
   });
   it("GSC-02 caps display but keeps full export beyond the former 100000 bound", async () => {
     const w = table(Array.from({ length: 100001 }, (_, i) => i));
@@ -214,5 +216,8 @@ it("XGSC-06 exports the active cohort with retained indices and unrounded cells"
   expect(text).toContain("1000.01,1000.03");
   expect(text).toContain("1,A,1e-8,3"); expect(text).toContain("3,C,4,6");
   expect(text).not.toContain("999"); expect(text).not.toContain("1000.02");
+  expect(w.vm.formatValue(1e-8,true)).toBe("1.00000e-8");
+  useDisplayPreferences().precision = "full";
   expect(w.vm.formatValue(1e-8,true)).toBe("1e-8");
+  expect(await csv(w)).toBe(text);
 });

@@ -13,6 +13,24 @@ satisfies them. Dated audits record observations against particular revisions.
 
 ## Reusable rule for every scientific GUI surface
 
+Quick Plot and Detailed View use the same presentation selector, plot renderer,
+axis controls and matrix-slice projection for declared scientific outputs.
+Do not add a node-name branch to one surface to expose a new canonical plot.
+Slices use the displayed matrix's exact coordinates and row order, including
+exclusions and missing cells; they do not index the original unfiltered source.
+
+Restored run summaries are bounded previews. Quick Plot and Detailed View load
+exact output ports and connected input ports from the same retained run through
+the shared evidence loader. Preserve the full axis metadata with those values;
+never trim identities or relax alignment checks to make a preview look complete.
+
+Run Trial is a preview. Save and Exit after a successful trial saves parameters
+and invokes normal node execution to produce retained workflow results; it must
+not present preview arrays as retained evidence. Execution belongs to the
+originating workbook and unchanged project/session/graph. A changed graph must
+be reviewed before execution. Parameter-only editing without a successful trial
+does not implicitly run the workflow.
+
 Every plot, table, statistics panel, workflow editor, and export surface should satisfy the same contract.
 
 ### 1. Input authority
@@ -121,6 +139,14 @@ Any operation that changes what is displayed must be visible:
 - Spectral range selection.
 - Cube unfolding or spatial reduction.
 - Missing-value handling.
+
+Sampled plots and capped tables must carry a visible **Subset** indicator,
+including omissions introduced by Display Settings. Keep the row counts,
+selection method and interpretation details behind the same contextual `?`;
+the icon alone does not disclose that data are omitted. Quick Plot and Detailed
+View use the shared indicator and structured population metadata. Excluded
+observations outside the active population do not by themselves make a preview
+a subset of that active population.
 
 ### 6. Lifecycle fidelity
 

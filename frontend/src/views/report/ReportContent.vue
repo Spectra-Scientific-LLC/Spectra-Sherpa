@@ -70,7 +70,7 @@
           </div>
 
           <div class="config-field">
-            <label for="report-runs">Execution Runs (optional)</label>
+            <label for="report-runs">Runs</label>
             <Dropdown
               inputId="report-runs"
               v-model="selectedRunProxy"
@@ -122,13 +122,7 @@
             </button>
           </div>
           <div class="report-options">
-            <p class="report-mode-help">
-              {{
-                reportStore.reportMode === "summary"
-                  ? "Key results and context from selected runs, without AI."
-                  : "All retained results, settings, diagnostics, and execution evidence."
-              }}
-            </p>
+            <MethodHelp topic="shortSummary" label="Report length" :context="reportStore.reportMode === 'summary' ? 'Key retained results and context, without AI.' : 'All retained results, settings, diagnostics, and execution evidence.'" />
             <label class="row-level-option">
               <input type="checkbox" v-model="reportStore.includeRowLevelPlots" />
               <span>Include figures and individual reference/prediction values</span>
@@ -247,6 +241,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- report view bridges backend report payloads into export-generator types. */
 import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import Dropdown from "primevue/dropdown";

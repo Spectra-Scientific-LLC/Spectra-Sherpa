@@ -29,7 +29,10 @@ async def _count(session: AsyncSession, statement) -> int:  # noqa: ANN001
 
 def _project_runs(project_id: int):  # noqa: ANN202
     workflow_ids = select(Workflow.id).where(Workflow.project_id == project_id).scalar_subquery()
-    return or_(ExecutionRun.project_id == project_id, ExecutionRun.workflow_id.in_(workflow_ids))
+    return or_(
+        ExecutionRun.project_id == project_id,
+        ExecutionRun.workflow_id.in_(workflow_ids),
+    )
 
 
 async def latest_run_status(session: AsyncSession, project_id: int) -> str | None:
@@ -42,13 +45,16 @@ async def latest_run_status(session: AsyncSession, project_id: int) -> str | Non
     )
 
 
-async def project_progress(session: AsyncSession, project_id: int) -> dict[str, bool]:
-    """Progress signals for one project; the caller has already checked access."""
-    workflow_ids = select(Workflow.id).where(Workflow.project_id == project_id).scalar_subquery()
+async def project_has_data(session: AsyncSession, project_id: int) -> bool:
+    """Starter/Guidance availability; caller checks access, execution checks admission.
 
-    has_data = bool(
+    A file-backed import exists before any workflow registers its source.
+    Empty experiment shells alone do not mean that data has been added.
+    """
+    return bool(
         await _count(
-            session, select(func.count(ProjectDataSource.id)).where(ProjectDataSource.project_id == project_id)
+            session,
+            select(func.count(ProjectDataSource.id)).where(ProjectDataSource.project_id == project_id),
         )
         or await _count(
             session,
@@ -57,14 +63,24 @@ async def project_progress(session: AsyncSession, project_id: int) -> dict[str, 
             .where(Experiment.project_id == project_id),
         )
     )
+
+
+async def project_progress(session: AsyncSession, project_id: int) -> dict[str, bool]:
+    """Progress signals for one project; the caller has already checked access."""
+    workflow_ids = select(Workflow.id).where(Workflow.project_id == project_id).scalar_subquery()
+    has_data = await project_has_data(session, project_id)
     workflow_nodes = await _count(
-        session, select(func.count(WorkflowNode.id)).where(WorkflowNode.workflow_id.in_(workflow_ids))
+        session,
+        select(func.count(WorkflowNode.id)).where(WorkflowNode.workflow_id.in_(workflow_ids)),
     )
     preprocessing_nodes = await _count(
         session,
         select(func.count(WorkflowNode.id)).where(
             WorkflowNode.workflow_id.in_(workflow_ids),
-            or_(WorkflowNode.node_type.like("preprocess.%"), WorkflowNode.node_type.like("baseline.%")),
+            or_(
+                WorkflowNode.node_type.like("preprocess.%"),
+                WorkflowNode.node_type.like("baseline.%"),
+            ),
         ),
     )
     successful_runs = await _count(

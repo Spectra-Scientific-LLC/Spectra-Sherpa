@@ -4,22 +4,25 @@
     <div v-if="!loading && isEmpty" class="plotly-empty" role="status">
       {{ emptyMessage }}
     </div>
-    <div v-show="!isEmpty" ref="chartEl" class="plotly-canvas"></div>
-    <div v-if="displayed.omitted" class="plotly-preview-notice" role="status">
-      Display limit: {{ displayed.omissionDescription }} omitted.
-      <MethodHelp topic="displayExports" label="Plot display limits" />
+    <div v-if="!isEmpty && (hasSubset || contextText)" class="plot-context-controls">
+      <DisplaySubsetIndicator v-if="hasSubset" />
+      <MethodHelp v-if="contextText" topic="displayExports" label="Plot context" :context="contextText" />
     </div>
+    <div v-show="!isEmpty" ref="chartEl" class="plotly-canvas"></div>
   </div>
 </template>
 
 <script setup lang="ts">
 import MethodHelp from "@/components/MethodHelp.vue";
+import DisplaySubsetIndicator from "@/components/DisplaySubsetIndicator.vue";
 import { selectionIndices } from "@/utils/sampleReview";
 import { focusPlot, releasePlot, nextPlotAttentionId } from "@/lib/sherpaAttention";
 import { scientificPlotRefusal } from "@/utils/scientificPlotState";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
 import { displayPlot } from "@/utils/displayPlot";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { plotContext, plotHasSubset } from "@/utils/plotContext";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { PLOT_SURFACE } from "@/theme/plotTheme";
 
 type PlotlyData = Record<string, unknown>;
 type PlotlyLayout = Record<string, unknown>;
@@ -57,6 +60,8 @@ const props = defineProps<{
   emptyMessage?: string;
   attentionNodeId?: string;
   attentionPlotKey?: string;
+  context?: string;
+  sourcePopulation?: { shown: number; total: number };
 }>();
 
 const emit = defineEmits<{
@@ -71,11 +76,18 @@ const notePlotFocus = () => focusPlot(attentionId, props.attentionNodeId, props.
 onBeforeUnmount(() => releasePlot(attentionId));
 const chartEl = ref<HTMLDivElement | null>(null);
 const displayPreferences = useDisplayPreferences();
+const plotSurface = inject(PLOT_SURFACE, "screen");
 const displayed = computed(() => displayPlot(
   props.data || [], props.layout || {}, displayPreferences,
   new Set(props.selectedPointIds || []),
+  plotSurface,
 ));
 const refusal = computed(() => scientificPlotRefusal(props.layout));
+const hasSubset = computed(() => plotHasSubset(props.layout || {}, displayed.value.omitted, props.sourcePopulation));
+const contextText = computed(() => plotContext(
+  props.layout || {}, props.context,
+  displayed.value.omitted ? displayed.value.omissionDescription : "",
+));
 const emptyMessage = computed(
   () => refusal.value || props.emptyMessage || "No renderable plot data available.",
 );
@@ -366,11 +378,16 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 320px;
 }
-.plotly-preview-notice { padding: .25rem .5rem; font-size: .8rem; color: var(--text-color-secondary, var(--ss-text-muted)); }
 
 .plotly-canvas {
   width: 100%;
   height: 100%;
+}
+
+.plot-context-controls {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
 }
 
 .plotly-overlay,

@@ -28,7 +28,7 @@
 
   <div v-else class="empty-panel">
     <p class="eyebrow">Report Pack</p>
-    <p>Generate a pack to download manifest, evidence rows, verification proof, and validation templates.</p>
+    <p>No pack generated.</p>
   </div>
 </template>
 

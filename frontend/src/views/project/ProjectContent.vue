@@ -4,7 +4,7 @@
     <WorkspaceHeader title="Project" :actions="headerActionItems">
         <Button
           label="New Project" icon="pi pi-plus" class="p-button-sm"
-          :disabled="appConfig?.siteProfile === 'demo'"
+          data-action="new_project"
           @click="editingProject = null; dialogVisible = true" />
         <Button
           v-if="isServerBacked && !qualified && projectStore.currentProjectId"
@@ -475,7 +475,6 @@ const headerActionItems = computed(() => [
   {
     label: "New Project",
     icon: "pi pi-plus",
-    disabled: appConfig.value?.siteProfile === "demo",
     command: () => { editingProject.value = null; dialogVisible.value = true; },
   },
   ...(isServerBacked.value && !qualified.value && projectStore.currentProjectId

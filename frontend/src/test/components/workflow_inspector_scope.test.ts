@@ -7,7 +7,7 @@ import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 const { apiGet, toastAdd } = vi.hoisted(() => ({ apiGet: vi.fn(), toastAdd: vi.fn() }));
 vi.mock("@/api/client", () => ({ default: { get: apiGet } }));
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: toastAdd }) }));
-const auth = reactive({ user: { id: 1 }, token: "session-A" });
+const auth = reactive({ user: { id: 1 }, token: "session-A", get sessionRevision() { return this.token; } });
 const project = reactive({ currentProjectId: 1 });
 const workbook = reactive({ projectId: 1, activeSheet: { workflowId: 9, trialId: undefined as string | undefined } });
 const metadata = {
@@ -120,6 +120,48 @@ describe("Inspector retained evidence request ownership", () => {
     expect(vm.quickPlotNodeOutput.data).toEqual([[200]]);
     expect(vm.quickPlotLoading).toBe(false);
     expect(view === "plot" ? vm.showQuickPlotModal : vm.showDataTableModal).toBe(true);
+  });
+
+  it.each(transitions)("does not open a trial after a delayed %s scope change", async (_name, away, back) => {
+    const wrapper = mountInspector(); const vm = wrapper.vm as any;
+    const old = deferred(); apiGet.mockReturnValueOnce(old.promise);
+    const opening = vm.openToRunTrials();
+    away(); back();
+    old.resolve(response(100));
+    await opening;
+    expect(wrapper.emitted("open-trial")).toBeUndefined();
+    expect(toastAdd).not.toHaveBeenCalled();
+  });
+
+  it("keeps a missing exact detail result unavailable rather than handing off its preview", async () => {
+    const wrapper = mountInspector(); const vm = wrapper.vm as any;
+    apiGet.mockRejectedValueOnce(new Error("Retained evidence missing"));
+    await vm.openToRunTrials();
+    expect(wrapper.emitted("open-trial")).toBeUndefined();
+    expect(vm.quickPlotEvidenceError).toContain("exact retained output is unavailable");
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Data unavailable" }));
+  });
+
+  it("opens an unexecuted node for editing and trial without inventing retained output", async () => {
+    const wrapper = mountInspector();
+    await wrapper.setProps({ nodeOutput: null });
+    await (wrapper.vm as any).openToRunTrials();
+    const [detail] = wrapper.emitted("open-trial")!.at(-1)! as any[];
+    expect(detail.output).toBeNull();
+    expect(apiGet).not.toHaveBeenCalled();
+  });
+
+  it("opens an unexecuted connected node when an ancestor's retained result is unavailable", async () => {
+    const wrapper = mountInspector();
+    await wrapper.setProps({ nodeOutput: null, inputConnections: [{ nodeId: "ancestor", nodeType: "data.file_load",
+      nodeLabel: "Ancestor", port: "default", toPort: "X", data: output() }] });
+    apiGet.mockRejectedValueOnce(new Error("Ancestor retention unavailable"));
+    await (wrapper.vm as any).openToRunTrials();
+    const [detail] = wrapper.emitted("open-trial")!.at(-1)! as any[];
+    expect(detail.output).toBeNull();
+    expect(detail.inputConnections[0].data).toBeNull();
+    expect(detail.inputData).toBeNull();
+    expect(toastAdd).not.toHaveBeenCalled();
   });
 
   it("rejects a node change while retained Data View loads", async () => {

@@ -32,7 +32,7 @@
         </label>
         <PairedEvaluationPanel :recipes="pairedRecipes" />
       </details>
-      <p v-if="scientificComparison" class="qualification-note" role="status">This overview is descriptive. Use the qualified scientific sections above for paired conclusions.</p>
+      <p v-if="scientificComparison" class="qualification-note" role="status">Descriptive overview · paired conclusions above.</p>
       <p v-else-if="!rankableMetrics?.length" class="qualification-note" role="status">
         Differences are arithmetic only; ranking requires matching evaluation evidence.
       </p>

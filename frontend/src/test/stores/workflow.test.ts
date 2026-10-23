@@ -673,6 +673,9 @@ describe("Workflow Store execution state restoration on loadWorkflow", () => {
     expect(dataNode).toBeDefined();
     expect(plsdaNode).toBeDefined();
     expect(dataNode?.label).toBe("Data");
+    // Zero is a valid canvas coordinate and must survive save/reopen.
+    expect(dataNode?.x).toBe(0);
+    expect(dataNode?.y).toBe(0);
     expect(plsdaNode?.label).toBe("PLS-DA");
     expect(dataNode?.executionState?.status).toBe("completed");
     expect(plsdaNode?.executionState?.status).toBe("completed");

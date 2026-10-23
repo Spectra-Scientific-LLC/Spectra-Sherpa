@@ -1,4 +1,5 @@
 import { mount } from "@vue/test-utils";
+import { plotContext } from "@/utils/plotContext";
 import { describe, expect, it } from "vitest";
 import { nextTick } from "vue";
 
@@ -11,6 +12,40 @@ import { datasetMetadataGroupingState } from "@/utils/sampleMetadataGrouping";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe("QuickPlotModal", () => {
+  it.each(["data.file_load", "preprocess.scale"])("keeps alternate coordinate controls for %s without inventing absent labels", async (nodeType) => {
+    const wire = { data: [[1, 2, 3]], x_axis: { data: [1000, 900, 800], title: "Wavenumber", units: "cm-1",
+      alternate_scales: [{ name: "Wavelength", values: [10000, 11111, 12500], title: "Wavelength", units: "nm", source_set_index: 1 }] },
+      y_axis: { labels: ["sample-1"], alternate_label_sets: [{ name: "Names", values: ["Lavender"], source_set_index: 1 }] } };
+    const wrapper = mount(QuickPlotModal, { props: { embedded: true, modelValue: true, nodeType, nodeLabel: "Source", nodeInputs: { X: { value: wire } },
+      nodeOutput: { data: wire.data, presentation_value: wire, metadata: { scientific_presentation: scientificPresentation("spectral_dataset") },
+        ports: { default: { value: wire, data: wire.data, metadata: {} } }, primary_port: "default" } }, global: { stubs: globalStubs } });
+    const vm = wrapper.vm as any;
+    expect(wrapper.text()).toContain("Coordinate scale");
+    vm.selectedFeatureScale = "scale:Wavelength";
+    vm.selectedSampleLabels = "labels:Names";
+    await nextTick();
+    expect(vm.displayPlotData[0]).toMatchObject({ x: [10000, 11111, 12500], y: [1, 2, 3] });
+    expect(vm.displayPlotData[0].name).toContain("Lavender");
+    expect(vm.displayPlotLayout.xaxis.title).toContain("nm");
+    if (nodeType === "preprocess.scale") expect(vm.displayPlotData).toHaveLength(2);
+    wrapper.unmount();
+  });
+  it("does not let absent output metadata mask the input's feature axis", async () => {
+    const wire = { data: [[1, 2, 3]], x_axis: { data: [1000, 900, 800], title: "Wavenumber", units: "cm-1" } };
+    const wrapper = mount(QuickPlotModal, { props: { embedded: true, modelValue: true, nodeType: "selection.stability",
+      nodeLabel: "Stability", nodeInputs: { X: { value: wire } },
+      nodeOutput: { data: [], presentation_value: { per_variable_frequency: [0.2, 0.5, 1] }, metadata: {
+        scientific_presentation: { ...scientificPresentation("metric_record"), presentation_id: "stability",
+          source_port: "stability", source_ports: ["stability"], modes: ["record"] },
+        // Serialized placeholders for values this node did not produce.
+        x_title: "", x_units: null, wavenumbers: [] } } }, global: { stubs: globalStubs } });
+    const vm = wrapper.vm as any;
+    vm.selectedPlotKey = "scientific_selection_stability";
+    await nextTick();
+    expect(vm.displayPlotData[0].x).toEqual([1000, 900, 800]);
+    expect(vm.displayPlotLayout.xaxis.title).toContain("Wavenumber (cm-1)");
+    wrapper.unmount();
+  });
   it("formats plot-table coordinates without changing retained data", () => {
     const wrapper = mount(QuickPlotModal, {
       props: { modelValue: true, nodeType: "model.pca", nodeLabel: "PCA", nodeOutput: { data: [], metadata: {} } },
@@ -222,6 +257,14 @@ describe("QuickPlotModal", () => {
       ["heatmap", [1100, 1000], ["input B"], [[20, 30]]],
     ]);
     expect(vm.displayPlotLayout.yaxis.domain[0]).toBeGreaterThan(vm.displayPlotLayout.yaxis2.domain[1]);
+    wrapper.findComponent({ name: "PlotlyChart" }).vm.$emit("click", { points: [{ curveNumber: 1, pointNumber: [0, 1] }] });
+    await nextTick();
+    expect(vm.matrixSlices.horizontal).toMatchObject({ x: [1100, 1000], y: [20, 30] });
+    expect(vm.matrixSlices.vertical).toMatchObject({ x: ["input B"], y: [30] });
+    expect(wrapper.find('[aria-label="Matrix slices"]').exists()).toBe(true);
+    vm.selectedPlotKey = "spectra_overlay";
+    await nextTick();
+    expect(wrapper.find('[aria-label="Matrix slices"]').exists()).toBe(false);
     wrapper.unmount();
   });
 
@@ -269,8 +312,10 @@ describe("QuickPlotModal", () => {
       nodeInputs: { X: { value: { data, x_axis: { labels: ["a", "b"] }, y_axis: { labels: data.map((_, i) => `s${i}`), include_mask: data.map((_, i) => i !== 0) } }, metadata: { data_role: "X_features" } } },
       nodeOutput: { data: [[2, 3]], metadata: { data_role: "X_features", feature_names: ["a", "b"], sample_labels: ["s1"] } } }, global: { stubs: globalStubs } });
     const vm = wrapper.vm as any;
-    expect(wrapper.text()).toContain("50 of 59 active rows shown; first 50 rows, 9 unplotted; 1 rows");
-    expect(wrapper.text()).toContain("Preprocessed: 1 of 1 active rows shown");
+    const context = plotContext(vm.displayPlotLayout, vm.plotContextExtra);
+    expect(context).toContain("Original: 50 of 59 active rows (first active rows); 1 excluded rows");
+    expect(context).toContain("Preprocessed: 1 of 1 active rows");
+    expect(wrapper.find(".plot-sampling-disclosure").exists()).toBe(false);
     expect(vm.displayPlotData[0].name).toBe("s1");
     expect(vm.displayPlotData[0].x).toEqual(["a", "b"]);
     vm.selectedPlotKey = "spectra_heatmap";
@@ -299,10 +344,11 @@ describe("QuickPlotModal", () => {
       global: { stubs: globalStubs },
     });
 
-    const disclosure = wrapper.find(".plot-sampling-disclosure");
-    expect(disclosure.text()).toContain("50 of 460 source spectra (10.9%)");
-    expect(disclosure.text()).toContain("Data view: plotted traces only");
-    expect(disclosure.find('a[href$="#display-and-table-exports"]').exists()).toBe(true);
+    const disclosure = (wrapper.vm as any).plotContextExtra;
+    expect(disclosure).toContain("50 of 460 source spectra; evenly spaced rows");
+    expect(disclosure).toContain("Data view contains plotted traces only");
+    expect(wrapper.findComponent({ name: "PlotlyChart" }).attributes("context")).toBe(disclosure);
+    expect(wrapper.findComponent({ name: "PlotlyChart" }).props("sourcePopulation")).toMatchObject({ shown: 50, total: 460 });
     expect(wrapper.html()).toContain("View Plotted Data");
     expect((wrapper.vm as any).dataPreview).toHaveLength(50);
 
@@ -311,6 +357,7 @@ describe("QuickPlotModal", () => {
     expect((wrapper.vm as any).dataPreviewSummary).toBe(
       "50 plotted traces of 460 source spectra; full source matrix is not in this view",
     );
+    expect(wrapper.get(".display-subset-indicator").isVisible()).toBe(true);
     wrapper.unmount();
   });
 
@@ -348,8 +395,8 @@ describe("QuickPlotModal", () => {
       global: { stubs: globalStubs },
     });
 
-    const disclosure = wrapper.find(".plot-sampling-disclosure").text();
-    expect(disclosure).toContain("50 of 80 source samples (62.5%)");
+    const disclosure = (wrapper.vm as any).plotContextExtra;
+    expect(disclosure).toContain("50 of 80 source samples");
     expect(disclosure).not.toContain("spectra");
     wrapper.unmount();
   });
@@ -642,7 +689,7 @@ describe("QuickPlotModal", () => {
     ]);
   });
 
-  it("renders uncolored PCA scores while explaining refused metadata grouping", () => {
+  it("keeps optional styling in help but exposes a failed explicit request", async () => {
     const scores = [[1.2, -0.5], [-0.8, 0.7]];
     const scoreValue = {
       type: "SherpaDataset",
@@ -674,7 +721,7 @@ describe("QuickPlotModal", () => {
       global: { stubs: globalStubs },
     });
 
-    expect(wrapper.text()).toContain(
+    expect((wrapper.vm as any).plotContextExtra).toContain(
       "Metadata grouping refused: sample IDs do not exactly match score-row labels.",
     );
     expect(wrapper.text()).not.toContain("No data to display");
@@ -690,6 +737,19 @@ describe("QuickPlotModal", () => {
     expect((wrapper.vm as any).displayPlotLayout.meta.metadata_grouping_notice).toContain(
       "sample IDs do not exactly match score-row labels",
     );
+    const vm = wrapper.vm as any;
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    vm.sampleColorField = "specimen_id";
+    // An automatic default is not an explicit user request.
+    await nextTick();
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    vm.metadataStyleRequested = true;
+    await nextTick();
+    expect(wrapper.get('[role="alert"]').text()).toContain("sample IDs do not exactly match");
+    expect(vm.plotContextExtra).not.toContain("sample IDs do not exactly match");
+    vm.sampleColorField = "__none__";
+    await nextTick();
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
     wrapper.unmount();
   });
 

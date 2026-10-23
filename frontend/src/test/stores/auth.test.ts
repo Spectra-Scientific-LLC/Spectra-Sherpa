@@ -35,14 +35,14 @@ describe("OSS auth store (identity-only, post-v0.4.1)", () => {
   });
 
   describe("clearCredentials", () => {
-    it("removes token and api_key and drops user without navigation", () => {
+    it("removes token and api_key and drops user without navigation", async () => {
       writeStoredApiKey("key");
       const store = useAuthStore();
       store.token = "jwt";
       localStorage.setItem("token", "jwt");
       store.user = { id: 1, username: "a", capabilities: { admin: false } };
 
-      store.clearCredentials();
+      await store.clearCredentials();
 
       expect(store.token).toBeNull();
       expect(store.user).toBeNull();
@@ -86,6 +86,55 @@ describe("OSS auth store (identity-only, post-v0.4.1)", () => {
       await store.initializeActor();
 
       expect(store.user).toBeNull();
+    });
+  });
+
+  describe("session identity versus renewable credentials", () => {
+    function signedIn() {
+      const auth = useAuthStore();
+      auth.token = "original";
+      localStorage.setItem("token", "original");
+      auth.user = { id: 7, username: "first" };
+      return auth;
+    }
+    it("only an acknowledged renewal preserves the session revision", async () => {
+      const auth = signedIn();
+      const captured = auth.captureSession();
+      expect(await auth.acceptRenewal(captured, "renewed")).toBe(true);
+      expect(auth.sessionRevision).toBe(captured.revision);
+      expect(auth.token).toBe("renewed");
+      auth.token = "another-login-same-account";
+      expect(auth.sessionRevision).toBeGreaterThan(captured.revision);
+    });
+    it.each(["logout", "actor", "token", "aba", "storage"])("rejects a late refresh after %s changes", async kind => {
+      const auth = signedIn();
+      const captured = auth.captureSession();
+      if (kind === "logout") await auth.clearCredentials();
+      if (kind === "actor") auth.user = { id: 8, username: "second" };
+      if (kind === "token") auth.token = "replacement";
+      if (kind === "aba") { auth.token = "other"; auth.token = "original"; }
+      if (kind === "storage") localStorage.setItem("token", "another-tab");
+      const before = localStorage.getItem("token");
+      expect(await auth.acceptRenewal(captured, "late")).toBe(false);
+      expect(localStorage.getItem("token")).toBe(before);
+    });
+    it("leaves the current credential and identity intact when persistence fails", async () => {
+      const auth = signedIn();
+      const captured = auth.captureSession();
+      const write = vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => { throw new Error("full"); });
+      await expect(auth.acceptRenewal(captured, "renewed")).rejects.toThrow("full");
+      expect(auth.token).toBe("original");
+      expect(auth.sessionRevision).toBe(captured.revision);
+      write.mockRestore();
+    });
+    it("invalidates a different tab's replacement or logout before it can reuse the actor", () => {
+      const auth = signedIn();
+      const revision = auth.sessionRevision;
+      localStorage.setItem("token", "another-account");
+      window.dispatchEvent(new StorageEvent("storage", { key: "token", newValue: "another-account" }));
+      expect(auth.token).toBe("another-account");
+      expect(auth.user).toBeNull();
+      expect(auth.sessionRevision).toBeGreaterThan(revision);
     });
   });
 });

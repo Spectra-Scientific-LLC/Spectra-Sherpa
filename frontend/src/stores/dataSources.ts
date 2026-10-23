@@ -31,7 +31,7 @@ export const useDataSourceStore = defineStore("dataSources", () => {
   const dataSources = ref<ProjectDataSource[]>([]);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
-  const identity = () => [useAuthStore().user?.id, useAuthStore().token, activeProjectScope.value, projectId.value];
+  const identity = () => [useAuthStore().user?.id, useAuthStore().sessionRevision, activeProjectScope.value, projectId.value];
   const readScope = useScopedRequest(identity, () => { isLoading.value = false; });
   const mutationScope = useScopedRequest(identity);
   let mutationTicket: ScopedRequestTicket | undefined;

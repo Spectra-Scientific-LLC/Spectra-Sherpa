@@ -17,6 +17,17 @@ export function assertMatrix(actual: number[][], expected: number[][], tolerance
   });
 }
 
+/** Exact six-significant-digit default display, independent of production formatting.
+ * Full-precision values are asserted separately in CSVs and plot arrays.
+ */
+export function assertDefaultDisplayMatrix(actual: string[][], expected: number[][]): void {
+  assert.ok(expected.length > 0, "An acceptance oracle must not be empty");
+  assert.deepEqual(actual, expected.map(row => row.map(value => {
+    assert.ok(Number.isFinite(value), "Display oracle must be finite");
+    return value.toPrecision(6);
+  })), "Default scientific display must preserve correctly rounded values and shape");
+}
+
 export function assertIdentity(actual: string[], expected: string[]): void {
   assert.deepEqual(
     actual,

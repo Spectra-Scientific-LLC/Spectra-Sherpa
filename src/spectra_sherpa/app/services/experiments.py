@@ -245,6 +245,9 @@ async def create_experiment(
     description: str | None,
     metadata: dict[str, Any],
     project_id: int | None = None,
+    *,
+    flush_only: bool = False,
+    created_paths: list[Path] | None = None,
 ) -> Experiment:
     experiment = Experiment(
         user_id=user_id,
@@ -255,6 +258,10 @@ async def create_experiment(
     )
     session.add(experiment)
     await session.flush()
+    # Register before the first write so a caller that rolls back can remove a
+    # directory this call created; never claim one that already existed.
+    if created_paths is not None and not experiment_dir(experiment.id).exists():
+        created_paths.append(experiment_dir(experiment.id))
 
     try:
         metadata_file = metadata_path_for(experiment.id)
@@ -273,7 +280,10 @@ async def create_experiment(
             after={"name": experiment.name, "project_id": experiment.project_id},
         )
 
-        await session.commit()
+        if flush_only:
+            await session.flush()
+        else:
+            await session.commit()
     except Exception:
         await session.rollback()
         raise

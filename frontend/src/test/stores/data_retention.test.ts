@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useDataStore } from "@/stores/data";
 import { useProjectStore } from "@/stores/project";
 import type { ExperimentSummary } from "@/types";
+import { retainedDatasetWorkspace, retainCompleteSource, retainedCompleteSource } from "@/utils/retainedInspection";
 
 vi.mock("@/api/client", () => ({
   default: {
@@ -23,6 +24,21 @@ function setScope(userId: number, projectId: number) {
 }
 
 describe("data store state retention", () => {
+  it("invalidates source receipts on logout while Data is unmounted, including same-account login", () => {
+    setActivePinia(createPinia());
+    setScope(7, 12);
+    const store = useDataStore();
+    const source = { n_samples: 1, n_features: 1, data: [[1]] };
+    const scope = "7:12:44:files";
+    const workspace = retainedDatasetWorkspace(store, "7:12");
+    workspace.set(44, source);
+    retainCompleteSource(source, scope);
+    useAuthStore().clearCredentials();
+    setScope(7, 12);
+    expect(workspace.size).toBe(0);
+    expect(retainedDatasetWorkspace(store, "7:12").size).toBe(0);
+    expect(retainedCompleteSource(source, scope)).toBeNull();
+  });
   it.each(["raw", "synthetic", "preprocessed"] as const)("retains the sole imported %s source for all-files inspection", async (stage) => {
     setActivePinia(createPinia());
     const store = useDataStore();

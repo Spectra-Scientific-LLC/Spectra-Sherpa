@@ -197,10 +197,10 @@ export const useSynthesisStore = defineStore("synthesis", () => {
   const searching = ref(false);
   const previewing = ref(false);
   const writes = useSynthesisSave(() => [
-    useAuthStore().user?.id, useAuthStore().token, useProjectStore().currentProjectId,
+    useAuthStore().user?.id, useAuthStore().sessionRevision, useProjectStore().currentProjectId,
   ]);
   const saving = ref(false);
-  const saveOwner = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token]);
+  const saveOwner = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().sessionRevision]);
   async function save(projectId: number | null, items: readonly SynthesisSaveItem[]) {
     if (saving.value) throw new Error("A synthesis save is already in progress.");
     const owner = saveOwner.begin();

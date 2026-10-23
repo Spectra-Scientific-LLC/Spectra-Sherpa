@@ -1,3 +1,12 @@
+// Deterministic Web Locks platform stand-in; production uses the browser lock.
+let sessionLock: Promise<unknown> = Promise.resolve();
+Object.defineProperty(navigator, "locks", { configurable: true, value: {
+  request: (_name: string, action: () => unknown) => {
+    const result = sessionLock.then(action);
+    sessionLock = result.catch(() => undefined);
+    return result;
+  },
+} });
 import { vi } from 'vitest'
 import axios from 'axios'
 

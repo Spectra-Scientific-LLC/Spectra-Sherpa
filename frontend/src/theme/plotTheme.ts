@@ -1,5 +1,9 @@
 import type { DisplayPreferences } from "@/composables/useDisplayPreferences";
+import type { InjectionKey } from "vue";
 import { themeToken } from "./interfaceTheme";
+
+export type PlotSurface = "screen" | "panel" | "print";
+export const PLOT_SURFACE: InjectionKey<PlotSurface> = Symbol("scientific-plot-surface");
 
 /** Categorical series only. Never use these as sequential/diverging scales or
  * infer scientific/status meaning from a trace's existing color. */
@@ -14,7 +18,9 @@ export const EXTENDED_COLORS = [
 ];
 const ACCESSIBLE_PALETTES = {
   colorblind: ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"],
-  "high-contrast": ["#002B7F", "#B62020", "#006B45", "#671094", "#A05500", "#006D83"],
+  // The same category keeps its color in dark panels and light exports.
+  // Each color has >=3:1 contrast against both declared plot papers.
+  "high-contrast": ["#2677C9", "#C94646", "#21835A", "#9266B6", "#A66B00", "#078487"],
 };
 export type PlotPalette = DisplayPreferences["palette"];
 
@@ -73,36 +79,68 @@ export const PRINT_PLOT_THEME = {
   observation: themeToken("action"),
 } as const;
 
+/** Dark result panels share the interface tokens; print remains light. */
+export const PANEL_PLOT_THEME = {
+  paper: themeToken("panel-inset"),
+  text: themeToken("panel-text"),
+  axis: themeToken("panel-secondary"),
+  grid: themeToken("panel-raised"),
+} as const;
+
+/** Labels/colorbars must follow dark paper; numeric colors and data stay intact. */
+export function themedPlotTrace(trace: Record<string, unknown>, surface: PlotSurface): Record<string, unknown> {
+  if (surface !== "panel") return trace;
+  const font = (value: unknown) => ({ ...(value && typeof value === "object" ? value : {}), color: PANEL_PLOT_THEME.text });
+  const colorbar = (value: unknown) => {
+    if (!value || typeof value !== "object") return value;
+    const bar = value as Record<string, unknown>;
+    return { ...bar, tickfont: font(bar.tickfont), ...(bar.title && typeof bar.title === "object"
+      ? { title: { ...bar.title, font: font((bar.title as Record<string, unknown>).font) } } : {}) };
+  };
+  const marker = trace.marker as Record<string, unknown> | undefined;
+  return { ...trace,
+    ...(trace.textfont ? { textfont: font(trace.textfont) } : {}),
+    ...(trace.colorbar ? { colorbar: colorbar(trace.colorbar) } : {}),
+    ...(marker?.colorbar ? { marker: { ...marker, colorbar: colorbar(marker.colorbar) } } : {}),
+  };
+}
+
 /** Layout defaults cannot override explicit scientific scales or reference
  * styling. Producers with categorical colors use categoricalPalette too. */
 export function themedPlotLayout(
   layout: Record<string, unknown>,
   preference: PlotPalette,
-  target: "screen" | "print" = "screen",
+  target: PlotSurface = "screen",
 ): Record<string, unknown> {
-  const textColor = PRINT_PLOT_THEME.text;
+  const theme = target === "panel" ? PANEL_PLOT_THEME : PRINT_PLOT_THEME;
+  const textColor = theme.text;
   const font = (value: unknown) => ({ ...(value && typeof value === "object" ? value : {}), color: textColor });
   const titled = (value: unknown) => value && typeof value === "object"
     ? { ...value, font: font((value as Record<string, unknown>).font) } : value;
-  // Plot paper is explicit on screen too. Retained dark-mode tick/title colors
-  // cannot silently become unreadable when a plot opens on a light surface.
+  // Surface typography is presentation, never a change to scientific encoding.
   const axes = Object.fromEntries(Object.entries(layout).filter(([key, value]) =>
     /^[xy]axis\d*$/.test(key) && value && typeof value === "object").map(([key, value]) => {
       const axis = value as Record<string, unknown>;
-      return [key, { ...axis, color: PRINT_PLOT_THEME.axis, tickfont: font(axis.tickfont),
+      return [key, { ...axis, color: theme.axis, tickfont: font(axis.tickfont),
+        ...(target === "panel" ? { gridcolor: PANEL_PLOT_THEME.grid, linecolor: theme.axis } : {}),
         ...(axis.title !== undefined ? { title: titled(axis.title) } : {}) }];
     }));
+  const colorAxes = target === "panel" ? Object.fromEntries(Object.entries(layout)
+    .filter(([key, value]) => /^coloraxis\d*$/.test(key) && value && typeof value === "object")
+    .map(([key, value]) => [key, themedPlotTrace(value as Record<string, unknown>, target)])) : {};
   return {
     ...layout,
     ...axes,
-    paper_bgcolor: PRINT_PLOT_THEME.paper,
-    plot_bgcolor: PRINT_PLOT_THEME.paper,
+    ...colorAxes,
+    paper_bgcolor: theme.paper,
+    plot_bgcolor: theme.paper,
     font: font(layout.font),
     ...(layout.title !== undefined ? { title: titled(layout.title) } : {}),
-    ...(layout.legend ? { legend: { ...(layout.legend as Record<string, unknown>), bgcolor: PRINT_PLOT_THEME.paper, font: font((layout.legend as Record<string, unknown>).font) } } : {}),
+    ...(layout.legend ? { legend: { ...(layout.legend as Record<string, unknown>), bgcolor: theme.paper, font: font((layout.legend as Record<string, unknown>).font) } } : {}),
+    ...(target === "panel" ? {
+      modebar: { ...(layout.modebar as Record<string, unknown>), bgcolor: theme.paper, color: theme.axis, activecolor: theme.text },
+      annotations: Array.isArray(layout.annotations) ? layout.annotations.map((item) => ({ ...item, font: font(item.font) })) : layout.annotations,
+    } : {}),
     ...(preference === "default" ? {} : { colorway: [...categoricalPalette(preference)] }),
-    // Same colors in screen PNG and report capture; print is a standalone
-    // policy, not a transformation of the scientific data or reference lines.
-    ...(target === "print" ? { paper_bgcolor: PRINT_PLOT_THEME.paper } : {}),
   };
 }

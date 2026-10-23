@@ -65,6 +65,8 @@
             </div>
 
             <Dropdown
+
+              panelClass="ss-panel-theme"
               v-else-if="param.type === 'select'"
               :model-value="localParams[param.name]"
               @update:model-value="(v) => $emit('updateParam', param.name, v)"
@@ -82,6 +84,7 @@
                 <span>No trained artifacts yet — run a training node first.</span>
               </div>
               <Dropdown
+                panelClass="ss-panel-theme"
                 :model-value="localParams[param.name]"
                 @update:model-value="(v) => $emit('updateParam', param.name, v)"
                 :id="param.name"

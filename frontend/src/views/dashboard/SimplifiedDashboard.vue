@@ -19,7 +19,7 @@
       <WorkspaceContextItem
         v-if="activeDashboardTab === 'starter'"
         label="Starter"
-        :value="activeGoalProject ? `${activeGoalProject.name}: ${activeGoalProject.goal_plan?.intent_label}` : 'Describe a goal'"
+        :value="activeGoalProject ? `${activeGoalProject.name}: ${activeGoalProject.goal_plan?.intent_label}` : ''"
       />
       <WorkspaceContextItem
         v-else
@@ -200,12 +200,8 @@
             option-label="label"
             option-value="value"
             placeholder="Choose dataset"
-            aria-describedby="analysis-dataset-help"
             class="analysis-dataset-filter__control"
           />
-          <small id="analysis-dataset-help" v-if="!isLocalMode && !selectedDatasetId">
-            Choose a dataset to enable Start.
-          </small>
           <div v-if="selectedDatasetNeedsImport" class="dataset-import-notice" role="status">
             <span>Needs file import. Starting creates a project; import the provider file before running.</span>
             <Button label="Data → Import" icon="pi pi-upload" class="p-button-text p-button-sm"
@@ -215,7 +211,7 @@
         <article class="starter-card">
           <div class="starter-card__body">
             <h5>Blank Project</h5>
-            <p>Start clean, then import data.</p>
+            <p>Choose data later.</p>
           </div>
           <Button
             label="Start"
@@ -223,7 +219,7 @@
             icon-pos="right"
             class="p-button-outlined"
             :loading="isStartingAnalysis && selectedTemplateId === null"
-            :disabled="(!isLocalMode && !selectedDatasetId) || isStartingAnalysis"
+            :disabled="isStartingAnalysis"
             @click="startBlankProject"
           />
         </article>
@@ -455,6 +451,12 @@ function onStarterOverview(overview: StarterOverview): void {
 
 async function startFromGoal(request: StarterStartRequest): Promise<void> {
   const { plan, dataset } = request;
+  // A session change after mount clears the catalogs; reload them before
+  // resolving the plan rather than reporting its choices as unlisted.
+  await Promise.allSettled([
+    workflowStore.templates.length ? undefined : workflowStore.fetchTemplates(undefined, true),
+    dataset?.kind === "reference" ? workflowStore.fetchCompatibilityMatrix() : undefined,
+  ]);
   const template = plan.template_slug
     ? workflowStore.templates.find((candidate) => candidate.slug === plan.template_slug)
     : undefined;
@@ -562,8 +564,8 @@ async function createAnalysisStarter(template?: WorkflowTemplate, goalStart?: An
   const dataset = goalStart ? goalStart.dataset : selectedDataset.value;
   const experimentId = goalStart?.experimentId ?? null;
   // A goal without a chosen dataset starts blank; its plan names the starter.
-  const blankLocalProject = (!template || !!goalStart) && !dataset && isLocalMode.value;
-  if (!dataset && !blankLocalProject && experimentId == null) {
+  const blankProject = (!template || !!goalStart) && !dataset;
+  if (!dataset && !blankProject && experimentId == null) {
     toast.add({
       severity: "warn",
       summary: "Choose a Dataset",
@@ -623,7 +625,7 @@ async function createAnalysisStarter(template?: WorkflowTemplate, goalStart?: An
         },
         templateSlug,
       );
-    } else if (goalStart) {
+    } else if (goalStart && isLocalMode.value) {
       persistAnalysisStarterIntent(
         project.id,
         { dataset_id: "upload:own-files", source: "upload", name: "own-files", label: "Your own files" },
@@ -645,7 +647,8 @@ async function createAnalysisStarter(template?: WorkflowTemplate, goalStart?: An
     // A selected reference is part of the starter contract, so land on the
     // import surface where it can be admitted into this project immediately.
     // The user's own dataset opens in My Dataset, ready to send to Workflow;
-    // a goal without data opens Upload. Other blank projects open the
+    // a local goal without data opens Upload; hosted goals open Import.
+    // Other blank projects open the
     // project overview. In every goal path the recorded intent carries the
     // plan's starter template to the Workflow builder.
     if (experimentId != null) {
@@ -653,7 +656,7 @@ async function createAnalysisStarter(template?: WorkflowTemplate, goalStart?: An
     } else if (dataset) {
       await router.push({ path: "/data", query: { tab: "import" } });
     } else if (goalStart) {
-      await router.push({ path: "/data", query: { tab: "upload" } });
+      await router.push({ path: "/data", query: { tab: isLocalMode.value ? "upload" : "import" } });
     } else {
       await router.push("/project");
     }

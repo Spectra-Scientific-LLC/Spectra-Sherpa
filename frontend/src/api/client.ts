@@ -1,8 +1,11 @@
+import { readBrowserToken, readBrowserSession, sameBrowserSession, endBrowserSession, type BrowserSession } from '@/extension-contract/session-v1';
+import { getActivePinia } from 'pinia';
 import axios, { type AxiosError } from "axios";
 import { updateDemoQuotaFromRateLimit } from "@/composables/demoModeState";
 import { useNotifier } from "@/composables/useNotifier";
 import { clearStoredApiKey, readStoredApiKey } from "@/utils/authStorage";
 import { isDemoUpgradeError, redactSensitiveText } from "@/utils/errors";
+import { enableGuiTrace, resetGuiTrace, traceGui, traceOperation } from "@/lib/guiTrace";
 
 // Use relative URL in production (nginx proxies to backend)
 // Use absolute URL in development for Vite dev server
@@ -25,6 +28,8 @@ const ASYNC_ERROR_PATH_HINTS = [
 ];
 const ASYNC_ERROR_DEDUPE_WINDOW_MS = 15000;
 const asyncErrorDedup = new Map<string, number>();
+const traceStarts = new WeakMap<object, number>();
+let traceCredential: string | null | undefined;
 
 function normalizeUrlPath(rawUrl: string | undefined): string {
   if (!rawUrl) return "";
@@ -144,24 +149,61 @@ function emitAsyncApiErrorNotification(error: AxiosError): void {
  *
  * JWT takes precedence if both are present.
  */
-api.interceptors.request.use((config) => {
+const requestSessions = new WeakMap<object, BrowserSession>();
+api.interceptors.request.use(async (config) => {
+  const initiating = readBrowserSession();
+  if (getActivePinia()) {
+    const { useAuthStore } = await import('@/stores/auth');
+    const auth = useAuthStore();
+    const revision = auth.sessionRevision;
+    await auth.ensureStoredSession();
+    const bootstrap = config.url === '/config' || /^\/auth\/(me|login|register|verify|resend)/.test(config.url ?? '');
+    if (revision !== auth.sessionRevision ||
+        (!bootstrap && readBrowserToken() && !auth.user)) {
+      throw new Error('Login session changed. Retry from the current account.');
+    }
+  }
+  const validated = readBrowserSession();
+  if (initiating.loginId !== validated.loginId) {
+    throw new Error('Login session changed before request dispatch.');
+  }
+  requestSessions.set(config, validated);
   config.headers = config.headers || {};
 
   // Check for JWT token first (user login auth)
-  const token = localStorage.getItem("token");
+  const token = validated.token;
   if (token) {
     config.headers["Authorization"] = `Bearer ${token}`;
   }
 
   // Send one credential: a stale machine key must not replace the JWT actor.
   const apiKey = readStoredApiKey();
+  const credential = token || apiKey;
+  if (traceCredential !== credential) { resetGuiTrace(); traceCredential = credential; }
   if (token) {
     config.headers.delete("X-API-Key");
   } else if (apiKey) {
     config.headers["X-API-Key"] = apiKey;
   }
 
+  if (config.url !== "/logs/workspace-events") {
+    traceStarts.set(config, performance.now());
+    traceGui(traceOperation(config.url, config.method), "start");
+  }
   return config;
+});
+
+api.interceptors.response.use(response => {
+  if (response.config.url !== "/logs/workspace-events") {
+    traceGui(traceOperation(response.config.url, response.config.method), "ok", {
+      status: response.status, elapsed_ms: Math.min(3600000, Math.round(performance.now() - (traceStarts.get(response.config) ?? performance.now()))),
+    });
+    if (response.headers["x-sherpa-gui-trace"] === "1") enableGuiTrace(body => api.post("/logs/workspace-events", body));
+  }
+  return response;
+}, error => {
+  if (error.config?.url !== "/logs/workspace-events") traceGui(traceOperation(error.config?.url, error.config?.method), axios.isCancel(error) ? "cancelled" : "error", { status: error.response?.status ?? 0 });
+  return Promise.reject(error);
 });
 
 /**
@@ -196,6 +238,9 @@ api.interceptors.response.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Scope changes deliberately abort obsolete reads; they are not outages.
+    if (axios.isCancel(error)) return Promise.reject(error);
+    if (error.config?.url === "/logs/workspace-events") return Promise.reject(error);
     // Demo mode: 429 (execution / sherpa rate limit) — refresh banner
     // limit refs from the structured detail (limit_type, limit_per_hour,
     // limit_per_day, remaining). Old payloads with just `{remaining,
@@ -234,7 +279,8 @@ api.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
-      expireBrowserSession();
+      const rejected = requestSessions.get(error.config);
+      if (rejected && sameBrowserSession(rejected)) void expireBrowserSession(rejected);
     }
     return Promise.reject(error);
   },
@@ -242,10 +288,11 @@ api.interceptors.response.use(
 
 // Shared logout path. Session probes call this only after confirming that
 // their connection and credential are still current.
-export function expireBrowserSession(): void {
+export async function expireBrowserSession(expected = readBrowserSession()): Promise<void> {
   const path = window.location.pathname;
   if (!path.startsWith("/login") && !path.startsWith("/register")) {
-    localStorage.removeItem("token");
+    const cleared = await endBrowserSession(expected);
+    if (!cleared || !sameBrowserSession(cleared)) return;
     clearStoredApiKey();
     window.location.href = `/login?reason=session-expired&return_to=${encodeURIComponent(
       `${window.location.pathname}${window.location.search}${window.location.hash}`,

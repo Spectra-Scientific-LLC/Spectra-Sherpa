@@ -6,6 +6,7 @@ import type {
 } from "@/types";
 import type { NodeOutput, PortOutput } from "@/utils/nodeOutput";
 import rendererAuthority from "@/utils/scientific-presentation-renderers.json";
+import { t2QDiagnosticRows } from "@/utils/scientificPlots";
 
 export interface ResolvedScientificPresentation {
   contractDigest: string;
@@ -277,6 +278,11 @@ export const scientificEvidenceShape = (
   output: NodeOutput | null | undefined,
 ): ScientificEvidenceShape | null => {
   const identity = projectedPresentationIdentity(output);
+  if (identity?.kind === "t2_q_diagnostics") {
+    const rows = t2QDiagnosticRows(output?.presentation_value, output?.metadata || {});
+    return { rows: rows.length, cols: rows.length > 0 ? 2 : 0,
+      rowLabel: rows.length === 1 ? "sample" : "samples", colLabel: "statistics" };
+  }
   if (identity?.kind === "validation_result" && identity.presentation_id === "component_selection"
     && identity.source_port === "component_curve") {
     const curve = output?.presentation_value as Record<string, unknown> | undefined;

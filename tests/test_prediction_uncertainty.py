@@ -242,7 +242,7 @@ async def test_watch_persists_and_revalidates_population_declaration(
     source = dataset(12)
     source.target = None
     source.target_context = TargetContext()
-    materialize_export_artifact(build_export_artifact(source, filename="incoming.csv", format="csv"), incoming)
+    materialize_export_artifact(build_export_artifact(source, filename="incoming.csv", format="portable_csv"), incoming)
     enabled = await auth_client.post(f"/api/v1/deploy/watches/{watch_id}/enable")
     assert enabled.status_code == 200, enabled.text
     monkeypatch.setattr(folder_watch_service, "async_session", factory)

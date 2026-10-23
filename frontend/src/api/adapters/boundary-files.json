@@ -3,6 +3,7 @@
   "generated": ["src/types/api-generated.ts", "src/types/api/v1.ts"],
   "counts_order": ["interfaces", "objectAliases", "inlineApiLiterals"],
   "files": {
+    "src/extension-contract/session-v1.ts": [1, 0, 0],
     "src/api/adapters/datasets.ts": [0, 0, 0],
     "src/api/adapters/deploy.ts": [0, 0, 0],
     "src/api/adapters/projects.ts": [0, 0, 0],

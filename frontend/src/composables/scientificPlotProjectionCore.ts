@@ -4140,6 +4140,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
   return {
     plotBag,
+    featureScaleOptions, featureLabelSetOptions, featureTitleSetOptions, sampleLabelSetOptions, axisSetError,
     sampleColorFieldOptions,
     sampleSymbolFieldOptions,
     handleContourClick,

@@ -164,7 +164,7 @@ export const useProjectStore = defineStore("project", () => {
   // Identity changes invalidate the entire in-memory scientific workspace.
   // Keep per-user saved preferences, but never carry one user's active project
   // into another session or allow its pending reads to restore that context.
-  watch([() => useAuthStore().user?.id ?? null, () => useAuthStore().token], () => {
+  watch([() => useAuthStore().user?.id ?? null, () => useAuthStore().sessionRevision], () => {
     currentProjectId.value = null;
     currentProject.value = null;
     projects.value = [];
@@ -180,7 +180,7 @@ export const useProjectStore = defineStore("project", () => {
   }, { flush: "sync" });
   let requestedProjectId: number | null = null;
   const projectRead = useScopedRequest(
-    () => [useAuthStore().user?.id, useAuthStore().token],
+    () => [useAuthStore().user?.id, useAuthStore().sessionRevision],
     () => {
       requestedProjectId = null;
       if (loadingOwner && !loadingOwner.isCurrent()) finishLoading(loadingOwner);
@@ -204,18 +204,18 @@ export const useProjectStore = defineStore("project", () => {
     }
   }
   const workspaceMutation = useScopedRequest(
-    () => [useAuthStore().user?.id, useAuthStore().token, currentProjectId.value],
+    () => [useAuthStore().user?.id, useAuthStore().sessionRevision, currentProjectId.value],
     () => {
       if (loadingOwner && !loadingOwner.isCurrent()) finishLoading(loadingOwner);
     },
   );
   const captureMutationScope = workspaceMutation.capture;
-  const accountMutation = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token]);
-  const versionsRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token, currentProjectId.value]);
+  const accountMutation = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().sessionRevision]);
+  const versionsRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().sessionRevision, currentProjectId.value]);
   // These are account-wide inventories, not children of the active project.
   // Selecting a deep-linked project must not cancel the selector's own list.
-  const projectListRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token]);
-  const archiveListRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token]);
+  const projectListRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().sessionRevision]);
+  const archiveListRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().sessionRevision]);
   watch(currentProjectId, (id) => {
     if (currentProject.value?.id !== id) currentProject.value = null;
     versions.value = [];

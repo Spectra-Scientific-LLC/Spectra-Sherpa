@@ -14,7 +14,7 @@ const project = reactive({
   ensureProjectForBrowserTab: vi.fn(async () => {}),
   selectProject: vi.fn(async (id: number) => { project.currentProjectId = id; }),
 });
-const auth = reactive({ user: { id: 1 } as { id: number } | null, token: 'session-A' as string | null });
+const auth = reactive({ user: { id: 1 } as { id: number } | null, token: 'session-A' as string | null, get sessionRevision() { return this.token; } });
 vi.mock('@/stores/project', () => ({ useProjectStore: () => project }));
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }));
 let mounted: VueWrapper[] = [];
@@ -525,9 +525,9 @@ describe("Persistent run inspection", () => {
     });
     const { wrapper } = await open('?project=1&view=Summary');
     expect((wrapper.get('[aria-label="Run name"]').element as HTMLInputElement).value).toBe('PLS — abc12345');
-    expect(wrapper.get('.run-detail__identity').text()).toContain('Run #42');
+    expect(wrapper.get('.run-detail__identity').text()).not.toContain('Run #42');
     expect(wrapper.get('.summary').text()).toContain('PLS — abc12345');
-    expect(wrapper.get('[aria-label="Run actions"]').text()).toContain('Workflow: Peak Find + PLS');
+    expect(wrapper.get('[aria-label="Workflow: Peak Find + PLS"]').text()).toBe('Workflow');
     wrapper.unmount();
   });
   it("shows run identity and grouped actions before the final evidence warning", async () => {

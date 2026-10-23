@@ -1,3 +1,4 @@
+import { readBrowserToken, readBrowserSession, sameBrowserSession } from '@/extension-contract/session-v1';
 import api, { expireBrowserSession } from "@/api/client";
 import {
   clearStoredToken,
@@ -48,8 +49,7 @@ export const withCredentials = (wsUrl: string): string => {
  * Send one credential authority. An explicitly configured API key retains its
  * historical precedence over a stored browser token.
  */
-export const buildAuthMessage = (): string => {
-  const token = localStorage.getItem("token");
+export const buildAuthMessage = (token = readBrowserToken()): string => {
   const apiKey = readStoredApiKey();
   return JSON.stringify({
     type: "authenticate",
@@ -75,10 +75,11 @@ export const resolveWsPolicyClose = async (
   if (signal?.aborted) return "cancelled";
   if (!hasStoredToken()) return "no-credentials";
   if (hasStoredApiKey()) {
-    clearStoredToken();
+    await clearStoredToken();
     return "retry-with-api-key";
   }
-  const token = localStorage.getItem("token");
+  const token = readBrowserToken();
+  const session = readBrowserSession();
   const controller = new AbortController();
   let cancelWait!: () => void;
   const cancelled = new Promise<null>((resolve) => {
@@ -100,10 +101,10 @@ export const resolveWsPolicyClose = async (
     if (signal?.aborted) return "cancelled";
     // Renewal is not a disconnect: the current connection must retry with
     // its new credential rather than leave the handshake unresolved.
-    if (token !== localStorage.getItem("token")) return "session-unconfirmed";
+    if (token !== readBrowserToken() || !sameBrowserSession(session)) return "session-unconfirmed";
     if (!response || controller.signal.aborted) return "session-unconfirmed";
     if (response.status === 401) {
-      expireBrowserSession();
+      await expireBrowserSession(session);
       return "session-rejected";
     }
     return "session-confirmed";
@@ -111,7 +112,7 @@ export const resolveWsPolicyClose = async (
     if (signal?.aborted) return "cancelled";
     // Renewal is not a disconnect: the current connection must retry with
     // its new credential rather than leave the handshake unresolved.
-    if (token !== localStorage.getItem("token")) return "session-unconfirmed";
+    if (token !== readBrowserToken() || !sameBrowserSession(session)) return "session-unconfirmed";
     // A transport/server failure cannot invalidate a credential.
     return "session-unconfirmed";
   } finally {

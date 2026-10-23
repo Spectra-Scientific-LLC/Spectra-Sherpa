@@ -6,18 +6,23 @@ import {
   type AdvisorPromptRequestDetail,
 } from "@/lib/advisorPromptActions";
 import { guidanceRuleLabel } from "@/lib/guidanceRules";
+import { GUIDANCE_ACTIONS } from "@/lib/actionOntology";
 
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
   apiPatch: vi.fn(),
   routerPush: vi.fn(),
+  project: { currentProjectId: 7 as number | null },
+  workflow: { workflowId: 9 as number | null, restoredRunId: 31 as number | null },
+  notify: vi.fn(),
+  currentRoute: { value: { path: "/dashboard" } },
   wsSend: vi.fn(),
   ws: {
     readyState: WebSocket.OPEN,
     send: vi.fn(),
   },
   advisorActiveNode: {
-    value: null as { id: number; tab_key: string; subscope_key: string } | null,
+    value: null as { id: number; project_id: number; tab_key: string; subscope_key: string } | null,
   },
 }));
 
@@ -28,9 +33,14 @@ vi.mock("@/api/client", () => ({
   },
 }));
 
-vi.mock("vue-router", () => ({
+vi.mock("@/stores/project", () => ({ useProjectStore: () => mocks.project }));
+vi.mock("@/stores/workflow", () => ({ useWorkflowStore: () => mocks.workflow }));
+vi.mock("@/composables/useNotifier", () => ({ useNotifier: () => ({ notifySystemEvent: mocks.notify }) }));
+vi.mock("vue-router", async (original) => ({
+  ...await original<typeof import("vue-router")>(),
   useRouter: () => ({
     push: mocks.routerPush,
+    currentRoute: mocks.currentRoute,
   }),
 }));
 
@@ -67,8 +77,13 @@ function makeEvent(overrides: Partial<GuidanceEvent> = {}): GuidanceEvent {
 
 describe("guidance store", () => {
   beforeEach(() => {
+    document.body.replaceChildren();
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    mocks.currentRoute.value.path = "/dashboard";
+    mocks.project.currentProjectId = 7;
+    mocks.advisorActiveNode.value = null;
+    mocks.routerPush.mockImplementation(async (route: { path: string }) => { mocks.currentRoute.value.path = route.path; });
     mocks.ws.send = mocks.wsSend;
     mocks.ws.readyState = WebSocket.OPEN;
     mocks.apiGet.mockResolvedValue({
@@ -84,6 +99,85 @@ describe("guidance store", () => {
         rule_id: "workflow_saved_never_run",
       },
     });
+  });
+
+  it("opens workflow from Data through the existing dataset handoff, not a blank route", async () => {
+    mocks.currentRoute.value.path = "/data";
+    const workflow = document.createElement("button");
+    workflow.dataset.action = "open_workflow";
+    const handoff = vi.fn();
+    workflow.addEventListener("click", handoff);
+    document.body.append(workflow);
+    await useGuidanceStore().runAction("open_workflow");
+    expect(handoff).toHaveBeenCalledTimes(1);
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+  });
+
+  it.each(["disabled", "missing"])("does not bypass a %s Data handoff", async (state) => {
+    mocks.currentRoute.value.path = "/data";
+    const handoff = vi.fn();
+    if (state === "disabled") {
+      const workflow = document.createElement("button");
+      workflow.dataset.action = "open_workflow";
+      workflow.disabled = true;
+      workflow.addEventListener("click", handoff);
+      document.body.append(workflow);
+    }
+    await useGuidanceStore().runAction("open_workflow");
+    expect(handoff).not.toHaveBeenCalled();
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+  });
+
+  it("preserves ordinary workflow navigation outside Data", async () => {
+    await useGuidanceStore().runAction("open_workflow");
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/workflow", query: { project_id: "7", workflow_id: "9" }, hash: undefined });
+  });
+
+  it.each(Object.values(GUIDANCE_ACTIONS))("keeps the project for $actionId without submitting scientific work", async (action) => {
+    if (action.expectedScope) mocks.advisorActiveNode.value = { id: 1, project_id: 7, tab_key: action.expectedScope.tabKey, subscope_key: action.expectedScope.subscopeKey ?? "" };
+    const target = document.createElement("button");
+    target.dataset.action = action.clickTarget ?? "import_data";
+    const clicked = vi.fn();
+    target.onclick = clicked;
+    document.body.append(target);
+    expect(await useGuidanceStore().runAction(action.actionId)).toBe(true);
+    const destination = mocks.routerPush.mock.calls[0][0];
+    expect(destination.path).toBe(action.route);
+    expect(destination.query[action.route === "/workflow" ? "project_id" : "project"]).toBe("7");
+    if (action.query) expect(destination.query).toMatchObject(action.query);
+    expect(clicked).toHaveBeenCalledTimes(action.clickTarget ? 1 : 0);
+  });
+
+  it("refuses a stale-project suggestion instead of acting in the newly selected project", async () => {
+    const store = useGuidanceStore();
+    await store.loadSettings();
+    await store.handleEvent(makeEvent());
+    mocks.project.currentProjectId = 8;
+    await store.clickAction();
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+    expect(store.error).toContain("another project");
+  });
+
+  it("handles failed route loading without an unhandled rejection", async () => {
+    mocks.routerPush.mockRejectedValueOnce(new Error("chunk unavailable"));
+    const store = useGuidanceStore();
+    await expect(store.runAction("open_library")).resolves.toBe(false);
+    expect(store.error).toContain("could not be loaded");
+  });
+
+  it("does not send an Advisor prompt when the destination topic never becomes ready", async () => {
+    vi.useFakeTimers();
+    const listener = vi.fn();
+    window.addEventListener(ADVISOR_PROMPT_REQUEST_EVENT, listener);
+    try {
+      const result = useGuidanceStore().runAction("explain_latest_results");
+      await vi.advanceTimersByTimeAsync(2100);
+      expect(await result).toBe(false);
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(ADVISOR_PROMPT_REQUEST_EVENT, listener);
+      vi.useRealTimers();
+    }
   });
 
   it("loads guidance settings from the namespaced API", async () => {
@@ -202,15 +296,16 @@ describe("guidance store", () => {
       ack_kind: "clicked",
     });
     expect(mocks.wsSend).toHaveBeenCalledWith(expect.stringContaining('"ack_kind":"clicked"'));
-    expect(mocks.routerPush).toHaveBeenCalledWith("/workflow");
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/workflow", query: { project_id: "7", workflow_id: "9" }, hash: undefined });
   });
 
   it("routes prompt-backed actions and asks Sherpa Advisor", async () => {
     const store = useGuidanceStore();
     mocks.advisorActiveNode.value = {
       id: 77,
-      tab_key: "experiments",
-      subscope_key: "compare",
+      project_id: 7,
+      tab_key: "models",
+      subscope_key: "run_history",
     };
     const promptListener = vi.fn();
     window.addEventListener(ADVISOR_PROMPT_REQUEST_EVENT, promptListener);
@@ -226,7 +321,7 @@ describe("guidance store", () => {
 
     await store.clickAction();
 
-    expect(mocks.routerPush).toHaveBeenCalledWith("/runs");
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/runs", query: { project: "7", tab: "run_history" }, hash: undefined });
     expect(promptListener).toHaveBeenCalledTimes(1);
     const event = promptListener.mock.calls[0]?.[0] as CustomEvent<AdvisorPromptRequestDetail>;
     expect(event.detail).toEqual({
@@ -330,7 +425,7 @@ describe("guidance store", () => {
 
     await store.clickAction();
 
-    expect(mocks.routerPush).toHaveBeenCalledWith("/deploy");
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/deploy", query: { project: "7" }, hash: undefined });
     expect(clickSpy).toHaveBeenCalledTimes(1);
     document.body.removeChild(button);
   });
@@ -360,7 +455,7 @@ describe("guidance store", () => {
     await clickPromise;
     vi.useRealTimers();
 
-    expect(mocks.routerPush).toHaveBeenCalledWith("/project");
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/project", query: { project: "7" }, hash: undefined });
     // Routing succeeded; nothing crashed; no test assertion failed.
   }, 10_000);
 
@@ -378,6 +473,7 @@ describe("guidance store", () => {
     // before the prompt event dispatches.
     mocks.advisorActiveNode.value = {
       id: 99,
+      project_id: 7,
       tab_key: "report",
       subscope_key: "draft",
     };
@@ -396,7 +492,7 @@ describe("guidance store", () => {
 
     await store.clickAction();
 
-    expect(mocks.routerPush).toHaveBeenCalledWith("/report");
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/report", query: { project: "7", workflow: "9", run: "31" }, hash: undefined });
     expect(promptListener).toHaveBeenCalledTimes(1);
     const event = promptListener.mock.calls[0]?.[0] as CustomEvent<AdvisorPromptRequestDetail>;
     expect(event.detail.prompt).toContain("report");

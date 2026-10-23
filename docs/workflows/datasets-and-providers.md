@@ -34,8 +34,39 @@ process files they submit.
 Provider rules differ. The user-acquired Eigenvector archive path is distinct
 from optional NIST reference retrieval or HITRAN/HAPI synthesis. Use the relevant
 provider configuration and permissions; a file checksum proves identity, not
-permission to redistribute it. Demo allows only its documented reference-file
-exception, while local OSS and Pro accept ordinary supported customer files.
+permission to redistribute it. Demo blocks ordinary customer uploads; its
+documented reference-file and guarded HITRAN/NIST synthesis routes are separate
+exceptions. Local OSS and Pro accept ordinary supported customer files.
+
+### NIST wavenumber declarations
+
+NIST Quant IR synthesis explicitly selects a provider-specific JCAMP axis policy.
+For complete `X++(Y..Y)` grids, `FIRSTX`, `LASTX`, and `NPOINTS` determine the
+axis. The original headers, source SHA-256, chosen policy, and discrepancy
+measurements remain in the component's provenance and saved synthesis recipe.
+Intensity values are decoded and scaled, not reordered or interpolated by this
+reconciliation.
+
+The current policy (version 2) takes the axis from those three declarations
+only. The NIST writer prints a rounded `DELTAX`, so it never builds the axis; it
+must have the endpoint grid's direction and, unless it is a correctly rounded
+step, agree with the spacing of adjacent line checkpoints at their printed
+precision. Every line checkpoint must lie on the endpoint grid within its own
+text precision, either aligned or with the writer's consistent one-sample lag.
+Provenance records the original headers, the largest checkpoint error and the
+drift the declared `DELTAX` would accumulate; its `maximum_allowed_error` bounds
+checkpoints only. Invalid counts, non-finite declarations, reversed or
+ambiguous checkpoints, a changing checkpoint offset, and larger discrepancies
+refuse. Recipes saved under version 1, which allowed one spectral interval plus
+1% of an interval, still replay under that policy. Ordinary JCAMP imports remain
+strict; provider headers alone never enable the exception. This policy chooses
+a global endpoint grid; it does not claim point-for-point axis equivalence with
+the NIST web viewer's line-anchored display.
+
+If a NIST variant is refused, choose another resolution/apodization or review
+the source declarations. Version 2 is tested against the declarations of acetone
+and benzene spectra at 0.5, 1 and 2 cm⁻¹ resolution. This is not qualification
+of the complete NIST catalog.
 
 ## Targets and validation groups
 

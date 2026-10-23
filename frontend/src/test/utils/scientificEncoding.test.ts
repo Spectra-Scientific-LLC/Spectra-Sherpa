@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { DEFAULT_DISPLAY_PREFERENCES, useDisplayPreferences } from "@/composables/useDisplayPreferences";
 import { componentPercent, scientificNumber } from "@/utils/scientificEncoding";
 import { buildPredictedVsActualPlot } from "@/utils/scientificPlots";
+
+afterEach(() => Object.assign(useDisplayPreferences(), DEFAULT_DISPLAY_PREFERENCES));
 
 describe("scientific precision declaration and magnitude handling", () => {
   it("preserves declared significant digits, including trailing zeros", () => {
@@ -17,11 +20,17 @@ describe("scientific precision declaration and magnitude handling", () => {
     expect(scientificNumber(0.00099, { decimalPlaces: 3 })).toBe("9.900e-4");
     expect(scientificNumber(1e21, { decimalPlaces: 3 })).toBe("1.000e+21");
   });
-  it("keeps round-trip coordinate text when precision is not declared", () => {
+  it("keeps round-trip coordinate text when full precision is selected", () => {
+    useDisplayPreferences().precision = "full";
     expect(scientificNumber(1000.0000000001)).toBe("1000.0000000001");
     expect(scientificNumber(1000.0000000002)).toBe("1000.0000000002");
     expect(scientificNumber(0.94)).toBe("0.94");
     expect(scientificNumber(Number.NaN, { decimalPlaces: 3 })).toBe("Unavailable");
+  });
+  it("uses the readable display default without changing the underlying value", () => {
+    const value = 1000.0000000001;
+    expect(scientificNumber(value)).toBe("1000.00");
+    expect(value).toBe(1000.0000000001);
   });
   it("retains the percentage convention without collapsing small component contributions", () => {
     expect(componentPercent(0.2)).toBe("20.0");

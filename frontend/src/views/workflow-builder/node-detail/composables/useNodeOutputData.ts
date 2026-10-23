@@ -20,6 +20,7 @@ import {
   splitLabelByDelimiter,
 } from "@/utils/sampleLabels";
 import type { NodeOutput } from "@/utils/nodeOutput";
+import { extractExportArtifact, exportArtifactSummary } from "@/utils/exportArtifact";
 import {
   isProjectedScientificKind,
   scientificEvidenceShape,
@@ -245,6 +246,8 @@ export function useNodeOutputData({
 
   const outputSummary = computed(() => {
     if (!hasOutput.value) return "";
+    const prepared = exportArtifactSummary(extractExportArtifact(nodeOutput.value));
+    if (prepared) return prepared.label;
     const evidenceShape = scientificEvidenceShape(nodeOutput.value);
     if (evidenceShape) {
       return `${evidenceShape.rows} ${evidenceShape.rowLabel} · ${evidenceShape.cols} ${evidenceShape.colLabel}`;
@@ -263,6 +266,8 @@ export function useNodeOutputData({
 
   const outputData = computed(() => {
     if (!hasOutput.value) return null;
+    const prepared = exportArtifactSummary(extractExportArtifact(nodeOutput.value));
+    if (prepared) return { rows: prepared.rows, cols: prepared.cols, rowLabel: "Spectra / rows", colLabel: "Variables", type: prepared.label, range: null };
     const evidenceShape = scientificEvidenceShape(nodeOutput.value);
     if (evidenceShape) {
       return {
@@ -352,6 +357,7 @@ export function useNodeOutputData({
 
   const datasetInfo = computed(() => {
     if (!hasOutput.value || !nodeOutput.value) return null;
+    if (exportArtifactSummary(extractExportArtifact(nodeOutput.value))) return null;
     const primaryPort = nodeOutput.value.primary_port;
     const primaryPortOutput = primaryPort ? (nodeOutput.value.ports?.[primaryPort] as any) : null;
     const portValue: any = primaryPortOutput?.value || null;

@@ -17,7 +17,8 @@ vi.mock("@/api/client", () => ({
 
 vi.mock("@/stores/auth", async () => {
   const { reactive } = await import("vue");
-  const auth = reactive({ user: { id: 1 }, token: "test-session" });
+  const auth = reactive({ user: { id: 1 }, token: "test-session", renewalRevision: null as string | null,
+    get sessionRevision() { return this.renewalRevision ?? this.token; } });
   return { useAuthStore: () => auth };
 });
 
@@ -73,6 +74,8 @@ describe("Job Store WebSocket policy close", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     setActivePinia(createPinia());
+    useAuthStore().token = 'test-session';
+    (useAuthStore() as unknown as { renewalRevision: string | null }).renewalRevision = null;
     localStorage.clear();
     apiGet.mockReset();
     apiGet.mockResolvedValue({ data: [] });
@@ -230,6 +233,8 @@ describe("Job Store WebSocket policy close", () => {
   });
 
   it("recovers with a renewed token while the session probe is pending", async () => {
+    const auth = useAuthStore();
+    (auth as unknown as { renewalRevision: string | null }).renewalRevision = auth.token;
     localStorage.setItem("token", "old-session");
     let finish!: (response: unknown) => void;
     apiGet.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
@@ -239,6 +244,7 @@ describe("Job Store WebSocket policy close", () => {
     await pending;
     sockets[0].close(1008);
     localStorage.setItem("token", "renewed-session");
+    auth.token = 'renewed-session';
     finish({ status: 401 });
     await vi.advanceTimersByTimeAsync(1000);
     expect(sockets).toHaveLength(2);

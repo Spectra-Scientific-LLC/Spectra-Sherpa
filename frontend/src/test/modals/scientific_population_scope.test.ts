@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { mount } from "@vue/test-utils";
+import { plotContext } from "@/utils/plotContext";
 import { describe, expect, it } from "vitest";
 import QuickPlotModal from "@/views/workflow-builder/modals/QuickPlotModal.vue";
 import { buildOutOfFoldEvidencePlot } from "@/utils/scientificPlots";
@@ -135,8 +136,8 @@ describe("Scientific plotted populations", () => {
       source_row_indices: Array.from({ length: 50 }, (_, i) => i + 1),
       sample_labels: Array.from({ length: 50 }, (_, i) => `Exact ${i + 1}`),
     });
-    expect(w.get(".plot-sampling-disclosure").text()).toContain(
-      "Excluded: 2 source rows",
+    expect(plotContext(vm.plotLayout)).toContain(
+      "2 excluded rows",
     );
     w.unmount();
   });
@@ -201,10 +202,9 @@ describe("Scientific plotted populations", () => {
       } else {
         expect(vm.plotLayout.title.text).toBe("Spectral overlay");
       }
-      expect(w.get(".plot-sampling-disclosure").text()).toContain("50");
-      expect(w.get(".plot-sampling-disclosure").text()).toContain("80");
+      expect(plotContext(vm.plotLayout)).toContain("50 of 80 active rows");
       expect(w.props("nodeOutput").data).toHaveLength(80);
-      expect(vm.plotSampling.plottedTableOnly).toBe(false);
+      expect(vm.plotSampling?.plottedTableOnly ?? false).toBe(false);
       w.unmount();
     },
   );
@@ -232,7 +232,7 @@ describe("Scientific plotted populations", () => {
       source_row_indices: Array.from({ length: 50 }, (_, i) => i + 1),
       sample_labels: Array.from({ length: 50 }, (_, i) => `Output ${i + 1}`),
     });
-    expect(w.get(".plot-sampling-disclosure").text()).toContain("50 of 79 active preprocessed result rows");
+    expect(plotContext(vm.plotLayout)).toContain("Preprocessed: 50 of 79 active rows");
     vm.selectedPlotKey = "spectra_heatmap";
     await w.vm.$nextTick();
     expect(vm.plotLayout.meta.comparison_populations.original).toMatchObject({ shown: 89, total: 89, method: "all_active" });

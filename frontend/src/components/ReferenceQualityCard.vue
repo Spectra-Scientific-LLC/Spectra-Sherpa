@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import MethodHelp from "@/components/MethodHelp.vue";
 import type { ReferenceValueEvidence } from "@/types";
 
 const props = defineProps<{
@@ -26,10 +27,10 @@ const precision = computed(() => {
 
 <template>
   <section class="reference-quality" :aria-label="title || 'Reference-value quality'">
-    <h4>{{ title || "Reference-value quality" }}</h4>
+    <h4>{{ title || "Reference-value quality" }} <MethodHelp topic="referenceValues" label="Reference quality" context="Model residuals do not establish laboratory precision. Prediction intervals require separate calibration and coverage evidence." /></h4>
     <p v-if="unavailableReason" role="note">{{ unavailableReason }}</p>
     <p v-else-if="!evidence" role="note">
-      This saved model has no bound laboratory reference declaration. Its reported model error cannot establish reference measurement precision.
+      Laboratory reference declaration not recorded.
     </p>
     <template v-else>
       <dl>
@@ -41,13 +42,16 @@ const precision = computed(() => {
         <div><dt>Missing targets</dt><dd>{{ evidence.missing_included_count }} included; {{ evidence.missing_excluded_count }} excluded</dd></div>
         <div><dt>Reported precision</dt><dd>{{ precision ? `${precision.sd} ${evidence.units || 'response units not recorded'} pooled within-specimen SD (unverified)` : "Not recorded" }}</dd></div>
         <div v-if="precision"><dt>Precision study</dt><dd>{{ precision.specimens }} specimens × {{ precision.replicates }} replicates; {{ precision.degrees }} degrees of freedom. {{ evidence.precision_study_provenance || "Provenance not recorded" }}</dd></div>
-        <div><dt>Method provenance</dt><dd>{{ evidence.provenance || "Not recorded" }}</dd></div>
-        <div><dt>Instrument repeatability</dt><dd>Not recorded separately</dd></div>
+        <div v-if="evidence.provenance"><dt>Method provenance</dt><dd>{{ evidence.provenance }}</dd></div>
       </dl>
+      <details><summary>Unrecorded supporting evidence</summary>
+        <p v-if="!evidence.provenance">Method provenance: not recorded.</p>
+        <p>Instrument repeatability: not recorded separately.</p>
+      </details>
       <p v-if="evidence.qualification_gaps.length" role="status">
         Qualification gaps: {{ evidence.qualification_gaps.join("; ") }}.
       </p>
-      <p role="note">Model residuals do not estimate laboratory precision. Prediction intervals require separate calibration and coverage evidence.</p>
+
     </template>
   </section>
 </template>

@@ -314,7 +314,7 @@ export const useReportStore = defineStore("report", () => {
   const workflowsError = ref("");
   const runsError = ref("");
   const workspaceIdentity = () => [
-    useAuthStore().user?.id, useAuthStore().token, useProjectStore().currentProjectId,
+    useAuthStore().user?.id, useAuthStore().sessionRevision, useProjectStore().currentProjectId,
   ];
   const selectionIdentity = () => [
     ...workspaceIdentity(), selectedWorkflowId.value, selectedRunIds.value.join(","),

@@ -44,6 +44,40 @@ beforeEach(() => {
 afterEach(() => { disposePinia(pinia); _clearProjectScopeRegistryForTests(); });
 
 describe("store-owned scope, independent of mounted pages", () => {
+  it("accepts a same-session delayed project read across renewal without clearing the canvas", async () => {
+    const auth = useAuthStore();
+    localStorage.setItem("token", auth.token!);
+    const project = useProjectStore();
+    const workflow = useWorkflowStore();
+    workflow.workflowId = 9;
+    workflow.hasUnsavedChanges = true;
+    const held = deferred<{ data: unknown }>();
+    vi.mocked(api.get).mockReturnValueOnce(held.promise);
+    const pending = project.fetchProject(1);
+    const signal = vi.mocked(api.get).mock.calls[0][1]?.signal;
+    expect(await auth.acceptRenewal(auth.captureSession(), "renewed")).toBe(true);
+    expect(signal?.aborted).toBe(false);
+    expect(workflow.workflowId).toBe(9);
+    held.resolve({ data: { id: 1, name: "Same project" } });
+    expect((await pending)?.id).toBe(1);
+    expect(workflow.workflowId).toBe(9);
+    expect(workflow.hasUnsavedChanges).toBe(true);
+  });
+
+  it("applies an acknowledged same-session mutation and inventory refresh across renewal", async () => {
+    const auth = useAuthStore();
+    localStorage.setItem("token", auth.token!);
+    const project = useProjectStore();
+    const held = deferred<{ data: unknown }>();
+    vi.mocked(api.put).mockReturnValueOnce(held.promise);
+    vi.mocked(api.get).mockResolvedValue({ data: [{ id: 1, name: "Renamed" }] });
+    const pending = project.updateProject(1, { name: "Renamed" });
+    expect(await auth.acceptRenewal(auth.captureSession(), "renewed")).toBe(true);
+    held.resolve({ data: { id: 1, name: "Renamed" } });
+    await pending;
+    expect(project.currentProjectId).toBe(1);
+    expect(project.projects[0].name).toBe("Renamed");
+  });
   it("shares admission for concurrent callers of the same project", async () => {
     const project = useProjectStore();
     const held = deferred<{ data: unknown }>();
@@ -391,6 +425,30 @@ describe("store-owned scope, independent of mounted pages", () => {
     await pending;
     expect(data.availableDatasets).toBeNull();
     expect(data.catalogLoading).toBe(false);
+  });
+
+  it("keeps account-wide starter catalogs across a project switch, including late replies", async () => {
+    const workflow = useWorkflowStore();
+    const templates = deferred<{ data: unknown }>();
+    const matrix = deferred<{ data: unknown }>();
+    vi.mocked(api.get).mockReturnValueOnce(templates.promise).mockReturnValueOnce(matrix.promise);
+    const pendingTemplates = workflow.fetchTemplates(undefined, true);
+    const pendingMatrix = workflow.fetchCompatibilityMatrix();
+    useProjectStore().currentProjectId = 2;
+    templates.resolve({ data: { templates: [{ id: 1, slug: "pca" }] } });
+    matrix.resolve({ data: { datasets: [{ dataset_id: "sklearn:iris" }], matrix: [] } });
+    await Promise.all([pendingTemplates, pendingMatrix]);
+    expect(workflow.templates.map(item => item.slug)).toEqual(["pca"]);
+    expect(workflow.templatesLoading).toBe(false);
+    expect(workflow.compatibilityMatrix?.datasets[0].dataset_id).toBe("sklearn:iris");
+
+    useProjectStore().currentProjectId = 3;
+    expect(workflow.templates).toHaveLength(1);
+    expect(workflow.compatibilityMatrix).not.toBeNull();
+
+    useAuthStore().token = "session-two";
+    expect(workflow.templates).toEqual([]);
+    expect(workflow.compatibilityMatrix).toBeNull();
   });
 
   it("notifies registered views on same-user token rotation", () => {

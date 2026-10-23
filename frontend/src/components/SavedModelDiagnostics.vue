@@ -269,7 +269,7 @@ const advisorResponse = ref<number | null>(null);
 const advisorSample = ref("");
 const advisorContext = ref<"prediction" | "applicability" | undefined>();
 const auth = useAuthStore();
-const identity = () => [auth.user?.id, auth.token, props.artifactUid, props.projectId, props.nodeId];
+const identity = () => [auth.user?.id, auth.sessionRevision, props.artifactUid, props.projectId, props.nodeId];
 const reads = useScopedRequest(identity, () => { loading.value = false; });
 watch(
   identity,

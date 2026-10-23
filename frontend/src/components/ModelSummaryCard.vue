@@ -22,18 +22,25 @@
     </p>
     <p v-if="summary.componentSelection || summary.pcaComponentSelection || summary.plsdaComponentSelection"
       class="model-summary__design" role="note">
-      Independent test evaluation:
+      Held-out evaluation:
       <template v-if="heldOutCount != null">{{ heldOutCount }} held-out samples with retained evaluation.</template>
       <template v-else-if="evidenceSubset">Open the source run for any retained independent test evaluation.</template>
-      <template v-else>Not retained for this model run.</template>
+      <template v-else>Not retained.</template>
     </p>
 
+    <ul v-if="compact && compactWarnings.length" class="model-summary__caution" aria-label="Model limitations">
+      <li v-for="warning in compactWarnings" :key="warning">{{ warning }}</li>
+    </ul>
+    <details :open="!compact" class="model-summary__details">
+      <summary>Model and validation details</summary>
     <section v-if="summary.componentSelection" class="model-summary__components" aria-label="PLS component selection">
       <h4>Latent variables <MethodHelp topic="componentSelection" label="Component selection" /></h4>
       <p>Selected: <strong>{{ summary.componentSelection.selectedComponents }} LV</strong> ·
         {{ summary.componentSelection.nCalibration }} calibration samples · {{ summary.componentSelection.scaling.replace(/_/g, ' ') }}.</p>
-      <p class="model-summary__design">Saved choice basis: {{ summary.componentSelection.selectionRule.replace(/_/g, ' ') }}
-        ({{ summary.componentSelection.selectionRuleStatus.replace(/_/g, ' ') }}).</p>
+      <details><summary>Component choice</summary>
+        {{ summary.componentSelection.selectionRule.replace(/_/g, ' ') }} · {{ summary.componentSelection.selectionRuleStatus.replace(/_/g, ' ') }}
+        <span v-if="summary.componentSelection.splitDigest"> · Split {{ summary.componentSelection.splitDigest }}</span>
+      </details>
       <p v-if="summary.componentSelection.requestedComponents !== summary.componentSelection.selectedComponents" class="model-summary__caution" role="note">
         {{ summary.componentSelection.requestedComponents }} LV were requested; the fitted model reached
         {{ summary.componentSelection.selectedComponents }} identifiable LV. The marker shows the effective fit.
@@ -41,14 +48,14 @@
       <p v-if="summary.componentSelection.cvStatus === 'available'" class="model-summary__design">
         {{ summary.componentSelection.cvFolds }}-fold {{ summary.componentSelection.cvMethod?.replace(/_/g, ' ') }}
         <template v-if="summary.componentSelection.cvGroups != null"> across {{ summary.componentSelection.cvGroups }} independent groups</template>.
-        Split {{ summary.componentSelection.splitDigest?.slice(0, 12) }}.
+
       </p>
       <p v-else class="model-summary__caution" role="note">Cross-validation unavailable: {{ summary.componentSelection.cvReason }}</p>
       <p v-if="!summary.componentSelection.selectedInCurve" class="model-summary__caution" role="note">The effective LV is not plotted in this bounded curve.</p>
       <div v-for="response in summary.componentSelection.responses" :key="response.name" class="model-summary__component-response">
         <h5>{{ response.name }}<template v-if="response.unit"> ({{ response.unit }})</template></h5>
         <figure v-if="componentPlot(response)" class="model-summary__curve">
-          <figcaption>RMSEC and fold-held-out RMSECV by latent variable. The vertical marker is the selected model.</figcaption>
+
           <svg viewBox="0 0 400 125" role="img" :aria-label="`${response.name} error versus latent variables`">
             <path d="M30 5 V100 H390" class="axis" />
             <path :d="componentPlot(response)?.calibration ?? undefined" class="calibration" />
@@ -126,7 +133,7 @@
     </section>
     <button v-if="canEditSelection && (summary.componentSelection || summary.pcaComponentSelection || summary.plsdaComponentSelection)"
       type="button" class="model-summary__edit" @click="emit('edit-selection')">
-      Edit component count and refit in workflow
+      Edit components in Workflow
     </button>
 
     <div v-for="block in regressionTables" :key="block.target" class="model-summary__table">
@@ -183,6 +190,7 @@
         </table>
       </figure>
     </div>
+    </details>
   </section>
 </template>
 
@@ -192,8 +200,24 @@ import { computed } from "vue";
 import { evaluationRoleLabel, scientificScalar, scientificErrorMetricLabel, scientificProtocolLabel } from "@/utils/scientificDisplay";
 import { r2Name, rmseName, SUMMARY_ROLES, type ClassificationStatistics, type ComponentSelectionResponse, type ModelSummary, type RegressionStatistics, type SummaryRole } from "@/utils/modelSummary";
 
-const props = defineProps<{ summary: ModelSummary | null; canEditSelection?: boolean; evidenceSubset?: boolean }>();
+const props = defineProps<{ summary: ModelSummary | null; canEditSelection?: boolean; evidenceSubset?: boolean; compact?: boolean }>();
 const emit = defineEmits<{ 'edit-selection': [] }>();
+
+const compactWarnings = computed(() => {
+  const summary = props.summary;
+  const warnings: string[] = [];
+  for (const selection of [summary?.componentSelection, summary?.plsdaComponentSelection]) {
+    if (selection && selection.requestedComponents !== selection.selectedComponents) {
+      warnings.push(`${selection.requestedComponents} LV requested; ${selection.selectedComponents} fitted.`);
+    }
+  }
+  const pls = summary?.componentSelection;
+  if (pls?.cvStatus === "unavailable") warnings.push(`CV unavailable: ${pls.cvReason}`);
+  for (const selection of [summary?.pcaComponentSelection, summary?.plsdaComponentSelection]) {
+    if (selection && !selection.cvMethod) warnings.push(`CV unavailable: ${selection.cvReason}`);
+  }
+  return warnings;
+});
 
 const hasStatistics = computed(() => Boolean(props.summary?.regression.length || props.summary?.classification.length));
 const byRole = <T extends { role: SummaryRole }>(items: T[]): T[] =>
@@ -217,7 +241,9 @@ const headlineConfusion = computed(() => [...classificationColumns.value].revers
 const populations = computed(() => {
   const all = [...(props.summary?.regression ?? []), ...(props.summary?.classification ?? [])];
   return SUMMARY_ROLES.flatMap((role) => {
-    const n = all.find((item) => item.role === role && item.n != null)?.n;
+    const selection = props.summary?.componentSelection ?? props.summary?.pcaComponentSelection ?? props.summary?.plsdaComponentSelection;
+    const n = all.find((item) => item.role === role && item.n != null)?.n
+      ?? (role === "calibration" ? selection?.nCalibration : null);
     return n == null ? [] : [{ role, n, label: evaluationRoleLabel(role) }];
   });
 });

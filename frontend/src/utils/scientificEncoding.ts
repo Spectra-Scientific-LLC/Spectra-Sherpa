@@ -7,7 +7,8 @@ export type ScientificDisplayPrecision =
 
 /**
  * A numeric payload does not encode measurement significant figures. Without an
- * explicit display policy, keep its round-trip representation. With a policy,
+ * explicit per-value display policy, use the user's display preference (full
+ * precision retains the round-trip representation). With an explicit policy,
  * keep the formatted string (including trailing zeros); never coerce it back
  * through Number. Decimal displays use scientific notation below their unit of
  * resolution, with decimalPlaces + 1 significant digits in the mantissa.

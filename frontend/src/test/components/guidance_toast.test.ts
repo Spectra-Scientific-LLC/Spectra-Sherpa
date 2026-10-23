@@ -20,15 +20,18 @@ const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
   apiPatch: vi.fn(),
   routerPush: vi.fn(),
+  currentRoute: { value: { path: "/dashboard" } },
   wsSend: vi.fn(),
   ws: { readyState: WebSocket.OPEN, send: vi.fn() },
-  advisorActiveNode: { value: null as { id: number; tab_key: string; subscope_key: string } | null },
+  advisorActiveNode: { value: null as { id: number; project_id: number; tab_key: string; subscope_key: string } | null },
 }));
 
 vi.mock("@/api/client", () => ({
   default: { get: mocks.apiGet, patch: mocks.apiPatch },
 }));
-vi.mock("vue-router", () => ({ useRouter: () => ({ push: mocks.routerPush }) }));
+vi.mock("vue-router", async (original) => ({ ...await original<typeof import("vue-router")>(), useRouter: () => ({ push: mocks.routerPush, currentRoute: mocks.currentRoute }) }));
+vi.mock("@/stores/project", () => ({ useProjectStore: () => ({ currentProjectId: 7 }) }));
+vi.mock("@/stores/workflow", () => ({ useWorkflowStore: () => ({ workflowId: null, restoredRunId: null }) }));
 vi.mock("@/stores/llm", () => ({ useLlmStore: () => ({ wsRef: mocks.ws }) }));
 vi.mock("@/stores/advisor", () => ({
   useAdvisorStore: () => ({
@@ -76,6 +79,8 @@ describe("GuidanceToast (Deploy + Report flows)", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    mocks.currentRoute.value.path = "/dashboard";
+    mocks.routerPush.mockImplementation(async ({ path }) => { mocks.currentRoute.value.path = path; });
     mocks.ws.send = mocks.wsSend;
     mocks.ws.readyState = WebSocket.OPEN;
     mocks.advisorActiveNode.value = null;
@@ -146,7 +151,7 @@ describe("GuidanceToast (Deploy + Report flows)", () => {
     await wrapper.find(".guidance-toast__primary").trigger("click");
     await flushPromises();
 
-    expect(mocks.routerPush).toHaveBeenCalledWith("/deploy");
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/deploy", query: { project: "7" }, hash: undefined });
     expect(buttonClickSpy).toHaveBeenCalledTimes(1);
     expect(mocks.apiPatch).toHaveBeenCalledWith(
       "/guidance/notifications/501",
@@ -161,6 +166,7 @@ describe("GuidanceToast (Deploy + Report flows)", () => {
     // (the live in-tab path).
     mocks.advisorActiveNode.value = {
       id: 99,
+      project_id: 7,
       tab_key: "report",
       subscope_key: "draft",
     };
@@ -177,7 +183,7 @@ describe("GuidanceToast (Deploy + Report flows)", () => {
     await wrapper.find(".guidance-toast__primary").trigger("click");
     await flushPromises();
 
-    expect(mocks.routerPush).toHaveBeenCalledWith("/report");
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/report", query: { project: "7" }, hash: undefined });
     expect(promptListener).toHaveBeenCalledTimes(1);
     const promptEvent = promptListener.mock.calls[0]?.[0] as CustomEvent<{
       prompt: string;

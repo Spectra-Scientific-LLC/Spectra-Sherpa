@@ -31,9 +31,9 @@
       <rect x="0" y="0" width="100" height="100" class="conc-curve-editor__frame" />
       <!-- grid + ticks -->
       <g class="conc-curve-editor__grid">
-        <template v-for="gx in X_TICKS" :key="`gx-${gx}`">
-          <line :x1="gx" y1="0" :x2="gx" y2="100" />
-          <text :x="gx" y="111" text-anchor="middle">{{ gx }}</text>
+        <template v-for="tick in sampleTicks" :key="tick.index">
+          <line :x1="tick.position" y1="0" :x2="tick.position" y2="100" />
+          <text class="conc-curve-editor__sample-tick" :x="tick.position" y="111" text-anchor="middle">{{ tick.index }}</text>
         </template>
         <template v-for="gy in Y_TICKS" :key="`gy-${gy}`">
           <line x1="0" :y1="toSvgY(gy)" x2="100" :y2="toSvgY(gy)" />
@@ -94,12 +94,12 @@ const PAD_L = 24;
 const PAD_R = 4;
 const PAD_T = 6;
 const PAD_B = 26;
-const X_TICKS = [0, 20, 40, 60, 80, 100];
 const Y_TICKS = [0, 0.25, 0.5, 0.75, 1];
 
 const props = withDefaults(
   defineProps<{
     points: CurvePoint[];
+    sampleCount: number;
     color?: string;
     title?: string;
     hideToolbar?: boolean;
@@ -116,6 +116,19 @@ const svgRef = ref<SVGSVGElement | null>(null);
 const activeIndex = ref<number | null>(null);
 
 const pointCount = computed(() => props.points.length);
+
+// Shape storage stays normalized to 0..100; only the displayed coordinates
+// project onto the same 0..n-1 sample grid used by synthesis and its preview.
+const sampleTicks = computed(() => {
+  const count = Number(props.sampleCount);
+  if (!Number.isFinite(count) || count < 2) return [];
+  const last = Math.trunc(count) - 1;
+  const intervals = Math.min(5, last);
+  return Array.from({ length: intervals + 1 }, (_, i) => {
+    const index = Math.round((i * last) / intervals);
+    return { index, position: (index / last) * 100 };
+  });
+});
 
 const toSvgY = (value: number) => 100 - value * 100;
 const toValueY = (svgY: number) => 1 - svgY / 100;

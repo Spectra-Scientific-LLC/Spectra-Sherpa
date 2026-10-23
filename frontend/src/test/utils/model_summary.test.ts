@@ -133,6 +133,10 @@ describe("model summary from retained records", () => {
         rows: [{ components: 1, pooled_reconstruction_rmse: 0.5 }] },
     } }]);
     expect(summary.regression).toEqual([]);
+    const compact = mount(ModelSummaryCard, { props: { summary, compact: true } });
+    expect(compact.get(".model-summary__populations").text()).toContain("24 calibration");
+    expect(compact.get(".model-summary__populations").element.closest("details")).toBeNull();
+    expect(compact.get(".model-summary__details").attributes("open")).toBeUndefined();
     const text = mount(ModelSummaryCard, { props: { summary } }).text();
     expect(text).toContain("Principal components");
     expect(text).toContain("CV reconstruction RMSE");
@@ -213,6 +217,37 @@ describe("model summary card", () => {
     expect(text).toContain("RMSEP (units not declared) 0.3975");
     expect(text).toContain("30 calibration fit");
     expect(text).not.toContain("Only calibration-fit statistics");
+  });
+
+  it("keeps essential scope outside collapsed detail tables", () => {
+    const summary = buildModelSummary(plsDefinition, null, [
+      { source: { nodeId: "model_1", port: "calibration_comparison", kind: "regression_comparison" }, value: calibration },
+    ]);
+    const card = mount(ModelSummaryCard, { props: { summary, compact: true } });
+    const details = card.get(".model-summary__details");
+    expect(details.attributes("open")).toBeUndefined();
+    expect(card.get(".model-summary__populations").text()).toContain("30 calibration");
+    expect(card.get('[role="note"]').text()).toContain("no retained CV or test predictions");
+    expect(card.get('[role="note"]').element.closest("details")).toBeNull();
+    expect(card.get("table").element.closest("details")).toBe(details.element);
+  });
+
+  it("keeps unavailable CV and effective component warnings outside collapsed details", () => {
+    const summary = buildModelSummary(plsDefinition, null, [{
+      source: { nodeId: "model_1", port: "component_curve", kind: "component_selection" },
+      value: {
+        schema_version: "spectrasherpa-pls-component-curve/1",
+        requested_components: 5, selected_components: 2, n_calibration: 12,
+        response_names: ["Moisture"], response_units: ["%"],
+        calibration: [{ components: 2, rmsec: [0.5] }],
+        cross_validation: { status: "unavailable", reason: "Insufficient independent specimens" },
+      },
+    }]);
+    const card = mount(ModelSummaryCard, { props: { summary, compact: true } });
+    const warnings = card.get('[aria-label="Model limitations"]');
+    expect(warnings.text()).toContain("5 LV requested; 2 fitted");
+    expect(warnings.text()).toContain("CV unavailable: Insufficient independent specimens");
+    expect(warnings.element.closest("details")).toBeNull();
   });
 
   it("says so when a run has no validation statistics", () => {

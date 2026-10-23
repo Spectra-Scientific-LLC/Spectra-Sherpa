@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import DisabledReason from "@/components/DisabledReason.vue";
 import WorkflowInspector from "@/views/workflow-builder/WorkflowInspector.vue";
+import { projectScientificPresentation, resolveScientificPresentation } from "@/utils/scientificPresentation";
 
 const nodeMetadata = reactive({
   presentation_contract: { digest: "b".repeat(64), payload: {
@@ -196,6 +197,99 @@ describe("WorkflowInspector node help", () => {
     wrapper.unmount();
     workflowStore.restoredRunId = null;
     workflowStore.executionEvidenceScope = "unavailable";
+  });
+
+  it("opens Detailed View with the same exact populations as Quick Plot and retains alternate ports", async () => {
+    apiGet.mockClear();
+    workflowStore.restoredRunId = 3;
+    workflowStore.executionEvidenceScope = "restored_summary";
+    const exact = { type: "SherpaDataset", data: Array.from({ length: 150 }, (_, i) => [i, i + 1]),
+      metadata: { data_role: "X_features" },
+      y_axis: { labels: Array.from({ length: 150 }, (_, i) => `sample-${i}`),
+        include_mask: Array.from({ length: 150 }, (_, i) => i !== 5) },
+      x_axis: { labels: ["feature-A", "feature-B"], units: "cm" } };
+    const preview = { ...exact, data: exact.data.slice(0, 20) };
+    const contract = { digest: "a".repeat(64), payload: {
+      schema_version: "spectrasherpa-node-presentation/1", default_presentation: "spectra",
+      presentations: [{ presentation_id: "spectra", label: "Spectra", kind: "spectral_dataset",
+        source_ports: ["default"], modes: ["plot", "table"], description: "" }],
+    } };
+    apiGet.mockImplementation(async (url: string) => ({ data: { value: url.endsWith("/auxiliary") ? [1, 2, 3] : exact } }));
+    const wrapper = mountInspector();
+    try {
+      await wrapper.setProps({ selectedNode: { ...selectedNode, id: "scale_1", type: "preprocess.scale" },
+        inputConnections: [{ nodeId: "source_1", nodeType: "data.file_load", nodeLabel: "Load",
+          port: "default", toPort: "X", data: { data: preview.data, metadata: {}, value: preview } }],
+        nodeOutput: { data: preview.data, metadata: {}, primary_port: "default", model_id: "retained-artifact",
+          ports: { default: { data: preview.data, metadata: {}, value: preview },
+            auxiliary: { data: [0], metadata: {}, value: [0] } }, presentation_contract: contract },
+      });
+      const vm = wrapper.vm as any;
+      await vm.openQuickPlot();
+      const quickPlotValue = vm.quickPlotNodeOutput.presentation_value;
+      const quickPlotInput = vm.quickPlotResolvedInputs.X.value;
+      vm.showQuickPlotModal = false;
+      await vm.openToRunTrials();
+      const [detail] = wrapper.emitted("open-trial")!.at(-1)! as any[];
+      expect(detail.output.data).toHaveLength(150);
+      expect(detail.output.ports.default.value).toEqual(quickPlotValue);
+      expect(detail.output.ports.auxiliary.value).toEqual([1, 2, 3]);
+      expect(detail.output.model_id).toBe("retained-artifact");
+      expect(detail.output.presentation_contract).toEqual(contract);
+      expect(detail.inputConnections[0].data.value).toEqual(quickPlotInput);
+      expect(detail.inputConnections[0].toPort).toBe("X");
+      expect(detail.inputData.shape).toEqual([150, 2]);
+      expect(detail.inputConnections[0].data.value.y_axis.include_mask[5]).toBe(false);
+      expect(detail.output.ports.default.value.x_axis.units).toBe("cm");
+      expect(vm.showQuickPlotModal).toBe(false);
+      expect(vm.showDataTableModal).toBe(false);
+      expect(wrapper.props("nodeOutput")!.data).toHaveLength(20);
+    } finally {
+      wrapper.unmount();
+      workflowStore.restoredRunId = null;
+      workflowStore.executionEvidenceScope = "unavailable";
+    }
+  });
+
+  it("preserves primary model context when Quick Plot and Detailed View select a secondary port", async () => {
+    workflowStore.restoredRunId = 3;
+    workflowStore.executionEvidenceScope = "restored_summary";
+    const scores = { type: "SherpaDataset", data: [[1, 2], [3, 4]], metadata: {
+      pc_labels: ["PC1 (70.0%)", "PC2 (30.0%)"], explained_variance_ratio: [0.7, 0.3],
+    } };
+    const loadings = { type: "SherpaDataset", data: [[0.1, 0.2], [0.3, 0.4]],
+      metadata: { y_title: "Principal Component" } };
+    apiGet.mockImplementation(async (url: string) => ({ data: { value: url.endsWith("/loadings") ? loadings : scores } }));
+    const wrapper = mountInspector();
+    try {
+      await wrapper.setProps({ selectedNode, nodeOutput: { data: [[0]], metadata: scores.metadata, primary_port: "default",
+        ports: { default: { data: [[0]], metadata: scores.metadata },
+          loadings: { data: [[0]], metadata: loadings.metadata } },
+        presentation_contract: { digest: "e".repeat(64), payload: {
+          schema_version: "spectrasherpa-node-presentation/1", default_presentation: "scores",
+          presentations: [
+            { presentation_id: "scores", label: "Scores", kind: "pca_scores", source_ports: ["default"], modes: ["plot"] },
+            { presentation_id: "loadings", label: "Loadings", kind: "pca_loadings", source_ports: ["loadings"], modes: ["plot"] },
+          ],
+        } },
+      } });
+      const vm = wrapper.vm as any;
+      vm.selectedPresentationId = "loadings";
+      await vm.openQuickPlot();
+      const quick = vm.quickPlotNodeOutput;
+      vm.showQuickPlotModal = false;
+      await vm.openToRunTrials();
+      const [detail] = wrapper.emitted("open-trial")!.at(-1)! as any[];
+      const projected = projectScientificPresentation(detail.output,
+        resolveScientificPresentation(null, detail.output, "loadings"));
+      expect(quick.metadata.pc_labels).toEqual(scores.metadata.pc_labels);
+      expect(projected!.metadata.pc_labels).toEqual(quick.metadata.pc_labels);
+      expect(projected!.presentation_value).toEqual(quick.presentation_value);
+    } finally {
+      wrapper.unmount();
+      workflowStore.restoredRunId = null;
+      workflowStore.executionEvidenceScope = "unavailable";
+    }
   });
 
   it.each([["y_test", "X_test"], ["references", "held_population"]])("hydrates the declared cohort %s → %s", async (responsePort, cohortPort) => {

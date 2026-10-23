@@ -8,11 +8,14 @@ scientific node an arbitrary filesystem path.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import csv
 import hashlib
 import io
 import json
 import re
+import zipfile
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -23,11 +26,13 @@ from spectra_sherpa.app.lib.portable_json import encode_portable_json
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, axis_to_wire
 
 EXPORT_ARTIFACT_SCHEMA = "spectrasherpa-export-artifact/1"
+ZIP_EXPORT_ARTIFACT_SCHEMA = "spectrasherpa-export-artifact/2"
 _MAX_EXPORT_BYTES = 32 * 1024 * 1024
 _MAX_EXPORT_NUMERIC_ELEMENTS = 1_000_000
-_FORMAT_SUFFIX = {"csv": ".csv", "json": ".json", "jdx": ".jdx"}
+_FORMAT_SUFFIX = {"csv": ".csv", "portable_csv": ".csv", "json": ".json", "jdx": ".zip"}
 _FORMAT_MEDIA_TYPE = {
     "csv": "text/csv;charset=utf-8",
+    "portable_csv": "text/csv;charset=utf-8",
     "json": "application/json",
     "jdx": "chemical/x-jcamp-dx",
 }
@@ -54,14 +59,14 @@ def _canonical_json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
 
 
-def _safe_filename(filename: object, fmt: str) -> str:
+def _safe_filename(filename: object, fmt: str, *, legacy_jdx: bool = False) -> str:
     if not isinstance(filename, str) or not filename or filename.strip() != filename:
         raise ValueError("export filename must be non-empty text without surrounding whitespace")
     if len(filename) > 128 or filename in {".", ".."}:
         raise ValueError("export filename is invalid")
     if Path(filename).name != filename or "/" in filename or "\\" in filename or "\x00" in filename:
         raise ValueError("export filename must be a basename without path separators")
-    suffix = _FORMAT_SUFFIX[fmt]
+    suffix = ".jdx" if legacy_jdx else _FORMAT_SUFFIX[fmt]
     if Path(filename).suffix.lower() != suffix:
         raise ValueError(f"export filename for {fmt} must end with {suffix}")
     return filename
@@ -73,8 +78,11 @@ def canonicalize_export_parameters(raw: Mapping[str, object]) -> dict[str, str]:
     fmt = raw.get("format")
     filename = raw.get("filename")
     if not isinstance(fmt, str) or fmt not in _FORMAT_SUFFIX:
-        raise ValueError("export format must be one of csv, json, or jdx")
-    return {"filename": _safe_filename(filename, fmt), "format": fmt}
+        raise ValueError("export format must be one of csv, portable_csv, json, or jdx")
+    # Existing saved workflows may still name a .jdx file. Admit that basename
+    # without mutating the saved graph; the newly prepared artifact is a ZIP.
+    legacy_jdx = fmt == "jdx" and isinstance(filename, str) and filename.lower().endswith(".jdx")
+    return {"filename": _safe_filename(filename, fmt, legacy_jdx=legacy_jdx), "format": fmt}
 
 
 def _finite_matrix(dataset: SherpaDataset) -> np.ndarray:
@@ -213,7 +221,7 @@ def _label(axis_payload: Mapping[str, object], index: int, prefix: str) -> str:
     return f"{prefix}_{index + 1}"
 
 
-def _csv_content(payload: Mapping[str, Any]) -> str:
+def _csv_content(payload: Mapping[str, Any], *, portable: bool = False) -> str:
     buffer = io.StringIO(newline="")
     writer = csv.writer(buffer, lineterminator="\n")
     feature_axis = payload["feature_axis"]
@@ -260,7 +268,8 @@ def _csv_content(payload: Mapping[str, Any]) -> str:
             for transport, name in zip(metadata_transport_headers, metadata_names, strict=True)
         ],
     }
-    buffer.write(encode_portable_csv_envelope(envelope) + "\n")
+    if portable:
+        buffer.write(encode_portable_csv_envelope(envelope) + "\n")
     writer.writerow(headers)
     for row_index in range(n_samples):
         row = payload["data"][row_index]
@@ -289,18 +298,19 @@ def _csv_content(payload: Mapping[str, Any]) -> str:
     return buffer.getvalue()
 
 
-def _jdx_content(payload: Mapping[str, Any]) -> str:
-    n_samples, n_features = payload["shape"]
+def _jdx_content(payload: Mapping[str, Any], row: int) -> str:
+    _, n_features = payload["shape"]
     feature_axis = payload["feature_axis"]
     values = feature_axis["values"]
     units = feature_axis["units"]
-    if n_samples != 1:
-        raise ValueError("JCAMP-DX export requires exactly one spectrum")
     if not isinstance(values, list) or len(values) != n_features:
         raise ValueError("JCAMP-DX export requires a measured numeric feature axis")
     if not isinstance(units, str) or not units.strip():
         raise ValueError("JCAMP-DX export requires declared feature-axis units")
     title = payload["title"] if isinstance(payload["title"], str) and payload["title"] else "SpectraSherpa Export"
+    labels = payload["sample_axis"]["labels"]
+    if labels and labels[row]:
+        title = f"{title} — {labels[row]}"
     y_units = payload["units"] if isinstance(payload["units"], str) and payload["units"] else "ARBITRARY UNITS"
     for field_name, header_value in (("title", title), ("x units", units), ("y units", y_units)):
         if len(header_value) > 256 or any(ord(character) < 32 or ord(character) == 127 for character in header_value):
@@ -316,10 +326,44 @@ def _jdx_content(payload: Mapping[str, Any]) -> str:
     ]
     lines.extend(
         f"{format(float(x), '.17g')}, {format(float(y), '.17g')}"
-        for x, y in zip(values, payload["data"][0], strict=True)
+        for x, y in zip(values, payload["data"][row], strict=True)
     )
     lines.append("##END=")
     return "\n".join(lines) + "\n"
+
+
+def _jdx_archive(payload: Mapping[str, Any], source_digest: str) -> bytes:
+    """One file per input row, with deterministic safe names and identity mapping.
+
+    Labels are display metadata, never paths or invented sample IDs. Preserve
+    the incoming row order and inclusion metadata; filtering belongs upstream.
+    Stored ZIP entries avoid platform/zlib-dependent compression differences.
+    """
+    buffer = io.BytesIO()
+    entries: list[dict[str, object]] = []
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+
+        def write(name: str, content: str) -> None:
+            data = content.encode("utf-8")
+            if buffer.tell() + len(data) > _MAX_EXPORT_BYTES:
+                raise ValueError("export archive exceeds the byte limit")
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, data)
+
+        for row in range(payload["shape"][0]):
+            name = f"spectrum_{row + 1:06d}.jdx"
+            write(name, _jdx_content(payload, row))
+            entries.append({"filename": name, "source_row_index": row})
+        manifest = {
+            "schema_version": "spectrasherpa-jdx-archive/1",
+            "source_digest": source_digest,
+            "spectra": entries,
+            "dataset": {key: value for key, value in payload.items() if key != "data"},
+        }
+        write("manifest.json", _canonical_json(manifest) + "\n")
+    return buffer.getvalue()
 
 
 def build_export_artifact(dataset: SherpaDataset, *, filename: str, format: str) -> dict[str, object]:
@@ -347,19 +391,22 @@ def build_export_artifact(dataset: SherpaDataset, *, filename: str, format: str)
         payload = _dataset_payload(dataset, matrix)
         source_digest = dataset.scientific_digest
         shape = [int(value) for value in matrix.shape]
-    if format == "csv":
-        content = _csv_content(payload)
+    if format in {"csv", "portable_csv"}:
+        content = _csv_content(payload, portable=format == "portable_csv")
     elif format == "jdx":
-        content = _jdx_content(payload)
-    encoded = content.encode("utf-8")
+        encoded = _jdx_archive(payload, source_digest)
+        content = base64.b64encode(encoded).decode("ascii")
+        safe_filename = str(Path(safe_filename).with_suffix(".zip"))
+    if format != "jdx":
+        encoded = content.encode("utf-8")
     if len(encoded) > _MAX_EXPORT_BYTES:
         raise ValueError(f"export artifact exceeds the {_MAX_EXPORT_BYTES}-byte limit")
     return {
-        "schema_version": EXPORT_ARTIFACT_SCHEMA,
+        "schema_version": ZIP_EXPORT_ARTIFACT_SCHEMA if format == "jdx" else EXPORT_ARTIFACT_SCHEMA,
         "filename": safe_filename,
         "format": format,
-        "media_type": _FORMAT_MEDIA_TYPE[format],
-        "content_encoding": "utf-8",
+        "media_type": "application/zip" if format == "jdx" else _FORMAT_MEDIA_TYPE[format],
+        "content_encoding": "base64" if format == "jdx" else "utf-8",
         "content": content,
         "content_sha256": hashlib.sha256(encoded).hexdigest(),
         "byte_length": len(encoded),
@@ -374,18 +421,23 @@ def verify_export_artifact(value: object) -> dict[str, object]:
     if not isinstance(value, Mapping) or set(value) != _ARTIFACT_FIELDS:
         raise ValueError("export artifact must use the closed schema")
     artifact = dict(value)
-    if artifact["schema_version"] != EXPORT_ARTIFACT_SCHEMA:
+    if artifact["schema_version"] not in {EXPORT_ARTIFACT_SCHEMA, ZIP_EXPORT_ARTIFACT_SCHEMA}:
         raise ValueError("unsupported export artifact schema")
     fmt = artifact["format"]
     if not isinstance(fmt, str) or fmt not in _FORMAT_SUFFIX:
         raise ValueError("export artifact format is invalid")
-    artifact["filename"] = _safe_filename(artifact["filename"], fmt)
-    if artifact["media_type"] != _FORMAT_MEDIA_TYPE[fmt] or artifact["content_encoding"] != "utf-8":
+    is_zip = artifact["schema_version"] == ZIP_EXPORT_ARTIFACT_SCHEMA
+    if is_zip and fmt != "jdx":
+        raise ValueError("ZIP export artifact requires JCAMP-DX format")
+    artifact["filename"] = _safe_filename(artifact["filename"], fmt, legacy_jdx=fmt == "jdx" and not is_zip)
+    media_type = "application/zip" if is_zip else _FORMAT_MEDIA_TYPE[fmt]
+    encoding = "base64" if is_zip else "utf-8"
+    if artifact["media_type"] != media_type or artifact["content_encoding"] != encoding:
         raise ValueError("export artifact media contract is invalid")
     content = artifact["content"]
     if not isinstance(content, str):
         raise ValueError("export artifact content must be UTF-8 text")
-    encoded = content.encode("utf-8")
+    encoded = _artifact_bytes(artifact)
     byte_length = artifact["byte_length"]
     if (
         len(encoded) > _MAX_EXPORT_BYTES
@@ -413,6 +465,18 @@ def verify_export_artifact(value: object) -> dict[str, object]:
     return artifact
 
 
+def _artifact_bytes(artifact: Mapping[str, object]) -> bytes:
+    content = str(artifact["content"])
+    if artifact["content_encoding"] == "base64":
+        if len(content) > 4 * ((_MAX_EXPORT_BYTES + 2) // 3):
+            raise ValueError("export artifact exceeds the byte limit")
+        try:
+            return base64.b64decode(content, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError("export artifact base64 is invalid") from exc
+    return content.encode("utf-8")
+
+
 def materialize_export_artifact(value: object, output_dir: str | Path) -> Path:
     """Write verified artifact bytes beneath an explicit host-owned directory."""
 
@@ -421,7 +485,7 @@ def materialize_export_artifact(value: object, output_dir: str | Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     destination = root / str(artifact["filename"])
     with destination.open("xb") as output:
-        output.write(str(artifact["content"]).encode("utf-8"))
+        output.write(_artifact_bytes(artifact))
     return destination
 
 

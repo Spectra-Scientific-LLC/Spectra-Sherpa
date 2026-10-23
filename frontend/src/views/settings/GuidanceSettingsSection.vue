@@ -3,7 +3,6 @@
     <div class="section-header">
       <div>
         <h3>Guidance</h3>
-        <p>Contextual suggestions are based on action-keyed activity in this app.</p>
       </div>
     </div>
 
@@ -16,7 +15,6 @@
       />
       <span>
         <strong>Show contextual suggestions</strong>
-        <small>Disable this to stop toasts and future highlights.</small>
       </span>
     </label>
 
@@ -29,7 +27,6 @@
       />
       <span>
         <strong>Toast notifications</strong>
-        <small>Show concise next-step suggestions outside the Advisor chat.</small>
       </span>
     </label>
 
@@ -42,7 +39,6 @@
       />
       <span>
         <strong>Button highlights</strong>
-        <small>Subtly highlight the recommended action when available.</small>
       </span>
     </label>
 

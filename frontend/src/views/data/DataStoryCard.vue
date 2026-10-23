@@ -9,7 +9,7 @@
     <div class="data-story-body" aria-live="polite">
       <p v-if="!available">{{ unavailableMessage }}</p>
       <p v-else-if="!ready">{{ unavailableReason || (sourceKey ? "Finishing dataset details…" : "Choose a dataset to review its story.") }}</p>
-      <p v-else-if="dataStore.dataStoryText">{{ dataStore.dataStoryText }}</p>
+      <ChatMarkdown v-else-if="dataStore.dataStoryText" :source="dataStore.dataStoryText" />
       <p v-else-if="loading">Reviewing the selected spectra and sample metadata…</p>
       <p v-else>Generate a story for this dataset.</p>
     </div>
@@ -37,6 +37,7 @@
 import { computed, watch } from "vue";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
+import ChatMarkdown from "@/components/ChatMarkdown.vue";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDataStore } from "@/stores/data";
 import type { SherpaDatasetDict } from "@/types";
@@ -106,7 +107,7 @@ function regenerate(): void {
 }
 .data-story-heading h3 { margin: 0; }
 .ai-label { color: var(--text-color-secondary); font-size: 0.7em; font-weight: 500; }
-.data-story-body { flex: 1; min-height: 0; overflow: auto; white-space: pre-wrap; }
+.data-story-body { flex: 1; min-height: 0; overflow: auto; }
 .data-story-body p { margin: 10px 0; }
 .data-story-question input { flex: 1; min-width: 0; }
 @media (max-width: 640px) {

@@ -40,6 +40,13 @@ vi.mock("primevue/inputtext", () => ({
 }));
 
 describe("Data Story card", () => {
+  it("renders scientific Markdown while keeping generated HTML inert", () => {
+    mocks.store.dataStoryText = "**16 scans**\n\n<script>alert('unsafe')</script>";
+    const wrapper = mount(DataStoryCard, { props: { sourceKey: "lavender", ready: true } });
+    expect(wrapper.find("strong").text()).toBe("16 scans");
+    expect(wrapper.find("script").exists()).toBe(false);
+    wrapper.unmount();
+  });
   beforeEach(() => {
     mocks.enabled = true;
     mocks.localChat = false;

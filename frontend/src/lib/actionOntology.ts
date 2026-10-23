@@ -2,6 +2,8 @@ export interface GuidanceActionMeta {
   actionId: string;
   actionVersion: number;
   route?: string;
+  query?: Record<string, string>;
+  hash?: string;
   label: string;
   prompt?: string;
   /**
@@ -20,8 +22,8 @@ export interface GuidanceActionMeta {
    * Optional ``data-action`` value of a button to click after
    * navigation + scope-wait complete.  Used to actually open a
    * modal/dialog the user would otherwise have to find themselves
-   * (e.g. "New Project", "New Watch", "Import Data").  Polled for
-   * up to 2s; no-op on timeout.
+   * (e.g. "New Project", "New Watch"). Polled for up to 2s;
+   * missing or disabled targets produce an actionable refusal.
    *
    * Do NOT set ``clickTarget`` for actions whose target executes
    * destructive or side-effectful work (``run_workflow``,
@@ -36,8 +38,8 @@ export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
     actionVersion: 1,
     route: "/data",
     label: "Import data",
-    // Open the file-upload dialog after navigating.
-    clickTarget: "import_data",
+    // Import targets can persist data. Navigate to its chooser, never submit it.
+    query: { tab: "import" },
   },
   add_preprocessing: {
     actionId: "add_preprocessing",
@@ -61,20 +63,21 @@ export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
     actionVersion: 1,
     route: "/data",
     label: "Review data",
+    query: { tab: "my-dataset" },
   },
   open_synthesis: {
     actionId: "open_synthesis",
     actionVersion: 1,
     route: "/data",
     label: "Open synthesis",
-    clickTarget: "open_synthesis",
+    query: { tab: "synthesis" },
   },
   open_library: {
     actionId: "open_library",
     actionVersion: 1,
     route: "/data",
     label: "Open library",
-    clickTarget: "open_library",
+    query: { tab: "library" },
   },
   open_memory_map: {
     actionId: "open_memory_map",
@@ -100,7 +103,7 @@ export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
   },
   // No clickTarget — selecting a specific starter is a user decision;
   // the dashboard surfaces the analysis starter gallery.
-  pick_template: { actionId: "pick_template", actionVersion: 1, route: "/dashboard", label: "Browse analysis starters" },
+  pick_template: { actionId: "pick_template", actionVersion: 1, route: "/dashboard", hash: "#starter", label: "Browse analysis starters" },
   open_workflow: { actionId: "open_workflow", actionVersion: 1, route: "/workflow", label: "Open workflow" },
   create_folder_watch: {
     actionId: "create_folder_watch",

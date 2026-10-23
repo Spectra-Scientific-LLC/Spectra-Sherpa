@@ -1,11 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import DisplayPreferencesSection from "@/views/settings/DisplayPreferencesSection.vue";
-import { DEFAULT_DISPLAY_PREFERENCES, useDisplayPreferences } from "@/composables/useDisplayPreferences";
+import { DEFAULT_DISPLAY_PREFERENCES, displayNumber, useDisplayPreferences } from "@/composables/useDisplayPreferences";
 
 afterEach(() => Object.assign(useDisplayPreferences(), DEFAULT_DISPLAY_PREFERENCES));
 
 describe("global display defaults", () => {
+  it("defaults to readable precision without removing the full precision option", () => {
+    const value = 1.234567891234567;
+    expect(DEFAULT_DISPLAY_PREFERENCES.precision).toBe("6");
+    expect(displayNumber(value)).toBe("1.23457");
+    useDisplayPreferences().precision = "full";
+    expect(displayNumber(value)).toBe(String(value));
+  });
   it("starts with a 300-row visual ceiling and applies changes immediately across instances", async () => {
     const first = mount(DisplayPreferencesSection);
     const second = mount(DisplayPreferencesSection);

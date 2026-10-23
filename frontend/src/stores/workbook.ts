@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
 import api from "@/api/client";
+import { traceGui } from "@/lib/guiTrace";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
@@ -113,7 +114,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
   const activeTrialSheet = computed(() =>
     activeSheet.value?.kind === "trial" ? activeSheet.value : null,
   );
-  const workspaceIdentity = () => [useAuthStore().user?.id, useAuthStore().token, useProjectStore().currentProjectId];
+  const workspaceIdentity = () => [useAuthStore().user?.id, useAuthStore().sessionRevision, useProjectStore().currentProjectId];
   const identity = () => [...workspaceIdentity(), projectId.value];
   const loadScope = useScopedRequest(identity, () => { isLoading.value = false; });
   const refreshScope = useScopedRequest(() => [...identity(), activeSheet.value?.workflowId]);
@@ -129,6 +130,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
   }
 
   function resetProjectScope(): void {
+    traceGui("workbook_reset", "reset", { project_id: projectId.value });
     loadScope.invalidate();
     refreshScope.invalidate();
     switchScope.invalidate();
@@ -142,7 +144,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
   }
 
   registerProjectScopeReset(resetProjectScope);
-  watch([() => useAuthStore().user?.id, () => useAuthStore().token, () => useProjectStore().currentProjectId], resetProjectScope, { flush: "sync" });
+  watch([() => useAuthStore().user?.id, () => useAuthStore().sessionRevision, () => useProjectStore().currentProjectId], resetProjectScope, { flush: "sync" });
 
   function persistActiveSheet(): void {
     if (projectId.value === null || !activeSheet.value || activeSheet.value.kind === "trial")
@@ -233,10 +235,12 @@ export const useWorkbookStore = defineStore("workbook", () => {
     options: { createIfEmpty?: boolean } = {},
   ): Promise<void> {
     projectId.value = targetProjectId;
+    traceGui("workbook_load", "start", { project_id: targetProjectId });
     switchScope.invalidate();
     const request = loadScope.begin();
     const workflowStore = useWorkflowStore();
     isLoading.value = true;
+    let completed = false;
     try {
       let loadedSheets = await fetchSheets(targetProjectId, request.signal);
       if (!request.isCurrent()) return;
@@ -262,7 +266,9 @@ export const useWorkbookStore = defineStore("workbook", () => {
       } else {
         workflowStore.clearWorkflow();
       }
+      completed = true;
     } finally {
+      traceGui("workbook_load", !request.isCurrent() ? "superseded" : completed ? "ok" : "error", { project_id: targetProjectId, workflow_id: workflowStore.workflowId, node_count: workflowStore.nodes.length });
       if (request.isCurrent()) {
         isLoading.value = false;
       }

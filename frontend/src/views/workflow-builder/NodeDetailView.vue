@@ -1,13 +1,16 @@
 <template>
-  <div class="node-detail-view" :class="{ embedded }">
+  <div class="node-detail-view ss-panel-theme" :class="{ embedded }">
     <!-- Header -->
     <header class="detail-header">
       <div class="header-left">
         <span class="node-icon">{{ nodeIcon }}</span>
         <div class="header-info">
           <h1>{{ nodeLabel }}</h1>
-          <span class="node-instance-id">Instance ID: {{ nodeId }}</span>
-          <span class="node-type-badge">Canonical node: {{ nodeType }}</span>
+          <details>
+            <summary>Node identity</summary>
+            <span class="node-instance-id">Instance ID: {{ nodeId }}</span>
+            <span class="node-type-badge">Canonical node: {{ nodeType }}</span>
+          </details>
         </div>
       </div>
       <div class="header-actions">
@@ -16,7 +19,7 @@
           icon="pi pi-play"
           class="p-button-success"
           :loading="isExecuting"
-          :disabled="hasValidationErrors"
+          :disabled="hasValidationErrors || saving"
           @click="handleRunTrial"
           :title="runTrialDisabledReason || 'Run trial execution with current parameters'"
           :aria-describedby="runTrialDisabledReason ? runTrialReasonId : undefined"
@@ -31,6 +34,8 @@
           label="Save and Exit"
           icon="pi pi-check"
           class="p-button-primary"
+          :disabled="isExecuting || saving || hasValidationErrors"
+          :loading="saving"
           @click="handleSaveAndExit"
         />
         <DisabledReason :id="runTrialReasonId" :reason="runTrialDisabledReason" class="header-disabled-reason" />
@@ -64,7 +69,7 @@
           :get-param-error="getParamError"
           @toggle="toggleSection('settings')"
           @reset="resetToDefaults"
-          @update-param="(name, v) => (localParams[name] = v)"
+          @update-param="updateLocalParameter"
         />
 
         <PeakExecutionDetails
@@ -76,6 +81,7 @@
         <OutputPanel
           :expanded="sections.output"
           :node-type="nodeType"
+          :export-disabled-reason="preparedExportDownloadReason"
           @toggle="toggleSection('output')"
           @toggle-sub="toggleOutputSubsection"
           @show-full-metadata="showFullMetadata = true"
@@ -90,6 +96,10 @@
         <PlotsPanel
           :attention-node-id="nodeId"
           :expanded="sections.plots"
+          :node-label="nodeLabel"
+          :node-input="inputData"
+          :node-inputs="quickPlotInputs"
+          :plot-selection="quickPlotSelection"
           @toggle="toggleSection('plots')"
           @toggle-plot="togglePlot"
           @contour-click="handleContourClick"
@@ -140,6 +150,8 @@
 import PeakExecutionDetails from "@/components/common/PeakExecutionDetails.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- node outputs and plot payloads vary widely across node families in this inspection view. */
 import { ref, computed, watch, onMounted, provide, nextTick, useId } from "vue";
+import { PLOT_SURFACE } from "@/theme/plotTheme";
+
 import DisabledReason from "@/components/DisabledReason.vue";
 import {
   NODE_DETAIL_STATE_KEY,
@@ -166,7 +178,7 @@ import InputPanel from "./node-detail/panels/InputPanel.vue";
 import SettingsPanel from "./node-detail/panels/SettingsPanel.vue";
 import OutputPanel from "./node-detail/panels/OutputPanel.vue";
 import PlotsPanel from "./node-detail/panels/PlotsPanel.vue";
-import { downloadExportArtifact, extractExportArtifact } from "@/utils/exportArtifact";
+import { downloadExportArtifact, extractExportArtifact, exportDownloadReason, exportFilenameForFormat, EXPORT_FORMAT_LABELS } from "@/utils/exportArtifact";
 import type { NodeOutput } from "@/utils/nodeOutput";
 import {
   availableScientificPresentations,
@@ -177,21 +189,24 @@ import {
 import { isUserEditableNodeParameter } from "@/utils/nodeParameterVisibility";
 
 const route = useRoute();
+provide(PLOT_SURFACE, "panel");
 const toast = useToast();
 
 const props = withDefaults(
   defineProps<{
     initialNodeData?: any | null;
     embedded?: boolean;
+    saving?: boolean;
   }>(),
   {
     initialNodeData: null,
     embedded: false,
+    saving: false,
   },
 );
 
 const emit = defineEmits<{
-  (event: "save", nodeId: string, params: Record<string, unknown>): void;
+  (event: "save", nodeId: string, params: Record<string, unknown>, execute: boolean): void;
   (event: "close"): void;
 }>();
 
@@ -366,7 +381,7 @@ const mapMetadataParams = (_nodeType: string, parameters: any[]): any[] =>
     min: p.min_value,
     max: p.max_value,
     step: p.step,
-    options: p.options?.map((o: any) => (typeof o === "string" ? { label: o, value: o } : o)),
+    options: p.options?.map((o: any) => (typeof o === "string" ? { label: _nodeType === "output.export" && p.name === "format" ? EXPORT_FORMAT_LABELS[o as keyof typeof EXPORT_FORMAT_LABELS] ?? o : o, value: o } : o)),
     description: p.description,
     default: p.default,
     required: p.required,
@@ -528,10 +543,23 @@ const openQuickPlot = () => {
   showQuickPlotModal.value = true;
 };
 
+function updateLocalParameter(name: string, value: unknown): void {
+  localParams.value[name] = value;
+  if (nodeType.value === "output.export" && name === "format") {
+    const filename = exportFilenameForFormat(localParams.value.filename, value);
+    if (filename !== null) localParams.value.filename = filename;
+  }
+}
+
+const preparedExportDownloadReason = computed(() =>
+  nodeType.value === "output.export"
+    ? exportDownloadReason(extractExportArtifact(nodeOutput.value), localParams.value) : "",
+);
+
 const exportOutput = async () => {
   if (nodeType.value === "output.export") {
     try {
-      const artifact = await downloadExportArtifact(extractExportArtifact(nodeOutput.value));
+      const artifact = await downloadExportArtifact(extractExportArtifact(nodeOutput.value), localParams.value);
       toast.add({
         severity: "success",
         summary: "Prepared export downloaded",
@@ -569,7 +597,7 @@ const handleCancel = () => {
   window.close();
 };
 
-const { isExecuting, broadcastParamsUpdate, waitForParamsAck, handleRunTrial } = useNodeTrial({
+const { isExecuting, hasSuccessfulTrial, broadcastParamsUpdate, waitForParamsAck, handleRunTrial } = useNodeTrial({
   nodeData,
   localParams,
   nodeType,
@@ -590,6 +618,7 @@ const handleSaveAndExit = async () => {
       "save",
       String(nodeData.value?.id ?? nodeId.value),
       cloneNodeDetailParams(localParams.value),
+      hasSuccessfulTrial.value,
     );
     return;
   }

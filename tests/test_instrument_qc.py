@@ -354,7 +354,7 @@ async def test_real_watch_retains_start_snapshot_without_holding_predictions(
         feature_axis=SpectralAxis(values=np.arange(8, dtype=float), units="cm-1"),
         domain=DomainContext(measurement_mode="reflectance"),
     )
-    materialize_export_artifact(build_export_artifact(data, filename="new.csv", format="csv"), folder)
+    materialize_export_artifact(build_export_artifact(data, filename="new.csv", format="portable_csv"), folder)
     enabled = await auth_client.post(f"/api/v1/deploy/watches/{watch_id}/enable")
     assert enabled.status_code == 200, enabled.text
     monkeypatch.setattr(folder_watch_service, "async_session", factory)

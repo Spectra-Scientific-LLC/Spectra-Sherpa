@@ -132,8 +132,7 @@
             message="No folder watches"
           >
             <p>
-              Create a folder watch to automatically process new spectral files as they appear in a
-              server directory.
+              Create a watch to process new files in a server folder.
             </p>
           </WorkspaceState>
 

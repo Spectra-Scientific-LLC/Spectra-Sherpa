@@ -1,3 +1,4 @@
+import { readBrowserToken } from '@/extension-contract/session-v1';
 import { onBeforeUnmount, watch } from "vue";
 
 import api from "@/api/client";
@@ -27,7 +28,8 @@ export function useSessionRenewal() {
 
   const maybeRenew = async (): Promise<boolean> => {
     const now = Date.now();
-    const token = localStorage.getItem("token");
+    const token = readBrowserToken();
+    const session = authStore.captureSession();
     const minutesRemaining = sessionExpiryMinutesRemaining(token, now);
     if (
       document.visibilityState !== "visible" ||
@@ -36,18 +38,35 @@ export function useSessionRenewal() {
       now - lastActivityAt > ACTIVE_WINDOW_MS ||
       now - lastAttemptAt < RETRY_INTERVAL_MS ||
       refreshInFlight
+      || !session.userId || session.token !== token
     ) {
       return false;
     }
 
+    return attempt(session, now);
+  };
+
+  /**
+   * An explicit "Renew session" request. "skipped" means no attempt was made
+   * (one is already in flight, or this tab's credential is no longer the
+   * stored one, for example because another tab renewed it): the caller must
+   * not treat that as a failed renewal.
+   */
+  const renewNow = async (): Promise<"renewed" | "failed" | "skipped"> => {
+    noteActivity();
+    const token = readBrowserToken();
+    const session = authStore.captureSession();
+    if (refreshInFlight || !token || !session.userId || session.token !== token) return "skipped";
+    return (await attempt(session, Date.now())) ? "renewed" : "failed";
+  };
+
+  const attempt = async (session: ReturnType<typeof authStore.captureSession>, now: number): Promise<boolean> => {
     lastAttemptAt = now;
     refreshInFlight = true;
     try {
       const response = await api.post<RefreshResponse>("/auth/refresh");
       const renewedToken = response.data.access_token;
-      if (renewedToken && enabled && localStorage.getItem("token") === token) {
-        localStorage.setItem("token", renewedToken);
-        authStore.token = renewedToken;
+      if (renewedToken && enabled && await authStore.acceptRenewal(session, renewedToken)) {
         window.dispatchEvent(new StorageEvent("storage", { key: "token", newValue: renewedToken }));
         return true;
       }
@@ -70,7 +89,7 @@ export function useSessionRenewal() {
 
   const start = () => {
     enabled = true;
-    if (timer !== null || !localStorage.getItem("token")) return;
+    if (timer !== null || !readBrowserToken()) return;
     document.addEventListener("pointerdown", noteActivity, { capture: true });
     document.addEventListener("keydown", noteActivity, { capture: true });
     document.addEventListener("visibilitychange", onVisible);
@@ -95,7 +114,7 @@ export function useSessionRenewal() {
     () => [authStore.token, authStore.user] as const,
     ([, user], [previousToken, previousUser]) => {
       if (!enabled) return;
-      if (!localStorage.getItem("token")) {
+      if (!readBrowserToken()) {
         stopPolling();
         return;
       }
@@ -109,5 +128,5 @@ export function useSessionRenewal() {
 
   onBeforeUnmount(stop);
 
-  return { start, stop, maybeRenew, noteActivity };
+  return { start, stop, maybeRenew, renewNow, noteActivity };
 }

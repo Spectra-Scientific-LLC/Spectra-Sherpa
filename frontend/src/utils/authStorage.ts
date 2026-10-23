@@ -1,5 +1,5 @@
+import { readBrowserToken, endBrowserSession } from '@/extension-contract/session-v1';
 const API_KEY_STORAGE_KEY = "api_key";
-const TOKEN_STORAGE_KEY = "token";
 
 let runtimeApiKey = "";
 
@@ -28,13 +28,13 @@ export function clearStoredApiKey(): void {
 }
 
 export function readStoredToken(): string {
-  return localStorage.getItem(TOKEN_STORAGE_KEY) || "";
+  return readBrowserToken() || "";
 }
 
 export function hasStoredToken(): boolean {
   return Boolean(readStoredToken());
 }
 
-export function clearStoredToken(): void {
-  localStorage.removeItem(TOKEN_STORAGE_KEY);
+export async function clearStoredToken(): Promise<void> {
+  await endBrowserSession();
 }

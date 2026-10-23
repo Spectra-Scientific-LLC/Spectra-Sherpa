@@ -33,8 +33,8 @@ class ExportNode(Node):
         category="output",
         label="Prepare Export",
         description=(
-            "Prepare a digest-bound CSV, JSON, or single-spectrum JCAMP-DX artifact. "
-            "CSV and JSON retain one exact target and row-aligned sample metadata when present. "
+            "Prepare a digest-bound CSV, JSON, or ZIP containing one JCAMP-DX file per spectrum. "
+            "Plain CSV is the default; portable CSV and JSON also retain typed axes and units. "
             "The workbench downloads the exact prepared bytes; generated scripts "
             "materialize the same verified artifact under their export directory."
         ),
@@ -52,8 +52,8 @@ class ExportNode(Node):
                 label="Format",
                 param_type="select",
                 default="csv",
-                options=["csv", "json", "jdx"],
-                description="Closed serialization format",
+                options=["csv", "portable_csv", "json", "jdx"],
+                description="Plain CSV, portable CSV with a metadata preamble, JSON, or JDX (ZIP of all input spectra)",
                 required=True,
             ),
         ],
@@ -128,7 +128,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
     implementation_id="spectrasherpa.output.export",
-    implementation_version="2.0.0",
+    implementation_version="3.0.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="preserves_samples",

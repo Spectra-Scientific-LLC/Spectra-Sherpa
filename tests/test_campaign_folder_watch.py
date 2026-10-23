@@ -116,7 +116,9 @@ async def test_signed_campaign_import_real_folder_watch(
         feature_axis=SpectralAxis(values=np.arange(8, dtype=float), units="cm-1"),
         domain=DomainContext(measurement_mode="reflectance"),
     )
-    materialize_export_artifact(build_export_artifact(dataset, filename="new.csv", format="csv"), incoming)
+    # This fitted application requires units and measurement mode: plain CSV
+    # deliberately carries neither. Explicit portable CSV retains that authority.
+    materialize_export_artifact(build_export_artifact(dataset, filename="new.csv", format="portable_csv"), incoming)
     created = await auth_client.post(
         "/api/v1/deploy/watches",
         json={
@@ -175,7 +177,9 @@ async def test_signed_campaign_import_real_folder_watch(
         feature_axis=SpectralAxis(values=np.arange(8, dtype=float), units="cm-1"),
         domain=DomainContext(measurement_mode="reflectance"),
     )
-    materialize_export_artifact(build_export_artifact(singleton, filename="singleton.csv", format="csv"), incoming)
+    materialize_export_artifact(
+        build_export_artifact(singleton, filename="singleton.csv", format="portable_csv"), incoming
+    )
     await test_session.refresh(watch)
     await folder_watch_service.FolderWatchService()._process_watch(watch)
     predictions = (await test_session.scalars(select(BatchPrediction))).all()
@@ -205,6 +209,7 @@ async def test_signed_campaign_import_real_folder_watch(
         "empty",
         "missing_mode",
         "wrong_mode",
+        "plain_csv",
     ],
 )
 async def test_incompatible_incoming_file_is_visible_failure(
@@ -245,7 +250,12 @@ async def test_incompatible_incoming_file_is_visible_failure(
                 )
             ),
         )
-        materialize_export_artifact(build_export_artifact(data, filename="bad.csv", format="csv"), incoming)
+        materialize_export_artifact(
+            build_export_artifact(
+                data, filename="bad.csv", format="csv" if bad_input == "plain_csv" else "portable_csv"
+            ),
+            incoming,
+        )
     response = await auth_client.post(
         "/api/v1/deploy/watches",
         json={
@@ -267,6 +277,12 @@ async def test_incompatible_incoming_file_is_visible_failure(
     assert prediction.error_message
     if bad_input in ("missing_mode", "wrong_mode"):
         assert "measurement_mode" in prediction.error_message
+        assert "axis" not in prediction.error_message
+    if bad_input == "wrong_units":
+        assert "axis" in prediction.error_message
+        assert "measurement_mode" not in prediction.error_message
+    if bad_input == "plain_csv":
+        assert "axis" in prediction.error_message and "measurement_mode" in prediction.error_message
     assert prediction.results is None
     run = await test_session.get(ExecutionRun, prediction.run_id)
     assert run.source_metadata["canonical_plan_digest"] == record.application_plan_digest

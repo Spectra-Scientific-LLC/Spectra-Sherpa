@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { getYAxisLabel } from "@/utils/plotLabels";
 
 describe("spectral ordinate labels", () => {
+  it("retains declared dimensionless and normalized signal context", () => {
+    expect(getYAxisLabel({ y_title: "Samples", value_units: "dimensionless" })).toBe("Intensity (dimensionless)");
+    expect(getYAxisLabel({ y_title: "Samples", value_units: "normalized" })).toBe("Normalized intensity");
+    expect(getYAxisLabel({ value_units: "dimensionless" })).toBe("Response (dimensionless)");
+    expect(getYAxisLabel({ value_units: "normalized" })).toBe("Normalized response");
+  });
   it.each(["Sample", "Acquisition"])("does not use %s as the absorbance ordinate", title => {
     expect(getYAxisLabel({ y_title: title, value_units: "absorbance" })).toBe("Absorbance");
   });

@@ -10,7 +10,7 @@ export interface DisplayPreferences {
 }
 
 export const DEFAULT_DISPLAY_PREFERENCES: DisplayPreferences = {
-  precision: "full",
+  precision: "6",
   palette: "default",
   lineScale: 1,
   markerScale: 1,
@@ -25,7 +25,7 @@ function validated(value: unknown): DisplayPreferences {
   const saved = value && typeof value === "object" ? value as Partial<DisplayPreferences> : {};
   return {
     precision: ["full", "3", "6", "9"].includes(String(saved.precision))
-      ? saved.precision! : "full",
+      ? saved.precision! : DEFAULT_DISPLAY_PREFERENCES.precision,
     palette: ["default", "colorblind", "high-contrast"].includes(String(saved.palette))
       ? saved.palette! : "default",
     lineScale: [0.75, 1, 1.5].includes(Number(saved.lineScale)) ? Number(saved.lineScale) : 1,

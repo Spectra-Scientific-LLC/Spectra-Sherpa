@@ -149,6 +149,10 @@
     <PromotionFitContext v-if="route.query.promotion_artifact && workflowStore.workflowId" :artifact-uid="String(route.query.promotion_artifact)" :workflow-id="workflowStore.workflowId" :source-run-id="Number(route.query.promotion_source_run) || null" />
 
     <p v-if="workflowContextLoading" role="status" aria-label="Loading workflow">Loading workflow…</p>
+    <div v-if="workbookLoadError" role="alert" class="workflow-selection-unavailable">
+      <span>{{ workbookLoadError }}</span>
+      <Button label="Reload workbook" class="p-button-sm" @click="initializeWorkbook(false)" />
+    </div>
     <p v-if="!workflowContextLoading && workflowStore.hasFoldValidationPlan" role="status" aria-label="Validated workflow export">
       This campaign-derived sheet has a cross-validation plan. A project archive preserves the sheet, but is not a deployable campaign winner.
       <template v-if="canOptimize">For an application, use a signed Model package when Optimize offers one for a selected, refitted winner.</template>
@@ -313,6 +317,7 @@
             embedded
             :initial-node-data="workbookStore.activeTrialSheet.trialData"
             @save="saveTrialParams"
+            :saving="applyingTrial"
             @close="closeActiveTrialTab"
           />
           <WorkflowCanvas
@@ -509,6 +514,7 @@ const dataSelectionReceipt = ref<DataSelectionReceipt | null>(
 // A missing receipt cannot be diagnosed until the routed project has loaded.
 // Also suppress notices retained from the previous sheet during navigation.
 const workbookContextReady = ref(false);
+const workbookLoadError = ref("");
 const workflowContextLoading = computed(() =>
   !workbookContextReady.value || workbookStore.isLoading || workflowStore.isLoading,
 );
@@ -990,6 +996,14 @@ type WorkflowDraftSnapshot = {
 
 const pendingRecoveryDraft = ref<ReturnType<typeof editableWorkflowGraph> | null>(null);
 
+// Recovery belongs to the sheet on which it was discovered, not the canvas
+// component's lifetime (template creation can replace that sheet in-place).
+watch(
+  () => [authStore.user?.id, workbookStore.projectId, workflowStore.workflowId],
+  () => { pendingRecoveryDraft.value = null; },
+  { flush: "sync" },
+);
+
 const currentWorkflowDraftKey = (): string | null => {
   const projectId = workbookStore.projectId;
   const currentWorkflowId = workflowStore.workflowId;
@@ -1151,7 +1165,17 @@ const createNodeId = (
 
 // Handle BroadcastChannel messages from NodeDetailView.
 // DetailView is send-only for `node_params_updated` (fired on Save and Exit).
+let trialOwnerId = crypto.randomUUID();
+watch([() => authStore.user?.id, () => authStore.sessionRevision], () => {
+  trialOwnerId = crypto.randomUUID();
+}, { flush: "sync" });
 const handleBroadcastMessage = (event: MessageEvent) => {
+  if (event.data?.ownerId && event.data.ownerId !== trialOwnerId) return;
+  if (event.data?.execute && event.data.ownerId !== trialOwnerId) {
+    broadcastChannel.value?.postMessage({ type: "node_params_applied", requestId: event.data.requestId,
+      applied: false, reason: "Reopen the trial from its workflow tab." });
+    return;
+  }
   const result = _handleBroadcastMessage(
     event,
     nodes,
@@ -1171,6 +1195,10 @@ const handleBroadcastMessage = (event: MessageEvent) => {
       applied: result.applied,
       reason: result.reason ?? null,
     });
+  }
+  if (result.applied && event.data?.execute === true) {
+    // Detached detail windows use the same retained execution as embedded trials.
+    void saveTrialParams(String(event.data.nodeId), event.data.params, true, false);
   }
 };
 
@@ -1679,7 +1707,7 @@ const triggerAutosave = async (
         toast.add({
           severity: "error",
           summary: "Autosave Failed",
-          detail: "Your edits are kept as a local draft. Edit again to retry saving.",
+          detail: `${autosaveErrorMessage.value}. Your edits are kept as a local draft. Correct the settings and retry saving.`,
           life: 6000,
         });
         autosaveFailureToastShown.value = true;
@@ -1695,11 +1723,12 @@ const triggerAutosave = async (
   }
 };
 
-const initializeWorkbook = async () => {
+const initializeWorkbook = async (respectDeepLink = true) => {
+  workbookLoadError.value = "";
   try {
     const queryProjectId = Number(route.query.project_id);
     let targetProjectId: number | null =
-      Number.isFinite(queryProjectId) && queryProjectId > 0
+      respectDeepLink && Number.isFinite(queryProjectId) && queryProjectId > 0
         ? queryProjectId
         : projectStore.currentProjectId;
 
@@ -1737,11 +1766,23 @@ const initializeWorkbook = async () => {
     }
 
     await projectStore.selectProject(targetProjectId);
+    if (projectStore.currentProjectId !== targetProjectId) throw new Error("The requested project could not be selected. Reload the workbook to retry.");
     const pendingStarter = readAnalysisStarterIntent();
+    const accountAtLoad = [authStore.user?.id, authStore.sessionRevision];
     await workbookStore.loadSheets(targetProjectId, {
       createIfEmpty: pendingStarter?.template_slug == null,
     });
-    if (route.query.workflow_id !== undefined) {
+    // Actor hydration can reset both stores during the first load. Retry that
+    // known invalidation once; never accept an abandoned load as an empty graph.
+    if (workbookStore.projectId !== targetProjectId && projectStore.currentProjectId === targetProjectId &&
+        accountAtLoad[0] === authStore.user?.id && accountAtLoad[1] !== authStore.sessionRevision) {
+      await workbookStore.loadSheets(targetProjectId, { createIfEmpty: pendingStarter?.template_slug == null });
+    }
+    if (workbookStore.projectId !== targetProjectId ||
+        (workbookStore.activeSheet?.kind !== "trial" && workbookStore.activeSheet && workflowStore.workflowId !== workbookStore.activeSheet.workflowId)) {
+      throw new Error("Workbook loading was interrupted by a workspace change. Reload the workbook to retry.");
+    }
+    if (respectDeepLink && route.query.workflow_id !== undefined) {
       const requestedId = Number(route.query.workflow_id);
       const requestedIndex = workbookStore.sheets.findIndex(sheet => sheet.workflowId === requestedId);
       if (!Number.isSafeInteger(requestedId) || requestedIndex < 0) {
@@ -1772,6 +1813,7 @@ const initializeWorkbook = async () => {
     });
   } catch (err: unknown) {
     const message = getErrorMessage(err, "Unable to load workflow sheets");
+    workbookLoadError.value = message;
     console.error("[WorkflowBuilder] Workbook load failed:", err);
     toast.add({
       severity: "error",
@@ -1784,12 +1826,12 @@ const initializeWorkbook = async () => {
 
 let workbookReadyForProjectSwitches = false;
 const projectWorkbookLoads = useScopedRequest(
-  () => [authStore.user?.id, authStore.token, projectStore.currentProjectId],
+  () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId],
 );
 
 watch(
-  () => projectStore.currentProjectId,
-  async (projectId) => {
+  () => [projectStore.currentProjectId, authStore.user?.id, authStore.sessionRevision] as const,
+  async ([projectId]) => {
     if (
       !workbookReadyForProjectSwitches ||
       projectId === null ||
@@ -1799,12 +1841,19 @@ watch(
     }
 
     const request = projectWorkbookLoads.begin();
+    workbookLoadError.value = "";
     clearPendingAutosave();
     clearPendingAutoExecute();
     resetDialogOpenedSheetUi();
     workflowStore.clearWorkflow();
 
     try {
+      if (Number(route.query.project_id) !== projectId) {
+        const query: typeof route.query = { ...route.query, project_id: String(projectId) };
+        for (const key of ["project", "workflow_id", "selection", "fromDataSelection", "addNode"]) delete query[key];
+        await router.replace({ path: route.path, query });
+        if (!request.isCurrent()) return;
+      }
       await workbookStore.loadSheets(projectId);
       if (
         !request.isCurrent() ||
@@ -1830,6 +1879,7 @@ watch(
     } catch (err: unknown) {
       if (!request.isCurrent()) return;
       const message = getErrorMessage(err, "Unable to load workflow sheets");
+      workbookLoadError.value = message;
       console.error("[WorkflowBuilder] Project workbook load failed:", err);
       toast.add({
         severity: "error",
@@ -2031,7 +2081,7 @@ const openTrialTab = async (nodeData: any) => {
   }
   try {
     await workbookStore.openTrialTab(
-      nodeData,
+      { ...nodeData, ownerId: trialOwnerId },
       sourceWorkflowId,
       workbookStore.activeSheet?.tabColor ?? null,
     );
@@ -2063,26 +2113,57 @@ const closeActiveTrialTab = async () => {
   }
 };
 
-const saveTrialParams = async (nodeId: string, params: Record<string, unknown>) => {
+const trialSaveScope = useScopedRequest(
+  () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId, workflowStore.workflowId],
+);
+const applyingTrial = ref(false);
+const saveTrialParams = async (
+  nodeId: string, params: Record<string, unknown>, execute = false, closeTrial = true,
+) => {
+  if (applyingTrial.value) return;
+  const request = trialSaveScope.begin();
+  const trialId = workbookStore.activeTrialSheet?.trialId;
+  const sourceWorkflowId = workflowStore.workflowId;
+  if (closeTrial && (!trialId || workbookStore.activeTrialSheet?.sourceWorkflowId !== sourceWorkflowId)) return;
+  applyingTrial.value = true;
   try {
     workflowStore.updateNode(nodeId, { params });
+    const intendedGraph = workflowDraftSignature(workflowStore);
     if (workflowStore.hasUnsavedChanges && workflowStore.workflowId !== null) {
       await workflowStore.saveWorkflow({ createVersion: false });
+    }
+    if (!request.isCurrent() || (closeTrial && workbookStore.activeTrialSheet?.trialId !== trialId)) return;
+    if (workflowStore.hasUnsavedChanges) throw new Error("Settings have not been saved. Review the draft and try again.");
+    if (closeTrial) await closeActiveTrialTab();
+    if (!request.isCurrent() || workflowStore.workflowId !== sourceWorkflowId) return;
+    if (workflowDraftSignature(workflowStore) !== intendedGraph) {
+      throw new Error("The workflow changed while applying the trial. Review its current settings before running.");
+    }
+    if (execute) {
+      // Trial outputs are previews, not retained run evidence. Re-enter the
+      // normal node execution path so canvas, Inspector and Runs agree.
+      const result = await workflowStore.executeNode(nodeId);
+      if (!request.isCurrent()) return;
+      if (result.error || result.status === "error") {
+        throw new Error(result.error || "Node execution failed");
+      }
     }
     toast.add({
       severity: "success",
       summary: "Saved",
-      detail: "Settings applied to the workflow",
+      detail: execute ? "Settings and results updated in the workflow" : "Settings applied to the workflow",
       life: 1500,
     });
-    await closeActiveTrialTab();
   } catch (err: unknown) {
+    if (!request.isCurrent()) return;
     toast.add({
       severity: "error",
-      summary: "Save Failed",
+      summary: "Apply Trial Failed",
       detail: getErrorMessage(err, "Unable to save trial settings"),
       life: 4000,
     });
+  } finally {
+    applyingTrial.value = false;
   }
 };
 
@@ -2801,7 +2882,7 @@ const onDeleteNode = (nodeId: string) => {
   background: var(--ss-panel-inset);
 }
 
-.toolbar-state-control :deep(.p-checkbox-box.p-highlight) {
+.toolbar-state-control :deep(.p-checkbox.p-highlight .p-checkbox-box) {
   border-color: var(--ss-action-border);
   background: var(--ss-action);
 }

@@ -6,10 +6,7 @@
     :style="{ width: '95vw', maxWidth: '1500px' }"
   >
     <section :aria-label="isPls ? 'PLS sample review' : 'PCA sample review'" class="pca-review">
-      <p>
-        Review calibration samples in this analysis. Marking does not exclude them. Exclusion refits
-        preprocessing and the model; it does not edit My Dataset or existing optimization seeds.
-      </p>
+      <MethodHelp topic="diagnostics" label="Diagnostic review" context="Review is adaptive model development, not independent validation. Marking highlights samples; analysis exclusions refit without changing My Dataset or existing optimization seeds." />
       <p v-if="error" role="alert" class="review-error">{{ error }}</p>
       <p v-if="busy" role="status">{{ progress }}</p>
       <template v-if="review">
@@ -17,7 +14,7 @@
           Run {{ review.run_id }} · {{ review.n_calibration }} calibration samples ·
           {{ review.n_components }} components.
           <span v-if="!isPls">Limits: 95%; Q: {{ review.q_limit_method }}.</span>
-          Screening after inspection is adaptive model development, not independent validation.
+
         </p>
         <p v-if="review.stale" role="alert">
           The graph has changed or the run is incomplete. Rerun before new exclusions. The plots
@@ -58,10 +55,8 @@
           aria-label="Held-out validation metrics"
         >
           <p>
-            <strong v-if="review.state.post_review">Post-review analysis.</strong> Full-test metrics
-            include every original held-out observation, including review omissions. Test review
-            never refits the model or changes workflow predictions. A lower subset RMSEP is not
-            independent evidence of improvement.
+            <strong v-if="review.state.post_review">Post-review subset.</strong>
+            Full-test metrics retain all original held-out samples; omissions affect the review subset only.
           </p>
           <table>
             <caption>
@@ -256,7 +251,7 @@
         <p v-if="isPls">
           Residual = reference − predicted. ○ Calibration · □ Held-out test · ◇ Scientist-marked
           outlier · × Excluded projection / omitted test subset. Colours preserve sample groups.
-          Calibration fit is not validation.
+
         </p>
         <p v-else>
           ○ Calibration · ◇ Scientist-marked outlier · × Excluded — projected. Colour preserves
@@ -264,8 +259,9 @@
           application limit for excluded projections; solid T² is the calibration limit.
         </p>
         <p role="status" aria-live="polite">
-          {{ selected.length }} samples selected across charts and the table.
+          {{ selected.length }} samples selected
         </p>
+        <p v-if="selected.length">Analysis exclusions refit preprocessing and model; My Dataset is unchanged.</p>
         <label class="review-reason"
           >Scientific reason
           <input
@@ -412,6 +408,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import { computed, ref, watch } from "vue";

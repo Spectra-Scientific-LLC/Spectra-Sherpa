@@ -29,7 +29,7 @@ const error = ref("");
 const maxFiles = ref(16);
 const maxBytes = ref(31 * 1024 * 1024);
 const auth = useAuthStore();
-const identity = () => [auth.user?.id, auth.token, props.artifactUid, project.currentProjectId];
+const identity = () => [auth.user?.id, auth.sessionRevision, props.artifactUid, project.currentProjectId];
 const reads = useScopedRequest(identity);
 const writes = useScopedRequest(identity, () => { busy.value = false; }, { abortOnInvalidate: false });
 

@@ -38,12 +38,12 @@ describe("reference-value review", () => {
     expect(wrapper.text()).toContain("12");
     expect(wrapper.text()).toContain("Mean of 2 measurements; mapping unverified");
     expect(wrapper.text()).toContain("Reference measurement precision is not recorded");
-    expect(wrapper.text()).toContain("Model residuals do not estimate laboratory precision");
+    expect(wrapper.text()).toContain("Model residuals do not establish laboratory precision");
   });
 
   it("does not invent a method or precision for an older model", () => {
     const wrapper = mount(ReferenceQualityCard, { props: { evidence: null } });
-    expect(wrapper.text()).toContain("no bound laboratory reference declaration");
+    expect(wrapper.text()).toContain("Laboratory reference declaration not recorded");
     expect(wrapper.text()).not.toContain("Pooled within-specimen");
   });
 

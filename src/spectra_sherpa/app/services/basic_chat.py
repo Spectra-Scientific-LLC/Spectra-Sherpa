@@ -25,9 +25,18 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from urllib.parse import urlparse
 
+from spectra_sherpa.app.core.app_paths import get_app_data_paths
+from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.services.chat_providers import ChatEndpointConfig, ChatRequest, get_chat_provider
+from spectra_sherpa.app.services.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
+
+chat_limiter = RateLimiter(
+    max_calls=30,
+    period_sec=3600,
+    state_path=get_app_data_paths(settings.data_dir).rate_limits_dir / "byo_chat_stream.json",
+)
 
 MAX_INPUT_CHARS = 16_000
 CHAT_ENDPOINT_URL = os.getenv("CHAT_ENDPOINT_URL", "")

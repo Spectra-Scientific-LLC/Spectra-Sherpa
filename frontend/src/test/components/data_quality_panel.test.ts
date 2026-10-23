@@ -91,6 +91,12 @@ describe("DataQualityPanel", () => {
 
     expect(wrapper.text()).toContain("Multiple samples loaded");
     expect(wrapper.text()).toContain("3 features detected");
+    const passed = wrapper.get("details");
+    expect(passed.attributes("open")).toBeUndefined();
+    expect(passed.text()).toContain("Multiple samples loaded");
+    expect(passed.text()).toContain("3 features detected");
+    const missing = wrapper.findAll(".dq-flag").find(flag => flag.text().includes("1 missing values"))!;
+    expect(missing.element.closest("details")).toBeNull();
     expect(wrapper.text()).toContain("1 missing values");
     expect(wrapper.text()).not.toContain("Sample IDs (3)");
   });

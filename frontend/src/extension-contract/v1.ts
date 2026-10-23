@@ -43,6 +43,8 @@ export interface HostAuthStore {
   user: Ref<HostUser | null>;
   token: Ref<string | null>;
   clearCredentials(): void;
+  /** Gate cross-tab credential adoption before protected requests. */
+  ensureStoredSession?(): Promise<void>;
 }
 
 export interface HostMenuItem {

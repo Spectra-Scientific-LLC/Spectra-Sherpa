@@ -1,6 +1,7 @@
 """Optional goal classifier for the Starter planner.
 
-OSS plans goals with keyword rules only. A deployment with a language model
+OSS uses its configured BYO endpoint; managed deployments register their model.
+A deployment with a language model
 can register a classifier that reads the goal text, picks one of the offered
 intents and, optionally, the dataset to start from. The classifier never
 writes steps: the planner validates both choices against what it offered and
@@ -56,7 +57,9 @@ def set_goal_classifier(
 
 def goal_classifier_available() -> bool:
     if _classifier is None:
-        return False
+        from spectra_sherpa.app.services.local_starter import local_starter_available
+
+        return local_starter_available()
     if _is_available is None:
         return True
     try:
@@ -87,6 +90,10 @@ async def classify_goal_with_model(
     support the chosen intent, is dropped while the intent is kept.
     """
     classifier = _classifier
+    if classifier is None:
+        from spectra_sherpa.app.services.local_starter import classify_local_goal
+
+        classifier = classify_local_goal
     if classifier is None or not goal_classifier_available():
         return None
     try:
@@ -95,7 +102,8 @@ async def classify_goal_with_model(
             timeout=_timeout_seconds,
         )
     except Exception:
-        logger.warning("Starter goal classifier failed", exc_info=True)
+        # Provider errors can contain authenticated URLs or user goal text.
+        logger.warning("Starter goal classifier failed; using the rule-based plan")
         return None
     if not isinstance(result, GoalClassification):
         return None

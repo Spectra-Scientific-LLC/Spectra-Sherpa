@@ -3,6 +3,7 @@
     <div v-if="scaleOptions.length > 1" class="axis-set-control">
       <label>Coordinate scale</label>
       <Dropdown
+        :panelClass="panelClass"
         :model-value="scaleValue"
         :options="scaleOptions"
         optionLabel="label"
@@ -13,6 +14,7 @@
     <div v-if="labelOptions.length > 1" class="axis-set-control">
       <label>Axis labels</label>
       <Dropdown
+        :panelClass="panelClass"
         :model-value="labelValue"
         :options="labelOptions"
         optionLabel="label"
@@ -23,6 +25,7 @@
     <div v-if="titleOptions.length > 1" class="axis-set-control">
       <label>Axis title</label>
       <Dropdown
+        :panelClass="panelClass"
         :model-value="titleValue"
         :options="titleOptions"
         optionLabel="label"
@@ -34,10 +37,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, inject } from "vue";
+import { PLOT_SURFACE } from "@/theme/plotTheme";
 import Dropdown from "primevue/dropdown";
 
 import type { AxisSetOption } from "@/utils/datasetAxisSets";
+
+const panelClass = inject(PLOT_SURFACE, "screen") === "panel" ? "ss-panel-theme" : undefined;
 
 const props = defineProps<{
   scaleValue: string;

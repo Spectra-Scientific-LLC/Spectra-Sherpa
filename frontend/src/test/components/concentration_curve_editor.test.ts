@@ -5,11 +5,34 @@ import { seedConcentrationShape } from "@/utils/curve";
 
 const mountEditor = (points = seedConcentrationShape(5)) =>
   mount(ConcentrationCurveEditor, {
-    props: { points, color: "#123456", title: "Water" },
+    props: { points, sampleCount: 50, color: "#123456", title: "Water" },
     global: { stubs: { InputNumber: true } },
   });
 
 describe("ConcentrationCurveEditor", () => {
+  it("projects integer sample ticks without changing normalized control points", async () => {
+    const points = seedConcentrationShape(5);
+    const original = structuredClone(points);
+    const wrapper = mountEditor(points);
+    const ticks = () => wrapper.findAll(".conc-curve-editor__sample-tick").map(t => Number(t.text()));
+    expect(ticks()).toEqual([0, 10, 20, 29, 39, 49]);
+    await wrapper.setProps({ sampleCount: 100 });
+    expect(ticks()).toEqual([0, 20, 40, 59, 79, 99]);
+    await wrapper.setProps({ sampleCount: 3 });
+    expect(ticks()).toEqual([0, 1, 2]);
+    await wrapper.setProps({ sampleCount: 2 });
+    expect(ticks()).toEqual([0, 1]);
+    expect(wrapper.findAll(".conc-curve-editor__sample-tick").map(t => t.attributes("x"))).toEqual(["0", "100"]);
+    expect(points).toEqual(original);
+    expect(wrapper.emitted("update:points")).toBeUndefined();
+  });
+
+  it.each([NaN, Infinity, 0, 1])("does not invent sample indices for invalid count %s", sampleCount => {
+    const wrapper = mount(ConcentrationCurveEditor, {
+      props: { points: [], sampleCount }, global: { stubs: { InputNumber: true } },
+    });
+    expect(wrapper.findAll(".conc-curve-editor__sample-tick")).toHaveLength(0);
+  });
   it("renders one draggable handle per control point", () => {
     const wrapper = mountEditor(seedConcentrationShape(7));
     expect(wrapper.findAll("circle.conc-curve-editor__handle")).toHaveLength(7);

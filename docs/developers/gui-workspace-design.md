@@ -27,6 +27,18 @@ Keep population, units, exclusions and consequential warnings visible.
 Put methodology behind contextual `?` help, and short explanations in hover.
 Omit redundant prose. A working plot is not evidence that its Data View works.
 
+Lead results pages with plots and a compact model/population strip; put exact
+tables and implementation identity under named disclosures. Keep unavailable CV,
+requested-versus-fitted component differences, and calibration-only limitations
+outside collapsed details. Successful QC checks may collapse together; actual
+warnings must remain visible. Empty downstream synthesis sections may start
+collapsed, but users must still be able to open them without a forced wizard.
+
+Use one accessible `MethodHelp` control for each coherent explanation. Do not
+replace removed paragraphs with hover-only instructions or a second help system.
+Preserve scientific scope in offline reports; reducing setup-page copy does not
+authorize removing evidence from exports.
+
 Technical IDs and digests remain accessible in details or copy actions; use
 readable names for headings. Do not infer scientific identity from a display
 label, a filename or matching row counts.

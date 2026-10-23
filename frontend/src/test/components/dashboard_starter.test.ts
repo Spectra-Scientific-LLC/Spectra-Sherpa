@@ -198,6 +198,48 @@ describe("SimplifiedDashboard Starter tab", () => {
     expect(mocks.routerPush).toHaveBeenLastCalledWith({ path: "/data", query: { tab: "import" } });
   });
 
+  it("reloads catalogs cleared after mount instead of calling the planned dataset unlisted", async () => {
+    const { projectStore } = await mountDashboard();
+    const workflowStore = useWorkflowStore();
+    const templates = workflowStore.templates;
+    const matrix = workflowStore.compatibilityMatrix;
+    workflowStore.templates = [];
+    workflowStore.compatibilityMatrix = null;
+    vi.mocked(workflowStore.fetchTemplates).mockImplementationOnce(async () => {
+      workflowStore.templates = templates;
+      return templates;
+    });
+    vi.mocked(workflowStore.fetchCompatibilityMatrix).mockImplementationOnce(async () => {
+      workflowStore.compatibilityMatrix = matrix;
+      return matrix!;
+    });
+    mocks.starter!.emit("start", {
+      plan: PLAN,
+      name: "Lavender",
+      dataset: {
+        key: "builtin:lavender-essential-oil-v1",
+        label: "Lavender Essential Oil FTIR Corpus v1",
+        kind: "reference",
+        source: "builtin",
+        technique: "FTIR",
+        availability: "distributed_reference",
+        experiment_id: null,
+      },
+    });
+    await flushPromises();
+    expect(mocks.toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: "Dataset Unavailable" }));
+    expect(projectStore.createProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          analysis_starter: expect.objectContaining({
+            dataset_id: "builtin:lavender-essential-oil-v1",
+            template_slug: "pca",
+          }),
+        },
+      }),
+    );
+  });
+
   it("links the user's own dataset and hands it and the planned starter to the Data page", async () => {
     const { projectStore } = await mountDashboard();
     mocks.starter!.emit("start", {
@@ -249,12 +291,17 @@ describe("SimplifiedDashboard Starter tab", () => {
     });
   });
 
-  it("refuses a goal without data outside local mode", async () => {
+  it.each(["enterprise", "hybrid"])("starts a blank goal in %s without sending users to Upload", async (mode) => {
+    appMode.value = mode;
     const { projectStore } = await mountDashboard();
     mocks.starter!.emit("start", { plan: PLAN, name: "Files later", dataset: null });
     await flushPromises();
-    expect(projectStore.createProject).not.toHaveBeenCalled();
-    expect(mocks.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Choose a Dataset" }));
+    expect(projectStore.createProject).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Files later", goal: PLAN.goal, goal_plan: PLAN }),
+    );
+    expect(mocks.routerPush).toHaveBeenLastCalledWith({ path: "/data", query: { tab: "import" } });
+    expect(window.sessionStorage.getItem("sherpa:data-entry-dataset-intent")).toBeNull();
+    expect(mocks.toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: "Choose a Dataset" }));
   });
 
   it("shows the active project's goal in Starter", async () => {

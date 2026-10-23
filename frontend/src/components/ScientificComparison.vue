@@ -1,11 +1,10 @@
 <template>
   <section aria-label="Scientific comparison" class="scientific-comparison">
-    <h3>Evaluation evidence</h3>
-    <p>Each section answers a different question. Missing evidence in one section does not invalidate another.</p>
+    <h3>Evaluation evidence <MethodHelp topic="comparison" label="Comparing results" context="Compare matching populations and evaluation roles. Missing evidence in one role does not invalidate another." /></h3>
     <div class="populations">
       <article v-for="item in evidence.items" :key="`${item.reference.provider}:${item.reference.id}`">
         <h4>{{ item.label }}</h4>
-        <p>Evidence: {{ item.reference.kind }} · {{ item.reference.provider }}</p>
+        <details><summary>Evidence source</summary>{{ item.reference.kind }} · {{ item.reference.provider }}</details>
         <p>Development: {{ count(item.population.development_count) }} · Held-out: {{ count(item.population.held_out_count) }} · Excluded: {{ count(item.population.excluded_count) }}</p>
         <p>Response: {{ item.population.response || 'Unknown' }} · Units: {{ item.population.units || 'Not recorded' }}</p>
         <p>Population verification: {{ item.population.verification }}</p>
@@ -17,7 +16,7 @@
       </article>
     </div>
     <section v-for="role in roles" :key="role" :aria-label="labels[role]" class="role-section">
-      <h4>{{ labels[role] }}</h4><p>{{ meanings[role] }}</p>
+      <h4>{{ labels[role] }} <MethodHelp topic="comparison" :label="labels[role]" :context="meanings[role]" /></h4>
       <div v-for="pair in evidence.pairs" :key="`${pair.left_index}:${pair.right_index}`" class="pair">
         <template v-for="section in pair.sections.filter(s => s.role === role)" :key="section.role">
           <h5>{{ evidence.items[pair.left_index]?.label }} / {{ evidence.items[pair.right_index]?.label }}</h5>
@@ -30,12 +29,13 @@
               <td>{{ number(value.left) }}</td><td>{{ number(value.right) }}</td><td>{{ number(value.right - value.left) }}</td>
             </tr></tbody>
           </table>
-          <details v-if="section.state === 'comparable' && traces(role, pair).length" class="plots">
+          <details v-if="section.state === 'comparable' && traces(role, pair).length" class="plots" open>
             <summary>Predictions and residuals · {{ labels[role] }}</summary>
             <PlotlyChart :data="traces(role, pair)" :layout="plotLayout(role, false)" :selected-point-ids="selection(role, pair)" @selected="selectPoints($event, role, pair)" @deselect="clearSelection(role, pair)" />
             <PlotlyChart :data="traces(role, pair, true)" :layout="plotLayout(role, true)" :selected-point-ids="selection(role, pair)" @selected="selectPoints($event, role, pair)" @deselect="clearSelection(role, pair)" />
-            <p>Lasso points to highlight the same specimens in both plots and the table. Selection does not change fitting or exclusions.</p>
+            <MethodHelp topic="comparison" label="Linked highlights" context="Lasso highlights the same specimens across plots and table; it does not change fitting or exclusions." />
             <button v-if="selection(role, pair).length" type="button" @click="clearSelection(role, pair)">Clear selected specimens ({{ selection(role, pair).length }})</button>
+            <details><summary>Specimen values · up to 50 shown, selected first</summary>
             <table aria-label="Paired specimen results">
               <thead><tr><th>Specimen</th><th>Reference</th><th>First prediction</th><th>Second prediction</th><th>First residual</th><th>Second residual</th></tr></thead>
               <tbody><tr v-for="row in sampleRows(role, pair)" :key="row.id" :class="{ 'selected-row': selection(role, pair).includes(row.id) }">
@@ -43,7 +43,8 @@
                 <td>{{ number(row.observed) }}</td><td>{{ number(row.left) }}</td><td>{{ number(row.right) }}</td><td>{{ number(row.observed - row.left) }}</td><td>{{ number(row.observed - row.right) }}</td>
               </tr></tbody>
             </table>
-            <p>Table shows up to 50 specimens, selected specimens first. Both plots retain all qualified points.</p>
+            <p>Plots retain all qualified points.</p>
+            </details>
           </details>
         </template>
       </div>
@@ -53,6 +54,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { ref, watch } from 'vue';
 import { selectedSampleIds } from '@/utils/sampleReview';
 import PlotlyChart from '@/components/PlotlyChart.vue';

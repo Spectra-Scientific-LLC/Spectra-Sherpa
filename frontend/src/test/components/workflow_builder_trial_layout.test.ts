@@ -81,6 +81,7 @@ const workflowStore = reactive({
   loadWorkflow: vi.fn(),
   clearWorkflow: vi.fn(),
   updateNode: vi.fn(),
+  executeNode: vi.fn(async () => ({ status: "completed" })),
   addNode: vi.fn(),
   getNodeMetadata: vi.fn(() => ({ label: "PCA" })),
   validateNodeParams: vi.fn(() => []),
@@ -151,8 +152,9 @@ vi.mock("vue-router", () => ({
 const confirmAction = vi.hoisted(() => vi.fn(async () => false));
 vi.mock("@/composables/useConfirmAction", () => ({ useConfirmAction: () => confirmAction }));
 
+const toastAdd = vi.hoisted(() => vi.fn());
 vi.mock("primevue/usetoast", () => ({
-  useToast: () => ({ add: vi.fn() }),
+  useToast: () => ({ add: toastAdd }),
 }));
 
 vi.mock("@/stores/workbook", () => ({
@@ -169,11 +171,8 @@ vi.mock("@/stores/workflow", () => ({
   useWorkflowStore: () => workflowStore,
 }));
 
-vi.mock("@/stores/auth", () => ({
-  useAuthStore: () => ({
-    user: { id: 1 },
-  }),
-}));
+const authStore = reactive({ user: { id: 1 }, sessionRevision: "session-1" });
+vi.mock("@/stores/auth", () => ({ useAuthStore: () => authStore }));
 
 vi.mock("@/stores/workflowBuilderConfig", () => ({
   useWorkflowBuilderConfigStore: () => workflowBuilderConfigStore,
@@ -327,6 +326,34 @@ async function mountBuilder() {
 }
 
 describe("WorkflowBuilderContent trial/detail layout", () => {
+  it("shows an interrupted load instead of an empty successful workbook", async () => {
+    workbookStore.activeIndex = 0;
+    workbookStore.loadSheets.mockImplementationOnce(async () => { workbookStore.projectId = null as unknown as number; });
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain("interrupted");
+    expect(wrapper.text()).toContain("Reload workbook");
+    wrapper.unmount();
+  });
+
+  it("retries the selected project rather than a stale project deep link", async () => {
+    workbookStore.activeIndex = 0;
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    workbookStore.loadSheets.mockRejectedValueOnce(new Error("temporary failure"));
+    projectStore.currentProjectId = 7;
+    await flushPromises();
+    expect(routeQuery.project_id).toBe("7");
+    expect(wrapper.get('[role="alert"]').text()).toContain("temporary failure");
+    routeQuery.project_id = "1"; // stale history entry must not redirect Retry
+    projectStore.selectProject.mockClear();
+    const retry = wrapper.findAll("button").find(button => button.text() === "Reload workbook")!;
+    await retry.trigger("click");
+    await flushPromises();
+    expect(projectStore.selectProject).toHaveBeenCalledWith(7);
+    expect(projectStore.selectProject).not.toHaveBeenCalledWith(1);
+    wrapper.unmount();
+  });
   it("keeps canvas input and Run unavailable until retained workbook hydration completes", async () => {
     workbookStore.activeIndex = 0;
     const wrapper = await mountBuilder();
@@ -353,6 +380,8 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
   }, 60_000);
 
   beforeEach(() => {
+    authStore.user = { id: 1 };
+    authStore.sessionRevision = "session-1";
     routeQuery.project_id = "1";
     delete routeQuery.fromDataSelection;
     delete routeQuery.selection;
@@ -945,6 +974,92 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     expect(lifecycleCounts.inspectorUnmounts).toBe(0);
   });
 
+  it("applies a completed trial through retained node execution after restoring its sheet", async () => {
+    workflowStore.executeNode.mockClear();
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    wrapper.getComponent(NodeDetailViewStub).vm.$emit("save", "pca_1", { n_components: 1 }, true);
+    await flushPromises();
+    expect(workflowStore.updateNode).toHaveBeenCalledWith("pca_1", { params: { n_components: 1 } });
+    expect(workbookStore.activeSheet?.workflowId).toBe(101);
+    expect(workflowStore.executeNode).toHaveBeenCalledExactlyOnceWith("pca_1");
+    wrapper.unmount();
+  });
+
+  it("does not run trial settings in a different project after a delayed save", async () => {
+    workflowStore.executeNode.mockClear();
+    let finish!: () => void;
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    workflowStore.hasUnsavedChanges = true;
+    workflowStore.saveWorkflow.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    wrapper.getComponent(NodeDetailViewStub).vm.$emit("save", "pca_1", { n_components: 1 }, true);
+    await flushPromises();
+    projectStore.currentProjectId = 2;
+    finish();
+    await flushPromises();
+    expect(workflowStore.executeNode).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("refuses a graph replaced by another tab while returning from a trial", async () => {
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    const originalNodes = workflowStore.nodes;
+    workbookStore.closeTrialTab.mockImplementationOnce(async () => {
+      workbookStore.activeIndex = 0;
+      workflowStore.nodes = originalNodes.map(node => ({ ...node, params: { n_components: 5 } }));
+    });
+    wrapper.getComponent(NodeDetailViewStub).vm.$emit("save", "pca_1", { n_components: 1 }, true);
+    await flushPromises();
+    expect(workflowStore.executeNode).not.toHaveBeenCalled();
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Apply Trial Failed", detail: expect.stringContaining("workflow changed") }));
+    workflowStore.nodes = originalNodes;
+    wrapper.unmount();
+  });
+
+  it("preserves trial ownership on same-actor profile refresh but revokes it on session change", async () => {
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as { openTrialTab: (data: object) => Promise<void> };
+    await vm.openTrialTab({ id: "pca_1" });
+    const owner = workbookStore.openTrialTab.mock.calls.at(-1)![0].ownerId;
+    authStore.user = { id: 1 };
+    await nextTick();
+    await vm.openTrialTab({ id: "pca_1" });
+    expect(workbookStore.openTrialTab.mock.calls.at(-1)![0].ownerId).toBe(owner);
+    authStore.sessionRevision = "session-2";
+    await nextTick();
+    await vm.openTrialTab({ id: "pca_1" });
+    const nextOwner = workbookStore.openTrialTab.mock.calls.at(-1)![0].ownerId;
+    expect(nextOwner).not.toBe(owner);
+    authStore.user = { id: 2 };
+    await nextTick();
+    await vm.openTrialTab({ id: "pca_1" });
+    expect(workbookStore.openTrialTab.mock.calls.at(-1)![0].ownerId).not.toBe(nextOwner);
+    wrapper.unmount();
+  });
+
+  it("only lets the originating workbook execute a detached trial save", async () => {
+    const first = await mountBuilder();
+    const second = await mountBuilder();
+    await flushPromises();
+    // Exercise both real message handlers, as BroadcastChannel would.
+    const firstVm = first.vm as unknown as { openTrialTab: (data: object) => Promise<void>; handleBroadcastMessage: (event: MessageEvent) => void };
+    const secondVm = second.vm as unknown as typeof firstVm;
+    await firstVm.openTrialTab({ id: "pca_1" });
+    const payload = workbookStore.openTrialTab.mock.calls.at(-1)![0];
+    const event = new MessageEvent("message", { data: {
+      type: "node_params_updated", requestId: "detached-save", workflowId: 101,
+      nodeId: "pca_1", params: { n_components: 1 }, ownerId: payload.ownerId, execute: true,
+    } });
+    firstVm.handleBroadcastMessage(event);
+    secondVm.handleBroadcastMessage(event);
+    await flushPromises();
+    expect(workflowStore.executeNode).toHaveBeenCalledExactlyOnceWith("pca_1");
+    first.unmount(); second.unmount();
+  });
+
   it("keeps a managed-candidate authority inspectable but disables ordinary execution", async () => {
     workbookStore.sheets = [
       {
@@ -1133,6 +1248,24 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     expect(workflowStore.setNodes).not.toHaveBeenCalled();
     expect(workflowStore.markWorkflowStale).not.toHaveBeenCalled();
     expect(workflowStore.hasUnsavedChanges).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("does not offer the previous sheet's recovery draft after a starter replaces it", async () => {
+    workbookStore.activeIndex = 0;
+    const key = "spectra_sherpa_workflow_draft_v1:1:1:101";
+    localStorage.setItem(key, JSON.stringify({
+      projectId: 1, workflowId: 101, workflowName: "Recoverable previous sheet", workflowDescription: "",
+      nodes: [{ id: "unsaved", type: "preprocess.derivative", params: {}, x: 0, y: 0 }], edges: [],
+    }));
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    expect(wrapper.text()).toContain("The saved workflow is shown");
+    workflowStore.workflowId = 999;
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("Restore draft");
+    expect(localStorage.getItem(key)).not.toBeNull();
+    expect(workflowStore.setNodes).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 });

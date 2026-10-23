@@ -6,6 +6,20 @@ import MethodHelp from "@/components/MethodHelp.vue";
 import { METHOD_TOPICS, resolveMethodHelpUrl } from "@/utils/documentation";
 
 describe("contextual methodology help", () => {
+  it("offers one collapsed context control with documentation and Escape dismissal", async () => {
+    const wrapper = mount(MethodHelp, { props: {
+      topic: "displayExports", label: "Plot context", context: "Both panels: 50 of 150 active rows.",
+    } });
+    const details = wrapper.get("details");
+    expect(details.attributes("open")).toBeUndefined();
+    expect(wrapper.findAll("summary")).toHaveLength(1);
+    expect(wrapper.get("summary").attributes("aria-label")).toBe("Plot context");
+    (details.element as HTMLDetailsElement).open = true;
+    expect(wrapper.get("p").text()).toBe("Both panels: 50 of 150 active rows.");
+    expect(wrapper.get("a").attributes("href")).toContain("#display-and-table-exports");
+    await details.trigger("keydown", { key: "Escape" });
+    expect((details.element as HTMLDetailsElement).open).toBe(false);
+  });
   it("uses a compact, keyboard-accessible secure documentation link", () => {
     const wrapper = mount(MethodHelp, { props: {
       topic: "componentSelection", label: "Component selection",
@@ -31,7 +45,7 @@ describe("contextual methodology help", () => {
     let links = 0;
     for (const file of paths) {
       const content = readFileSync(resolve(source, String(file)), "utf8");
-      for (const match of content.matchAll(/<MethodHelp\b[^>]*topic="([^"]+)"/g)) {
+      for (const match of content.matchAll(/<MethodHelp\b[^>]*\stopic="([^"]+)"/g)) {
         expect(resolveMethodHelpUrl(match[1]), String(file)).not.toBeNull();
         links++;
       }

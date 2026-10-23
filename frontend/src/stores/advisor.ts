@@ -37,7 +37,7 @@ export const useAdvisorStore = defineStore("advisor", () => {
   const isLoading = ref(false);
   const error = ref<string | null>(null);
   const auth = useAuthStore();
-  const workspaceIdentity = () => [auth.user?.id, auth.token, activeProjectScope.value];
+  const workspaceIdentity = () => [auth.user?.id, auth.sessionRevision, activeProjectScope.value];
   const scopeRequests = useScopedRequest(workspaceIdentity, () => { isLoading.value = false; });
   const channelRequests = useScopedRequest(workspaceIdentity, () => { isLoading.value = false; });
   const navigationRequests = useScopedRequest(workspaceIdentity);

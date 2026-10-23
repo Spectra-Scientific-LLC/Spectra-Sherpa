@@ -30,7 +30,7 @@ const comparison = ref<EvidenceComparison | null>(null), repetition = ref(0);
 const status = ref(''), error = ref(''), record = ref<PairedEvaluationRecord | null>(null);
 let timer: ReturnType<typeof setTimeout> | undefined;
 const auth = useAuthStore(), project = useProjectStore();
-const identity = () => [auth.user?.id, auth.token, project.currentProjectId, props.runId];
+const identity = () => [auth.user?.id, auth.sessionRevision, project.currentProjectId, props.runId];
 const reads = useScopedRequest(() => [...identity(), repetition.value], () => {
   if (timer) clearTimeout(timer);
 });

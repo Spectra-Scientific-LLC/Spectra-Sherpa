@@ -1,5 +1,6 @@
 import { validateScientificMetadata } from "@/utils/scientificMetadataValidation";
 import { defineStore } from "pinia";
+import { traceGui } from "@/lib/guiTrace";
 import { ref, computed, watch } from "vue";
 import api from "@/api/client";
 import type { components } from "@/types/api/v1";
@@ -102,7 +103,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const lastExecutionResultDescriptors = ref<Record<string, NodeScientificValueDescriptors>>({});
   const lastExecutionPresentations = ref<Record<string, ExecutedPresentationRecord>>({});
   const workflowWarnings = ref<string[]>([]);
-  const workspaceIdentity = () => [useAuthStore().user?.id, useAuthStore().token, useProjectStore().currentProjectId];
+  const sessionIdentity = () => [useAuthStore().user?.id, useAuthStore().sessionRevision];
+  const workspaceIdentity = () => [...sessionIdentity(), useProjectStore().currentProjectId];
   const workflowOwnership = useScopedRequest(workspaceIdentity);
   const loadScope = useScopedRequest(workspaceIdentity, () => { isLoading.value = false; });
   const saveScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
@@ -110,8 +112,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const executionScope = useScopedRequest(workspaceIdentity, () => { preparingExecution.value = false; }, { abortOnInvalidate: false });
   const choiceScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
   const datasetCatalogScope = useScopedRequest(workspaceIdentity, () => { availableDatasets.value = null; });
-  const templateScope = useScopedRequest(workspaceIdentity, () => { templatesLoading.value = false; templatesError.value = null; templates.value = []; });
-  const compatibilityScope = useScopedRequest(workspaceIdentity, () => { compatibilityLoading.value = false; compatibilityError.value = null; compatibilityMatrix.value = null; });
+  // The template catalog and compatibility matrix are not project-owned (their
+  // endpoints take no project), so a project switch must not discard them.
+  const templateScope = useScopedRequest(sessionIdentity, () => { templatesLoading.value = false; templatesError.value = null; templates.value = []; });
+  const compatibilityScope = useScopedRequest(sessionIdentity, () => { compatibilityLoading.value = false; compatibilityError.value = null; compatibilityMatrix.value = null; });
   async function recordActiveWorkflowChoice(projectId: number | null | undefined, id: number): Promise<void> {
     if (projectId == null || projectId !== useProjectStore().currentProjectId) return;
     const request = choiceScope.begin();
@@ -473,8 +477,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
         id: n.node_id,
         type: frontendType,
         label: n.label && n.label !== frontendType ? n.label : getNodeMetadata(frontendType)?.label || undefined,
-        x: n.position_x || 100,
-        y: n.position_y || 100,
+        x: n.position_x ?? 100,
+        y: n.position_y ?? 100,
         params: { ...(n.parameters || {}) },
       };
     });
@@ -515,6 +519,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   function clearWorkflow() {
+    traceGui("workflow_reset", "reset", { workflow_id: workflowId.value, node_count: nodes.value.length });
     workflowOwnership.invalidate();
     loadScope.invalidate();
     saveScope.invalidate();
@@ -746,6 +751,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       const converted = fromBackendFormat((data.nodes || []).map(workflowNode), (data.edges || []).map(workflowEdge));
       nodes.value = converted.nodes;
       edges.value = converted.edges;
+      traceGui("workflow_apply", "ok", { workflow_id: data.id, node_count: converted.nodes.length });
       // A newly admitted graph must not render the preceding sheet's evidence
       // while its preflight request is still in flight.
       currentTemplateId.value = null;
@@ -856,7 +862,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   registerProjectScopeReset(clearWorkflow);
-  watch([() => useAuthStore().user?.id, () => useAuthStore().token, () => useProjectStore().currentProjectId], clearWorkflow, { flush: "sync" });
+  watch([() => useAuthStore().user?.id, () => useAuthStore().sessionRevision, () => useProjectStore().currentProjectId], clearWorkflow, { flush: "sync" });
 
   async function listWorkflows(
     projectId: number | null = useProjectStore().currentProjectId,

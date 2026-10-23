@@ -9,7 +9,7 @@
     <summary v-if="!embedded" class="collection-definition-heading">
       <span>
         <strong>Source collection metadata</strong>
-        <small>Original files and aligned sample annotations</small>
+
       </span>
     </summary>
     <h5 v-else class="collection-definition-embedded-heading">Source collection</h5>
@@ -87,7 +87,7 @@
               <Tag :value="statusLabel" :severity="statusSeverity" />
               <strong v-if="receipt.title">{{ receipt.title }}</strong>
             </div>
-            <p>{{ receipt.message }}</p>
+            <p v-if="receipt.status !== 'absent'">{{ receipt.message }}</p>
           </div>
         </div>
 

@@ -39,6 +39,8 @@
             icon="pi pi-sliders-h"
             class="p-button-sm inspector-action-btn"
             @click="openToRunTrials"
+            :loading="quickPlotLoading"
+            :disabled="quickPlotLoading"
             title="Open to Run Trials"
             aria-label="Open to Run Trials"
           />
@@ -605,7 +607,7 @@
                     optionValue="value"
                     optionDisabled="disabled"
                     :placeholder="`Select ${param.label.toLowerCase()}`"
-                    @change="emitParams"
+                    @change="onSelectParameterChange(param.name)"
                   />
                 </template>
 
@@ -711,7 +713,7 @@
                         optionValue="value"
                         optionDisabled="disabled"
                         :placeholder="`Select ${param.label.toLowerCase()}`"
-                        @change="emitParams"
+                        @change="onSelectParameterChange(param.name)"
                       />
                     </template>
 
@@ -927,9 +929,11 @@
               icon="pi pi-download"
               label="Download Prepared File"
               class="p-button-sm p-button-outlined"
-              :disabled="!preparedExportArtifact"
+              :disabled="!!preparedExportDownloadReason"
+              :title="preparedExportDownloadReason || undefined"
               @click="downloadPreparedExport"
             />
+            <span v-if="selectedNodeType === 'output.export' && preparedExportDownloadReason" role="status">{{ preparedExportDownloadReason }}</span>
             <Button
               v-if="
                 selectedNodeType !== 'output.export' &&
@@ -1302,11 +1306,11 @@
       </div>
 
       <!-- Read-only Metadata View (for non-data-source nodes) -->
-      <div
+      <details
         v-else-if="selectedNode && spectraMetadata && selectedResultShowsMetadata"
         class="inspector-metadata readonly"
       >
-        <span class="section-label">Metadata (read-only)</span>
+        <summary class="section-label">Metadata</summary>
         <div class="metadata-preview">
           <div v-if="spectraSpeciesNames.length" class="meta-preview-item">
             <span class="meta-key">Species:</span>
@@ -1353,7 +1357,7 @@
             @click="showMetadataModal = true"
           />
         </div>
-      </div>
+      </details>
     </template>
   </div>
 
@@ -1568,7 +1572,7 @@ import { buildDiagnosticEntries } from "@/utils/diagnostics";
 import { scientificMetricNotes } from "@/utils/scientificDisplay";
 import { primaryClassificationMetricSummary } from "@/utils/classificationMetrics";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";
-import { downloadExportArtifact, extractExportArtifact } from "@/utils/exportArtifact";
+import { downloadExportArtifact, extractExportArtifact, exportDownloadReason, exportFilenameForFormat, EXPORT_FORMAT_LABELS } from "@/utils/exportArtifact";
 import {
   groupColumnFromInputs,
   groupedSplitSummary,
@@ -1691,7 +1695,7 @@ const projectStore = useProjectStore();
 const authStore = useAuthStore();
 const workbookStore = useWorkbookStore();
 const workspaceIdentity = () => [
-  authStore.user?.id, authStore.token, projectStore.currentProjectId,
+  authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId,
   workbookStore.projectId, workbookStore.activeSheet?.workflowId,
   workbookStore.activeSheet?.trialId, workflowStore.workflowId,
 ];
@@ -1763,7 +1767,7 @@ const selectedOutputPreviewNotice = computed(() => {
   ) {
     return null;
   }
-  return "Showing a bounded history preview. Quick Plot loads exact retained results when available.";
+  return "History preview. Result views load exact retained data when available.";
 });
 const selectedOutputSupportsTable = computed(() =>
   selectedPresentation.value
@@ -1815,10 +1819,19 @@ watch(
   { immediate: true, deep: true },
 );
 const preparedExportArtifact = computed(() => extractExportArtifact(props.nodeOutput));
+const preparedExportDownloadReason = computed(() => exportDownloadReason(preparedExportArtifact.value, localParams.value));
+
+function onSelectParameterChange(name: string): void {
+  if (props.selectedNode?.type === "output.export" && name === "format") {
+    const filename = exportFilenameForFormat(localParams.value.filename, localParams.value.format);
+    if (filename !== null) localParams.value.filename = filename;
+  }
+  emitParams();
+}
 
 const downloadPreparedExport = async (): Promise<void> => {
   try {
-    const artifact = await downloadExportArtifact(preparedExportArtifact.value);
+    const artifact = await downloadExportArtifact(preparedExportArtifact.value, localParams.value);
     toast.add({
       severity: "success",
       summary: "Prepared export downloaded",
@@ -1848,7 +1861,7 @@ const preparedExportSummary = computed(() => {
   const shape = Array.isArray(artifact.shape) ? artifact.shape.join(" × ") : "unknown";
   return {
     filename: typeof artifact.filename === "string" ? artifact.filename : "unknown",
-    format: typeof artifact.format === "string" ? artifact.format.toUpperCase() : "unknown",
+    format: typeof artifact.format === "string" ? EXPORT_FORMAT_LABELS[artifact.format as keyof typeof EXPORT_FORMAT_LABELS] ?? artifact.format : "unknown",
     shape,
     byteLength:
       typeof artifact.byte_length === "number" ? artifact.byte_length.toLocaleString() : "unknown",
@@ -2260,7 +2273,7 @@ const filterInputOutput = computed<PortOutput | NodeOutput | null>(() => {
 const {
   quickPlotLoading, quickPlotEvidenceError, quickPlotNodeOutput,
   quickPlotResolvedInputs, quickPlotPrimaryInput, showQuickPlotModal, showDataTableModal,
-  openQuickPlot, openDataTable,
+  openQuickPlot, openDataTable, prepareTrialEvidence,
 } = useInspectorRetainedEvidence({
   identity: () => [
     ...workspaceIdentity(), props.selectedNode?.id, props.selectedNode?.type,
@@ -2971,6 +2984,7 @@ const groupValuesFromInputs = computed((): string[] | null => {
 
 const parameterOptions = (param: NodeParameterMetadata): any[] | undefined => {
   const normalized = normalizeOptions(param.options);
+  if (selectedNodeType.value === "output.export" && param.name === "format") return normalized?.map(option => ({ ...option, label: EXPORT_FORMAT_LABELS[option.value as keyof typeof EXPORT_FORMAT_LABELS] ?? option.label }));
   if (param.name !== "split_method" || selectedNodeType.value !== "data.train_test_split") {
     return normalized;
   }
@@ -3536,13 +3550,20 @@ const deleteNode = () => {
 
 // Open node detail in a temporary builder sheet for trial execution.
 
-const openToRunTrials = () => {
+const openToRunTrials = async () => {
   if (!props.selectedNode) return;
+
+  const evidence = await prepareTrialEvidence();
+  if (!evidence?.isCurrent() || !props.selectedNode) return;
+  const inputConnections = props.inputConnections.map(connection => ({
+    ...connection,
+    data: evidence.inputs[connection.toPort || "default"] ?? null,
+  }));
 
   // Build input data summary from first connected node's output
   let inputData = null;
-  if (props.inputConnections.length > 0) {
-    const firstInput = props.inputConnections[0];
+  if (inputConnections.length > 0) {
+    const firstInput = inputConnections[0];
     if (firstInput.data?.data) {
       const data = firstInput.data.data;
       inputData = {
@@ -3569,129 +3590,30 @@ const openToRunTrials = () => {
     toPort: edge.toPort || "default",
   }));
 
-  // Pick the ports we want to preserve across reduced-tier fallbacks.
-  // Plot computeds on the Detail View read these directly (loadings for
-  // PCA/PLS/PLSDA; St/H/A for MCR/NMF/ICA/SIMPLISMA). They're all small
-  // matrices (n_components × n_features) and stripping them makes those
-  // plots render empty even when the primary payload fits.
-  const PRESERVED_PORT_NAMES = new Set([
-    "loadings",
-    "St",
-    "H",
-    "A",
-    ...(nodeMetadata.value?.presentation_contract?.payload.presentations.flatMap(
-      (presentation) => presentation.source_ports,
-    ) ?? []),
-  ]);
-
-  const buildReducedPorts = (
-    level: "full" | "primary" | "minimal",
-    ports: NodeOutput["ports"] | null | undefined,
-  ): NodeOutput["ports"] | null => {
-    if (!ports) return null;
-    if (level === "full") return ports;
-    const reduced: Record<string, PortOutput> = {};
-    for (const [name, port] of Object.entries(ports)) {
-      if (PRESERVED_PORT_NAMES.has(name)) reduced[name] = port;
-    }
-    return Object.keys(reduced).length > 0 ? reduced : null;
-  };
-
-  // detail level: "full" = all data+ports, "primary" = data+metadata+small-plot-ports, "minimal" = no data
-  const buildNodeDetailData = (level: "full" | "primary" | "minimal") => {
-    if (!props.selectedNode) return null;
-    const includeData = level !== "minimal";
-
-    // Strip large metadata fields to avoid sessionStorage quota.
-    // Visualization nodes (output.*) embed Plotly traces in metadata.data
-    // which duplicates the top-level data array — strip it in non-full tiers.
-    let metadata = outputMetadata.value;
-    const nt = props.selectedNode.type;
-    if (level !== "full" && metadata && nt.startsWith("output.")) {
-      const lightMetadata = { ...metadata };
-      delete lightMetadata.data; // Plotly traces (duplicated in output.data)
-      metadata = lightMetadata;
-    }
-    if (level === "minimal" && metadata) {
-      const lightMetadata = { ...metadata };
-      // Remove large arrays from PCA metadata (loadings can be very large)
-      if (nt.includes("pca")) {
-        delete lightMetadata.loadings;
-        delete lightMetadata.wavenumbers;
-      }
-      // Remove large arrays from decomposition methods
-      if (["model.simplisma", "model.nmf", "model.ica", "model.mcr_als"].includes(nt)) {
-        delete lightMetadata.St;
-        delete lightMetadata.H;
-        delete lightMetadata.A;
-        delete lightMetadata.wavenumbers;
-        delete lightMetadata.spectral_wavenumbers;
-      }
-      // For visualization nodes, trace data has already been removed above;
-      // drop remaining large fields but keep layout and plot_type.
-      if (nt.startsWith("output.")) {
-        delete lightMetadata.data;
-      }
-      metadata = lightMetadata;
-    }
-
-    return {
-      id: props.selectedNode.id,
-      type: props.selectedNode.type,
-      label: props.selectedNode.label || getNodeLabel(props.selectedNode.type),
-      workflowId: workflowStore.workflowId,
-      params: cloneInspectorParams(localParams.value),
-      output: props.nodeOutput
-        ? {
-            // For output.* nodes in reduced tiers, top-level data duplicates
-            // the Plotly traces already stripped from metadata — omit it too.
-            data:
-              includeData && !(level !== "full" && nt.startsWith("output."))
-                ? props.nodeOutput.data
-                : null,
-            metadata: metadata,
-            plots: props.nodeOutput.plots || null,
-            // Detailed View must receive the same authoritative shape and
-            // content-category projection shown by the Inspector.
-            descriptor: props.nodeOutput.descriptor ?? null,
-            ports: buildReducedPorts(level, props.nodeOutput.ports),
-            primary_port: props.nodeOutput.primary_port || null,
-            // Carry the executor-lifted artifact UID through to sessionStorage
-            // so the NodeDetailView's "Saved Model Artifact" section can render
-            // (gated on `v-if="modelId"` after the OutputPanel inject chain).
-            // Without this, the section is invisible on every run regardless of
-            // whether the artifact was actually persisted.
-            model_id: props.nodeOutput.model_id ?? null,
-          }
-        : null,
-      presentationContract: nodeMetadata.value?.presentation_contract ?? null,
-      selectedPresentationId: selectedPresentation.value?.presentation.presentation_id ?? null,
-      // Include input connections with their data
-      inputConnections: props.inputConnections.map((conn) => ({
-        nodeId: conn.nodeId,
-        nodeType: conn.nodeType,
-        icon: NODE_ICONS[conn.nodeType] || "📦",
-        label: conn.nodeLabel,
-        port: conn.port,
-        toPort: conn.toPort,
-        // Embedded trial sheets are an in-memory workbench surface. Retain
-        // each typed input payload at the full tier so plot adapters can join
-        // a model's predictions to the actual target connected at `y`.
-        // Reduced/session-storage tiers intentionally omit these arrays.
-        data: level === "full" ? (conn.data ?? null) : null,
-      })),
-      inputData: includeData ? inputData : inputData ? { ...inputData, data: null } : null,
-      // Include param definitions for the settings form
-      paramDefinitions: getParamDefinitions(props.selectedNode.type),
-      // Include full workflow context for isolated trial execution.
-      workflowNodes: workflowNodes,
-      workflowEdges: workflowEdges,
-      // Carry project context into the trial surface.
-      projectId: projectStore.currentProjectId,
-    };
-  };
-
-  emit("open-trial", buildNodeDetailData("full"));
+  emit("open-trial", {
+    id: props.selectedNode.id,
+    type: props.selectedNode.type,
+    label: props.selectedNode.label || getNodeLabel(props.selectedNode.type),
+    workflowId: workflowStore.workflowId,
+    params: cloneInspectorParams(localParams.value),
+    output: evidence.output,
+    presentationContract: nodeMetadata.value?.presentation_contract ?? null,
+    selectedPresentationId: selectedPresentation.value?.presentation.presentation_id ?? null,
+    inputConnections: inputConnections.map((conn) => ({
+      nodeId: conn.nodeId,
+      nodeType: conn.nodeType,
+      icon: NODE_ICONS[conn.nodeType] || "📦",
+      label: conn.nodeLabel,
+      port: conn.port,
+      toPort: conn.toPort,
+      data: conn.data,
+    })),
+    inputData,
+    paramDefinitions: getParamDefinitions(props.selectedNode.type),
+    workflowNodes,
+    workflowEdges,
+    projectId: projectStore.currentProjectId,
+  });
 };
 
 const mapMetadataParams = (

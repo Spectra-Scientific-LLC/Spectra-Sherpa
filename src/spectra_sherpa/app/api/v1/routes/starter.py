@@ -61,7 +61,11 @@ async def _model_planning_allowed(session: AsyncSession, user: User) -> bool:
     """A model may read the goal only when one is registered and the user allows AI disclosure."""
     if not goal_classifier_available():
         return False
-    return await check_egress_permission(user, "allow_llm_chat", session=session)
+    from spectra_sherpa.app.core.mode_policy import is_local
+
+    # Like local chat, an explicitly configured BYO endpoint may receive the
+    # user's goal without enabling general egress. Private context is separate.
+    return await check_egress_permission(user, "allow_llm_chat", session=session, skip_global_check=is_local())
 
 
 @router.get("", response_model=StarterOverview)

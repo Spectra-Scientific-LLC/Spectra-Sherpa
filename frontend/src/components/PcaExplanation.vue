@@ -1,6 +1,6 @@
 <template>
   <section class="pca-explanation" aria-label="PCA outlier explanations">
-    <h3>Why is this sample unusual?</h3>
+    <h3>Variable contributions <MethodHelp topic="diagnostics" label="Interpreting contributions" context="Contributions describe the fitted model, not chemical causes. Signed T² contributions can cancel; negative contributions are not negative distances. Q contributions are squared residuals." /></h3>
     <p v-if="stale" role="status">
       Rerun the current workflow to explain its fitted model. Previous-fit explanations are hidden.
     </p>
@@ -8,11 +8,7 @@
       {{ unavailable || "This run has no PCA explanation evidence. Rerun to enable explanations." }}
     </p>
     <template v-else-if="detail">
-      <p>
-        Select observations in the scores, diagnostics or sample table, then choose one to explain.
-        Variable selection below only highlights loadings and contributions; it does not mark or
-        exclude observations.
-      </p>
+      <p v-if="!selected.length">Select an observation in the scores, diagnostics, or sample table.</p>
       <label
         >Sample to explain
         <select v-model="sample" aria-label="Sample to explain">
@@ -20,33 +16,21 @@
           <option v-for="id in selected" :key="id" :value="id">{{ id }}</option>
         </select>
       </label>
-      <p>
-        Reference: {{ detail.reference_count }} retained calibration observations, using the fitted
-        calibration centroid and all {{ components }} components. {{ detail.space }}. Preprocessing:
-        {{ detail.preprocessing.map(preprocessorLabel).join(" → ") || "none before PCA" }}.
-        Contributions describe model-space variables, not raw-signal changes or causes; smoothing
-        and derivatives mix neighboring variables.
-      </p>
+      <p>{{ detail.reference_count }} calibration samples · {{ components }} components · {{ detail.space }}</p>
       <template v-if="row">
         <p>
           <strong>{{ sample }}</strong> · {{ role }} · Full Q: {{ format(row.q_total) }} · Full T²:
           {{ format(row.t2_total) }}
         </p>
-        <p>
-          Showing {{ row.variables.length }} of {{ detail.feature_count }} variables: the union of
-          the top {{ detail.top_per_statistic }} Q and absolute T² contributions. Omitted variables
-          are not zero.
-        </p>
+        <p>{{ row.variables.length }} / {{ detail.feature_count }} variables shown · top Q and |T²| contributions</p>
+        <details><summary>Omitted contributions</summary>
         <p>
           Omitted Q: {{ format(row.omitted_q) }} · Omitted signed T²: {{ format(row.omitted_t2) }} ·
           Omitted absolute T² mass: {{ format(row.omitted_t2_absolute) }}. A small signed remainder
           can hide cancellation.
         </p>
-        <p>
-          Q contributions are squared residuals. T² uses signed additive contributions; negative
-          values represent cancellation, not negative distances. Changing the displayed loading
-          component does not change these all-component totals.
-        </p>
+        <p>Top {{ detail.top_per_statistic }} per statistic; omitted variables are not zero. Totals use all fitted components.</p>
+        </details>
         <div class="explanation-plots">
           <PlotlyChart
             v-for="statistic in ['q', 't2'] as const"
@@ -124,15 +108,12 @@
           @selected="selectFeatures"
           @deselect="features = []"
         />
-        <p>
-          All {{ detail.feature_count }} fitted variables shown. Lasso loadings to highlight
-          variables only. Contributions outside the leading list are omitted, never inferred from
-          the loadings.
-        </p>
+        <p>{{ detail.feature_count }} fitted variables · highlights only</p>
       </template>
       <p v-else>{{ detail.loadings_unavailable_reason }}</p>
       <details>
         <summary>Explanation provenance and formula</summary>
+        <p>Calibration centroid · preprocessing: {{ detail.preprocessing.map(preprocessorLabel).join(" → ") || "none before PCA" }}. Smoothing and derivatives mix neighboring variables. Highlights do not exclude samples or infer omitted contributions.</p>
         <p>
           Run {{ runId }} · {{ detail.formula }}. P denotes component × feature loadings in this
           formula.
@@ -149,6 +130,7 @@
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { computed, ref, watch } from "vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
+import MethodHelp from "@/components/MethodHelp.vue";
 import { selectedSampleIds, type PcaExplanations, type ReviewRow } from "@/utils/sampleReview";
 const props = defineProps<{
   evidence?: PcaExplanations;

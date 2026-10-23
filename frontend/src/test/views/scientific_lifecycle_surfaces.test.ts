@@ -136,14 +136,15 @@ describe("Report configuration layout and scientific summary", () => {
     expect(w.find(".config-field .selected-runs-chips").exists()).toBe(false);
     expect(w.get(".report-config > .selected-runs-chips").text()).toContain("Long selected");
     expect(w.get("iframe").attributes("srcdoc")).toContain("Short summary");
-    expect(w.get(".report-mode-help").text()).toContain("Key results and context");
+    expect(w.get('summary[aria-label="Report length"]').element.closest("details")?.open).toBe(false);
+    expect(w.get('summary[aria-label="Report length"]').element.closest("details")?.textContent).toContain("Key retained results and context");
     expect(w.find(".row-level-option").exists()).toBe(true);
     expect(w.get(".row-level-option").text()).toContain("Include figures and individual reference/prediction values");
     report.reportMode = "detailed";
     await flushPromises();
     expect(w.find(".row-level-option").exists()).toBe(true);
     expect(w.get("iframe").attributes("srcdoc")).not.toContain("<h2>Short summary");
-    expect(w.get(".report-mode-help").text()).toBe("All retained results, settings, diagnostics, and execution evidence.");
+    expect(w.get('summary[aria-label="Report length"]').element.closest("details")?.textContent).toContain("All retained results, settings, diagnostics, and execution evidence.");
     await w.get('button[aria-label="Remove Long selected execution run"]').trigger("click");
     expect(report.selectedRunIds).toEqual([]);
     w.unmount();

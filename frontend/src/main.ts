@@ -1,3 +1,4 @@
+import { readBrowserToken } from '@/extension-contract/session-v1';
 import * as Vue from "vue";
 import { createApp } from "vue";
 import * as VueRouter from "vue-router";
@@ -204,7 +205,7 @@ const initWorkflowMetadataRefresh = async () => {
 
   // Skip initial fetch when not authenticated (managed mode).
   // The node library will be fetched once the user logs in and views load.
-  const token = localStorage.getItem("token");
+  const token = readBrowserToken();
   if (!token && !hasStoredApiKey()) {
     // No credentials — defer until after login to avoid 401 spam.
     return;

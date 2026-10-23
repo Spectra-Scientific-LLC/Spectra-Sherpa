@@ -30,6 +30,7 @@ from spectra_sherpa.app.core.path_security import resolve_existing_file_path
 from spectra_sherpa.app.lib import synthetic_npz
 from spectra_sherpa.app.lib.axes import SpectralAxis
 from spectra_sherpa.app.lib.curves import evaluate_catmull_rom_samples
+from spectra_sherpa.app.lib.jcamp_reader import NIST_QUANT_IR_AXIS_POLICY
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
 from spectra_sherpa.app.lib.wavenumber_grid import (
     SAME_GRID_EPS_CM1,
@@ -674,7 +675,18 @@ async def save_synthesis_result(
     session: AsyncSession,
     current_user: User,
     request: SynthesisSaveRequest,
+    *,
+    commit: bool = True,
+    written_paths: list[Path] | None = None,
 ) -> SynthesisSaveResponse:
+    """Persist one synthesis result.
+
+    ``commit=False`` leaves the rows flushed in the caller's transaction so a
+    host can bind further authority (for example an execution grant) and commit
+    once. Such callers own rollback; ``written_paths`` receives every file or
+    directory this call creates, before it is written, so a caller can remove
+    exactly those on a confirmed rollback. Pre-existing paths are never listed.
+    """
     result = synthesize(request)
     if request.project_id is not None:
         project = (
@@ -691,6 +703,8 @@ async def save_synthesis_result(
     if experiment_id is None:
         experiment = await create_experiment(
             session,
+            flush_only=not commit,
+            created_paths=written_paths,
             user_id=current_user.id,
             name=request.name or _default_dataset_name(result),
             description="Synthetic FTIR dataset generated from component spectra",
@@ -723,9 +737,13 @@ async def save_synthesis_result(
             raise SynthesisError("Experiment does not belong to the requested project")
 
     base = experiment_dir(experiment_id) / SYNTHETIC_STAGE
+    if written_paths is not None and not base.exists():
+        written_paths.append(base)
     base.mkdir(parents=True, exist_ok=True)
     stem = _safe_stem(request.name or _default_dataset_name(result))
     npz_path, recipe_path = _unique_synthesis_artifact_paths(base, stem)
+    if written_paths is not None:
+        written_paths.extend((npz_path, recipe_path))
     _write_synthesis_npz(npz_path, result, title=request.name or _default_dataset_name(result))
     recipe_path.write_text(json.dumps({"recipe": result.recipe, "ground_truth": result.ground_truth}, indent=2))
 
@@ -737,6 +755,7 @@ async def save_synthesis_result(
         file_path=relative_file_path,
         file_size_bytes=npz_path.stat().st_size,
         file_type=SYNTHETIC_FILE_TYPE,
+        flush_only=not commit,
     )
     return SynthesisSaveResponse(
         experiment_id=experiment_id,
@@ -1483,7 +1502,7 @@ async def _get_nist_component_spectrum(
         await _download_nist_quant_ir_jcamp(summary.cas, index=index, destination=staged_path)
     source_path = cache_path if staged_path is None else staged_path
     try:
-        ingested = ingest(source_path)
+        ingested = ingest(source_path, parser_options={"axis_policy": NIST_QUANT_IR_AXIS_POLICY})
         if ingested.format_id != "jcamp-dx" or ingested.variant != "dx-text" or len(ingested.assets) != 1:
             raise SynthesisError("NIST did not return exactly one JCAMP-DX spectrum")
         dataset = ingested.assets[0].dataset
@@ -1511,6 +1530,12 @@ async def _get_nist_component_spectrum(
         resolution_cm1=variant.resolution_cm1,
         apodization=variant.apodization,
         cached=cached,
+        metadata={
+            "source_sha256": ingested.source_members[0].sha256,
+            "jcamp_headers": dict(dataset.extra.get("jcamp.headers", {})),
+            "axis_reconciliation": dataset.extra.get("jcamp.axis_reconciliation"),
+            "ingestion_warnings": list(ingested.warnings),
+        },
     )
 
 
@@ -2753,6 +2778,11 @@ def _build_recipe(
                 "concentration_max_ppm": component.concentration_max_ppm,
                 "control_points": [point.model_dump() for point in component.control_points],
                 "spectrum_units": _component_units(component.spectrum),
+                "source_provenance": {
+                    key: component.spectrum.metadata[key]
+                    for key in ("source_sha256", "jcamp_headers", "axis_reconciliation", "ingestion_warnings")
+                    if key in component.spectrum.metadata
+                },
             }
             for component in request.components
         ],

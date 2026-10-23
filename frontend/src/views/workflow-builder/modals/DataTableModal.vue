@@ -79,9 +79,15 @@
             <strong>{{ filteredRowCount }}</strong> matched
           </span>
           <span v-if="previewTableData.length < dataShape.rows" class="stat-item warning">
-            Showing first {{ previewTableData.length }} of {{ dataShape.rows }} rows; filters apply
-            to this preview
+            {{ previewTableData.length }} previewed
           </span>
+          <MethodHelp
+            topic="displayExports"
+            label="Table and export scope"
+            :context="previewTableData.length < dataShape.rows
+              ? `Filters apply to the first ${previewTableData.length} rows. CSV exports all ${dataShape.rows} active rows.`
+              : `CSV exports all ${dataShape.rows} active rows, regardless of table filters.`"
+          />
         </div>
 
         <Button
@@ -93,7 +99,6 @@
         />
       </div>
 
-      <span class="export-scope">CSV: {{ dataShape.rows }} active rows <MethodHelp topic="displayExports" label="CSV export scope" /></span>
       <p v-if="cohort.population" role="status">Active cohort: {{ cohort.population.total }} of {{ cohort.population.available }} retained rows; {{ cohort.population.excluded }} excluded. {{ cohort.population.shown_features }} of {{ cohort.population.available_features }} features; {{ cohort.population.excluded_features }} excluded.</p>
       <p v-if="exportError" role="alert">{{ exportError }}</p>
       <p v-if="tableProjectionError" role="alert">{{ tableProjectionError }}</p>
@@ -151,15 +156,15 @@
       </div>
 
       <!-- Metadata Panel -->
-      <div v-if="hasMetadata" class="metadata-panel" role="region" aria-label="Result metadata" tabindex="0">
-        <h4>Metadata</h4>
+      <details v-if="hasMetadata" class="metadata-panel" role="region" aria-label="Result metadata" tabindex="0">
+        <summary>Metadata</summary>
         <div class="metadata-grid">
           <div v-for="(value, key) in displayMetadata" :key="key" class="metadata-item">
             <span class="metadata-key">{{ key }}:</span>
             <span class="metadata-value">{{ formatMetadataValue(value) }}</span>
           </div>
         </div>
-      </div>
+      </details>
     </div>
   </Dialog>
 </template>
@@ -1277,11 +1282,12 @@ function exportCSV() {
   border-top: 1px solid var(--ss-panel-border);
 }
 
-.metadata-panel h4 {
+.metadata-panel summary {
   margin: 0 0 12px;
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--ss-panel-text);
+  cursor: pointer;
 }
 
 .metadata-grid {

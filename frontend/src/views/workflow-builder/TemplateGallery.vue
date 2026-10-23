@@ -145,16 +145,16 @@ const groupedTemplates = computed(() => {
 });
 
 onMounted(async () => {
-  // Always re-fetch to pick up backend template updates (e.g. new data_roles)
-  if (!workflowStore.templatesLoading) {
-    try {
-      await Promise.all([
-        workflowStore.fetchTemplates(undefined, true),
-        workflowStore.fetchCompatibilityMatrix(),
-      ]);
-    } catch {
-      // Store owns the error state shown below.
-    }
+  // Always re-fetch to pick up backend template updates (e.g. new data_roles).
+  // An in-flight template load is reused, but the compatibility matrix is
+  // still required: without it every starter reads as unavailable.
+  try {
+    await Promise.all([
+      workflowStore.templatesLoading ? undefined : workflowStore.fetchTemplates(undefined, true),
+      workflowStore.fetchCompatibilityMatrix(),
+    ]);
+  } catch {
+    // Store owns the error state shown below.
   }
 });
 </script>

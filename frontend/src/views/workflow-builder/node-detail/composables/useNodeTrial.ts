@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted, type Ref } from "vue";
+import { ref, nextTick, onMounted, onUnmounted, type Ref } from "vue";
 import type { ToastServiceMethods } from "primevue/toastservice";
 import type { NodeOutput } from "@/utils/nodeOutput";
 import type {
@@ -6,6 +6,7 @@ import type {
   NodeScientificValueDescriptors,
 } from "@/stores/workflow-types";
 import api from "@/api/client";
+import { extractExportArtifact, exportArtifactSummary } from "@/utils/exportArtifact";
 
 export const STORAGE_KEY = "node_detail_data";
 export const BROADCAST_CHANNEL_NAME = "workflow_node_updates";
@@ -46,6 +47,8 @@ export function useNodeTrial({
   toast,
 }: UseNodeTrialDeps) {
   const isExecuting = ref(false);
+  const hasSuccessfulTrial = ref(false);
+  let mounted = true;
   const broadcastChannel = ref<BroadcastChannel | null>(null);
   const pendingAcks = new Map<string, (ack: ParamsAck) => void>();
   const completedAcks = new Map<string, ParamsAck>();
@@ -63,7 +66,9 @@ export function useNodeTrial({
       nodeId: nodeData.value?.id,
       nodeType: nodeData.value?.type,
       workflowId: nodeData.value?.workflowId ?? null,
+      ownerId: nodeData.value?.ownerId ?? null,
       params: { ...localParams.value },
+      execute: hasSuccessfulTrial.value,
       timestamp: Date.now(),
     };
 
@@ -136,9 +141,17 @@ export function useNodeTrial({
   };
 
   const handleRunTrial = async () => {
-    if (!nodeData.value) return;
+    if (!nodeData.value || isExecuting.value) return;
 
     isExecuting.value = true;
+    // ScientificNumberInput commits its draft on blur. Running from either
+    // the Inspector or this sheet must execute the last visible edit.
+    (document.activeElement as HTMLElement | null)?.blur();
+    await nextTick();
+    if (!mounted) {
+      isExecuting.value = false;
+      return;
+    }
     addLog("info", "Trial started", `Running ${nodeType.value} with trial settings`);
 
     toast.add({
@@ -209,6 +222,7 @@ export function useNodeTrial({
       }
 
       const response = await api.post("/workflows/trial/execute", trialPayload);
+      if (!mounted) return;
 
       isExecuting.value = false;
 
@@ -237,9 +251,12 @@ export function useNodeTrial({
           ...nodeData.value,
           output: output,
         };
+        hasSuccessfulTrial.value = true;
 
         let outputSummary = "Trial completed";
-        if (output.data && Array.isArray(output.data)) {
+        const prepared = exportArtifactSummary(extractExportArtifact(output));
+        if (prepared) outputSummary = prepared.label;
+        else if (output.data && Array.isArray(output.data)) {
           const rows = output.data.length;
           const cols = Array.isArray(output.data[0]) ? output.data[0].length : 1;
           outputSummary = `Output: ${rows} × ${cols} matrix`;
@@ -263,6 +280,7 @@ export function useNodeTrial({
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
+      if (!mounted) return;
       isExecuting.value = false;
       const message = error?.response?.data?.detail || error?.message || String(error);
       addLog("error", "Trial failed", message);
@@ -288,6 +306,7 @@ export function useNodeTrial({
   });
 
   onUnmounted(() => {
+    mounted = false;
     for (const resolve of pendingAcks.values()) {
       resolve({ applied: false, reason: "unmounted" });
     }
@@ -302,6 +321,7 @@ export function useNodeTrial({
 
   return {
     isExecuting,
+    hasSuccessfulTrial,
     broadcastChannel,
     broadcastParamsUpdate,
     waitForParamsAck,

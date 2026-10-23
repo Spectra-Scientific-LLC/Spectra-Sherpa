@@ -473,6 +473,8 @@ function savedDatasetView(id: number) {
 }
 
 type DataContentVm = {
+  dataStoryInspectedSource: Record<string, unknown> | null;
+  originalSourceSampleCount: number | null;
   saveDatasetView(): Promise<void>;
   showDefaultDatasetView(): Promise<void>;
   savePortfolio(): Promise<void>;
@@ -1789,6 +1791,38 @@ describe("DataContent file inspection", () => {
     expect(mocks.dataStore.activateFile).toHaveBeenCalledWith(second.id, second.file_path);
   });
 
+  it("retains verified complete source facts across route return, not an arbitrary retained preview", async () => {
+    const source = {
+      n_samples: 2, n_features: 3, data: [[1, 2, 3], [4, 5, 6]],
+      metadata: { contents_file_count: 1, acquisition: { scans: 16 } },
+    };
+    mocks.dataStore.inspectFile.mockImplementation(async () => {
+      mocks.dataStore.fileInfo = source;
+      return source;
+    });
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    await vm.showExperimentContents(11);
+    await flushPromises();
+    expect(vm.dataStoryInspectedSource).toEqual(source);
+    wrapper.unmount();
+    mocks.dataStore.inspectFile.mockClear();
+    const returned = mountDataContent();
+    await flushPromises();
+    const returnedVm = returned.vm as unknown as DataContentVm;
+    expect(returnedVm.dataStoryInspectedSource).toEqual(source);
+    expect(returnedVm.originalSourceSampleCount).toBe(2);
+    expect(mocks.dataStore.inspectFile).not.toHaveBeenCalled();
+    // A changed source inventory cannot reuse the earlier complete-source proof.
+    mocks.dataStore.experimentFiles[0].file_size_bytes += 1;
+    returned.unmount();
+    const changed = mountDataContent();
+    await flushPromises();
+    expect((changed.vm as unknown as DataContentVm).dataStoryInspectedSource).toBeNull();
+    changed.unmount();
+  });
+
   it("keeps checkbox changes local after loading the complete collection", async () => {
     mocks.dataStore.experiments[0].file_count = 2;
     const first = mocks.dataStore.experimentFiles[0];
@@ -3006,6 +3040,7 @@ describe("DataContent file inspection", () => {
   });
 
   it("adds the built-in Lavender corpus through the reference selection flow", async () => {
+    const selectBeforeImport = mocks.dataStore.selectExperiment.mock.calls.length;
     const lavender: ReferenceDatasetOption = {
       source: "builtin",
       name: "lavender-essential-oil-v1",
@@ -3054,6 +3089,8 @@ describe("DataContent file inspection", () => {
       { source: "builtin", name: "lavender-essential-oil-v1", overrides: null },
     ]);
     expect(mocks.dataStore.selectExperiment).toHaveBeenCalledWith(33);
+    const selectionCalls = mocks.dataStore.selectExperiment.mock.invocationCallOrder.slice(selectBeforeImport);
+    expect(selectionCalls.every((order) => order > mocks.dataStore.importReferenceDatasets.mock.invocationCallOrder[0])).toBe(true);
     expect(wrapper.get('[data-testid="data-tabs"]').attributes("data-active-index")).toBe("5");
     expect(mocks.toastAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: "success", summary: "Import Complete" }),

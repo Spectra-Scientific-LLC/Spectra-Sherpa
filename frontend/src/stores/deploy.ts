@@ -21,7 +21,7 @@ export const useDeployStore = defineStore("deploy", () => {
   const applicationsLoading = ref(false);
   const watchesError = ref("");
   const runsError = ref("");
-  const account = () => [useAuthStore().user?.id, useAuthStore().token] as const;
+  const account = () => [useAuthStore().user?.id, useAuthStore().sessionRevision] as const;
   const identity = () => [...account(), activeProjectScope.value];
   const applicationRequests = useScopedRequest(identity, () => {
     applications.value = [];

@@ -133,16 +133,7 @@
       />
     </div>
 
-    <div v-if="!isCollapsed && viewMode === 'add'" class="toolbar-help">
-      <h4>How to use</h4>
-      <ol>
-        <li>Add nodes from above</li>
-        <li>Click "Connect" on a node</li>
-        <li>Click destination node</li>
-        <li>Adjust parameters on right</li>
-        <li>Click "Run"</li>
-      </ol>
-    </div>
+    <MethodHelp v-if="!isCollapsed" topic="workflow" label="Build a workflow" />
 
     <!--
       Floating hover tooltip. Uses position: fixed (via inline style) so it
@@ -166,6 +157,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { ref, computed, onMounted, nextTick } from 'vue';
 import { useWorkflowStore } from '@/stores/workflow';
 import {

@@ -593,6 +593,34 @@ describe("TemplatePickerDialog", () => {
     expect(mocks.routerPush).not.toHaveBeenCalled();
   });
 
+  it("sends an absent saved definition as null, not the load node's empty digest", async () => {
+    mocks.workflowNodes = [
+      {
+        id: "data_1",
+        type: "data.collection_load",
+        params: {
+          experiment_id: 8,
+          stage: "raw",
+          selected_file_ids: ["9"],
+          dataset_view_id: null,
+          dataset_view_sha256: "",
+        },
+      },
+    ];
+    mocks.apiGet.mockResolvedValue({ data: { templates: [], total: 0 } });
+    mocks.apiPost.mockResolvedValue({ data: null });
+
+    const wrapper = mount(TemplatePickerDialog, { props: { visible: false } });
+    await wrapper.setProps({ visible: true });
+    await flushPromises();
+
+    const [, body] = mocks.apiPost.mock.calls.find(
+      ([path]) => path === "/workflow-templates/binding-compatibility-preview",
+    )!;
+    expect(body.binding).toMatchObject({ experiment_id: 8, file_ids: [9], dataset_view_id: null });
+    expect(body.binding.dataset_view_sha256).toBeNull();
+  });
+
   it("uses the verified project dataset instead of a stale active sheet source", async () => {
     mocks.workflowNodes = [{
       id: "data_1",

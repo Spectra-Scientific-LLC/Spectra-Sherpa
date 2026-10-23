@@ -15,7 +15,7 @@ from typing import Any, Literal, cast, get_args
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1842,6 +1842,13 @@ class DataBindingSpec(BaseModel):
     @property
     def target_type(self) -> TargetType | None:
         return self.target_authority.target_type if self.target_authority is not None else None
+
+    @field_validator("dataset_view_sha256", mode="before")
+    @classmethod
+    def _absent_view_digest(cls, value: object) -> object:
+        # Load-node parameters persist "" for "no saved definition"; a client
+        # echoing that convention means absent, exactly like WorkflowSourceSelection.
+        return None if value == "" else value
 
     @model_validator(mode="after")
     def _one_source_scope(self) -> "DataBindingSpec":

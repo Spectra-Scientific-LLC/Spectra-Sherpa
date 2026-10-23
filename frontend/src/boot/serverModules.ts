@@ -155,6 +155,7 @@ function buildContext(
       user,
       token,
       clearCredentials: authStore.clearCredentials,
+      ensureStoredSession: authStore.ensureStoredSession,
     },
     topbarMenu: scope ? {
       addItems: (items) => { if (scope.current()) useTopbarMenu().addItems(items, contributorId); },
@@ -447,6 +448,7 @@ export async function bootServerModules(
   }
   const extensionRegistrationKey = (): string => JSON.stringify([
     identity.user?.id,
+    identity.sessionRevision,
     identity.user?.capabilities,
     activeProjectScope.value,
     config.value?.uiExtensions,

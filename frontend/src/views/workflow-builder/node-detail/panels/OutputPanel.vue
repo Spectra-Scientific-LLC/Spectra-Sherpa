@@ -583,10 +583,13 @@
             />
             <Button
               :label="nodeType === 'output.export' ? 'Download Prepared File' : 'Export CSV'"
+              :disabled="nodeType === 'output.export' && !!exportDisabledReason"
+              :title="nodeType === 'output.export' ? exportDisabledReason : undefined"
               icon="pi pi-download"
               class="p-button-outlined"
               @click="$emit('exportOutput')"
             />
+            <span v-if="nodeType === 'output.export' && exportDisabledReason" role="status">{{ exportDisabledReason }}</span>
           </div>
 
           <div v-if="outputPreview.length" class="preview-table">
@@ -651,6 +654,7 @@ import { NODE_DETAIL_STATE_KEY } from "../state/useNodeDetailState";
 defineProps<{
   expanded: boolean;
   nodeType?: string;
+  exportDisabledReason?: string;
 }>();
 
 defineEmits<{
