@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Staging GUI corrections
 
-- Dependency security: update locked nbconvert to7.17.2 and the paused desktop
-  shell's Electron dependency to44.5.0. Desktop packaging remains paused.
+- Dependency security: require nbconvert7.17.2 or later in the HITRAN extra,
+  including pip upgrades; update the paused desktop shell's Electron dependency
+  to44.5.0. No notebook stack is added to base installs; packaging remains paused.
 - Batch preflight keeps internal HTTP exception details in server logs and
   returns status-specific recovery advice without interrupting other pairs.
 - Advisor dataset descriptions include the recorded instrument and parsed
