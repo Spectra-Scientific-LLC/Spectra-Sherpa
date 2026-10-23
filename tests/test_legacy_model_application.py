@@ -18,6 +18,7 @@ from spectra_sherpa.app.services.execution_runtime import ApplicationModelArtifa
 from spectra_sherpa.app.services.legacy_model_application import (
     LEGACY_WARNING,
     LegacyAcknowledgementRequired,
+    LegacyInputRefusal,
     require_legacy_application_acknowledgement,
 )
 from spectra_sherpa.app.services.model_application import (
@@ -109,8 +110,9 @@ def test_v060_numeric_axis_requires_exact_values_even_after_ack(model_type, seri
     with pytest.raises(ValueError, match="coordinates differ"):
         require_legacy_application_acknowledgement(manifest, {}, changed, acknowledged=True)
     manifest.pop("feature_axis")
-    with pytest.raises(ValueError, match="no complete retained numeric feature axis"):
+    with pytest.raises(LegacyInputRefusal, match="no complete retained numeric feature axis") as refusal:
         require_legacy_application_acknowledgement(manifest, {}, dataset, acknowledged=True)
+    assert refusal.value.code == "axis_unavailable"
 
 
 @pytest.mark.parametrize("model_type", ["pca", "fastica"])

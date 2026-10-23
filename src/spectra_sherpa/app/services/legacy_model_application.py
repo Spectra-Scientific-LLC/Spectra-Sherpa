@@ -12,6 +12,12 @@ from spectra_sherpa.app.services.dag.legacy_model_application import (
     LegacyAcknowledgementRequired as LegacyAcknowledgementRequired,
 )
 from spectra_sherpa.app.services.dag.legacy_model_application import (
+    LegacyInputRefusal as LegacyInputRefusal,
+)
+from spectra_sherpa.app.services.dag.legacy_model_application import (
+    legacy_refusal_reason as legacy_refusal_reason,
+)
+from spectra_sherpa.app.services.dag.legacy_model_application import (
     require_legacy_application_acknowledgement as _require_legacy_application_acknowledgement,
 )
 

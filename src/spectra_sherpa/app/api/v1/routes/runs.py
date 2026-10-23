@@ -268,6 +268,8 @@ async def preflight_verification_batch(
             from spectra_sherpa.app.services.legacy_model_application import (
                 LEGACY_WARNING,
                 LegacyAcknowledgementRequired,
+                LegacyInputRefusal,
+                legacy_refusal_reason,
             )
 
             logger.warning("Batch preflight refused pair %s (invalid input)", index, exc_info=True)
@@ -275,6 +277,9 @@ async def preflight_verification_batch(
                 results.append(
                     {"index": index, "compatible": False, "code": "legacy_ack_required", "reason": LEGACY_WARNING}
                 )
+                continue
+            if isinstance(exc, LegacyInputRefusal):
+                results.append({"index": index, "compatible": False, "reason": legacy_refusal_reason(exc.code)})
                 continue
             results.append({"index": index, "compatible": False, "reason": preflight_refusal_reason(422)})
         except HTTPException as exc:
