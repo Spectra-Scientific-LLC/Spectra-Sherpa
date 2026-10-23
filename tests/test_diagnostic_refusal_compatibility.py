@@ -11,39 +11,39 @@ from spectra_sherpa.sdk.fitted_state_custody import FittedStateCustodyError, fit
 _REVIEWED = {
     "classification.knn": (
         "8acc66bc0b248e2ebfbd89f041dd0513b3505740fa5a2b5e3b4dbccba81f1206",
-        "45dfeb78fef8ebf91d22edf584342724a5f5d8ca3532649ff86ea7347db0900f",
+        "df59b9d414abefb1c93de58ef405f3044ad4c6a02b23dd62cf8cd38c131b58a7",
     ),
     "classification.plsda": (
         "526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
-        "f8cb93e6a0b919054f55680e6d4e994bd310d122d3dfb0e40b095569cef53ef9",
+        "85b2a1fd3938dee8a3a12f61397a07052883cd3f0bfa4d977151b600fe4992b6",
     ),
     "classification.simca": (
         "16dfeba33f742c80aad2e8ae2dcccb42d430215b20b2fdfb77179f821db52034",
-        "bd702d6c67ccd5e0450b7c084ee7c7b0d20a530a3eb364a5e53d1a07caf07bc8",
+        "2a591ac8626fe115463326b7f6b30b1ad3721c6392e6e4a07af786de13777388",
     ),
     "model.fitted_linear_regression": (
         "10b125ffb88229b92cfe1eac67e5717117cfdf57d485b3e370abb2ef8910f6a7",
-        "0249dc0427231232a1b543a5bdce6d1f1eceb5231719b41d0e65d52082bb4026",
+        "a0a31850e5ec62ce5d3d45050af62f715306d1da9d84442d76d70b1b738303f8",
     ),
     "model.fitted_pcr": (
         "577777179c36fedf0338c84a003e9080aa8879043e2ad0e19e7dccc5f618c201",
-        "27f4c22c6ae6fb575c7e9cb2882de79143b166274356e739346cbe2d6f7f9a22",
+        "e76876f01548800f4b3ee2bdf0382359e046793a1e02e61e424e17b552256bf3",
     ),
     "model.fitted_svr": (
         "cde922310dc4713ab5349720f865595fee13c8c2a53b60f68708ceed9882bae0",
-        "2ac66187fb0e4fc00934d9630e68128888cd8c2c2c2d172194ee5ca550798fbc",
+        "a6be415b3b1ed88d25ef0a220d1059031ada900f4c470d2a7cb762c250edf8af",
     ),
     "model.ica": (
         "053d4bf663ea8242c2ad400629f7a9436035a826781346966cb62d95a19cac5a",
-        "94c112265e78275a70a033f9ac7fbe5b9e6f24b99a7c2d5652ec2e76c8033d8f",
+        "96cf3f6dd097f4bbe30b4dcaf2c70f919fdb7abdce90b9d51ba4f25aa4a2427e",
     ),
     "model.mcr_als": (
         "ce5de4a28b2258eed1ad44509ae8f0aa9952f7f8b7d5097116ad55f5b21ba9d3",
-        "50cd24ddedd39194455a526922e3923b9fb6c2acef12aba4b9fe18b5be940a9b",
+        "bc1c45f468420d8931ff66c71b388abaf32e1d459cc35a6b1d668c819470389e",
     ),
     "model.pca": (
         "5e809716a8266c4ddd5fb3902b8a68c264019fd05237bdb1397f664ae31dea10",
-        "7d89eafc1c61c6ed5b121cea3ed06e74045dea4c7b5381275c54facf9b0b8924",
+        "85b458d4b762f028fd9e825c47642460faf9f4682122def13416c88082a879f6",
     ),
 }
 

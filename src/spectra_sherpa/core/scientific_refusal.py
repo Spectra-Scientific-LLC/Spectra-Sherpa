@@ -31,3 +31,6 @@ class ScientificInputRefusal(ValueError):
         public_reason = scientific_refusal_reason(code)
         self.code = code
         super().__init__(public_reason if detail is None else detail)
+
+    def __reduce__(self):
+        return type(self), (self.code,), {**self.__dict__, "args": self.args}

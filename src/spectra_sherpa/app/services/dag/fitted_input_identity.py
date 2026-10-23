@@ -50,6 +50,11 @@ class FittedInputMismatch(ValueError):
         self.fields = fields
         super().__init__(message)
 
+    def __reduce__(self):
+        # Workers transport exceptions privately. Reconstruct with classified
+        # fields, not the rendered message that BaseException puts in args.
+        return type(self), (self.fields,), {**self.__dict__, "args": self.args}
+
 
 def _text(value: object, *, name: str) -> str | None:
     if value is None:

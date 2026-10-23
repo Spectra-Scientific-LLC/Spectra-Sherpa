@@ -528,7 +528,7 @@ _DIAGNOSTIC_REFUSAL_PREDECESSORS = tuple(
         (
             "classification.knn",
             "spectrasherpa.model-artifact.knn/2",
-            "45dfeb78fef8ebf91d22edf584342724a5f5d8ca3532649ff86ea7347db0900f",
+            "df59b9d414abefb1c93de58ef405f3044ad4c6a02b23dd62cf8cd38c131b58a7",
             (
                 "7f188a7485c4774ccaa67d7efcf0cd95e35c07682633e9b5265d48f5e568be92",
                 "8acc66bc0b248e2ebfbd89f041dd0513b3505740fa5a2b5e3b4dbccba81f1206",
@@ -538,7 +538,7 @@ _DIAGNOSTIC_REFUSAL_PREDECESSORS = tuple(
         (
             "classification.plsda",
             "spectrasherpa.sherpa-plsda-state/5",
-            "f8cb93e6a0b919054f55680e6d4e994bd310d122d3dfb0e40b095569cef53ef9",
+            "85b2a1fd3938dee8a3a12f61397a07052883cd3f0bfa4d977151b600fe4992b6",
             (
                 "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
                 "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
@@ -554,7 +554,7 @@ _DIAGNOSTIC_REFUSAL_PREDECESSORS = tuple(
         (
             "classification.simca",
             "spectrasherpa.model-artifact.simca/2",
-            "bd702d6c67ccd5e0450b7c084ee7c7b0d20a530a3eb364a5e53d1a07caf07bc8",
+            "2a591ac8626fe115463326b7f6b30b1ad3721c6392e6e4a07af786de13777388",
             (
                 "16dfeba33f742c80aad2e8ae2dcccb42d430215b20b2fdfb77179f821db52034",
                 "58ae844cdcd14833a6da09a7f658e979ed08d812fc5bed7ef9d230be6e79d72e",
@@ -564,7 +564,7 @@ _DIAGNOSTIC_REFUSAL_PREDECESSORS = tuple(
         (
             "model.fitted_linear_regression",
             "spectrasherpa.model.fitted_linear_regression/1",
-            "0249dc0427231232a1b543a5bdce6d1f1eceb5231719b41d0e65d52082bb4026",
+            "a0a31850e5ec62ce5d3d45050af62f715306d1da9d84442d76d70b1b738303f8",
             (
                 "04d5ea448432137158df7b412286a17a5fe3498f5589ce53b33414fad2388b2b",
                 "10b125ffb88229b92cfe1eac67e5717117cfdf57d485b3e370abb2ef8910f6a7",
@@ -578,7 +578,7 @@ _DIAGNOSTIC_REFUSAL_PREDECESSORS = tuple(
         (
             "model.fitted_pcr",
             "spectrasherpa.model.fitted_pcr/1",
-            "27f4c22c6ae6fb575c7e9cb2882de79143b166274356e739346cbe2d6f7f9a22",
+            "e76876f01548800f4b3ee2bdf0382359e046793a1e02e61e424e17b552256bf3",
             (
                 "18c724b705c6c1331a82a45e7c4f7c2c8a6c4b91fb375385e3e146f3f39b9b11",
                 "577777179c36fedf0338c84a003e9080aa8879043e2ad0e19e7dccc5f618c201",
@@ -592,7 +592,7 @@ _DIAGNOSTIC_REFUSAL_PREDECESSORS = tuple(
         (
             "model.fitted_svr",
             "spectrasherpa.model.fitted_svr/1",
-            "2ac66187fb0e4fc00934d9630e68128888cd8c2c2c2d172194ee5ca550798fbc",
+            "a6be415b3b1ed88d25ef0a220d1059031ada900f4c470d2a7cb762c250edf8af",
             (
                 "0daa0a05e555974ab7810bc97ddecc09abb00c24f7b5f6014be8a99aaee1b97b",
                 "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
@@ -606,19 +606,19 @@ _DIAGNOSTIC_REFUSAL_PREDECESSORS = tuple(
         (
             "model.ica",
             "spectrasherpa.model-artifact.fastica/2",
-            "94c112265e78275a70a033f9ac7fbe5b9e6f24b99a7c2d5652ec2e76c8033d8f",
+            "96cf3f6dd097f4bbe30b4dcaf2c70f919fdb7abdce90b9d51ba4f25aa4a2427e",
             ("053d4bf663ea8242c2ad400629f7a9436035a826781346966cb62d95a19cac5a",),
         ),
         (
             "model.mcr_als",
             "spectrasherpa.model-artifact.mcr-als/2",
-            "50cd24ddedd39194455a526922e3923b9fb6c2acef12aba4b9fe18b5be940a9b",
+            "bc1c45f468420d8931ff66c71b388abaf32e1d459cc35a6b1d668c819470389e",
             ("ce5de4a28b2258eed1ad44509ae8f0aa9952f7f8b7d5097116ad55f5b21ba9d3",),
         ),
         (
             "model.pca",
             "spectrasherpa.model-artifact.pca/3",
-            "7d89eafc1c61c6ed5b121cea3ed06e74045dea4c7b5381275c54facf9b0b8924",
+            "85b458d4b762f028fd9e825c47642460faf9f4682122def13416c88082a879f6",
             (
                 "2d4457cd7ca9ce699326aad70e1b4a77deb74d6cea88afd08066f106f45df161",
                 "5e809716a8266c4ddd5fb3902b8a68c264019fd05237bdb1397f664ae31dea10",

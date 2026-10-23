@@ -47,11 +47,11 @@ _INSPECTION_CONSUMERS = {
     ),
     "classification.knn": (
         "b75296b1e07af53623dfaf5e859b759d089eb1b4145a415bc555ff59cf4fec8a",
-        "45dfeb78fef8ebf91d22edf584342724a5f5d8ca3532649ff86ea7347db0900f",
+        "df59b9d414abefb1c93de58ef405f3044ad4c6a02b23dd62cf8cd38c131b58a7",
     ),
     "classification.simca": (
         "58ae844cdcd14833a6da09a7f658e979ed08d812fc5bed7ef9d230be6e79d72e",
-        "bd702d6c67ccd5e0450b7c084ee7c7b0d20a530a3eb364a5e53d1a07caf07bc8",
+        "2a591ac8626fe115463326b7f6b30b1ad3721c6392e6e4a07af786de13777388",
     ),
     # PR119: display descriptions/input-coordinate bindings and canonical
     # sample helpers changed source identities, not archived declarations.
@@ -73,33 +73,33 @@ _INSPECTION_CONSUMERS = {
     ),
     "classification.plsda": (
         "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-        "f8cb93e6a0b919054f55680e6d4e994bd310d122d3dfb0e40b095569cef53ef9",
+        "85b2a1fd3938dee8a3a12f61397a07052883cd3f0bfa4d977151b600fe4992b6",
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
         # Reviewed typed public refusals preserve every legacy admission check.
         # This pair permits historical inspection only, never old execution.
-        "ba292a47e692ce536d91a7a2148b98b69cff3ae23bb4d43f347281cae5dfd20a",
+        "d3fb0d37037ce5c51bd5e8343386d8dc9bce131f53c08d368b21da3af97b54d9",
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",
-        "c3bb8be999ff4af3715ad137e743733283ff1f49eb1e2e902ebb00ad04c80d5d",
+        "dd74469839faad7d699e1426c9b1d52708789759bdbd9a34e547278c668ba007",
     ),
     "model.apply_fitted_pcr": (
         "1aecb57326c2c3a8f71823a035cbcb2f21be34d72a3049daedcc5e67a399f2e9",
-        "b320f5e1644f1594a5cdf258dc83d8b055a6b190ac3cf0d13342c10b20dfeac1",
+        "a26782875d287ce1b28fc0db96485362667bd67039ebd25f546f69a75f98bdf0",
     ),
     "model.apply_fitted_svr": (
         "244fe3defede23aefb869e74d97034600b1a73c9abb63694fb6101ed2fea9c34",
-        "15e52d92c5b7f1dc34293e1e62af5719711ce659ea7ca5ee0d71cefe3675007b",
+        "7a4e54b71e344ce4a3b2fee943a92c947bfa3b3316f8e8a522984dc18cddf13f",
     ),
     "model.fitted_linear_regression": (
         "04d5ea448432137158df7b412286a17a5fe3498f5589ce53b33414fad2388b2b",
-        "0249dc0427231232a1b543a5bdce6d1f1eceb5231719b41d0e65d52082bb4026",
+        "a0a31850e5ec62ce5d3d45050af62f715306d1da9d84442d76d70b1b738303f8",
     ),
     "model.fitted_pcr": (
         "a207b7fc520763105b633ca6d99eb267872c38ed54dc6854082b7be1bd1756b8",
-        "27f4c22c6ae6fb575c7e9cb2882de79143b166274356e739346cbe2d6f7f9a22",
+        "e76876f01548800f4b3ee2bdf0382359e046793a1e02e61e424e17b552256bf3",
     ),
     "model.fitted_pls": (
         "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
@@ -107,7 +107,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.fitted_svr": (
         "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
-        "2ac66187fb0e4fc00934d9630e68128888cd8c2c2c2d172194ee5ca550798fbc",
+        "a6be415b3b1ed88d25ef0a220d1059031ada900f4c470d2a7cb762c250edf8af",
     ),
 }
 

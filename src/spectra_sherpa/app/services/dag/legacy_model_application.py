@@ -65,6 +65,9 @@ class LegacyInputRefusal(ValueError):
         self.code = code
         super().__init__(legacy_refusal_reason(code))
 
+    def __reduce__(self):
+        return type(self), (self.code,), {**self.__dict__, "args": self.args}
+
 
 def require_legacy_application_acknowledgement(
     manifest: dict[str, Any],
