@@ -32,7 +32,7 @@ def test_python_lock_retains_reviewed_security_floors_and_scp_authority() -> Non
         "pillow": "12.3.0",
         "pypdf": "6.21.2",
         "nbconvert": "7.17.2",  # GHSA-pjvx-prjx-h659: extracted-output path traversal
-        "setuptools": "83.0.0",
+        "setuptools": "84.1.0",  # GHSA-xmj3-9gf7-h52w: Windows legacy-wheel path escape
         "soupsieve": "2.8.4",
     }
     for package, floor in floors.items():
@@ -81,6 +81,18 @@ def test_hitran_extra_forces_pip_to_upgrade_vulnerable_nbconvert() -> None:
     assert Version("7.17.1") not in constraint
     assert Version("7.17.2") in constraint
     assert Version("8.0.0") not in constraint
+
+
+def test_scp_extra_forces_pip_to_upgrade_vulnerable_setuptools() -> None:
+    project = tomllib.loads((PACKAGE_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["poetry"]
+    dependency = project["dependencies"]["setuptools"]
+    assert dependency["optional"] is True
+    assert "setuptools" in project["extras"]["scp"]
+    assert all("setuptools" not in names for extra, names in project["extras"].items() if extra != "scp")
+    constraint = SpecifierSet(dependency["version"])
+    assert Version("84.0.0") not in constraint
+    assert Version("84.1.0") in constraint
+    assert Version("85.0.0") not in constraint
 
 
 def test_pypdf_install_paths_exclude_versions_before_the_reviewed_security_floor() -> None:
