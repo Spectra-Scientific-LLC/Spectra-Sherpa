@@ -277,16 +277,10 @@ async def preflight_verification_batch(
             # traceback. Keep diagnostics in operator logs, never in the batch
             # response. Status-specific recovery advice is literal, not a
             # redaction of untrusted exception text.
+            from spectra_sherpa.app.services.batch_verification import preflight_refusal_reason
+
             logger.warning("Batch preflight refused pair %s (HTTP %s)", index, exc.status_code, exc_info=True)
-            reasons = {
-                400: "The dataset or model could not be read. Re-import the dataset or choose another saved model.",
-                409: (
-                    "Saved inputs changed or failed integrity checks. "
-                    "Reload the dataset and model, then retry preflight."
-                ),
-                422: "This combination is not valid. Review the workflow, dataset selection and target settings.",
-            }
-            results.append({"index": index, "compatible": False, "reason": reasons[exc.status_code]})
+            results.append({"index": index, "compatible": False, "reason": preflight_refusal_reason(exc.status_code)})
     return {"pairs": results}
 
 

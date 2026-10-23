@@ -32,6 +32,17 @@ class BatchAuthorityChanged(HTTPException):
         super().__init__(409, "Batch source authority changed; review a fresh preflight before retrying")
 
 
+def preflight_refusal_reason(status_code: int) -> str:
+    """Public recovery advice for admitted refusal statuses, never exception text."""
+    return {
+        400: "The dataset or model could not be read. Re-import the dataset or choose another saved model.",
+        409: (
+            "Saved inputs changed or failed integrity checks. " "Reload the dataset and model, then retry preflight."
+        ),
+        422: "This combination is not valid. Review the workflow, dataset selection and target settings.",
+    }[status_code]
+
+
 def verification_digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
