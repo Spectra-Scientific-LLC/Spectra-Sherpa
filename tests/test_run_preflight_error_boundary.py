@@ -7,6 +7,91 @@ import pytest
 from fastapi import HTTPException
 
 from spectra_sherpa.app.api.v1.routes import runs
+from spectra_sherpa.app.services.batch_verification import preflight_refusal_reason
+from spectra_sherpa.app.services.legacy_model_application import LEGACY_WARNING, LegacyAcknowledgementRequired
+
+
+@pytest.mark.parametrize(
+    ("code", "reason"),
+    [
+        ("local_only", "Legacy exploratory model recovery is available only in local OSS with application permission"),
+        ("plsda_axis_unavailable", "Legacy PLS-DA has no exact typed feature axis; refit it before application"),
+        ("axis_unavailable", "Legacy model has no complete retained numeric feature axis; refit it"),
+        ("axis_type_mismatch", "Application data has no matching typed feature axis for the legacy model"),
+        ("axis_malformed", "Legacy model feature axis is malformed or incomplete"),
+        ("coordinates_mismatch", "Application feature coordinates differ from the legacy fitted axis"),
+        ("units_mismatch", "Application feature-axis units differ from the legacy model"),
+        ("quantity_mismatch", "Application feature-axis quantity differs from the legacy model"),
+    ],
+)
+async def test_preflight_preserves_classified_scientific_refusals_without_reflection(
+    auth_client, monkeypatch, code, reason
+):
+    from spectra_sherpa.app.services.legacy_model_application import LegacyInputRefusal
+
+    refusal = LegacyInputRefusal(code)
+    # Even a dependency adding private detail cannot change the public reason.
+    refusal.args = ("Traceback: /private/server/model.py SELECT internal_column",)
+    monkeypatch.setattr(runs, "_prepare_verification_pair", AsyncMock(side_effect=refusal))
+    response = await auth_client.post(
+        "/api/v1/runs/verification/preflight",
+        json={
+            "project_id": 1,
+            "mode": "run_workflow",
+            "pairs": [{"workflow_id": 1, "dataset": {"experiment_id": 1}}],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {"pairs": [{"index": 0, "compatible": False, "reason": reason}]}
+    assert "Traceback" not in response.text and "internal_column" not in response.text
+
+
+def test_legacy_public_refusal_vocabulary_is_closed():
+    from spectra_sherpa.app.services.legacy_model_application import LegacyInputRefusal, legacy_refusal_reason
+
+    with pytest.raises(KeyError):
+        LegacyInputRefusal("Traceback: /private/server/model.py")
+    with pytest.raises(KeyError):
+        legacy_refusal_reason("unreviewed-reason")
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_preflight_value_errors_never_echo_details(auth_client, monkeypatch, caplog, legacy):
+    private = "Traceback: /private/server/model.py SELECT internal_column FROM internal_table"
+    exception_type = LegacyAcknowledgementRequired if legacy else ValueError
+    monkeypatch.setattr(
+        runs,
+        "_prepare_verification_pair",
+        AsyncMock(
+            side_effect=[
+                exception_type(private),
+                {"receipt": "b" * 64, "metadata": {"n_included_samples": 33}},
+            ]
+        ),
+    )
+    monkeypatch.setattr(runs.logger, "disabled", False)
+    caplog.set_level(logging.WARNING, logger=runs.logger.name)
+    runs.logger.addHandler(caplog.handler)
+    try:
+        response = await auth_client.post(
+            "/api/v1/runs/verification/preflight",
+            json={
+                "project_id": 1,
+                "mode": "run_workflow",
+                "pairs": [{"workflow_id": n, "dataset": {"experiment_id": 1}} for n in (1, 2)],
+            },
+        )
+    finally:
+        runs.logger.removeHandler(caplog.handler)
+    assert response.status_code == 200
+    refused, accepted = response.json()["pairs"]
+    expected = {"index": 0, "compatible": False, "reason": LEGACY_WARNING if legacy else preflight_refusal_reason(422)}
+    if legacy:
+        expected["code"] = "legacy_ack_required"
+    assert refused == expected
+    assert private not in response.text and "internal_column" not in response.text
+    assert private in caplog.text
+    assert accepted == {"index": 1, "compatible": True, "receipt": "b" * 64, "metadata": {"n_included_samples": 33}}
 
 
 @pytest.mark.parametrize("status", [400, 409, 422])

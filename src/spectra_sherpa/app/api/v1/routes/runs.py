@@ -264,12 +264,24 @@ async def preflight_verification_batch(
                 {"index": index, "compatible": True, "receipt": admitted["receipt"], "metadata": admitted["metadata"]}
             )
         except ValueError as exc:
-            from spectra_sherpa.app.services.legacy_model_application import LegacyAcknowledgementRequired
+            from spectra_sherpa.app.services.batch_verification import preflight_refusal_reason
+            from spectra_sherpa.app.services.legacy_model_application import (
+                LEGACY_WARNING,
+                LegacyAcknowledgementRequired,
+                LegacyInputRefusal,
+                legacy_refusal_reason,
+            )
 
+            logger.warning("Batch preflight refused pair %s (invalid input)", index, exc_info=True)
             if isinstance(exc, LegacyAcknowledgementRequired):
-                results.append({"index": index, "compatible": False, "code": "legacy_ack_required", "reason": str(exc)})
+                results.append(
+                    {"index": index, "compatible": False, "code": "legacy_ack_required", "reason": LEGACY_WARNING}
+                )
                 continue
-            results.append({"index": index, "compatible": False, "reason": str(exc)})
+            if isinstance(exc, LegacyInputRefusal):
+                results.append({"index": index, "compatible": False, "reason": legacy_refusal_reason(exc.code)})
+                continue
+            results.append({"index": index, "compatible": False, "reason": preflight_refusal_reason(422)})
         except HTTPException as exc:
             if exc.status_code not in {400, 409, 422}:
                 raise

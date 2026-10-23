@@ -41,6 +41,31 @@ class LegacyAcknowledgementRequired(ValueError):
     """The old artifact is eligible only after explicit exploratory consent."""
 
 
+_LEGACY_REFUSAL_REASONS = {
+    "local_only": "Legacy exploratory model recovery is available only in local OSS with application permission",
+    "plsda_axis_unavailable": "Legacy PLS-DA has no exact typed feature axis; refit it before application",
+    "axis_unavailable": "Legacy model has no complete retained numeric feature axis; refit it",
+    "axis_type_mismatch": "Application data has no matching typed feature axis for the legacy model",
+    "axis_malformed": "Legacy model feature axis is malformed or incomplete",
+    "coordinates_mismatch": "Application feature coordinates differ from the legacy fitted axis",
+    "units_mismatch": "Application feature-axis units differ from the legacy model",
+    "quantity_mismatch": "Application feature-axis quantity differs from the legacy model",
+}
+
+
+def legacy_refusal_reason(code: str) -> str:
+    """Return only authority-owned public advice, never an exception message."""
+    return _LEGACY_REFUSAL_REASONS[code]
+
+
+class LegacyInputRefusal(ValueError):
+    """A known scientific refusal with a closed, literal public projection."""
+
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(legacy_refusal_reason(code))
+
+
 def require_legacy_application_acknowledgement(
     manifest: dict[str, Any],
     arrays: dict[str, Any],
@@ -61,13 +86,13 @@ def require_legacy_application_acknowledgement(
     if not legacy:
         return None
     if not local_allowed:
-        raise ValueError("Legacy exploratory model recovery is available only in local OSS with application permission")
+        raise LegacyInputRefusal("local_only")
     if model_type == "plsda":
         from spectra_sherpa.app.services.dag.nodes.classification.plsda_state import SherpaPLSDAArtifact
 
         identity = manifest.get("feature_identity")
         if not isinstance(identity, dict) or identity.get("mode") != "typed_axis":
-            raise ValueError("Legacy PLS-DA has no exact typed feature axis; refit it before application")
+            raise LegacyInputRefusal("plsda_axis_unavailable")
         # The full state and its declared typed axis are validated separately
         # by the saved-model adapter before numerical application.
         artifact = SherpaPLSDAArtifact.from_artifact(manifest, arrays)
@@ -86,15 +111,15 @@ def _require_exact_legacy_axis(manifest: dict[str, Any], prepared: SherpaDataset
     axis = prepared.get_feature_axis()
     count = manifest.get("n_features")
     if type(count) is not int or count < 1 or not isinstance(values, list) or len(values) != count:
-        raise ValueError("Legacy model has no complete retained numeric feature axis; refit it")
+        raise LegacyInputRefusal("axis_unavailable")
     if axis is None or type(axis).__name__ != manifest.get("feature_axis_class") or axis.values is None:
-        raise ValueError("Application data has no matching typed feature axis for the legacy model")
+        raise LegacyInputRefusal("axis_type_mismatch")
     expected = np.asarray(values, dtype=np.float64)
     actual = np.asarray(axis.values, dtype=np.float64)
     if expected.shape != (count,) or actual.shape != (count,) or not np.isfinite(expected).all():
-        raise ValueError("Legacy model feature axis is malformed or incomplete")
+        raise LegacyInputRefusal("axis_malformed")
     if not np.isfinite(actual).all() or not np.array_equal(expected, actual):
-        raise ValueError("Application feature coordinates differ from the legacy fitted axis")
+        raise LegacyInputRefusal("coordinates_mismatch")
     semantics = axis_semantics(
         axis_class=type(axis).__name__,
         title=getattr(axis, "title", None),
@@ -104,8 +129,8 @@ def _require_exact_legacy_axis(manifest: dict[str, Any], prepared: SherpaDataset
     expected_units = manifest.get("feature_axis_units")
     actual_units = semantics.units
     if canonical_axis_unit(expected_units) != canonical_axis_unit(actual_units):
-        raise ValueError("Application feature-axis units differ from the legacy model")
+        raise LegacyInputRefusal("units_mismatch")
     expected_quantity = manifest.get("feature_axis_quantity")
     actual_quantity = semantics.quantity.value if semantics.quantity is not None else None
     if expected_quantity != actual_quantity:
-        raise ValueError("Application feature-axis quantity differs from the legacy model")
+        raise LegacyInputRefusal("quantity_mismatch")

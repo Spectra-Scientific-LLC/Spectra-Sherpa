@@ -77,7 +77,9 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
-        "2c0aac4b7572370e631c839a79b3980b5edb37d879bb43fc789edab337e76a64",
+        # Reviewed typed public refusals preserve every legacy admission check.
+        # This pair permits historical inspection only, never old execution.
+        "ba292a47e692ce536d91a7a2148b98b69cff3ae23bb4d43f347281cae5dfd20a",
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",
