@@ -148,6 +148,10 @@ View use the shared indicator and structured population metadata. Excluded
 observations outside the active population do not by themselves make a preview
 a subset of that active population.
 
+Quick Plot and Detailed View share the figure-height policy. Wrapped controls
+must not shrink a tall paired figure into an internally scrolling chart window.
+Scroll the containing surface, retaining both panels and their canonical axes.
+
 ### 6. Lifecycle fidelity
 
 The same scientific meaning should survive:

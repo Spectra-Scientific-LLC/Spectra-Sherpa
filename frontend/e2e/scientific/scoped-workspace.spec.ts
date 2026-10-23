@@ -91,6 +91,42 @@ async function addMixture(request: APIRequestContext, project: { id: number; nam
   return { project, experiment, files: [await imported.json()] };
 }
 
+test("choosing Synthesis during Data bootstrap preserves My Dataset restoration @smoke", async ({ page, request }) => {
+  const dataset = await createDataset(request, "Iris delayed Data bootstrap", { source: "sklearn", name: "iris" });
+  let release!: () => void, received!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const intercepted = new Promise<void>(resolve => { received = resolve; });
+  let delayed = false;
+  const pattern = "**/api/v1/experiments?*";
+  await page.route(pattern, async route => {
+    if (delayed || new URL(route.request().url()).searchParams.get("project_id") !== String(dataset.project.id)) {
+      return route.continue();
+    }
+    delayed = true;
+    const response = await route.fetch();
+    received();
+    await held;
+    return route.fulfill({ response });
+  });
+  try {
+    await page.goto(`/data?project=${dataset.project.id}&tab=my-dataset`);
+    await intercepted;
+    await page.getByRole("button", { name: "Synthesis", exact: true }).click();
+    release();
+    await expect(page.getByRole("button", { name: "Synthesis", exact: true })).toHaveAttribute("aria-current", "true");
+    await page.getByRole("button", { name: "My Dataset", exact: true }).click();
+    const heading = page.locator(".focused-dataset-details > summary");
+    await expect(heading).toContainText(dataset.experiment.name);
+    await heading.click();
+    const metadata = page.getByRole("region", { name: "Dataset metadata and quality", exact: true });
+    await expect(metadata.locator(".meta-row").filter({ hasText: "Samples in selection" }).locator(".meta-val")).toHaveText("150");
+    await expect(page.getByRole("region", { name: "My Dataset", exact: true })).not.toContainText("No dataset selected");
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
+
 test("a delayed dataset inspection cannot replace the newly selected dataset @smoke", async ({
   page,
   request,

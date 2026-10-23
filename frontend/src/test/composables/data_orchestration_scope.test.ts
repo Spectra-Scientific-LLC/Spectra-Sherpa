@@ -183,6 +183,38 @@ describe("Data request boundaries", () => {
     expect(route.isCurrent()).toBe(false);
     expect(navigation.focus.begin().isCurrent()).toBe(true);
   });
+
+  it("tab choice retires presentation, not admitted dataset restoration, route hydration or inspection", () => {
+    const navigation = setup(() => useDatasetNavigation(() => [1]));
+    const bootstrap = navigation.bootstrap.begin();
+    const focus = navigation.focus.begin();
+    const route = navigation.route.begin();
+    const tabCurrent = navigation.captureTabChoice();
+    navigation.chooseTab();
+    expect(tabCurrent()).toBe(false);
+    expect(route.isCurrent()).toBe(true);
+    expect(bootstrap.isCurrent()).toBe(true);
+    expect(focus.isCurrent()).toBe(true);
+    const nextTabCurrent = navigation.captureTabChoice();
+    navigation.chooseTab();
+    expect(nextTabCurrent()).toBe(false);
+  });
+
+  it.each(["user", "project"])("tab presentation cannot grant scientific ownership after %s A → B → A", field => {
+    const identity = reactive<Record<string, number>>({ user: 1, project: 2 });
+    const navigation = setup(() => useDatasetNavigation(() => Object.values(identity)));
+    const tabCurrent = navigation.captureTabChoice();
+    const bootstrap = navigation.bootstrap.begin();
+    const focus = navigation.focus.begin();
+    const previous = identity[field];
+    identity[field] = previous + 1;
+    identity[field] = previous;
+    expect(tabCurrent()).toBe(true);
+    expect(bootstrap.isCurrent()).toBe(false);
+    expect(focus.isCurrent()).toBe(false);
+    navigation.choose();
+    expect(tabCurrent()).toBe(false);
+  });
 });
 
 describe("Synthesis request boundaries", () => {

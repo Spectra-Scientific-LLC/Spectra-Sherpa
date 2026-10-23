@@ -88,6 +88,15 @@ describe("QuickPlotModal", () => {
     Paginator: true,
   };
 
+  it.each([false, true])("uses the same responsive canvas height when embedded=%s", embedded => {
+    const wrapper = mount(QuickPlotModal, {
+      props: { embedded, modelValue: true, nodeType: "model.pca", nodeLabel: "PCA", nodeOutput: { data: [], metadata: {} } },
+      global: { stubs: globalStubs },
+    });
+    expect((wrapper.vm as any).plotCanvasStyle).toEqual({ height: "clamp(360px, 55vh, 680px)", minHeight: "360px" });
+    wrapper.unmount();
+  });
+
   it("expands declared trace records into numeric plot-table points", () => {
     const traces = [{ type: "scatter", name: "PC1", x: [1100, 1102], y: [0.2, null], marker: { color: "blue" } }];
     const wrapper = mount(QuickPlotModal, {

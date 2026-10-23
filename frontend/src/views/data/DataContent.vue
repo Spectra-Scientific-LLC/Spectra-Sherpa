@@ -4730,6 +4730,7 @@ async function inspectExperimentFile(
   experimentId: number,
   fileId: number | null,
   isCurrent: () => boolean = () => true,
+  tabChoiceCurrent = navigation.captureTabChoice(),
 ): Promise<boolean> {
   if (
     fileId != null &&
@@ -4737,8 +4738,7 @@ async function inspectExperimentFile(
     dataStore.activeFileId === fileId &&
     dataStore.fileInfo !== null
   ) {
-    activeTab.value = TAB_MY_DATASET;
-    persistActiveDataTab();
+    activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
     return true;
   }
 
@@ -4747,8 +4747,7 @@ async function inspectExperimentFile(
   if (fileId == null) {
     await showExperimentContents(experimentId);
     if (!isCurrent()) return false;
-    activeTab.value = TAB_MY_DATASET;
-    persistActiveDataTab();
+    activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
     return true;
   }
 
@@ -4760,12 +4759,14 @@ async function inspectExperimentFile(
   await showExperimentContents(experimentId);
     if (!isCurrent()) return false;
   dataStore.activateFile(file.id, file.file_path);
-  activeTab.value = TAB_MY_DATASET;
-  persistActiveDataTab();
+  activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
   return true;
 }
 
-async function inspectLatestProjectFile(isCurrent: () => boolean = () => true): Promise<boolean> {
+async function inspectLatestProjectFile(
+  isCurrent: () => boolean = () => true,
+  tabChoiceCurrent = navigation.captureTabChoice(),
+): Promise<boolean> {
   if (
     projectStore.currentProjectId != null &&
     (!projectStore.currentProject ||
@@ -4788,17 +4789,22 @@ async function inspectLatestProjectFile(isCurrent: () => boolean = () => true): 
 
     await showExperimentContents(experiment.id);
     if (!isCurrent()) return false;
-    await onInspectFile(latestFile, { updateRoute: false });
+    await onInspectFile(latestFile, { updateRoute: false, tabChoiceCurrent });
     if (!isCurrent()) return false;
-    activeTab.value = TAB_MY_DATASET;
-    persistActiveDataTab();
+    activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
     return true;
   }
 
   return false;
 }
 
-async function applyRouteExploreState(ticket = navigation.route.begin()) {
+function activateDataTab(tab: number, tabChoiceCurrent: () => boolean): void {
+  if (!tabChoiceCurrent()) return;
+  activeTab.value = tab;
+  persistActiveDataTab();
+}
+
+async function applyRouteExploreState(ticket = navigation.route.begin(), tabChoiceCurrent = navigation.captureTabChoice()) {
   const query = { ...route.query };
   syncGuidedExampleSession();
   const wantsExplore =
@@ -4826,14 +4832,13 @@ async function applyRouteExploreState(ticket = navigation.route.begin()) {
     // A saved or copied deep link can outlive its project context. Keep the
     // project-scoped selection restored above instead of replacing it with an
     // experiment that the current project cannot admit.
-    activeTab.value = TAB_MY_DATASET;
-    persistActiveDataTab();
+    activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
     return;
   }
 
   try {
     if (experimentId != null && fileId != null) {
-      const inspected = await inspectExperimentFile(experimentId, fileId, ticket.isCurrent);
+      const inspected = await inspectExperimentFile(experimentId, fileId, ticket.isCurrent, tabChoiceCurrent);
       if (!ticket.isCurrent()) return;
       if (inspected) {
         return;
@@ -4859,13 +4864,12 @@ async function applyRouteExploreState(ticket = navigation.route.begin()) {
         await showDefaultDatasetView();
       }
       if (!ticket.isCurrent()) return;
-      activeTab.value = TAB_MY_DATASET;
-      persistActiveDataTab();
+      activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
       return;
     }
 
     if (query.focus === "latest-project" || isGuidedExampleSession.value) {
-      const inspected = await inspectLatestProjectFile(ticket.isCurrent);
+      const inspected = await inspectLatestProjectFile(ticket.isCurrent, tabChoiceCurrent);
       if (!ticket.isCurrent()) return;
       if (inspected) {
         return;
@@ -4875,10 +4879,10 @@ async function applyRouteExploreState(ticket = navigation.route.begin()) {
     // Errors are surfaced by the Contents panel.
   }
 
-  if (ticket.isCurrent()) activeTab.value = TAB_MY_DATASET;
+  if (ticket.isCurrent()) activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
 }
 
-async function applyRouteDataState() {
+async function applyRouteDataState(tabChoiceCurrent = navigation.captureTabChoice()) {
   const ticket = navigation.route.begin();
   const requestedTab = routeTabIndex(route.query.tab);
   const starterIntent = pendingAnalysisStarterIntent();
@@ -4887,8 +4891,7 @@ async function applyRouteDataState() {
       (experiment) => experiment.id === starterIntent.imported_experiment_id,
     );
     if (importedExperiment) {
-      activeTab.value = TAB_MY_DATASET;
-      persistActiveDataTab();
+      activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
       if (dataStore.activeExperimentId !== importedExperiment.id || !dataStore.fileInfo) {
         await dataStore.selectExperiment(importedExperiment.id);
         if (!ticket.isCurrent()) return;
@@ -4899,16 +4902,14 @@ async function applyRouteDataState() {
     // A deleted dataset must not permanently suppress the starter import.
     clearImportedAnalysisStarterMarker(starterIntent);
   }
-  if ((requestedTab === null || requestedTab === TAB_IMPORT) && applyAnalysisStarterIntent()) {
-    activeTab.value = TAB_IMPORT;
-    persistActiveDataTab();
+  if (tabChoiceCurrent() && (requestedTab === null || requestedTab === TAB_IMPORT) && applyAnalysisStarterIntent()) {
+    activateDataTab(TAB_IMPORT, tabChoiceCurrent);
     return;
   }
   if (requestedTab !== null) {
-    activeTab.value = requestedTab;
-    persistActiveDataTab();
+    activateDataTab(requestedTab, tabChoiceCurrent);
     if (requestedTab === TAB_MY_DATASET) {
-      await applyRouteExploreState(ticket);
+      await applyRouteExploreState(ticket, tabChoiceCurrent);
     } else if (requestedTab === TAB_MULTI_WELL) {
       const experimentId = queryNumber(route.query.experimentId ?? route.query.experiment);
       if (
@@ -4921,7 +4922,7 @@ async function applyRouteDataState() {
     return;
   }
 
-  await applyRouteExploreState(ticket);
+  await applyRouteExploreState(ticket, tabChoiceCurrent);
 }
 
 function onAnalysisChoice(choice: AnalysisChoice): void {
@@ -4941,7 +4942,7 @@ watch(() => dataStore.activeExperimentId, (id) => {
   if (id !== workflowHydrationDataset) workflowSelectionRequests.invalidate();
 }, { flush: "sync" });
 
-async function loadWorkflowDataSelectionContext(): Promise<void> {
+async function loadWorkflowDataSelectionContext(tabChoiceCurrent = navigation.captureTabChoice()): Promise<void> {
   const workflowId = workflowContextId.value;
   const sourceNodeId = workflowSourceNodeId.value;
   if (workflowId === null || !sourceNodeId) return;
@@ -4957,8 +4958,7 @@ async function loadWorkflowDataSelectionContext(): Promise<void> {
     const context = response.data;
     workflowSelectionContext.value = context;
     const saved = context.saved_selection;
-    activeTab.value = TAB_MY_DATASET;
-    persistActiveDataTab();
+    activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
     if (!saved) {
       workflowSelectionContextError.value = null;
       return;
@@ -5454,6 +5454,7 @@ async function goToWorkflow(addNode?: string) {
 
 onMounted(async () => {
   const intent = navigation.intent.value;
+  const tabChoiceCurrent = navigation.captureTabChoice();
   const admission = projectAdmission.begin();
   try {
     if (!await resolveDatasetProject(route.query, projectStore)) return;
@@ -5467,7 +5468,9 @@ onMounted(async () => {
   if (!admission.isCurrent() || intent !== navigation.intent.value) return;
   const ticket = navigation.bootstrap.begin();
   currentDataDraftStorageKey = dataDraftStorageKey();
-  restoreActiveDataTab();
+  if (tabChoiceCurrent()) {
+    restoreActiveDataTab();
+  }
   restoreDataDraft(currentDataDraftStorageKey);
   const catalogsReady = Promise.allSettled([
     fetchQuota(),
@@ -5477,29 +5480,29 @@ onMounted(async () => {
   ]);
   await dataStore.fetchExperiments();
   if (!ticket.isCurrent()) return;
-  if (pendingAnalysisStarterIntent()) await catalogsReady;
+  if (tabChoiceCurrent() && pendingAnalysisStarterIntent()) await catalogsReady;
   if (!ticket.isCurrent()) return;
   await dataStore.restoreActiveExperimentForCurrentProject();
   if (!ticket.isCurrent()) return;
   syncGuidedExampleSession();
-  await applyRouteDataState();
+  await applyRouteDataState(tabChoiceCurrent);
   if (!ticket.isCurrent()) return;
   // New Analysis carries a reference choice, rather than merely suggesting
   // one. Admit bundled/catalog sources automatically. Provider packages stay
   // manual because they require the exact user-acquired archive.
-  if (pendingAnalysisStarterIntent() && selectedRefDatasets.size > 0) {
+  if (tabChoiceCurrent() && pendingAnalysisStarterIntent() && selectedRefDatasets.size > 0) {
     await onImportSelectedDatasets();
     if (!ticket.isCurrent()) return;
   }
   if (workflowSelectionContextRequested.value) {
-    await loadWorkflowDataSelectionContext();
+    await loadWorkflowDataSelectionContext(tabChoiceCurrent);
     if (!ticket.isCurrent()) return;
   }
 
   const requestedTab = routeTabIndex(route.query.tab);
-  const sourceTabRequested =
-    (requestedTab != null && requestedTab !== TAB_MY_DATASET) ||
-    pendingAnalysisStarterIntent() != null;
+  const sourceTabRequested = tabChoiceCurrent()
+    ? (requestedTab != null && requestedTab !== TAB_MY_DATASET) || pendingAnalysisStarterIntent() != null
+    : activeTab.value !== TAB_MY_DATASET;
 
   // Restore My Dataset when the Pinia store still has an active contents
   // exploration (i.e. the user left the Data page after inspecting a
@@ -5560,7 +5563,9 @@ watch(activeTab, (tabIndex) => {
 
 const dataTabSelection = useScopedRequest(() => [...dataScopeIdentity(), activeTab.value]);
 function onDataTabSelected(tabIndex: number) {
-  navigation.choose();
+  // A subtab changes presentation, not the admitted project/dataset. Retire
+  // tab activation without abandoning inventory, source or sheet hydration.
+  navigation.chooseTab();
   dataTabSelection.invalidate();
   if (tabIndex === TAB_MY_DATASET) void ensureInitialContentsSelection();
 }
@@ -6257,6 +6262,7 @@ async function onExperimentSelect(
   if (!exp) return;
   navigation.choose();
   const ticket = navigation.focus.begin();
+  const tabChoiceCurrent = navigation.captureTabChoice();
   if (dataStore.activeExperimentId !== exp.id) selectedDatasetView.value = null;
   // Dataset focus is one scientific context.  Comparison checkboxes may add
   // other datasets while that context is stable, but choosing another dataset
@@ -6292,10 +6298,9 @@ async function onExperimentSelect(
       setExperimentPlotSelection(exp.id, null);
     }
   }
-  activeTab.value = TAB_MY_DATASET;
-  persistActiveDataTab();
+  activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
   await showExperimentContents(exp.id);
-  if (!ticket.isCurrent() || dataStore.activeExperimentId !== exp.id) return;
+  if (!ticket.isCurrent() || !tabChoiceCurrent() || dataStore.activeExperimentId !== exp.id) return;
   const queryWithoutFile = { ...route.query };
   delete queryWithoutFile.fileId;
   // Normalize legacy aliases: experimentId would otherwise beat the new experiment.
@@ -6316,8 +6321,9 @@ async function onAcquisitionExperimentSelect(experimentId: number) {
   if (!experiment) return;
   navigation.choose();
   const ticket = navigation.focus.begin();
+  const tabChoiceCurrent = navigation.captureTabChoice();
   await dataStore.selectExperiment(experiment.id);
-  if (!ticket.isCurrent()) return;
+  if (!ticket.isCurrent() || !tabChoiceCurrent()) return;
   activeTab.value = TAB_MULTI_WELL;
   persistActiveDataTab();
   await router.replace({
@@ -6611,13 +6617,13 @@ async function onDeleteExperiment() {
   }
 }
 
-async function onInspectFile(file: ExperimentFile, options: { updateRoute?: boolean } = {}) {
+async function onInspectFile(file: ExperimentFile, options: { updateRoute?: boolean; tabChoiceCurrent?: () => boolean } = {}) {
   const ticket = inspection.focus.begin();
+  const tabChoiceCurrent = options.tabChoiceCurrent ?? navigation.captureTabChoice();
   const updateRoute = options.updateRoute ?? true;
   const experimentId = dataStore.activeExperimentId;
   if (!experimentId) return;
-  activeTab.value = TAB_MY_DATASET;
-  persistActiveDataTab();
+  activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
   await nextTick();
   if (!ticket.isCurrent()) return;
   dataStore.clearCatalogExploration();
@@ -6637,9 +6643,8 @@ async function onInspectFile(file: ExperimentFile, options: { updateRoute?: bool
       dataStore.clearInspection();
     }
     void ensureFileSampleLabels(experimentId);
-    activeTab.value = TAB_MY_DATASET;
-    persistActiveDataTab();
-    if (updateRoute) {
+    activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
+    if (updateRoute && tabChoiceCurrent()) {
       await router.replace({
         path: "/data",
         query: {
