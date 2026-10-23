@@ -23,6 +23,14 @@ from spectra_sherpa.app.services.dag.node_base import node_registry
 from spectra_sherpa.app.services.dag.workflow_preflight import preflight_workflow
 from spectra_sherpa.app.services.model_application import LoadedProjectDataset
 from spectra_sherpa.app.services.workflow_access import workflow_requires_canonical_artifact_grant
+from spectra_sherpa.core.scientific_refusal import ScientificInputRefusal
+
+
+@dataclass
+class VerificationRefusalContext:
+    """Public model context populated only after normal ownership/integrity admission."""
+
+    target_name: str | None = None
 
 
 class BatchAuthorityChanged(HTTPException):
@@ -151,7 +159,10 @@ def bind_workflow_definition(definition: dict[str, Any], loaded: LoadedProjectDa
     for node in nodes:
         contract = node_registry.get_metadata(node["node_type"]).resolved_execution_contract().payload
         if contract["target_access"] in {"required", "fit_only"} and selected.target is None:
-            raise ValueError(f"{node['node_id']} requires reference targets for training/evaluation.")
+            raise ScientificInputRefusal(
+                "reference_targets_required",
+                detail=f"{node['node_id']} requires reference targets for training/evaluation.",
+            )
         task = contract["supervised_task"]
         target_type = getattr(selected.target_context, "target_type", None)
         if selected.target is not None and (

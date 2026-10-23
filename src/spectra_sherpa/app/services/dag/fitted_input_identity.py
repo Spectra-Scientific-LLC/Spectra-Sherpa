@@ -25,6 +25,36 @@ _UNIT_SPELLINGS = {
     "count": "counts",
 }
 
+_PUBLIC_MISMATCH_FIELDS = ("features", "axis", "signal_units", "signal_quantity", "measurement_mode")
+
+
+def fitted_input_refusal_reason(fields: tuple[str, ...]) -> str:
+    """Project only closed identity field names, never exception details."""
+    if not fields or len(set(fields)) != len(fields):
+        raise ValueError("invalid public fitted-input field selection")
+    labels = [field for field in _PUBLIC_MISMATCH_FIELDS if field in fields]
+    if len(labels) != len(fields):
+        raise ValueError("unknown public fitted-input field")
+    return (
+        "application input differs from fitted input authority: "
+        + ", ".join(labels)
+        + "; use an explicit conversion or refit with the correct metadata"
+    )
+
+
+class FittedInputMismatch(ValueError):
+    """A mismatch classified by the same authority that rejects the input."""
+
+    def __init__(self, fields: tuple[str, ...]):
+        message = fitted_input_refusal_reason(fields)
+        self.fields = fields
+        super().__init__(message)
+
+    def __reduce__(self):
+        # Workers transport exceptions privately. Reconstruct with classified
+        # fields, not the rendered message that BaseException puts in args.
+        return type(self), (self.fields,), {**self.__dict__, "args": self.args}
+
 
 def _text(value: object, *, name: str) -> str | None:
     if value is None:
@@ -81,14 +111,6 @@ def validate_fitted_input_identity(value: object) -> dict[str, object]:
 def require_fitted_input_identity(dataset: Any, value: object, *, features: int) -> None:
     expected = validate_fitted_input_identity(value)
     actual = fitted_input_identity(dataset, features=features)
-    different = [
-        key
-        for key in ("features", "axis", "signal_units", "signal_quantity", "measurement_mode")
-        if actual[key] != expected[key]
-    ]
+    different = [key for key in _PUBLIC_MISMATCH_FIELDS if actual[key] != expected[key]]
     if different:
-        raise ValueError(
-            "application input differs from fitted input authority: "
-            + ", ".join(different)
-            + "; use an explicit conversion or refit with the correct metadata"
-        )
+        raise FittedInputMismatch(tuple(different))

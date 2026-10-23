@@ -78,13 +78,15 @@ def test_exact_directional_application_compatibility(entry):
 
 def test_scientific_authority_compatibility_is_exact_and_classifies_current_custody():
     from spectra_sherpa.core.contract_compatibility import (
+        _DIAGNOSTIC_REFUSAL_PREDECESSORS,
         _FEATURE_PRESENTATION_PREDECESSORS,
         _SCIENTIFIC_AUTHORITY_PREDECESSORS,
     )
 
     current_entries = (
-        tuple(e for e in _SCIENTIFIC_AUTHORITY_PREDECESSORS if e.operation_id != "classification.plsda")
-        + _FEATURE_PRESENTATION_PREDECESSORS
+        tuple(e for e in _SCIENTIFIC_AUTHORITY_PREDECESSORS if e.operation_id == "model.parafac")
+        + tuple(e for e in _FEATURE_PRESENTATION_PREDECESSORS if e.operation_id == "model.fitted_pls")
+        + tuple(e for e in _DIAGNOSTIC_REFUSAL_PREDECESSORS if e.operation_id not in {"model.ica", "model.mcr_als"})
     )
     for entry in current_entries:
         current = node_registry.get_metadata(entry.operation_id).resolved_execution_contract()
@@ -127,20 +129,21 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         "model.hca": "0adc84cec3ce752df725518210701d744af62e2cbfd6cd3396eab0d3bce8495b",
         "model.kmeans": "c65f7f11e6d2089abdec190e2c7aee80088eed4f2545ce55c0b92db1b2ebef30",
         "model.parafac": "caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
-        "classification.plsda": "526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
-        "model.load_apply": "ba292a47e692ce536d91a7a2148b98b69cff3ae23bb4d43f347281cae5dfd20a",
-        "model.apply_fitted_linear_regression": "38c9a89ee76f37647c38bf9d66b7b0c302c3c7a2265c089a2a2e10511092b3a5",
-        "model.apply_fitted_pcr": "696da832dd71dc37022631c9330a074bfe945084a464aed0f33dc55d374b2862",
+        "classification.plsda": "85b2a1fd3938dee8a3a12f61397a07052883cd3f0bfa4d977151b600fe4992b6",
+        "model.load_apply": "d3fb0d37037ce5c51bd5e8343386d8dc9bce131f53c08d368b21da3af97b54d9",
+        "model.apply_fitted_linear_regression": "dd74469839faad7d699e1426c9b1d52708789759bdbd9a34e547278c668ba007",
+        "model.apply_fitted_pcr": "a26782875d287ce1b28fc0db96485362667bd67039ebd25f546f69a75f98bdf0",
         "model.apply_fitted_pls": "a646aae06c4817385e9cadf0c5be1580dbcf72e881b17ef734c3b20d1478f72e",
-        "model.apply_fitted_svr": "78f4c25930341028dbb809e81dfff34d111051193e333b8728f96e8bdceb18ff",
-        "model.fitted_linear_regression": "10b125ffb88229b92cfe1eac67e5717117cfdf57d485b3e370abb2ef8910f6a7",
-        "model.fitted_pcr": "577777179c36fedf0338c84a003e9080aa8879043e2ad0e19e7dccc5f618c201",
+        "model.apply_fitted_svr": "7a4e54b71e344ce4a3b2fee943a92c947bfa3b3316f8e8a522984dc18cddf13f",
+        "model.fitted_linear_regression": "a0a31850e5ec62ce5d3d45050af62f715306d1da9d84442d76d70b1b738303f8",
+        "model.fitted_pcr": "e76876f01548800f4b3ee2bdf0382359e046793a1e02e61e424e17b552256bf3",
         "model.fitted_pls": "473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
-        "model.fitted_svr": "cde922310dc4713ab5349720f865595fee13c8c2a53b60f68708ceed9882bae0",
+        "model.fitted_svr": "a6be415b3b1ed88d25ef0a220d1059031ada900f4c470d2a7cb762c250edf8af",
     }
     reviewed_changes = {
         "model.apply_fitted_linear_regression": [
             "spectra_sherpa.app.lib.fitted_state",
+            "spectra_sherpa.app.services.dag.fitted_input_identity",
             "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
             "spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node",
             "spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes",
@@ -148,6 +151,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         ],
         "model.apply_fitted_pcr": [
             "spectra_sherpa.app.lib.fitted_state",
+            "spectra_sherpa.app.services.dag.fitted_input_identity",
             "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
             "spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node",
             "spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes",
@@ -155,6 +159,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         ],
         "model.apply_fitted_svr": [
             "spectra_sherpa.app.lib.fitted_state",
+            "spectra_sherpa.app.services.dag.fitted_input_identity",
             "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
             "spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node",
             "spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes",
@@ -166,6 +171,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         ],
         "model.fitted_linear_regression": [
             "spectra_sherpa.app.lib.fitted_state",
+            "spectra_sherpa.app.services.dag.fitted_input_identity",
             "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
             "spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node",
             "spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes",
@@ -173,6 +179,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         ],
         "model.fitted_pcr": [
             "spectra_sherpa.app.lib.fitted_state",
+            "spectra_sherpa.app.services.dag.fitted_input_identity",
             "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
             "spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node",
             "spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes",
@@ -190,6 +197,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         ],
         "model.fitted_svr": [
             "spectra_sherpa.app.lib.fitted_state",
+            "spectra_sherpa.app.services.dag.fitted_input_identity",
             "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
             "spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node",
             "spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes",
