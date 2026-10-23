@@ -716,8 +716,8 @@ const plotCanvasStyle = computed(() => {
     };
   }
   return {
-    height: "100%",
-    minHeight: "320px",
+    height: "clamp(360px, 55vh, 680px)",
+    minHeight: "360px",
   };
 });
 
@@ -1055,8 +1055,6 @@ async function downloadPlot() {
 
 <style scoped>
 .feature-paging { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; color: var(--ss-panel-secondary); }
-/* Inline result plots fit beside their controls instead of filling 70% of a tall screen. */
-.embedded-plot .plot-container { height: clamp(420px, 60vh, 680px); min-height: 420px; }
 .quick-plot-modal :deep(.p-dialog-content) {
   padding: 0;
   background: var(--ss-panel-inset);
@@ -1066,8 +1064,8 @@ async function downloadPlot() {
 .plot-container {
   display: flex;
   flex-direction: column;
-  height: min(70vh, calc(100vh - 96px));
-  min-height: min(500px, calc(100vh - 96px));
+  height: auto;
+  min-height: 0;
 }
 
 .plot-controls {
@@ -1206,26 +1204,15 @@ async function downloadPlot() {
 }
 
 .plotly-container {
-  flex: 1;
+  flex: none;
   min-height: 0;
   padding: 16px;
-  overflow: auto;
+  overflow: visible;
   box-sizing: border-box;
 }
 
-/* Keep the score map visible when the metadata controls wrap on a narrow screen.
-   Scroll the dialog as one surface, rather than shrinking the chart behind its own scrollbar. */
-.quick-plot-modal:not(.embedded-plot) .plot-container {
-  height: auto;
-  min-height: 0;
-}
-
-.quick-plot-modal:not(.embedded-plot) .plotly-container {
-  flex: none;
-  height: clamp(360px, 55vh, 680px);
-  min-height: 360px;
-  overflow: visible;
-}
+/* Quick Plot and Detailed View scroll their containing dialog, never a clipped
+   chart viewport. The canvas owns its height, including tall paired figures. */
 
 @media (max-width: 700px) {
   .quick-plot-modal:not(.embedded-plot) .plot-controls {

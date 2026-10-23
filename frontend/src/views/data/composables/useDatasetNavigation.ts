@@ -32,6 +32,13 @@ export function useDatasetNavigation(identity: () => readonly ScopeIdentity[]) {
   const bootstrap = useScopedRequest(scopedIdentity);
   const route = useScopedRequest(scopedIdentity);
   const focus = useScopedRequest(scopedIdentity);
+  // Display intent must survive the initial project admission. This lane only
+  // guards tab restoration; bootstrap/focus still own all scientific state.
+  const tabChoice = useScopedRequest(() => [intent.value]);
   function choose(): void { intent.value += 1; }
-  return { intent, bootstrap, route, focus, choose };
+  function chooseTab(): void {
+    tabChoice.invalidate();
+  }
+  function captureTabChoice(): () => boolean { return tabChoice.capture().isCurrent; }
+  return { intent, bootstrap, route, focus, choose, chooseTab, captureTabChoice };
 }

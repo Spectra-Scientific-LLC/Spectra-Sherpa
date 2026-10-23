@@ -921,6 +921,72 @@ describe("DataContent file inspection", () => {
     wrapper.unmount();
   });
 
+  it.each(["project", "datasets"])("restores My Dataset after visiting Synthesis during delayed %s bootstrap", async (phase) => {
+    const originalStore = mocks.dataStore;
+    mocks.dataStore = reactive(originalStore);
+    mocks.route.query = { tab: "my-dataset" };
+    mocks.dataStore.activeExperimentId = null;
+    mocks.dataStore.experimentFiles = [];
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    if (phase === "project") mocks.projectStore.ensureProjectForBrowserTab.mockReturnValueOnce(pending);
+    else mocks.dataStore.fetchExperiments.mockReturnValueOnce(pending);
+    mocks.dataStore.restoreActiveExperimentForCurrentProject.mockImplementation(async () => {
+      mocks.dataStore.activeExperimentId = 11;
+      mocks.dataStore.experimentFiles = [{
+        id: 22, experiment_id: 11, file_path: "raw/wine.csv", stage: "raw",
+        file_size_bytes: 2048, created_at: "2026-05-02T00:00:00Z",
+      }];
+    });
+    const wrapper = mountDataContent();
+    try {
+      await flushPromises();
+      const tabs = wrapper.getComponent({ name: "TabView" });
+      tabs.vm.$emit("update:activeIndex", 1);
+      await flushPromises();
+      release();
+      await flushPromises();
+      // A display-only tab choice must neither abort dataset restoration nor
+      // be overwritten by the older route's My Dataset tab.
+      expect(mocks.dataStore.restoreActiveExperimentForCurrentProject).toHaveBeenCalledOnce();
+      expect(wrapper.get("[data-testid='data-tabs']").attributes("data-active-index")).toBe("1");
+      tabs.vm.$emit("update:activeIndex", 5);
+      await flushPromises();
+      expect(mocks.dataStore.activeExperimentId).toBe(11);
+      expect(mocks.dataStore.inspectFile).toHaveBeenCalledWith(22, "raw/wine.csv", 11);
+      expect((wrapper.vm as unknown as DataContentVm).inspectedDatasetShape).toBeTruthy();
+    } finally {
+      release();
+      wrapper.unmount();
+      mocks.dataStore.restoreActiveExperimentForCurrentProject.mockReset().mockResolvedValue(undefined);
+      mocks.dataStore = originalStore;
+    }
+  });
+
+  it("hydrates the explicitly linked dataset without undoing a newer tab choice", async () => {
+    const originalStore = mocks.dataStore;
+    mocks.dataStore = reactive(originalStore);
+    mocks.dataStore.experiments.push({ ...mocks.dataStore.experiments[0], id: 12, name: "Linked mixture" });
+    mocks.route.query = { tab: "my-dataset", experiment: "12" };
+    let finish!: () => void;
+    mocks.dataStore.fetchExperiments.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    mocks.dataStore.selectExperiment.mockImplementation(async id => { mocks.dataStore.activeExperimentId = id; });
+    const wrapper = mountDataContent();
+    try {
+      await flushPromises();
+      wrapper.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", 1);
+      finish();
+      await flushPromises();
+      expect(mocks.dataStore.selectExperiment).toHaveBeenCalledWith(12);
+      expect(mocks.dataStore.activeExperimentId).toBe(12);
+      expect(wrapper.get("[data-testid='data-tabs']").attributes("data-active-index")).toBe("1");
+    } finally {
+      wrapper.unmount();
+      mocks.dataStore.selectExperiment.mockReset().mockResolvedValue(undefined);
+      mocks.dataStore = originalStore;
+    }
+  });
+
   it("does not undo a newer tab choice when initial inspection finishes late", async () => {
     mocks.route.query = { tab: "import" };
     let finishInspection!: () => void;
@@ -4192,6 +4258,77 @@ describe("DataContent file inspection", () => {
     } finally {
       wrapper.unmount();
       mocks.route = originalRoute;
+    }
+  });
+
+  it("finishes sheet context hydration without undoing a newer tab choice", async () => {
+    mocks.route.query = { tab: "my-dataset", workflow: "41", source_node: "source-a" };
+    let finish!: (response: { data: object }) => void;
+    const held = new Promise<{ data: object }>(resolve => { finish = resolve; });
+    const originalGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation((url, ...args) =>
+      String(url).includes("/data-selections/") ? held : originalGet(url, ...args));
+    const wrapper = mountDataContent();
+    try {
+      await flushPromises();
+      const tabs = wrapper.getComponent({ name: "TabView" });
+      tabs.vm.$emit("update:activeIndex", 1);
+      finish({ data: {
+        workflow_id: 41, workflow_name: "Current sheet", source_node_id: "source-a",
+        saved_selection: null,
+      } });
+      await flushPromises();
+      expect(wrapper.get("[data-testid='data-tabs']").attributes("data-active-index")).toBe("1");
+      tabs.vm.$emit("update:activeIndex", 5);
+      await flushPromises();
+      expect(wrapper.get('[aria-label="Workflow sheet data selection"]').text()).toContain("Current sheet");
+      expect(wrapper.text()).not.toContain("Loading sheet context…");
+      const apply = wrapper.findAllComponents(ButtonStub).find(button => button.props("label") === "Apply to this sheet");
+      expect(apply?.props("disabled")).toBe(false);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it("finishes a dataset selection without navigating away from a newer Synthesis choice", async () => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    let finish!: () => void;
+    mocks.dataStore.selectExperiment.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    const selecting = (wrapper.vm as unknown as DataContentVm).onExperimentSelect(mocks.dataStore.experiments[0]);
+    wrapper.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", 1);
+    mocks.routerReplace.mockClear();
+    finish();
+    await selecting;
+    await flushPromises();
+    expect(wrapper.get("[data-testid='data-tabs']").attributes("data-active-index")).toBe("1");
+    expect(mocks.routerReplace).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("restores project drafts even when a tab was chosen during admission", async () => {
+    const first = mountDataContent();
+    await flushPromises();
+    const firstVm = first.vm as unknown as DataContentVm;
+    firstVm.selectedRefDatasets.add("sklearn::iris");
+    firstVm.importDatasetName = "Retained import basket";
+    firstVm.librarySearch = "water";
+    firstVm.persistDataDraftNow();
+    first.unmount();
+    let finish!: () => void;
+    mocks.projectStore.ensureProjectForBrowserTab.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    const restored = mountDataContent();
+    try {
+      restored.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", 1);
+      finish();
+      await flushPromises();
+      const vm = restored.vm as unknown as DataContentVm;
+      expect(vm.importDatasetName).toBe("Retained import basket");
+      expect(vm.selectedRefDatasets.has("sklearn::iris")).toBe(true);
+      expect(vm.librarySearch).toBe("water");
+      expect(restored.get("[data-testid='data-tabs']").attributes("data-active-index")).toBe("1");
+    } finally {
+      restored.unmount();
     }
   });
 

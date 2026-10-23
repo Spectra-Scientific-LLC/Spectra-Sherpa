@@ -77,6 +77,12 @@ must not silently restore another project's datasets. Admission uses the
 project store's latest-selection rule; leaving the page invalidates the
 component's pending bootstrap.
 
+Data subtab selection is presentation intent, not a new scientific owner.
+It must not cancel project admission, restore a different dataset, discard a
+saved file subset, or abandon sheet-context hydration. Keep those reads scoped
+to their original user/project/source; guard delayed tab activation and URL
+replacement separately. A newer dataset choice still supersedes the old reads.
+
 Capture a write's destination and payload before awaiting. A selection change
 does not undo a server write already accepted. It does prevent stale UI effects
 and any subsequent writes that have not started. Never reread the current
