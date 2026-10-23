@@ -12,6 +12,7 @@ from __future__ import annotations
 # optional dependency across the included and excluded maps.
 OPTIONAL_DISTRIBUTION_MODULES: dict[str, str] = {
     "spectrochempy": "spectrochempy",
+    "setuptools": "setuptools",
     "beautifulsoup4": "bs4",
     "asyncpg": "asyncpg",
     "gunicorn": "gunicorn",

@@ -10,11 +10,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from packaging.version import Version
 
 from spectra_sherpa.app.services import synthesis
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-QUALIFICATION_REPORT = PACKAGE_ROOT.parents[1] / "docs/evidence/public-install-profiles-security-20261023b.json"
+QUALIFICATION_REPORT = PACKAGE_ROOT.parents[1] / "docs/evidence/public-install-profiles-security-20261023c.json"
 
 
 def _metadata() -> dict[str, Any]:
@@ -52,7 +53,7 @@ def test_public_extras_are_closed_and_independent() -> None:
     dependencies = metadata["dependencies"]
     extras = metadata["extras"]
     assert extras == {
-        "scp": ["spectrochempy"],
+        "scp": ["spectrochempy", "setuptools"],
         "hitran": ["hitran-api", "hitran-api2", "nbconvert"],
         "nist": ["beautifulsoup4"],
         "postgres": ["asyncpg", "gunicorn"],
@@ -81,7 +82,7 @@ def test_retained_public_profile_qualification_is_commit_and_lock_bound() -> Non
     report = json.loads(QUALIFICATION_REPORT.read_text(encoding="utf-8"))
 
     assert report["schema_version"] == "spectra-public-install-qualification/1"
-    assert report["source_revision"] == "a2d19adaf2efda49d1dfd6248b66d7f3189794b9"
+    assert report["source_revision"] == "2b0132cb650ddf5711ab8a94bce26b2226cf18cc"
     lock_bytes = (PACKAGE_ROOT / "poetry.lock").read_bytes()
     lock_hash = hashlib.sha256(lock_bytes).hexdigest()
     assert report["poetry_lock_sha256"] == lock_hash
@@ -95,6 +96,10 @@ def test_retained_public_profile_qualification_is_commit_and_lock_bound() -> Non
         "scp,hitran,nist",
     }
     assert report["profiles"]["default"]["present_optional_distributions"] == []
+    for name, profile in report["profiles"].items():
+        assert set(profile["installer_runtime"]) == {"setuptools"}
+        if "scp" in name.split(","):
+            assert Version(profile["installer_runtime"]["setuptools"]) >= Version("84.1.0")
     for profile in report["profiles"].values():
         assert set(profile["expected_optional_distributions"]) <= set(profile["present_optional_distributions"])
         assert profile["renderer"]["distribution"] == "plotly"

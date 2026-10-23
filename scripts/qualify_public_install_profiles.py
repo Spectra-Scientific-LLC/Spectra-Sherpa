@@ -117,6 +117,21 @@ def _qualify_profile(*, bootstrap_python: Path, wheel: Path, profile: str, root:
                 "payload = {'distributions': names, 'import_seconds': elapsed}",
                 "payload['renderer'] = {'distribution': 'plotly', 'version': metadata.version('plotly')}",
                 "payload['site_packages'] = paths['purelib']",
+                # Installer tools may already exist in a base venv. Record
+                # them separately, not as scientific/provider capabilities.
+                "try:",
+                "    _setuptools = metadata.version('setuptools')",
+                "except metadata.PackageNotFoundError:",
+                "    _setuptools = None",
+                "payload['installer_runtime'] = {'setuptools': _setuptools}",
+                *(
+                    (
+                        "from packaging.version import Version",
+                        "assert _setuptools and Version(_setuptools) >= Version('84.1.0')",
+                    )
+                    if "scp" in profile.split(",")
+                    else ()
+                ),
                 "payload['runtime_attestation'] = {",
                 "    requirement.distribution: requirement.version",
                 "    for requirement in _attested.distributions",
@@ -150,6 +165,7 @@ def _qualify_profile(*, bootstrap_python: Path, wheel: Path, profile: str, root:
         "python": _run(str(executable), "--version").stdout.strip(),
         "renderer": payload["renderer"],
         "runtime_attestation": payload["runtime_attestation"],
+        "installer_runtime": payload["installer_runtime"],
     }
 
 
