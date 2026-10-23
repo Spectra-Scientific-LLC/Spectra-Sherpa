@@ -31,6 +31,7 @@ def test_python_lock_retains_reviewed_security_floors_and_scp_authority() -> Non
         "mistune": "3.3.0",
         "pillow": "12.3.0",
         "pypdf": "6.21.2",
+        "nbconvert": "7.17.2",  # GHSA-pjvx-prjx-h659: extracted-output path traversal
         "setuptools": "83.0.0",
         "soupsieve": "2.8.4",
     }
@@ -59,6 +60,27 @@ def test_frontend_lock_retains_current_yaml_and_expansion_floors() -> None:
             assert version >= Version("2.1.4")
         else:
             assert version >= Version("5.0.9")
+
+
+def test_desktop_lock_retains_pointer_lock_security_patch() -> None:
+    desktop = PACKAGE_ROOT / "desktop/electron"
+    declaration = json.loads((desktop / "package.json").read_text(encoding="utf-8"))
+    lock = json.loads((desktop / "package-lock.json").read_text(encoding="utf-8"))
+    version = lock["packages"]["node_modules/electron"]["version"]
+    assert declaration["devDependencies"]["electron"] == version
+    assert Version(version) >= Version("44.5.0")  # GHSA-x562-297c-g43g
+
+
+def test_hitran_extra_forces_pip_to_upgrade_vulnerable_nbconvert() -> None:
+    project = tomllib.loads((PACKAGE_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["poetry"]
+    dependency = project["dependencies"]["nbconvert"]
+    assert dependency["optional"] is True  # no notebook stack added to base install
+    assert "nbconvert" in project["extras"]["hitran"]
+    assert all("nbconvert" not in names for extra, names in project["extras"].items() if extra != "hitran")
+    constraint = SpecifierSet(dependency["version"])
+    assert Version("7.17.1") not in constraint
+    assert Version("7.17.2") in constraint
+    assert Version("8.0.0") not in constraint
 
 
 def test_pypdf_install_paths_exclude_versions_before_the_reviewed_security_floor() -> None:

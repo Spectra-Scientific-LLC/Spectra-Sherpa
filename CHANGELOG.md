@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Staging GUI corrections
 
+- Dependency security: require nbconvert7.17.2 or later in the HITRAN extra,
+  including pip upgrades; update the paused desktop shell's Electron dependency
+  to44.5.0. No notebook stack is added to base installs; packaging remains paused.
+- Batch preflight keeps internal HTTP exception details in server logs and
+  returns status-specific recovery advice without interrupting other pairs.
+- Advisor dataset descriptions include the recorded instrument and parsed
+  acquisition settings, distinct from processing history. Mixed settings and
+  bounded source-lineage/timestamp summaries remain explicit.
 - Dependency security: require pypdf 6.21.2 or later in both pip and Poetry
   installations; no dependency-audit exceptions were added.
 - Quick Plot and Detailed View share declared scientific plots and controls,

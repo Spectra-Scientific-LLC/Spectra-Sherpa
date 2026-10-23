@@ -53,6 +53,8 @@ def test_only_approved_optional_clients_are_included() -> None:
     assert "hapi2" not in exclusions.EXCLUDED_MODULES
     assert "hapi" not in exclusions.EXCLUDED_MODULES
     assert "spectrochempy" in exclusions.EXCLUDED_MODULES
+    assert exclusions.OPTIONAL_DISTRIBUTION_MODULES["nbconvert"] == "nbconvert"
+    assert "nbconvert" in exclusions.EXCLUDED_MODULES
 
 
 def test_spec_sources_its_excludes_from_the_shared_list() -> None:
@@ -76,6 +78,7 @@ def test_verifier_passes_a_clean_bundle(tmp_path) -> None:
     [
         ("_internal/asyncpg/__init__.py", "module package"),
         ("_internal/spectrochempy/__init__.py", "module package"),
+        ("_internal/nbconvert/__init__.py", "notebook conversion package"),
         ("Contents/Frameworks/asyncpg/__init__.py", "macOS app layout"),
         ("_internal/asyncpg-0.30.0.dist-info/METADATA", "distribution metadata"),
         ("_internal/asyncpg.cpython-311-x86_64-linux-gnu.so", "compiled extension"),
@@ -116,6 +119,7 @@ def _backend(root: Path) -> Path:
         "spectra_sherpa.commercial_hybrid",
         "asyncpg",
         "spectrochempy",
+        "nbconvert",
     ],
 )
 def test_verifier_catches_modules_packed_inside_the_executable(tmp_path, module) -> None:

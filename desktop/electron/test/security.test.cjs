@@ -34,6 +34,13 @@ test('only owned web contents receives transport credentials and restart revokes
   }
   request({ webContentsId: 7, url: 'https://unrelated.example' }, result => assert.equal(result.cancel, true));
   permission(null, 'media', result => assert.equal(result, false));
+  // GHSA-x562-297c-g43g: origin attribution must never grant pointer lock.
+  // This shell denies permission independent of requesting frame/origin.
+  for (const requestingUrl of [endpoint, 'https://unrelated.example']) {
+    for (const isMainFrame of [true, false]) {
+      permission(null, 'pointerLock', result => assert.equal(result, false), { requestingUrl, isMainFrame });
+    }
+  }
   backend.endpoint = null;
   headers({ webContentsId: 7, url: endpoint, requestHeaders: {} }, result => assert.deepEqual(result.requestHeaders, {}));
 });

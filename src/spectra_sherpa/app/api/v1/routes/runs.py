@@ -273,7 +273,14 @@ async def preflight_verification_batch(
         except HTTPException as exc:
             if exc.status_code not in {400, 409, 422}:
                 raise
-            results.append({"index": index, "compatible": False, "reason": str(exc.detail)})
+            # A dependency's HTTP detail can contain a nested exception or
+            # traceback. Keep diagnostics in operator logs, never in the batch
+            # response. Status-specific recovery advice is literal, not a
+            # redaction of untrusted exception text.
+            from spectra_sherpa.app.services.batch_verification import preflight_refusal_reason
+
+            logger.warning("Batch preflight refused pair %s (HTTP %s)", index, exc.status_code, exc_info=True)
+            results.append({"index": index, "compatible": False, "reason": preflight_refusal_reason(exc.status_code)})
     return {"pairs": results}
 
 
