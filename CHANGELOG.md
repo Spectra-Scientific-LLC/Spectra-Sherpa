@@ -12,8 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency security: require nbconvert7.17.2 or later in the HITRAN extra,
   including pip upgrades; update the paused desktop shell's Electron dependency
   to44.5.0. No notebook stack is added to base installs; packaging remains paused.
-- Batch preflight keeps internal HTTP exception details in server logs and
-  returns status-specific recovery advice without interrupting other pairs.
+- Batch preflight keeps internal HTTP and invalid-input exception details in
+  server logs and returns recovery advice without interrupting other pairs.
+  Legacy-model refusals retain the canonical exploratory-use warning.
 - Advisor dataset descriptions include the recorded instrument and parsed
   acquisition settings, distinct from processing history. Mixed settings and
   bounded source-lineage/timestamp summaries remain explicit.

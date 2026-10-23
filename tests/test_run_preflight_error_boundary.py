@@ -7,6 +7,47 @@ import pytest
 from fastapi import HTTPException
 
 from spectra_sherpa.app.api.v1.routes import runs
+from spectra_sherpa.app.services.batch_verification import preflight_refusal_reason
+from spectra_sherpa.app.services.legacy_model_application import LEGACY_WARNING, LegacyAcknowledgementRequired
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_preflight_value_errors_never_echo_details(auth_client, monkeypatch, caplog, legacy):
+    private = "Traceback: /private/server/model.py SELECT internal_column FROM internal_table"
+    exception_type = LegacyAcknowledgementRequired if legacy else ValueError
+    monkeypatch.setattr(
+        runs,
+        "_prepare_verification_pair",
+        AsyncMock(
+            side_effect=[
+                exception_type(private),
+                {"receipt": "b" * 64, "metadata": {"n_included_samples": 33}},
+            ]
+        ),
+    )
+    monkeypatch.setattr(runs.logger, "disabled", False)
+    caplog.set_level(logging.WARNING, logger=runs.logger.name)
+    runs.logger.addHandler(caplog.handler)
+    try:
+        response = await auth_client.post(
+            "/api/v1/runs/verification/preflight",
+            json={
+                "project_id": 1,
+                "mode": "run_workflow",
+                "pairs": [{"workflow_id": n, "dataset": {"experiment_id": 1}} for n in (1, 2)],
+            },
+        )
+    finally:
+        runs.logger.removeHandler(caplog.handler)
+    assert response.status_code == 200
+    refused, accepted = response.json()["pairs"]
+    expected = {"index": 0, "compatible": False, "reason": LEGACY_WARNING if legacy else preflight_refusal_reason(422)}
+    if legacy:
+        expected["code"] = "legacy_ack_required"
+    assert refused == expected
+    assert private not in response.text and "internal_column" not in response.text
+    assert private in caplog.text
+    assert accepted == {"index": 1, "compatible": True, "receipt": "b" * 64, "metadata": {"n_included_samples": 33}}
 
 
 @pytest.mark.parametrize("status", [400, 409, 422])
