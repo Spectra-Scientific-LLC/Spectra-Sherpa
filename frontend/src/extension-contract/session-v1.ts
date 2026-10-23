@@ -31,11 +31,26 @@ export function sameBrowserSession(a: BrowserSession, b = readBrowserSession()):
 
 export function readBrowserToken(): string | null { return readBrowserSession().token; }
 
+let inTab: Promise<unknown> = Promise.resolve();
+
 async function serialize<T>(action: () => T): Promise<T> {
-  // All supported browsers provide Web Locks. Never emulate cross-tab CAS with
-  // an unsafe read/write lock in localStorage.
-  if (!navigator.locks) throw new Error("Browser session updates require Web Locks.");
-  return navigator.locks.request(SESSION_STORAGE_KEY, action);
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    return navigator.locks.request(SESSION_STORAGE_KEY, action);
+  }
+  // Web Locks exist only in secure contexts, so plain-HTTP access to a local
+  // workbench on another address has none. Serialize within this tab and keep
+  // every compare-and-set check; never emulate a cross-tab lock in
+  // localStorage, which would be unsafe.
+  const run = inTab.then(action);
+  inTab = run.catch(() => undefined);
+  return run;
+}
+
+/** randomUUID is also secure-context only; getRandomValues is not. */
+function newLoginId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function persist(session: BrowserSession): BrowserSession {
@@ -46,7 +61,7 @@ function persist(session: BrowserSession): BrowserSession {
 }
 
 export function startBrowserSession(token: string | null): Promise<BrowserSession> {
-  return serialize(() => persist({ token, loginId: crypto.randomUUID(), generation: 0,
+  return serialize(() => persist({ token, loginId: newLoginId(), generation: 0,
     transition: token ? "login" : "logout" })).then(session => {
       window.dispatchEvent(new Event("sherpa-session-changed"));
       return session;
@@ -64,5 +79,5 @@ export function renewBrowserSession(expected: BrowserSession, token: string,
 /** Expire only the rejected session, never a later login or renewal. */
 export function endBrowserSession(expected = readBrowserSession()): Promise<BrowserSession | null> {
   return serialize(() => sameBrowserSession(expected)
-    ? persist({ token: null, loginId: crypto.randomUUID(), generation: 0, transition: "logout" }) : null);
+    ? persist({ token: null, loginId: newLoginId(), generation: 0, transition: "logout" }) : null);
 }

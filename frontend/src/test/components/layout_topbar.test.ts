@@ -36,7 +36,9 @@ const mocks = vi.hoisted(() => ({
       capabilities: { admin: boolean };
     } | null,
     logout: vi.fn(),
+    clearCredentials: vi.fn(),
   },
+  renewNow: vi.fn(),
   projectStore: {
     currentProjectId: 1,
     currentProject: { id: 1, name: "Demo Project" },
@@ -131,6 +133,16 @@ vi.mock("@/stores/auth", async () => {
     useAuthStore: () => mocks.authStore,
   };
 });
+
+vi.mock("@/composables/useSessionRenewal", () => ({
+  useSessionRenewal: () => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    noteActivity: vi.fn(),
+    maybeRenew: vi.fn(),
+    renewNow: mocks.renewNow,
+  }),
+}));
 
 vi.mock("@/stores/job", () => ({
   useJobStore: () => mocks.jobStore,
@@ -657,5 +669,50 @@ describe("Topbar action hover labels", () => {
     };
     const wrapper = mountTopbar(true);
     expect(wrapper.get('.provenance-indicators [aria-label^="Calibrated model: Model files missing."]').classes()).toContain("status-red");
+  });
+});
+
+describe("MainLayout explicit session renewal", () => {
+  const expiringToken = () => {
+    const payload = window
+      .btoa(JSON.stringify({ sub: "7", exp: Date.now() / 1000 + 3 * 60 }))
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+    return `header.${payload}.signature`;
+  };
+  beforeEach(() => {
+    localStorage.clear();
+    mocks.routeMeta.public = false;
+    mocks.routeMeta.standalone = false;
+    mocks.authStore.clearCredentials.mockReset();
+    mocks.renewNow.mockReset();
+  });
+
+  it("does not log out when no renewal was attempted", async () => {
+    localStorage.setItem("token", expiringToken());
+    mocks.renewNow.mockResolvedValue("skipped");
+    const wrapper = mount(MainLayout, mainLayoutMountOptions);
+    await nextTick();
+    const renew = wrapper.findAll("button").find(button => button.text() === "Renew session");
+    await renew!.trigger("click");
+    await vi.waitFor(() => expect(mocks.renewNow).toHaveBeenCalled());
+    await nextTick();
+    expect(mocks.authStore.clearCredentials).not.toHaveBeenCalled();
+  });
+
+  it("keeps a session another tab committed while the failed attempt ran", async () => {
+    localStorage.setItem("token", expiringToken());
+    mocks.renewNow.mockImplementation(async () => {
+      localStorage.setItem("token", "renewed-in-another-tab");
+      return "failed";
+    });
+    const wrapper = mount(MainLayout, mainLayoutMountOptions);
+    await nextTick();
+    const renew = wrapper.findAll("button").find(button => button.text() === "Renew session");
+    await renew!.trigger("click");
+    await vi.waitFor(() => expect(mocks.renewNow).toHaveBeenCalled());
+    await nextTick();
+    expect(mocks.authStore.clearCredentials).not.toHaveBeenCalled();
   });
 });

@@ -47,17 +47,24 @@ measurements remain in the component's provenance and saved synthesis recipe.
 Intensity values are decoded and scaled, not reordered or interpolated by this
 reconciliation.
 
-The exception accepts at most one spectral interval plus 1% of an interval for
-text rounding, both for line checkpoints and accumulated `DELTAX` drift. Invalid
-counts, non-finite declarations, reversed checkpoints, and larger discrepancies
-refuse. Ordinary JCAMP imports remain strict; provider headers alone never enable
-the exception. This policy chooses a global endpoint grid; it does not claim
-point-for-point axis equivalence with the NIST web viewer's line-anchored display.
+The current policy (version 2) checks every line checkpoint against that grid
+within the precision of its own text, allowing either aligned checkpoints or the
+NIST writer's consistent one-sample lag. The declared `DELTAX` may differ from
+the endpoint step by at most 0.05% of the step, or by its own text rounding when
+that is coarser; the NIST writer's rounding is about 0.025% off. Provenance
+records the measured deviation, the drift it accumulates over the axis, and the
+bounds applied. Invalid counts, non-finite declarations, reversed or ambiguous
+checkpoints, a changing checkpoint offset, and larger discrepancies refuse.
+Recipes saved under version 1, which allowed one spectral interval plus 1% of an
+interval, still replay under that policy. Ordinary JCAMP imports remain strict;
+provider headers alone never enable the exception. This policy chooses a global
+endpoint grid; it does not claim point-for-point axis equivalence with the NIST
+web viewer's line-anchored display.
 
 If a NIST variant is refused, choose another resolution/apodization or review
-the source declarations. The bounded staging check accepted benzene and acetone
-at 2 cm⁻¹/Boxcar; benzene at 1 cm⁻¹/Boxcar exceeded the bound and remained refused.
-This is not qualification of the complete NIST catalog.
+the source declarations. Version 2 is tested against the declarations of acetone
+and benzene spectra at 0.5, 1 and 2 cm⁻¹ resolution. This is not qualification
+of the complete NIST catalog.
 
 ## Targets and validation groups
 

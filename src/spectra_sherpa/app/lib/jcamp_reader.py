@@ -33,6 +33,12 @@ _MAX_JCAMP_DATA_LINE_CHARACTERS = 64 * 1024
 LEGACY_NIST_QUANT_IR_AXIS_POLICY = "nist-quant-ir-fixed-grid-v1"
 NIST_QUANT_IR_AXIS_POLICY = "nist-quant-ir-fixed-grid-v2"
 _NIST_AXIS_POLICIES = {LEGACY_NIST_QUANT_IR_AXIS_POLICY, NIST_QUANT_IR_AXIS_POLICY}
+# v2 tolerates the NIST Quant IR writer's mis-rounded DELTAX, which differs
+# from the endpoint step by 0.025-0.027% in every tested spectrum. Its drift
+# over the axis then grows with NPOINTS, so bound the per-sample deviation, not
+# an interval count: twice the observed defect, or the DELTAX token's own
+# rounding when that is coarser. Larger deviations refuse.
+NIST_DELTAX_RELATIVE_TOLERANCE = 5e-4
 
 logger = logging.getLogger(__name__)
 
@@ -548,6 +554,15 @@ def _xydata_axis(
             )
             if nist_policy and not precision_policy and (deltax * global_step <= 0 or delta_drift > provider_bound):
                 raise ValueError("NIST DELTAX drift exceeds the one-interval reconciliation bound")
+            if precision_policy:
+                step_bound = max(
+                    abs(global_step) * NIST_DELTAX_RELATIVE_TOLERANCE,
+                    declared_tolerance
+                    + (_numeric_text_resolution(headers.get("FIRSTX")) + _numeric_text_resolution(headers.get("LASTX")))
+                    / (n - 1),
+                )
+                if abs(deltax - global_step) > step_bound:
+                    raise ValueError("NIST DELTAX deviates from the endpoint step beyond the provider rounding bound")
             if not nist_policy and abs(deltax - global_step) > declared_tolerance:
                 raise ValueError("JCAMP DELTAX contradicts FIRSTX/LASTX/NPOINTS fixed grid")
         checkpoint_tolerance = abs(global_step) * 0.05
@@ -588,10 +603,17 @@ def _xydata_axis(
                 }
             )
             if precision_policy:
+                # maximum_allowed_error bounds checkpoints here; the declared
+                # step has its own bound, recorded with the drift it allows.
+                assert deltax is not None  # required by _validate_nist_checkpoints
                 reconciliation.update(
                     {
                         "checkpoint_offset_samples": checkpoint_offset,
                         "step_validation": "declared-step-rounding-or-adjacent-checkpoint-precision",
+                        "maximum_allowed_checkpoint_error": provider_bound,
+                        "declared_step_relative_deviation": abs(deltax - global_step) / abs(global_step),
+                        "maximum_allowed_step_relative_deviation": step_bound / abs(global_step),
+                        "maximum_allowed_declared_step_endpoint_drift": step_bound * (n - 1),
                     }
                 )
     elif complete_grid and n == 1:

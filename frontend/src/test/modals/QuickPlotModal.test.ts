@@ -30,6 +30,22 @@ describe("QuickPlotModal", () => {
     if (nodeType === "preprocess.scale") expect(vm.displayPlotData).toHaveLength(2);
     wrapper.unmount();
   });
+  it("does not let absent output metadata mask the input's feature axis", async () => {
+    const wire = { data: [[1, 2, 3]], x_axis: { data: [1000, 900, 800], title: "Wavenumber", units: "cm-1" } };
+    const wrapper = mount(QuickPlotModal, { props: { embedded: true, modelValue: true, nodeType: "selection.stability",
+      nodeLabel: "Stability", nodeInputs: { X: { value: wire } },
+      nodeOutput: { data: [], presentation_value: { per_variable_frequency: [0.2, 0.5, 1] }, metadata: {
+        scientific_presentation: { ...scientificPresentation("metric_record"), presentation_id: "stability",
+          source_port: "stability", source_ports: ["stability"], modes: ["record"] },
+        // Serialized placeholders for values this node did not produce.
+        x_title: "", x_units: null, wavenumbers: [] } } }, global: { stubs: globalStubs } });
+    const vm = wrapper.vm as any;
+    vm.selectedPlotKey = "scientific_selection_stability";
+    await nextTick();
+    expect(vm.displayPlotData[0].x).toEqual([1000, 900, 800]);
+    expect(vm.displayPlotLayout.xaxis.title).toContain("Wavenumber (cm-1)");
+    wrapper.unmount();
+  });
   it("formats plot-table coordinates without changing retained data", () => {
     const wrapper = mount(QuickPlotModal, {
       props: { modelValue: true, nodeType: "model.pca", nodeLabel: "PCA", nodeOutput: { data: [], metadata: {} } },

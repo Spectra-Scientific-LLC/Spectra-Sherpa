@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, disposePinia, setActivePinia, type Pinia } from 'pinia';
+import api from '@/api/client';
 import { useAuthStore } from '@/stores/auth';
 import { useProjectStore } from '@/stores/project';
 import { useWorkflowStore } from '@/stores/workflow';
@@ -45,6 +46,23 @@ describe('cross-tab renewable credential authority', () => {
     expect(second.auth.sessionRevision).toBe(revision);
     expect(second.workflow.workflowId).toBe(385);
     expect(second.workflow.nodes).toHaveLength(1);
+  });
+
+  it('validates the renewed credential against the configured API base', async () => {
+    const client = api as unknown as { defaults?: { baseURL?: string } };
+    client.defaults = { baseURL: 'https://sherpa.example.test/gateway/api/v1/' };
+    try {
+      await startBrowserSession('original');
+      const first = tab(), second = tab();
+      globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ id: 7, is_active: true })));
+      await first.auth.acceptRenewal(first.auth.captureSession(), 'renewed');
+      await second.auth.ensureStoredSession();
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'https://sherpa.example.test/gateway/api/v1/auth/me', expect.anything());
+      expect(second.auth.token).toBe('renewed');
+    } finally {
+      delete client.defaults;
+    }
   });
 
   it.each(['different-user', 'rejected', 'logout', 'same-token-login'])(

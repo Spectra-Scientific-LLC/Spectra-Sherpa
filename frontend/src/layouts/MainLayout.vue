@@ -91,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { readBrowserToken } from '@/extension-contract/session-v1';
+import { readBrowserSession, readBrowserToken, sameBrowserSession } from '@/extension-contract/session-v1';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { setAttentionWindow } from "@/lib/sherpaAttention";
 import { useRoute } from "vue-router";
@@ -158,12 +158,14 @@ const updateSessionExpiry = () => {
 const renewSessionNow = async () => {
   if (renewingSession.value) return;
   renewingSession.value = true;
-  sessionRenewal.noteActivity();
+  // End only the session this request tried to renew. A renewal or login
+  // committed meanwhile (here or in another tab) stays current.
+  const expected = readBrowserSession();
   try {
-    const renewed = await sessionRenewal.maybeRenew();
+    const outcome = await sessionRenewal.renewNow();
     updateSessionExpiry();
-    if (renewed) return;
-    await authStore.clearCredentials();
+    if (outcome !== "failed" || !sameBrowserSession(expected)) return;
+    await authStore.clearCredentials(expected);
     window.location.href = `/login?reason=session-renewal&return_to=${encodeURIComponent(route.fullPath)}`;
   } finally {
     renewingSession.value = false;

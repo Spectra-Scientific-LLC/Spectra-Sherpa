@@ -1593,7 +1593,8 @@ export function useQuickPlotProjection(
   const rawPlotResult = computed<{ data: any[]; layout: Record<string, any> }>(() => {
     const output = withDisplayAxes(nodeOutput.value);
     if (!output) return { data: [], layout: BASE_PLOT_LAYOUT };
-    const metadata = { ...plotMetadata.value, ...output.metadata };
+    // Display axes add metadata; absent values must not mask upstream ones.
+    const metadata = { ...plotMetadata.value, ...definedMetadata(output.metadata) };
     const plotOutput = { ...output, metadata };
     const key = selectedPlotKey.value;
     const sharedPlot = projectPlot(key);

@@ -1,3 +1,4 @@
+/* eslint-disable vue/one-component-per-file */
 import { readBrowserToken } from "@/extension-contract/session-v1";
 import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, onMounted } from "vue";
@@ -193,5 +194,68 @@ describe("useSessionRenewal", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("explicit session renewal", () => {
+  let wrapper: ReturnType<typeof mount> | null = null;
+  let renewal: ReturnType<typeof useSessionRenewal>;
+  const Exposed = defineComponent({
+    setup() {
+      auth.token = readBrowserToken();
+      renewal = useSessionRenewal();
+      onMounted(() => renewal.start());
+      return () => null;
+    },
+  });
+  afterEach(() => {
+    wrapper?.unmount();
+    wrapper = null;
+    disposePinia(pinia);
+    vi.useRealTimers();
+  });
+  beforeEach(() => {
+    localStorage.clear();
+    mocks.post.mockReset();
+    pinia = createPinia();
+    setActivePinia(pinia);
+    auth = useAuthStore();
+    auth.user = { id: 7, username: "first" };
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-21T12:00:00Z"));
+  });
+
+  it("retries at once after a failed automatic attempt instead of reporting failure untried", async () => {
+    localStorage.setItem("token", tokenWithExpiry(Date.now() / 1000 + 4 * 60));
+    mocks.post.mockRejectedValueOnce(new Error("offline"));
+    wrapper = mount(Exposed);
+    await flushPromises();
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+
+    const renewedToken = tokenWithExpiry(Date.now() / 1000 + 60 * 60);
+    mocks.post.mockResolvedValueOnce({ data: { access_token: renewedToken } });
+    expect(await renewal.renewNow()).toBe("renewed");
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    expect(readBrowserToken()).toBe(renewedToken);
+  });
+
+  it("reports a real failed attempt as failed", async () => {
+    localStorage.setItem("token", tokenWithExpiry(Date.now() / 1000 + 4 * 60));
+    mocks.post.mockRejectedValue(new Error("offline"));
+    wrapper = mount(Exposed);
+    await flushPromises();
+    expect(await renewal.renewNow()).toBe("failed");
+  });
+
+  it("skips without a request when another tab already replaced the credential", async () => {
+    localStorage.setItem("token", tokenWithExpiry(Date.now() / 1000 + 4 * 60));
+    mocks.post.mockRejectedValue(new Error("offline"));
+    wrapper = mount(Exposed);
+    await flushPromises();
+    mocks.post.mockClear();
+    // Another tab's renewal, not yet validated by this tab.
+    localStorage.setItem("token", tokenWithExpiry(Date.now() / 1000 + 60 * 60));
+    expect(await renewal.renewNow()).toBe("skipped");
+    expect(mocks.post).not.toHaveBeenCalled();
   });
 });

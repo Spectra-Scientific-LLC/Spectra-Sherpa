@@ -95,8 +95,10 @@ export const useAuthStore = defineStore('auth', () => {
         const pending = (async () => {
             try {
                 // Raw fetch pins this exact credential and avoids the ordinary
-                // client's expiry side effects and recursive session gate.
-                const response = await fetch('/api/v1/auth/me', {
+                // client's expiry side effects and recursive session gate. It
+                // still targets the client's configured API base.
+                const base = (api.defaults?.baseURL || '/api/v1').replace(/\/$/, '')
+                const response = await fetch(`${base}/auth/me`, {
                     headers: { Authorization: `Bearer ${incoming.token}` },
                     signal: AbortSignal.timeout(10000),
                 })
@@ -154,8 +156,7 @@ export const useAuthStore = defineStore('auth', () => {
      * switching to a mode that doesn't need JWT (e.g. local,
      * loopback product) and by the server auth module's logout flow.
      */
-    function clearCredentials() {
-        const expected = readBrowserSession()
+    function clearCredentials(expected = readBrowserSession()) {
         // Explicit invalidation matters even when already logged out: an
         // in-flight implicit local actor lookup must not log the user back in.
         actorRequest.invalidate()

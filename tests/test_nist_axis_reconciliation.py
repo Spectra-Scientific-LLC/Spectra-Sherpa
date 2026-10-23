@@ -50,8 +50,22 @@ def test_precision_policy_preserves_exact_endpoint_axis_and_values(first, last, 
     np.testing.assert_array_equal(parsed.y, values)
     assert parsed.axis_reconciliation["checkpoint_offset_samples"] == offset
     assert parsed.axis_reconciliation["policy"] == "nist-quant-ir-fixed-grid-v2"
+    # Provenance states the bound actually enforced on the declared step.
+    decision = parsed.axis_reconciliation
+    assert decision["declared_step_endpoint_drift"] <= decision["maximum_allowed_declared_step_endpoint_drift"]
+    assert decision["declared_step_relative_deviation"] <= decision["maximum_allowed_step_relative_deviation"]
+    assert decision["max_checkpoint_error"] <= decision["maximum_allowed_checkpoint_error"]
     with pytest.raises(ValueError):
         parse_jcamp(text)  # Neither provider labels nor compatible checkpoints opt ordinary imports in.
+
+
+@pytest.mark.parametrize("delta", ["0.4830", "0.4826"])
+@pytest.mark.parametrize("offset", [0, 1])
+def test_precision_policy_bounds_declared_step_drift(delta, offset):
+    """Checkpoint spacing alone admitted 0.483 cm^-1, about 13 intervals of drift."""
+    text, _, _ = nist_style_text("575.169", "3975.077", 7053, delta, offset)
+    with pytest.raises(ValueError, match="DELTAX deviates"):
+        parse_jcamp(text, axis_policy=NIST_QUANT_IR_AXIS_POLICY)
 
 
 def test_previous_policy_remains_replayable_and_refuses_acetone_drift():

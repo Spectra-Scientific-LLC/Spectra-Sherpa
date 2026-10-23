@@ -43,6 +43,24 @@ export function useSessionRenewal() {
       return false;
     }
 
+    return attempt(session, now);
+  };
+
+  /**
+   * An explicit "Renew session" request. "skipped" means no attempt was made
+   * (one is already in flight, or this tab's credential is no longer the
+   * stored one, for example because another tab renewed it): the caller must
+   * not treat that as a failed renewal.
+   */
+  const renewNow = async (): Promise<"renewed" | "failed" | "skipped"> => {
+    noteActivity();
+    const token = readBrowserToken();
+    const session = authStore.captureSession();
+    if (refreshInFlight || !token || !session.userId || session.token !== token) return "skipped";
+    return (await attempt(session, Date.now())) ? "renewed" : "failed";
+  };
+
+  const attempt = async (session: ReturnType<typeof authStore.captureSession>, now: number): Promise<boolean> => {
     lastAttemptAt = now;
     refreshInFlight = true;
     try {
@@ -110,5 +128,5 @@ export function useSessionRenewal() {
 
   onBeforeUnmount(stop);
 
-  return { start, stop, maybeRenew, noteActivity };
+  return { start, stop, maybeRenew, renewNow, noteActivity };
 }
