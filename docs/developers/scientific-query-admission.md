@@ -59,6 +59,16 @@ tool, reveal data, or substitute for absent scientific evidence.
 
 ## Verification and deployment qualification
 
+Dataset descriptions derive acquisition facts from the registered dataset's
+parsed source metadata and recorded domain instrument, not its processing
+history. Tier 1 and above expose the same bounded acquisition projection in
+text and structured results. An empty processing history does not establish
+that acquisition settings are absent. Missing settings remain unknown.
+Source-member counts describe retained lineage, not the selected row population;
+mixed settings, bounded examples and unexamined nested metadata stay explicit.
+Ownership, project and disclosure checks remain outside this projection and
+must pass before tool results reach a provider.
+
 Run shared scientific-query, server single-call/admission, managed-workflow wire,
 production Advisor, Hybrid, context and frontend Guidance/chat suites. Provider
 substitutes prove call counts, refusal framing, pre-tool refusal, usage, quota

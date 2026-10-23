@@ -17,11 +17,104 @@ Usage::
 
 from __future__ import annotations
 
+import json
+import math
 from typing import Any
 
 import numpy as np
 
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+
+def _recorded_acquisition(dataset: SherpaDataset) -> dict[str, Any]:
+    """Project parsed acquisition facts, not processing history or inferred settings.
+
+    Source-member headers take precedence over any copied first-member header.
+    Only known scientific fields leave this boundary: no source paths, sample
+    identifiers, free-form metadata, raw spectra or credentials.
+    """
+    # Nested assemblies retain nested source metadata. Bound traversal, reporting
+    # partial examination instead of silently treating nested evidence as absent.
+    pending = [(dict(dataset.meta), 0)]
+    records: list[Any] = []
+    examined = 0
+    complete = True
+    while pending and examined < 1024:
+        source, depth = pending.pop()
+        examined += 1
+        members = source.get("source_member_metadata") if isinstance(source, dict) else None
+        if isinstance(members, list) and members:
+            if depth >= 8:
+                complete = False
+                continue
+            room = max(0, 1024 - examined - len(pending))
+            complete = complete and len(members) <= room
+            pending.extend(
+                (member.get("metadata", {}) if isinstance(member, dict) else {}, depth + 1)
+                for member in reversed(members[:room])
+            )
+        else:
+            records.append(source.get("omnic.acquisition") if isinstance(source, dict) else None)
+    complete = complete and not pending
+    fields: dict[str, Any] = {}
+    for name in (
+        "scan_count",
+        "background_scan_count",
+        "reference_frequency_cm-1",
+        "resolution",
+        "scan_points",
+        "optical_velocity",
+        "acquired_at",
+    ):
+        counts: dict[str, dict[str, Any]] = {}
+        present = 0
+        omitted_observations = 0
+        for record in records:
+            raw = record.get(name) if isinstance(record, dict) else None
+            # Native SPG headers legitimately contain a timestamp per spectrum.
+            values = raw if name == "acquired_at" and isinstance(raw, list) else [raw]
+            omitted_observations += max(0, len(values) - 256)
+            recorded = False
+            for value in values[:256]:
+                # No coercion of malformed/nonfinite values into apparent facts.
+                if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+                    continue
+                if isinstance(value, float) and not math.isfinite(value):
+                    continue
+                if isinstance(value, str):
+                    value = " ".join(value.split())[:160]
+                    if not value:
+                        continue
+                recorded = True
+                key = json.dumps(value)
+                if key in counts:
+                    counts[key]["count"] += 1
+                else:
+                    counts[key] = {"value": value, "count": 1}
+            present += recorded
+        if present:
+            fields[name] = {
+                "records_with_value": present,
+                "distinct_values": len(counts),
+                "values": list(counts.values())[:12],
+                "omitted_distinct_values": max(0, len(counts) - 12),
+                "omitted_observations": omitted_observations,
+            }
+    instrument = dataset.domain.instrument
+    return {
+        "availability": "partial" if not complete else "recorded" if instrument or fields else "not_recorded",
+        "instrument": " ".join(instrument.split())[:160] if instrument else None,
+        "source_records": len(records),
+        "records_with_acquisition": sum(isinstance(record, dict) and bool(record) for record in records),
+        "source_metadata_complete": complete,
+        "fields": fields,
+        "scope": (
+            "Retained source lineage, not current-row coverage or processing provenance. "
+            "Instrument is the dataset's recorded domain setting. Only named acquisition fields are projected; "
+            "missing settings are unknown. Value counts are observations, not sample counts; "
+            "timestamp examples are not a complete range or instrument scan duration."
+        ),
+    }
 
 
 class DatasetSummarizer:
@@ -96,6 +189,7 @@ class DatasetSummarizer:
                 "n_steps": state.n_steps,
             }
             result["units"] = dataset.units
+            result["acquisition"] = _recorded_acquisition(dataset)
             if dataset.feature_axis:
                 result["feature_axis"] = {
                     "type": dataset.feature_axis.axis_type,
@@ -220,6 +314,8 @@ class DatasetSummarizer:
             if tc.n_classes:
                 target_desc += f", {tc.n_classes} classes"
             lines.append(target_desc)
+
+        lines.append("Recorded acquisition: " + json.dumps(_recorded_acquisition(ds), ensure_ascii=False))
 
         return "\n".join(lines)
 
