@@ -23,11 +23,11 @@ from pathlib import Path
 PROFILE_REQUIREMENTS = {
     "default": frozenset(),
     "scp": frozenset({"spectrochempy"}),
-    "hitran": frozenset({"hitran-api", "hitran-api2"}),
+    "hitran": frozenset({"hitran-api", "hitran-api2", "nbconvert"}),
     "nist": frozenset({"beautifulsoup4"}),
     "postgres": frozenset({"asyncpg", "gunicorn"}),
-    "hitran,nist": frozenset({"beautifulsoup4", "hitran-api", "hitran-api2"}),
-    "scp,hitran,nist": frozenset({"beautifulsoup4", "hitran-api", "hitran-api2", "spectrochempy"}),
+    "hitran,nist": frozenset({"beautifulsoup4", "hitran-api", "hitran-api2", "nbconvert"}),
+    "scp,hitran,nist": frozenset({"beautifulsoup4", "hitran-api", "hitran-api2", "nbconvert", "spectrochempy"}),
 }
 OPTIONAL_DISTRIBUTIONS = frozenset().union(*PROFILE_REQUIREMENTS.values())
 

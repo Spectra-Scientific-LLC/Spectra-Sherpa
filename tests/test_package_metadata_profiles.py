@@ -53,7 +53,7 @@ def test_public_extras_are_closed_and_independent() -> None:
     extras = metadata["extras"]
     assert extras == {
         "scp": ["spectrochempy"],
-        "hitran": ["hitran-api", "hitran-api2"],
+        "hitran": ["hitran-api", "hitran-api2", "nbconvert"],
         "nist": ["beautifulsoup4"],
         "postgres": ["asyncpg", "gunicorn"],
     }

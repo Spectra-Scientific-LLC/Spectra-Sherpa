@@ -5804,7 +5804,7 @@ docs = ["sphinx"]
 test = ["pytest", "pytest-cov"]
 
 [extras]
-hitran = ["hitran-api", "hitran-api2"]
+hitran = ["hitran-api", "hitran-api2", "nbconvert"]
 nist = ["beautifulsoup4"]
 postgres = ["asyncpg", "gunicorn"]
 scp = ["spectrochempy"]
@@ -5812,4 +5812,4 @@ scp = ["spectrochempy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.13"
-content-hash = "c88617383a5d47fdf6d467332fed2da1d8df71a9ea6b4a21974159eadda04772"
+content-hash = "2ec98ffc8b4e0e3de02674f1889493fde5a2eaa1e64ea2c80f0489be4f8f1792"
