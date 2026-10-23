@@ -15,6 +15,7 @@ OPTIONAL_DISTRIBUTION_MODULES: dict[str, str] = {
     "beautifulsoup4": "bs4",
     "asyncpg": "asyncpg",
     "gunicorn": "gunicorn",
+    "nbconvert": "nbconvert",
 }
 
 BUNDLED_OPTIONAL_DISTRIBUTION_MODULES: dict[str, str] = {
