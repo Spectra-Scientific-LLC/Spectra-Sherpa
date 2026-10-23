@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plotContext } from "@/utils/plotContext";
+import { plotContext, plotHasSubset } from "@/utils/plotContext";
 
 describe("one plot context disclosure", () => {
   const p = { shown: 50, total: 150, method: "first_rows", excluded: 0 };
@@ -24,6 +24,17 @@ describe("one plot context disclosure", () => {
   it("does not invent a disclosure for an ordinary complete plot", () => {
     expect(plotContext({})).toBe("");
     expect(plotContext({ meta: { display_population: { shown: 5, total: 5 } } })).toBe("");
+  });
+  it("signals either sampled panel, provider sampling or display omissions from structured counts", () => {
+    expect(plotHasSubset(comparison())).toBe(true);
+    expect(plotHasSubset({ meta: { comparison_populations: {
+      original: { shown: 150, total: 150 }, preprocessed: p,
+    } } })).toBe(true);
+    expect(plotHasSubset({}, 1)).toBe(true);
+    expect(plotHasSubset({}, 0, p)).toBe(true);
+    expect(plotHasSubset({ meta: { display_population: { shown: 50, total: 50, excluded: 100 } } })).toBe(false);
+    expect(plotHasSubset({ meta: { display_population: { shown: 60, total: 50 } } })).toBe(false);
+    expect(plotHasSubset({})).toBe(false);
   });
   it("preserves physical-baseline and color-limit meaning in standalone and comparison heatmaps", () => {
     const sequential = "Sequential color scale; limits follow this displayed matrix. Physical baseline unspecified.";

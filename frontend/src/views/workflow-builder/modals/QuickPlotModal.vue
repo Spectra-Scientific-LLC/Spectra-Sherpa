@@ -219,6 +219,7 @@ v-model:scale-value="selectedFeatureScale"
           :layout="displayPlotLayout"
           :config="PLOT_CONFIG"
           :context="plotContextExtra"
+          :source-population="plotSampling ?? undefined"
           :style="plotCanvasStyle"
           @click="selectMatrixSlice"
         />
@@ -235,6 +236,7 @@ v-model:scale-value="selectedFeatureScale"
 
       <!-- Data Table -->
       <div v-else class="data-table-container">
+        <DisplaySubsetIndicator v-if="plotSampling?.plottedTableOnly" />
         <span v-if="usePlottedTable && isProjectedScientificKind(nodeOutput, 'visualization')" class="data-summary">Plot coordinates <MethodHelp topic="displayExports" label="Plot coordinates and sample rows" /></span>
         <span v-if="!tableOnly && availablePlots.length === 0" class="data-summary" title="No shared quantitative axis">Table-only result</span>
         <span v-if="dataPreviewSummary" class="data-summary">{{ dataPreviewSummary }}</span>
@@ -287,6 +289,7 @@ v-model:scale-value="selectedFeatureScale"
 import { SCIENTIFIC_COLORS, PLOT_SURFACE } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
+import DisplaySubsetIndicator from "@/components/DisplaySubsetIndicator.vue";
 import AxisSetControls from "@/components/data/AxisSetControls.vue";
 import { plotMatrixSlices } from "@/utils/plotMatrixSlices";
 import SampleMetadataStyleControls from "../node-detail/panels/SampleMetadataStyleControls.vue";

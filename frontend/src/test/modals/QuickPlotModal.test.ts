@@ -348,6 +348,7 @@ describe("QuickPlotModal", () => {
     expect(disclosure).toContain("50 of 460 source spectra; evenly spaced rows");
     expect(disclosure).toContain("Data view contains plotted traces only");
     expect(wrapper.findComponent({ name: "PlotlyChart" }).attributes("context")).toBe(disclosure);
+    expect(wrapper.findComponent({ name: "PlotlyChart" }).props("sourcePopulation")).toMatchObject({ shown: 50, total: 460 });
     expect(wrapper.html()).toContain("View Plotted Data");
     expect((wrapper.vm as any).dataPreview).toHaveLength(50);
 
@@ -356,6 +357,7 @@ describe("QuickPlotModal", () => {
     expect((wrapper.vm as any).dataPreviewSummary).toBe(
       "50 plotted traces of 460 source spectra; full source matrix is not in this view",
     );
+    expect(wrapper.get(".display-subset-indicator").isVisible()).toBe(true);
     wrapper.unmount();
   });
 

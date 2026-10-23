@@ -3,6 +3,9 @@ type Population = {
   shown: number; total: number; method?: string; excluded?: number; excluded_features?: number;
 };
 
+const object = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+
 function population(value: unknown): Population | null {
   if (!value || typeof value !== "object") return null;
   const p = value as Population;
@@ -19,13 +22,24 @@ function counts(p: Population): string {
   return `${p.shown} of ${p.total} active rows${selection}${exclusions.length ? `; ${exclusions.join(", ")}` : ""}`;
 }
 
+/** Visible existence signal; counts and methodology stay in the plot context. */
+export function plotHasSubset(layout: Record<string, unknown>, omitted = 0, sourcePopulation?: unknown): boolean {
+  const meta = object(layout.meta) ?? {};
+  const comparison = object(meta.comparison_populations);
+  const populations = comparison
+    ? [comparison.original, comparison.preprocessed, sourcePopulation]
+    : [meta.display_population, sourcePopulation];
+  return omitted > 0 || populations.some(value => {
+    const p = population(value);
+    return p !== null && p.shown < p.total;
+  });
+}
+
 export function plotContext(
   layout: Record<string, unknown>,
   additional = "",
   omitted = "",
 ): string {
-  const object = (value: unknown): Record<string, unknown> | null =>
-    value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
   const meta = object(layout.meta) ?? {};
   const comparison = object(meta.comparison_populations);
   const original = population(comparison?.original);

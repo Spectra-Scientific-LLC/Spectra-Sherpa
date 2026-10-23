@@ -4,19 +4,23 @@
     <div v-if="!loading && isEmpty" class="plotly-empty" role="status">
       {{ emptyMessage }}
     </div>
-    <MethodHelp v-if="contextText && !isEmpty" topic="displayExports" label="Plot context" :context="contextText" />
+    <div v-if="!isEmpty && (hasSubset || contextText)" class="plot-context-controls">
+      <DisplaySubsetIndicator v-if="hasSubset" />
+      <MethodHelp v-if="contextText" topic="displayExports" label="Plot context" :context="contextText" />
+    </div>
     <div v-show="!isEmpty" ref="chartEl" class="plotly-canvas"></div>
   </div>
 </template>
 
 <script setup lang="ts">
 import MethodHelp from "@/components/MethodHelp.vue";
+import DisplaySubsetIndicator from "@/components/DisplaySubsetIndicator.vue";
 import { selectionIndices } from "@/utils/sampleReview";
 import { focusPlot, releasePlot, nextPlotAttentionId } from "@/lib/sherpaAttention";
 import { scientificPlotRefusal } from "@/utils/scientificPlotState";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
 import { displayPlot } from "@/utils/displayPlot";
-import { plotContext } from "@/utils/plotContext";
+import { plotContext, plotHasSubset } from "@/utils/plotContext";
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { PLOT_SURFACE } from "@/theme/plotTheme";
 
@@ -57,6 +61,7 @@ const props = defineProps<{
   attentionNodeId?: string;
   attentionPlotKey?: string;
   context?: string;
+  sourcePopulation?: { shown: number; total: number };
 }>();
 
 const emit = defineEmits<{
@@ -78,6 +83,7 @@ const displayed = computed(() => displayPlot(
   plotSurface,
 ));
 const refusal = computed(() => scientificPlotRefusal(props.layout));
+const hasSubset = computed(() => plotHasSubset(props.layout || {}, displayed.value.omitted, props.sourcePopulation));
 const contextText = computed(() => plotContext(
   props.layout || {}, props.context,
   displayed.value.omitted ? displayed.value.omissionDescription : "",
@@ -376,6 +382,12 @@ onBeforeUnmount(() => {
 .plotly-canvas {
   width: 100%;
   height: 100%;
+}
+
+.plot-context-controls {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
 }
 
 .plotly-overlay,

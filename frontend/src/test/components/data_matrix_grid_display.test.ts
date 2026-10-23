@@ -22,9 +22,14 @@ describe("dataset matrix visual row limit", () => {
     expect(wrapper.text()).toContain("300 x 2 shown of 400 x 2");
     expect(wrapper.get("summary").attributes("aria-label")).toBe("Table display limits");
     expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    expect(wrapper.get(".display-subset-indicator").isVisible()).toBe(true);
+    expect(wrapper.get(".display-subset-indicator").element.closest("details")).toBeNull();
     useDisplayPreferences().maxRows = 500;
     await nextTick();
     expect((wrapper.vm as unknown as { displayedRows: unknown[] }).displayedRows).toHaveLength(400);
+    expect(wrapper.find(".display-subset-indicator").exists()).toBe(false);
+    await wrapper.setProps({ matrix: { ...matrix, total_rows: 10000, truncated: true } });
+    expect(wrapper.get(".display-subset-indicator").isVisible()).toBe(true);
     await wrapper.setProps({ matrix: {
       ...matrix, row_labels: ["sample-1"], rows_shown: 1, total_rows: 1,
       col_labels: Array.from({ length: 501 }, (_, i) => `feature-${i}`),
@@ -32,6 +37,9 @@ describe("dataset matrix visual row limit", () => {
     } });
     expect(wrapper.findAll("thead th")).toHaveLength(502);
     expect((wrapper.vm as unknown as { displayedRows: unknown[] }).displayedRows).toHaveLength(1);
+    expect(wrapper.find(".display-subset-indicator").exists()).toBe(false);
+    await wrapper.setProps({ matrix: { ...wrapper.props("matrix"), total_cols: 1000 } });
+    expect(wrapper.get(".display-subset-indicator").isVisible()).toBe(true);
     wrapper.unmount();
   });
 });

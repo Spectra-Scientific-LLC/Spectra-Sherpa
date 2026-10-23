@@ -146,12 +146,28 @@ describe("PlotlyChart", () => {
     expect(data[0].x).toHaveLength(300);
     expect(layout.annotations).toBeUndefined();
     expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    expect(wrapper.get(".display-subset-indicator").text()).toBe("Subset");
+    expect(wrapper.get(".display-subset-indicator").attributes("role")).toBe("status");
+    expect(wrapper.get(".display-subset-indicator").element.closest("details")).toBeNull();
     expect(wrapper.get("summary").text()).toBe("?");
     expect(wrapper.findAll("summary")).toHaveLength(1);
     expect(wrapper.text()).toContain("Plot: 400 of 500 active rows (first active rows). Metadata styling unavailable.");
     expect(wrapper.text()).toContain("Display settings additionally omit 100 plotted observations.");
     expect(wrapper.find('a[href$="#display-and-table-exports"]').exists()).toBe(true);
     expect(downloadMock).toHaveBeenCalledOnce();
+    wrapper.unmount();
+  });
+  it("signals provider and display-only subsets, clearing the badge when all data are visible", async () => {
+    const trace = { type: "scatter", mode: "markers", x: [1, 2], y: [3, 4] };
+    const wrapper = mount(PlotlyChart, { props: { data: [trace], sourcePopulation: { shown: 2, total: 100 } } });
+    await settle();
+    expect(wrapper.get(".display-subset-indicator").isVisible()).toBe(true);
+    await wrapper.setProps({ sourcePopulation: { shown: 2, total: 2 } });
+    expect(wrapper.find(".display-subset-indicator").exists()).toBe(false);
+    await wrapper.setProps({ data: [{ ...trace, x: Array(400).fill(1), y: Array(400).fill(2) }] });
+    await settle();
+    expect(wrapper.get(".display-subset-indicator").isVisible()).toBe(true);
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
     wrapper.unmount();
   });
   it("GSC-09 propagates export failures for the owning view to disclose", async () => {

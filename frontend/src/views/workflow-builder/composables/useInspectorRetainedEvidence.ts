@@ -66,19 +66,24 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
     );
   });
 
-  async function openRetainedEvidence(view: "plot" | "table"): Promise<void> {
+  async function openRetainedEvidence(view: "plot" | "table" | "detail") {
     const ticket = requests.begin();
     const show = () => {
       if (!ticket.isCurrent()) return;
       if (view === "plot") showQuickPlotModal.value = true;
-      else showDataTableModal.value = true;
+      else if (view === "table") showDataTableModal.value = true;
     };
+    const evidence = () => ({
+      output: exactQuickPlotOutput.value ?? options.output.value,
+      inputs: quickPlotResolvedInputs.value,
+      isCurrent: ticket.isCurrent,
+    });
     const runId = options.runId();
     const projectId = options.projectId();
     const nodeId = options.nodeId();
     if (options.evidenceScope() !== "restored_summary") {
       show();
-      return;
+      return evidence();
     }
     if (runId == null || projectId == null || !nodeId) {
       exactQuickPlotOutput.value = null;
@@ -87,7 +92,7 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
       quickPlotEvidenceError.value = "The retained output has no complete run, project, and node identity. Reopen the run to inspect it.";
       if (view === "plot") show();
       else options.unavailable(quickPlotEvidenceError.value);
-      return;
+      return null;
     }
     quickPlotLoading.value = true;
     quickPlotEvidenceError.value = "";
@@ -103,33 +108,63 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
     try {
       const source = options.output.value;
       const selected = resolveScientificPresentation(options.metadata.value, source, options.presentationId.value);
-      const sourcePorts = selected?.sourcePorts ?? [source?.primary_port ?? "default"];
+      // A detail sheet can select any of the node's presentations. Keep every
+      // retained port, rather than handing it a projected or bounded preview.
+      const availablePorts = Object.keys(source?.ports ?? {});
+      const sourcePorts = view === "detail"
+        ? (availablePorts.length ? availablePorts : source ? [source.primary_port ?? "default"] : [])
+        : selected?.sourcePorts ?? [source?.primary_port ?? "default"];
       const binding = selected?.presentation.output_binding;
       const labelsField = selected?.presentation.sample_labels_field;
       const inputBinding = selected?.presentation.input_binding;
       // Preserve the existing combined PCA view using only same-run companions.
       const summaryPorts = view === "plot" && selected?.presentation.kind === "pca_scores"
         ? ["variable_correlations", "explained_variance", "loadings"].filter(port => source?.ports?.[port]) : [];
-      const retainedPorts = [...new Set([
+      const retainedPorts = view === "detail" && !source ? [] : [...new Set([
+        // Retain the original primary context when plotting another port.
+        // Otherwise rebuilding a one-port node changes shared model labels.
+        ...(view === "plot" && source?.primary_port ? [source.primary_port] : []),
         ...sourcePorts, ...(binding ? [binding[0]] : []), ...summaryPorts, ...(labelsField ? [labelsField] : []),
       ])];
+      let connections = options.inputs();
+      if (view === "table") {
+        connections = inputBinding ? connections.filter(connection => (connection.toPort || "default") === inputBinding[0]) : [];
+      } else if (view === "detail" && !source) {
+        // An unexecuted node remains editable; load only inputs with retained
+        // evidence, rather than requesting results from unexecuted ancestors.
+        connections = connections.filter(connection => connection.data);
+      }
       const [outputs, inputs] = await Promise.all([
         Promise.all(retainedPorts.map(async port => [port, await read(nodeId, port)] as const)),
-        Promise.all((view === "plot" ? options.inputs()
-          : inputBinding ? options.inputs().filter(connection => (connection.toPort || "default") === inputBinding[0]) : [])
-          .map(async connection => [connection.toPort || "default", await read(connection.nodeId, connection.port)] as const)),
+        Promise.all(connections.map(async connection => {
+          let value: unknown;
+          try {
+            value = await read(connection.nodeId, connection.port);
+          } catch (error) {
+            // Editing a node with no result must remain possible when an
+            // ancestor's retained preview is unavailable. Keep it unavailable,
+            // rather than passing the bounded preview off as exact input.
+            if (view !== "detail" || source) throw error;
+            value = null;
+          }
+          return [connection.toPort || "default", value] as const;
+        })),
       ]);
-      if (!ticket.isCurrent()) return;
+      if (!ticket.isCurrent()) return null;
       const contract = source?.presentation_contract;
       const diagnostics = source?.metadata?.diagnostics;
       // Same normalizer used by node-detail/useNodeOutput. This surface carries
       // a contract, not a complete ExecutedPresentationRecord; never fabricate one.
-      exactQuickPlotOutput.value = buildNodeOutput(
+      exactQuickPlotOutput.value = source ? buildNodeOutput(
         Object.fromEntries(outputs), options.metadata.value?.output_ports,
         diagnostics && typeof diagnostics === "object" ? diagnostics as Record<string, unknown> : null,
         options.descriptors(nodeId), contract,
-      );
+      ) : null;
+      if (exactQuickPlotOutput.value && source?.model_id) {
+        exactQuickPlotOutput.value.model_id = source.model_id;
+      }
       exactQuickPlotInputs.value = Object.fromEntries(inputs.map(([port, value]) => {
+        if (value == null) return [port, null];
         const record = value && typeof value === "object" ? value as Record<string, unknown> : null;
         return [port, {
           data: Array.isArray(record?.data) ? record.data : Array.isArray(value) ? value : [],
@@ -137,10 +172,12 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
             ? record.metadata as Record<string, unknown> : {}, value,
         }];
       }));
+      return evidence();
     } catch {
-      if (!ticket.isCurrent()) return;
+      if (!ticket.isCurrent()) return null;
       quickPlotEvidenceError.value = "The exact retained output is unavailable. The compact history summary cannot be used as full evidence.";
-      if (view === "table") options.unavailable(quickPlotEvidenceError.value);
+      if (view !== "plot") options.unavailable(quickPlotEvidenceError.value);
+      return null;
     } finally {
       if (ticket.isCurrent()) {
         quickPlotLoading.value = false;
@@ -154,5 +191,6 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
     showQuickPlotModal, showDataTableModal, openRetainedEvidence,
     openQuickPlot: () => openRetainedEvidence("plot"),
     openDataTable: () => openRetainedEvidence("table"),
+    prepareTrialEvidence: () => openRetainedEvidence("detail"),
   };
 }
