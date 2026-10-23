@@ -52,6 +52,7 @@ from spectra_sherpa.app.services.prepared_data import (
     load_prepared_data_overrides_strict,
 )
 from spectra_sherpa.core.axis_semantics import axis_semantics, canonical_axis_unit
+from spectra_sherpa.core.scientific_refusal import ScientificInputRefusal
 from spectra_sherpa.sdk.deployment import DEPLOYMENT_INPUT_SCHEMA
 
 if TYPE_CHECKING:
@@ -728,9 +729,12 @@ def _target_for_artifact(
             finally:
                 dataset.target_context = original_context
 
-        raise ValueError(
-            f"Saved model was trained for target {selected!r}, but that target could not be matched in the "
-            "labeled dataset. Bind the matching target before application."
+        raise ScientificInputRefusal(
+            "target_mismatch",
+            detail=(
+                f"Saved model was trained for target {selected!r}, but that target could not be matched in the "
+                "labeled dataset. Bind the matching target before application."
+            ),
         )
 
     if manifest_targets and (

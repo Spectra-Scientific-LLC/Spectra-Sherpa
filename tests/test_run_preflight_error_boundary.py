@@ -12,6 +12,72 @@ from spectra_sherpa.app.services.legacy_model_application import LEGACY_WARNING,
 
 
 @pytest.mark.parametrize(
+    ("code", "fields", "expected"),
+    [
+        ("reference_targets_required", (), "This workflow requires reference targets for training/evaluation."),
+        (
+            "fitted_input_mismatch",
+            ("signal_units",),
+            "application input differs from fitted input authority: signal_units; "
+            "use an explicit conversion or refit with the correct metadata",
+        ),
+        (
+            "target_mismatch",
+            (),
+            "The saved model's target could not be matched. Bind the matching target before application.",
+        ),
+    ],
+)
+async def test_scientific_refusal_preserves_reason_but_not_exception_details(
+    auth_client, monkeypatch, code, fields, expected
+):
+    from spectra_sherpa.core.scientific_refusal import ScientificInputRefusal
+
+    if code == "fitted_input_mismatch":
+        from spectra_sherpa.app.services.dag.fitted_input_identity import FittedInputMismatch
+
+        refusal = FittedInputMismatch(fields)
+        refusal.args = ("Traceback: /private/server.py SELECT private_column",)
+    else:
+        refusal = ScientificInputRefusal(code, detail="Traceback: /private/server.py SELECT private_column")
+    monkeypatch.setattr(runs, "_prepare_verification_pair", AsyncMock(side_effect=refusal))
+    response = await auth_client.post(
+        "/api/v1/runs/verification/preflight",
+        json={"project_id": 1, "mode": "run_workflow", "pairs": [{"workflow_id": 1, "dataset": {"experiment_id": 1}}]},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"pairs": [{"index": 0, "compatible": False, "reason": expected}]}
+    assert "Traceback" not in response.text and "private_column" not in response.text
+
+
+async def test_target_context_is_separate_from_exception_and_scoped_to_each_pair(auth_client, monkeypatch):
+    from spectra_sherpa.core.scientific_refusal import ScientificInputRefusal
+
+    async def prepare(payload, pair, session, user_id, *, refusal_context):
+        if pair.workflow_id == 1:
+            refusal_context.target_name = "Oil"
+        if pair.workflow_id in (1, 2):
+            raise ScientificInputRefusal("target_mismatch", detail="Traceback: /private/server.py leaked_target")
+        return {"receipt": "c" * 64, "metadata": {"n_included_samples": 33}}
+
+    monkeypatch.setattr(runs, "_prepare_verification_pair", prepare)
+    response = await auth_client.post(
+        "/api/v1/runs/verification/preflight",
+        json={
+            "project_id": 1,
+            "mode": "run_workflow",
+            "pairs": [{"workflow_id": n, "dataset": {"experiment_id": 1}} for n in (1, 2, 3)],
+        },
+    )
+    assert response.status_code == 200
+    first, second, accepted = response.json()["pairs"]
+    assert first["compatible"] is False and "'Oil'" in first["reason"]
+    assert second["compatible"] is False and "Oil" not in second["reason"]
+    assert accepted["compatible"] is True and accepted["receipt"] == "c" * 64
+    assert "Traceback" not in response.text and "leaked_target" not in response.text
+
+
+@pytest.mark.parametrize(
     ("code", "reason"),
     [
         ("local_only", "Legacy exploratory model recovery is available only in local OSS with application permission"),

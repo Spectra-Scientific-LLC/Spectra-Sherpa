@@ -109,7 +109,7 @@ class VerificationBatchRequest(BaseModel):
     pairs: list[VerificationPair] = Field(..., min_length=1, max_length=32)
 
 
-async def _prepare_verification_pair(payload, pair, session, user_id):
+async def _prepare_verification_pair(payload, pair, session, user_id, *, refusal_context=None):
     from sqlalchemy.orm import selectinload
 
     from spectra_sherpa.app.contracts.demo_policy import require_trial_dataset_access
@@ -194,6 +194,10 @@ async def _prepare_verification_pair(payload, pair, session, user_id):
         if artifact.workflow_id != workflow.id or artifact.project_id != payload.project_id:
             raise HTTPException(404, "Model does not belong to the selected workflow and project")
         manifest, arrays = await to_thread(get_model_store().load, artifact.artifact_uid)
+        if refusal_context is not None:
+            from spectra_sherpa.app.services.model_application import _artifact_selected_target
+
+            refusal_context.target_name = _artifact_selected_target(manifest)
         from spectra_sherpa.app.services.legacy_model_application import LEGACY_WARNING
 
         _, warnings, application_metadata = await to_thread(
@@ -256,10 +260,17 @@ async def preflight_verification_batch(
     current_user: User = Depends(get_current_user),
 ):
     """Check every combination without fitting, prediction, quota or run writes."""
+    from spectra_sherpa.app.services.batch_verification import VerificationRefusalContext
+    from spectra_sherpa.app.services.dag.fitted_input_identity import FittedInputMismatch, fitted_input_refusal_reason
+    from spectra_sherpa.core.scientific_refusal import ScientificInputRefusal, scientific_refusal_reason
+
     results = []
     for index, pair in enumerate(payload.pairs):
+        refusal_context = VerificationRefusalContext()
         try:
-            admitted = await _prepare_verification_pair(payload, pair, session, current_user.id)
+            admitted = await _prepare_verification_pair(
+                payload, pair, session, current_user.id, refusal_context=refusal_context
+            )
             results.append(
                 {"index": index, "compatible": True, "receipt": admitted["receipt"], "metadata": admitted["metadata"]}
             )
@@ -273,6 +284,18 @@ async def preflight_verification_batch(
             )
 
             logger.warning("Batch preflight refused pair %s (invalid input)", index, exc_info=True)
+            if isinstance(exc, FittedInputMismatch):
+                results.append({"index": index, "compatible": False, "reason": fitted_input_refusal_reason(exc.fields)})
+                continue
+            if isinstance(exc, ScientificInputRefusal):
+                results.append(
+                    {
+                        "index": index,
+                        "compatible": False,
+                        "reason": scientific_refusal_reason(exc.code, target_name=refusal_context.target_name),
+                    }
+                )
+                continue
             if isinstance(exc, LegacyAcknowledgementRequired):
                 results.append(
                     {"index": index, "compatible": False, "code": "legacy_ack_required", "reason": LEGACY_WARNING}

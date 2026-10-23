@@ -38,6 +38,69 @@ class FittedStateCustodyCapability:
 _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingProxyType(
     {
         (
+            "spectrasherpa.model-artifact.knn/2",
+            "45dfeb78fef8ebf91d22edf584342724a5f5d8ca3532649ff86ea7347db0900f",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.knn/2",
+            contract_digest="45dfeb78fef8ebf91d22edf584342724a5f5d8ca3532649ff86ea7347db0900f",
+            custody_class=RETAINS_TRAINING_ROWS,
+            rationale="Typed input refusals only; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.sherpa-plsda-state/5",
+            "f8cb93e6a0b919054f55680e6d4e994bd310d122d3dfb0e40b095569cef53ef9",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="f8cb93e6a0b919054f55680e6d4e994bd310d122d3dfb0e40b095569cef53ef9",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Typed input refusals only; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.model-artifact.simca/2",
+            "bd702d6c67ccd5e0450b7c084ee7c7b0d20a530a3eb364a5e53d1a07caf07bc8",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.simca/2",
+            contract_digest="bd702d6c67ccd5e0450b7c084ee7c7b0d20a530a3eb364a5e53d1a07caf07bc8",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Typed input refusals only; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.model.fitted_linear_regression/1",
+            "0249dc0427231232a1b543a5bdce6d1f1eceb5231719b41d0e65d52082bb4026",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_linear_regression/1",
+            contract_digest="0249dc0427231232a1b543a5bdce6d1f1eceb5231719b41d0e65d52082bb4026",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Typed input refusals only; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.model.fitted_pcr/1",
+            "27f4c22c6ae6fb575c7e9cb2882de79143b166274356e739346cbe2d6f7f9a22",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_pcr/1",
+            contract_digest="27f4c22c6ae6fb575c7e9cb2882de79143b166274356e739346cbe2d6f7f9a22",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Typed input refusals only; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.model.fitted_svr/1",
+            "2ac66187fb0e4fc00934d9630e68128888cd8c2c2c2d172194ee5ca550798fbc",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_svr/1",
+            contract_digest="2ac66187fb0e4fc00934d9630e68128888cd8c2c2c2d172194ee5ca550798fbc",
+            custody_class=RETAINS_TRAINING_ROWS,
+            rationale="Typed input refusals only; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.model-artifact.pca/3",
+            "7d89eafc1c61c6ed5b121cea3ed06e74045dea4c7b5381275c54facf9b0b8924",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.pca/3",
+            contract_digest="7d89eafc1c61c6ed5b121cea3ed06e74045dea4c7b5381275c54facf9b0b8924",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Typed input refusals only; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
             "spectrasherpa.model.fitted_linear_regression/1",
             "10b125ffb88229b92cfe1eac67e5717117cfdf57d485b3e370abb2ef8910f6a7",
         ): FittedStateCustodyCapability(
