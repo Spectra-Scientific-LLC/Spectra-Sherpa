@@ -62,7 +62,7 @@ jobs:
         run: bash desktop/ubuntu/build.sh
       - name: Retain Ubuntu evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ubuntu-desktop-evidence
           path: ./desktop/ubuntu-evidence/
@@ -75,7 +75,7 @@ jobs:
         with:
           subject-path: desktop/release/*
       - name: Retain Ubuntu artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ubuntu-x86_64-artifact
           path: ./desktop/release/*
@@ -406,7 +406,7 @@ jobs:
 
       - name: Retain signing evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: signing-evidence-${{ matrix.os }}
           path: desktop/signing-evidence/
@@ -439,7 +439,7 @@ jobs:
           subject-path: desktop/release/*
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ matrix.target }}-artifact
           path: desktop/release/*
