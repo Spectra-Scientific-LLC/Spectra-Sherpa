@@ -12,10 +12,46 @@ import RadioButton from "primevue/radiobutton";
 import { createCategoryColorMap, seriesPalette } from "@/utils/colors";
 import { themeToken, standaloneThemeCss } from "@/theme/interfaceTheme";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
-import { categoricalPalette, themedPlotLayout, PRINT_PLOT_THEME, SERIES_PALETTES } from "@/theme/plotTheme";
+import { categoricalPalette, themedPlotLayout, themedPlotTrace, PANEL_PLOT_THEME, PRINT_PLOT_THEME, SERIES_PALETTES } from "@/theme/plotTheme";
 
 const root = resolve(process.cwd(), "src");
 describe("semantic theme authority", () => {
+  it("derives dark plot paper and readable typography from panel tokens without changing scientific encodings", () => {
+    const layout = {
+      xaxis: { title: { text: "Wavenumber", font: { color: "black" } }, autorange: "reversed" },
+      coloraxis: { colorscale: "RdBu", cmin: -2, cmax: 2, colorbar: { tickfont: { color: "black" } } },
+      annotations: [{ text: "Limit", x: 4, y: 5, font: { color: "black" } }],
+      shapes: [{ line: { color: "red" }, x0: 3, x1: 3 }],
+    };
+    const rendered = themedPlotLayout(layout, "default", "panel");
+    expect(rendered).toMatchObject({ paper_bgcolor: themeToken("panel-inset"), plot_bgcolor: PANEL_PLOT_THEME.paper,
+      xaxis: { autorange: "reversed", title: { text: "Wavenumber", font: { color: PANEL_PLOT_THEME.text } } },
+      coloraxis: { colorscale: "RdBu", cmin: -2, cmax: 2, colorbar: { tickfont: { color: PANEL_PLOT_THEME.text } } },
+      annotations: [{ text: "Limit", x: 4, y: 5, font: { color: PANEL_PLOT_THEME.text } }],
+    });
+    expect(rendered.shapes).toEqual(layout.shapes);
+    expect(layout.xaxis.title.font.color).toBe("black");
+    const trace = { x: [1, 2], y: [3, 4], marker: { color: [1, 2], colorscale: "Viridis" }, textfont: { color: "black" } };
+    expect(themedPlotTrace(trace, "panel")).toEqual({ ...trace, textfont: { color: PANEL_PLOT_THEME.text } });
+    expect(themedPlotTrace(trace, "print")).toBe(trace);
+    expect(themedPlotLayout(layout, "default", "print").paper_bgcolor).toBe(PRINT_PLOT_THEME.paper);
+  });
+
+  it("uses the shared dark context for Detailed View and Quick Plot, not embedded light overrides", () => {
+    for (const file of ["views/workflow-builder/NodeDetailView.vue", "views/workflow-builder/modals/QuickPlotModal.vue"]) {
+      const source = readFileSync(resolve(root, file), "utf8");
+      expect(source).toContain("ss-panel-theme");
+      expect(source).toContain('provide(PLOT_SURFACE, "panel")');
+    }
+    const modal = readFileSync(resolve(root, "views/workflow-builder/modals/QuickPlotModal.vue"), "utf8");
+    expect(modal).not.toContain(".embedded-plot .plot-controls,");
+    const controls = readFileSync(resolve(root, "assets/controls.css"), "utf8");
+    expect(controls).toContain(".ss-panel-theme {");
+    expect(controls).toContain("--ss-surface: var(--ss-panel-inset)");
+    expect(controls).toContain("--ss-action-text: var(--ss-panel-text)");
+    expect(controls).toContain(".p-dropdown-item.p-focus:not(.p-highlight)");
+    expect(controls).toContain(".p-multiselect-item.p-focus:not(.p-highlight)");
+  });
   it("does not add raw colors outside the declared token and palette owners", () => {
     const baseline = JSON.parse(readFileSync(resolve(root, "../theme-color-baseline.json"), "utf8"));
     expect(colorRegressions(inventoryColors(root), baseline.files)).toEqual([]);
@@ -109,6 +145,12 @@ describe("semantic theme authority", () => {
       const a = luminance(themeToken(foreground)), b = luminance(themeToken(background));
       return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
     };
+    for (const color of categoricalPalette("high-contrast")) {
+      for (const background of [PANEL_PLOT_THEME.paper, PRINT_PLOT_THEME.paper]) {
+        const a = luminance(color), b = luminance(background);
+        expect((Math.max(a, b) + .05) / (Math.min(a, b) + .05), `${color} on ${background}`).toBeGreaterThanOrEqual(3);
+      }
+    }
     for (const background of ["surface", "surface-subtle", "surface-page", "surface-workspace", "workspace-paper"])
       for (const foreground of ["text-strong", "text-body", "text-secondary", "text-muted", "action", "accent"])
         expect(contrast(foreground, background), `${foreground} on ${background}`).toBeGreaterThanOrEqual(4.5);

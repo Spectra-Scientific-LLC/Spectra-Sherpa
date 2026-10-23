@@ -29,7 +29,7 @@ vi.mock("plotly.js-cartesian-dist-min", () => ({
 }));
 
 import PlotlyChart from "@/components/PlotlyChart.vue";
-import { themedPlotLayout, PRINT_PLOT_THEME } from "@/theme/plotTheme";
+import { themedPlotLayout, PRINT_PLOT_THEME, PANEL_PLOT_THEME, PLOT_SURFACE } from "@/theme/plotTheme";
 
 async function settle(): Promise<void> {
   await flushPromises();
@@ -37,6 +37,25 @@ async function settle(): Promise<void> {
 }
 
 describe("PlotlyChart", () => {
+  it("keeps an inherited dark panel on full render, relayout and PNG download", async () => {
+    const wrapper = mount(PlotlyChart, {
+      props: { data: [{ type: "scatter", x: [1, 2], y: [3, 4] }], layout: { xaxis: { title: "PC1" } } },
+      global: { provide: { [PLOT_SURFACE as symbol]: "panel" } },
+    });
+    await settle();
+    expect(reactMock.mock.calls.at(-1)?.[2]).toMatchObject({
+      paper_bgcolor: PANEL_PLOT_THEME.paper, font: { color: PANEL_PLOT_THEME.text },
+    });
+    await wrapper.setProps({ layout: { xaxis: { title: "PC2" } } });
+    await settle();
+    expect(relayoutMock.mock.calls.at(-1)?.[1]).toMatchObject({
+      paper_bgcolor: PANEL_PLOT_THEME.paper, "font.color": PANEL_PLOT_THEME.text,
+    });
+    await wrapper.vm.downloadImage({ format: "png" });
+    expect(reactMock.mock.calls.at(-1)?.[2]).toMatchObject({ paper_bgcolor: PANEL_PLOT_THEME.paper });
+    expect(downloadMock).toHaveBeenCalled();
+    wrapper.unmount();
+  });
   it("restyles linked spectral lines without react and ignores redraw selection feedback", async () => {
     const wrapper = mount(PlotlyChart, {
       props: {
@@ -118,13 +137,19 @@ describe("PlotlyChart", () => {
       type: "scatter", mode: "markers",
       x: Array.from({ length: 400 }, (_, index) => index),
       y: Array.from({ length: 400 }, (_, index) => index),
-    }] } });
+    }], context: "Metadata styling unavailable.", layout: { meta: {
+      display_population: { shown: 400, total: 500, method: "first_rows" },
+    } } } });
     await settle();
     await wrapper.vm.downloadImage({ format: "png" });
     const [, data, layout] = reactMock.mock.calls.at(-1)!;
     expect(data[0].x).toHaveLength(300);
     expect(layout.annotations).toBeUndefined();
-    expect(wrapper.text()).toContain("Display limit: 100 plotted observations omitted.");
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    expect(wrapper.get("summary").text()).toBe("?");
+    expect(wrapper.findAll("summary")).toHaveLength(1);
+    expect(wrapper.text()).toContain("Plot: 400 of 500 active rows (first active rows). Metadata styling unavailable.");
+    expect(wrapper.text()).toContain("Display settings additionally omit 100 plotted observations.");
     expect(wrapper.find('a[href$="#display-and-table-exports"]').exists()).toBe(true);
     expect(downloadMock).toHaveBeenCalledOnce();
     wrapper.unmount();

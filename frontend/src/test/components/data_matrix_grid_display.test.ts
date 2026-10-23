@@ -19,7 +19,9 @@ describe("dataset matrix visual row limit", () => {
     } as unknown as DataMatrixResponse;
     const wrapper = mount(DataMatrixGrid, { props: { matrix } });
     expect((wrapper.vm as unknown as { displayedRows: unknown[] }).displayedRows).toHaveLength(300);
-    expect(wrapper.text()).toContain("300 of 400 fetched rows");
+    expect(wrapper.text()).toContain("300 x 2 shown of 400 x 2");
+    expect(wrapper.get("summary").attributes("aria-label")).toBe("Table display limits");
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
     useDisplayPreferences().maxRows = 500;
     await nextTick();
     expect((wrapper.vm as unknown as { displayedRows: unknown[] }).displayedRows).toHaveLength(400);

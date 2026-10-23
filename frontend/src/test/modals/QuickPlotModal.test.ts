@@ -1,4 +1,5 @@
 import { mount } from "@vue/test-utils";
+import { plotContext } from "@/utils/plotContext";
 import { describe, expect, it } from "vitest";
 import { nextTick } from "vue";
 
@@ -295,8 +296,10 @@ describe("QuickPlotModal", () => {
       nodeInputs: { X: { value: { data, x_axis: { labels: ["a", "b"] }, y_axis: { labels: data.map((_, i) => `s${i}`), include_mask: data.map((_, i) => i !== 0) } }, metadata: { data_role: "X_features" } } },
       nodeOutput: { data: [[2, 3]], metadata: { data_role: "X_features", feature_names: ["a", "b"], sample_labels: ["s1"] } } }, global: { stubs: globalStubs } });
     const vm = wrapper.vm as any;
-    expect(wrapper.text()).toContain("50 of 59 active rows shown; first 50 rows, 9 unplotted; 1 rows");
-    expect(wrapper.text()).toContain("Preprocessed: 1 of 1 active rows shown");
+    const context = plotContext(vm.displayPlotLayout, vm.plotContextExtra);
+    expect(context).toContain("Original: 50 of 59 active rows (first active rows); 1 excluded rows");
+    expect(context).toContain("Preprocessed: 1 of 1 active rows");
+    expect(wrapper.find(".plot-sampling-disclosure").exists()).toBe(false);
     expect(vm.displayPlotData[0].name).toBe("s1");
     expect(vm.displayPlotData[0].x).toEqual(["a", "b"]);
     vm.selectedPlotKey = "spectra_heatmap";
@@ -325,10 +328,10 @@ describe("QuickPlotModal", () => {
       global: { stubs: globalStubs },
     });
 
-    const disclosure = wrapper.find(".plot-sampling-disclosure");
-    expect(disclosure.text()).toContain("50 of 460 source spectra (10.9%)");
-    expect(disclosure.text()).toContain("Data view: plotted traces only");
-    expect(disclosure.find('a[href$="#display-and-table-exports"]').exists()).toBe(true);
+    const disclosure = (wrapper.vm as any).plotContextExtra;
+    expect(disclosure).toContain("50 of 460 source spectra; evenly spaced rows");
+    expect(disclosure).toContain("Data view contains plotted traces only");
+    expect(wrapper.findComponent({ name: "PlotlyChart" }).attributes("context")).toBe(disclosure);
     expect(wrapper.html()).toContain("View Plotted Data");
     expect((wrapper.vm as any).dataPreview).toHaveLength(50);
 
@@ -374,8 +377,8 @@ describe("QuickPlotModal", () => {
       global: { stubs: globalStubs },
     });
 
-    const disclosure = wrapper.find(".plot-sampling-disclosure").text();
-    expect(disclosure).toContain("50 of 80 source samples (62.5%)");
+    const disclosure = (wrapper.vm as any).plotContextExtra;
+    expect(disclosure).toContain("50 of 80 source samples");
     expect(disclosure).not.toContain("spectra");
     wrapper.unmount();
   });
@@ -668,7 +671,7 @@ describe("QuickPlotModal", () => {
     ]);
   });
 
-  it("renders uncolored PCA scores while explaining refused metadata grouping", () => {
+  it("keeps optional styling in help but exposes a failed explicit request", async () => {
     const scores = [[1.2, -0.5], [-0.8, 0.7]];
     const scoreValue = {
       type: "SherpaDataset",
@@ -700,7 +703,7 @@ describe("QuickPlotModal", () => {
       global: { stubs: globalStubs },
     });
 
-    expect(wrapper.text()).toContain(
+    expect((wrapper.vm as any).plotContextExtra).toContain(
       "Metadata grouping refused: sample IDs do not exactly match score-row labels.",
     );
     expect(wrapper.text()).not.toContain("No data to display");
@@ -716,6 +719,19 @@ describe("QuickPlotModal", () => {
     expect((wrapper.vm as any).displayPlotLayout.meta.metadata_grouping_notice).toContain(
       "sample IDs do not exactly match score-row labels",
     );
+    const vm = wrapper.vm as any;
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    vm.sampleColorField = "specimen_id";
+    // An automatic default is not an explicit user request.
+    await nextTick();
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    vm.metadataStyleRequested = true;
+    await nextTick();
+    expect(wrapper.get('[role="alert"]').text()).toContain("sample IDs do not exactly match");
+    expect(vm.plotContextExtra).not.toContain("sample IDs do not exactly match");
+    vm.sampleColorField = "__none__";
+    await nextTick();
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
     wrapper.unmount();
   });
 

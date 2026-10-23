@@ -1,13 +1,16 @@
 <template>
-  <div class="node-detail-view" :class="{ embedded }">
+  <div class="node-detail-view ss-panel-theme" :class="{ embedded }">
     <!-- Header -->
     <header class="detail-header">
       <div class="header-left">
         <span class="node-icon">{{ nodeIcon }}</span>
         <div class="header-info">
           <h1>{{ nodeLabel }}</h1>
-          <span class="node-instance-id">Instance ID: {{ nodeId }}</span>
-          <span class="node-type-badge">Canonical node: {{ nodeType }}</span>
+          <details>
+            <summary>Node identity</summary>
+            <span class="node-instance-id">Instance ID: {{ nodeId }}</span>
+            <span class="node-type-badge">Canonical node: {{ nodeType }}</span>
+          </details>
         </div>
       </div>
       <div class="header-actions">
@@ -147,6 +150,8 @@
 import PeakExecutionDetails from "@/components/common/PeakExecutionDetails.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- node outputs and plot payloads vary widely across node families in this inspection view. */
 import { ref, computed, watch, onMounted, provide, nextTick, useId } from "vue";
+import { PLOT_SURFACE } from "@/theme/plotTheme";
+
 import DisabledReason from "@/components/DisabledReason.vue";
 import {
   NODE_DETAIL_STATE_KEY,
@@ -184,6 +189,7 @@ import {
 import { isUserEditableNodeParameter } from "@/utils/nodeParameterVisibility";
 
 const route = useRoute();
+provide(PLOT_SURFACE, "panel");
 const toast = useToast();
 
 const props = withDefaults(

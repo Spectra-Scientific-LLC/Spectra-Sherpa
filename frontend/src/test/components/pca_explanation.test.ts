@@ -106,7 +106,7 @@ describe("PCA explanation focus", () => {
     });
     await flushPromises();
     expect(w.text()).toContain("1 variables highlighted; 1 are outside");
-    expect(w.text()).toContain("Showing 1 of 3 variables");
+    expect(w.text()).toContain("1 / 3 variables shown");
     await w.setProps({ selected: [] });
     expect(w.text()).toContain("Select an observation");
     w.unmount();

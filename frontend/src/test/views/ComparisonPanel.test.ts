@@ -28,7 +28,7 @@ describe('Comparison evaluation qualification', () => {
 
   it('keeps legacy overview descriptive when the scientific authority is present', () => {
     const wrapper = mount(ComparisonPanel, {props: {runs: [run(1), run(2)], metricKeys: ['accuracy'], diff: {accuracy: {'1': .9, '2': .8}}, rankableMetrics: ['accuracy'], scientificComparison: {schema_version: 'spectrasherpa-scientific-comparison/1', items: [], pairs: []}}, global: {plugins: [PrimeVue]}});
-    expect(wrapper.text()).toContain('This overview is descriptive');
+    expect(wrapper.text()).toContain('Descriptive overview');
     expect(wrapper.find('.metric-best, .delta-positive, .delta-negative').exists()).toBe(false);
     wrapper.unmount();
   });

@@ -7,7 +7,7 @@
     :contentStyle="embedded ? undefined : { overflow: 'auto', maxHeight: 'calc(100vh - 110px)' }"
     modal
     :draggable="false"
-    class="quick-plot-modal"
+    class="quick-plot-modal ss-panel-theme"
     :class="{ 'embedded-plot': embedded }"
   >
     <p v-if="evidenceError" role="alert" class="plot-evidence-error">{{ evidenceError }}</p>
@@ -26,6 +26,7 @@ v-model:scale-value="selectedFeatureScale"
         <div v-if="!tableOnly && availablePlots.length > 0" class="control-group">
           <label>{{ selectedPlotKey.startsWith('table_column:') ? 'Column' : 'Plot Type' }}</label>
           <Dropdown
+            panelClass="ss-panel-theme"
             v-model="selectedPlotKey"
             :options="availablePlots"
             optionLabel="label"
@@ -39,6 +40,7 @@ v-model:scale-value="selectedFeatureScale"
           <div class="control-group">
             <label>Horizontal Component</label>
             <Dropdown
+              panelClass="ss-panel-theme"
               v-model="xAxis"
               :options="axisOptions"
               optionLabel="label"
@@ -49,6 +51,7 @@ v-model:scale-value="selectedFeatureScale"
           <div class="control-group">
             <label>Vertical Component</label>
             <Dropdown
+              panelClass="ss-panel-theme"
               v-model="yAxis"
               :options="axisOptions"
               optionLabel="label"
@@ -61,6 +64,8 @@ v-model:scale-value="selectedFeatureScale"
         <SampleMetadataStyleControls
           v-if="showSampleStyleControls"
           v-model:color-value="sampleColorField" v-model:style-value="sampleSymbolField"
+          @update:color-value="metadataStyleRequested = true"
+          @update:style-value="metadataStyleRequested = true"
           :color-options="sampleColorFieldOptions" :style-options="sampleSymbolFieldOptions" />
 
         <!-- Feature axis selectors (generic scatter) -->
@@ -68,6 +73,7 @@ v-model:scale-value="selectedFeatureScale"
           <div class="control-group">
             <label>X Feature</label>
             <Dropdown
+              panelClass="ss-panel-theme"
               v-model="featureXAxis"
               :options="featureAxisOptions"
               optionLabel="label"
@@ -78,6 +84,7 @@ v-model:scale-value="selectedFeatureScale"
           <div class="control-group">
             <label>Y Feature</label>
             <Dropdown
+              panelClass="ss-panel-theme"
               v-model="featureYAxis"
               :options="featureAxisOptions"
               optionLabel="label"
@@ -91,6 +98,7 @@ v-model:scale-value="selectedFeatureScale"
         <div v-if="showRegressionTargetControl" class="control-group">
           <label>Target</label>
           <Dropdown
+            panelClass="ss-panel-theme"
             v-model="regressionTargetIdx"
             :options="regressionTargetOptions"
             optionLabel="label"
@@ -103,6 +111,7 @@ v-model:scale-value="selectedFeatureScale"
           <div class="control-group">
             <label>Spectrum</label>
             <Dropdown
+              panelClass="ss-panel-theme"
               v-model="selectedLibrarySample"
               :options="libraryCompareSampleOptions"
               optionLabel="label"
@@ -197,22 +206,8 @@ v-model:scale-value="selectedFeatureScale"
         />
       </div>
 
-      <div v-if="plotSampling" class="plot-sampling-disclosure" role="status">
-        <strong>Sampled plot:</strong> {{ plotSampling.shown }} of {{ plotSampling.total }}
-        {{ plotSampling.sourceNoun }} ({{ plotSampling.percent }}%).
-        <span v-if="plotSampling.excluded">Excluded: {{ plotSampling.excluded }} source rows.</span>
-        <span v-if="plotSampling.plottedTableOnly">Data view: plotted traces only.</span>
-        <MethodHelp topic="displayExports" label="Preview sampling" />
-      </div>
-
-      <div v-if="metadataGroupingError || explicitGroupingError" class="plot-grouping-notice" role="status">
-        <i class="pi pi-info-circle" aria-hidden="true" />
-        <span>{{ metadataGroupingError || explicitGroupingError }}</span> Showing the score rows without metadata coloring.
-      </div>
-
-      <div v-if="comparisonNotices" class="plot-grouping-notice" role="status">
-        <span>Original (immediate node input): {{ comparisonNotices[0] }}<br />Preprocessed: {{ comparisonNotices[1] }}<br />{{ plotLayout.meta.comparison_scale_notice }}</span>
-      </div>
+      <p v-for="failure in comparisonRefusals" :key="failure" role="alert">{{ failure }}</p>
+      <p v-if="requestedGroupingError" role="alert">{{ requestedGroupingError }}</p>
 
       <!-- Plotly chart -->
       <p v-if="downloadError" role="alert">{{ downloadError }}</p>
@@ -223,6 +218,7 @@ v-model:scale-value="selectedFeatureScale"
           :data="displayPlotData"
           :layout="displayPlotLayout"
           :config="PLOT_CONFIG"
+          :context="plotContextExtra"
           :style="plotCanvasStyle"
           @click="selectMatrixSlice"
         />
@@ -288,7 +284,7 @@ v-model:scale-value="selectedFeatureScale"
 </template>
 
 <script setup lang="ts">
-import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { SCIENTIFIC_COLORS, PLOT_SURFACE } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
 import AxisSetControls from "@/components/data/AxisSetControls.vue";
@@ -298,7 +294,8 @@ import { scientificNumber } from "@/utils/scientificEncoding";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
 import { scientificPlotRefusal } from "@/utils/scientificPlotState";
 /* eslint-disable @typescript-eslint/no-explicit-any -- quick-plot consumes generic backend visualization payloads. */
-import { ref, computed, watch } from "vue";
+import { ref, computed, provide, watch } from "vue";
+
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
 import Button from "primevue/button";
@@ -336,6 +333,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+provide(PLOT_SURFACE, "panel");
 const emit = defineEmits<{
   (e: "update:modelValue", value: boolean): void;
 }>();
@@ -357,25 +355,21 @@ const explicitGroupingError = computed(() => {
 });
 
 const plotRefusal = computed(() => scientificPlotRefusal(plotLayout.value));
-const comparisonNotices = computed(() => plotLayout.value?.meta?.comparison_notices);
+const comparisonRefusals = computed(() => plotLayout.value?.meta?.comparison_refusals ?? []);
+const metadataStyleRequested = ref(false);
+const requestedGroupingError = computed(() =>
+  metadataStyleRequested.value && sampleStyleApplicable.value &&
+  [sampleColorField.value, sampleSymbolField.value].some(value => value && !["none", "__none__"].includes(value))
+    ? metadataGroupingError.value || explicitGroupingError.value : "",
+);
+const plotContextExtra = computed(() => [
+  plotSampling.value?.plottedTableOnly
+    ? `${plotSampling.value.shown} of ${plotSampling.value.total} ${plotSampling.value.sourceNoun}; evenly spaced rows. Data view contains plotted traces only.`
+    : "",
+  requestedGroupingError.value || !sampleStyleApplicable.value ? "" : metadataGroupingError.value || explicitGroupingError.value,
+].filter(Boolean).join(" "));
 
 const plotSampling = computed(() => {
-  const population = (plotLayout.value as any)?.meta?.display_population;
-  if (
-    population?.method === "first_rows" &&
-    (population.total > population.shown || population.excluded > 0)
-  ) {
-    return {
-      shown: population.shown,
-      excluded: population.excluded ?? 0,
-      total: population.total,
-      omitted: population.total - population.shown,
-      percent: ((100 * population.shown) / population.total).toFixed(1),
-      sourceNoun: comparisonNotices.value ? "active preprocessed result rows" : "active result rows",
-      selectionDescription: `Traces are the first active rows in retained order. ${population.excluded ?? 0} of ${population.available ?? population.total} retained rows are excluded by the sample mask.`,
-      plottedTableOnly: false,
-    };
-  }
   if (props.nodeType !== "output.plot") return null;
   const visualization = props.nodeOutput?.ports?.visualization?.value;
   const metadata = visualization?.metadata ?? props.nodeOutput?.metadata;
@@ -385,12 +379,8 @@ const plotSampling = computed(() => {
   if (!Number.isInteger(shown) || !Number.isInteger(total) || shown < 1 || total <= shown) return null;
   return {
     plottedTableOnly: true,
-    excluded: 0,
-    selectionDescription: "Traces were selected at evenly spaced source rows.",
     shown,
     total,
-    omitted: total - shown,
-    percent: (100 * shown / total).toFixed(1),
     sourceNoun: visualization?.plot_type === "spectra" ? "source spectra" : "source samples",
   };
 });
@@ -432,9 +422,12 @@ const sampleStylePlotKeys = new Set([
   "classification_scores", "spectra_overlay", "scientific_spectral_overlay",
   "generic_scatter", "generic_boxplot",
 ]);
-const showSampleStyleControls = computed(() =>
+const sampleStyleApplicable = computed(() =>
   !props.tableOnly && sampleStylePlotKeys.has(selectedPlotKey.value) &&
-  !["component_concentrations", "component_spectra"].includes(props.nodeOutput?.metadata?.scientific_matrix_role ?? "") &&
+  !["component_concentrations", "component_spectra"].includes(props.nodeOutput?.metadata?.scientific_matrix_role ?? ""),
+);
+const showSampleStyleControls = computed(() =>
+  sampleStyleApplicable.value &&
   (sampleColorFieldOptions.value.length > 0 || sampleSymbolFieldOptions.value.length > 0),
 );
 
@@ -1059,11 +1052,6 @@ async function downloadPlot() {
 
 <style scoped>
 .feature-paging { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; color: var(--ss-panel-secondary); }
-.embedded-plot .feature-paging { color: var(--text-color); }
-.embedded-plot .plot-controls, .embedded-plot .data-table-container { background: var(--surface-card); color: var(--text-color); }
-.embedded-plot .control-group label, .embedded-plot .stat-item, .embedded-plot .stat-item strong { color: var(--text-color); }
-.embedded-plot :deep(.p-dropdown) { background: var(--surface-card); border-color: var(--surface-border); color: var(--text-color); }
-.embedded-plot :deep(.p-dropdown-label) { color: var(--text-color); }
 /* Inline result plots fit beside their controls instead of filling 70% of a tall screen. */
 .embedded-plot .plot-container { height: clamp(420px, 60vh, 680px); min-height: 420px; }
 .quick-plot-modal :deep(.p-dialog-content) {
@@ -1090,27 +1078,6 @@ async function downloadPlot() {
   flex-wrap: wrap;
 }
 
-.plot-sampling-disclosure {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--ss-warning);
-  background: var(--ss-panel-warning-surface);
-  color: var(--ss-panel-warning);
-  font-size: 0.85rem;
-  line-height: 1.45;
-}
-
-.plot-grouping-notice {
-  display: flex;
-  gap: 0.45rem;
-  align-items: flex-start;
-  padding: 0.55rem 0.8rem;
-  border-bottom: 1px solid var(--ss-panel-border);
-  background: var(--ss-panel);
-  color: var(--ss-panel-secondary);
-  font-size: 0.82rem;
-  line-height: 1.4;
-}
-
 .control-group {
   display: flex;
   align-items: center;
@@ -1125,10 +1092,6 @@ async function downloadPlot() {
 
 .plot-controls :deep(.control-group > label) {
   color: var(--ss-panel-secondary);
-}
-
-.embedded-plot .plot-controls :deep(.control-group > label) {
-  color: var(--text-color);
 }
 
 .plot-type-dropdown {

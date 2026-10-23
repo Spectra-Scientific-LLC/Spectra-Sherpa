@@ -93,9 +93,7 @@
     <section class="goal-starter__section" aria-labelledby="goal-starter-new-title">
       <header class="goal-starter__header">
         <h2 id="goal-starter-new-title">{{ activePlan ? "Start a new goal" : "What would you like to do?" }}</h2>
-        <p class="goal-starter__hint">
-          Mention your data if known, for example “predict moisture in corn NIR spectra”.
-        </p>
+
       </header>
       <label for="goal-starter-text" class="sr-only">Your goal</label>
       <Textarea
@@ -106,6 +104,7 @@
         :maxlength="GOAL_MAX_LENGTH"
         class="goal-starter__input"
         data-test="starter-goal"
+        placeholder="For example, predict moisture in corn NIR spectra"
       />
       <div v-if="overview?.examples.length" class="goal-examples" aria-label="Example goals">
         <button

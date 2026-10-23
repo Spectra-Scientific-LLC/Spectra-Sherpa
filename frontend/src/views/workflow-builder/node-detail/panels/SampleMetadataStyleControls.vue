@@ -2,6 +2,7 @@
   <div v-if="colorOptions.length" class="control-group">
     <label>Color by metadata</label>
     <Dropdown
+      panelClass="ss-panel-theme"
       :model-value="colorValue"
       :options="colorOptions"
       optionLabel="label"
@@ -12,6 +13,7 @@
   <div v-if="styleOptions.length" class="control-group">
     <label>{{ styleLabel }} by metadata</label>
     <Dropdown
+      panelClass="ss-panel-theme"
       :model-value="styleValue"
       :options="styleOptions"
       optionLabel="label"

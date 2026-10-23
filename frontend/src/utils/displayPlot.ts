@@ -1,5 +1,5 @@
 import type { DisplayPreferences } from "@/composables/useDisplayPreferences";
-import { themedPlotLayout } from "@/theme/plotTheme";
+import { themedPlotLayout, themedPlotTrace, type PlotSurface } from "@/theme/plotTheme";
 
 type Trace = Record<string, unknown>;
 type Layout = Record<string, unknown>;
@@ -80,6 +80,7 @@ function sampled(trace: Trace, maxRows: number, priorityIds: ReadonlySet<string>
 export function displayPlot(
   data: Trace[], layout: Layout, prefs: DisplayPreferences,
   priorityIds: ReadonlySet<string> = new Set(),
+  surface: PlotSurface = "screen",
 ) {
   let omitted = 0;
   let omittedTraces = 0;
@@ -132,13 +133,13 @@ export function displayPlot(
           : 6 * prefs.markerScale,
       };
     }
-    return copy;
+    return themedPlotTrace(copy, surface);
   }).filter((trace, index) => {
     if (!markerCounts[index] || markerBudgets[index]) return true;
     omitted += markerCounts[index];
     return false;
   });
-  const baseLayout: Layout = cleanPlotLayout(themedPlotLayout(layout, prefs.palette));
+  const baseLayout: Layout = cleanPlotLayout(themedPlotLayout(layout, prefs.palette, surface));
   return {
     data: shown,
     layout: baseLayout,

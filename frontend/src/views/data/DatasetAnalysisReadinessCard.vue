@@ -140,7 +140,7 @@ const expandedDetails = computed(() => {
     <summary class="analysis-readiness__heading">
       <div>
         <h3>Analysis readiness</h3>
-        <span
+        <span v-if="loading || previewError"
           title="Checks declared data shape, target, source, and technique metadata. Scientific sufficiency is checked when the workflow runs."
         >
           {{
@@ -148,9 +148,7 @@ const expandedDetails = computed(() => {
               ? "Recomputing target-choice preview"
               : isTargetPreview && previewError
                 ? "Target-choice preview unavailable"
-                : isTargetPreview
-                  ? "Target-choice preview"
-                  : "Structural profile"
+                : ""
           }}
         </span>
       </div>

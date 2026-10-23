@@ -4,11 +4,12 @@
     <p v-if="error" role="alert">{{ error }}</p>
     <template v-if="review">
       <h3>Use existing fitted model</h3>
-      <p>Artifact {{ artifactUid || `canonical:${canonicalArtifactId}` }}. This decision does not refit or add held-out samples.</p>
+      <p>No refit; held-out population unchanged.</p>
+      <details><summary>Artifact identity</summary>{{ artifactUid || `canonical:${canonicalArtifactId}` }}</details>
       <p>Fit on {{ review.population.fitted_count ?? 'an unrecorded number of' }} development samples. Held-out count: {{ review.population.held_out_count ?? 'not recorded' }}.</p>
       <p>{{ review.guidance.reason }}</p>
-      <p v-if="review.fitting_plan?.state === 'complete_declared_development_fit'" role="status">All {{ review.fitting_plan.declared_development_count }} declared development samples from saved Run {{ review.source_run_id }} are already fitted in this exact artifact. Reuse it; an unchanged recipe and population do not need another fit.</p>
-      <p v-else>Fitted state is available, but full coverage of a declared development population is not established here. Do not infer it from the fitted sample count.</p>
+      <p v-if="review.fitting_plan?.state === 'complete_declared_development_fit'" role="status">Complete development fit · {{ review.fitting_plan.declared_development_count }} samples · Run {{ review.source_run_id }}</p>
+      <p v-else>Full development-population coverage is not established.</p>
       <details v-if="!canonicalArtifactId"><summary>Change the final fitting recipe or population (optional)</summary>
         <ol><li>Open the training workflow and review its current data selection, exclusions, preprocessing and component count against the saved source run.</li><li>Keep validation and outlier-challenge samples excluded. Any deliberate population change needs a new recorded evaluation and review.</li><li>Save the intended recipe and explicitly click Run. This existing workflow action fits the model and saves a new run/artifact; opening the sheet never runs it.</li><li>Inspect the new run and return to Review for promotion for its new artifact. Previous qualification does not transfer automatically.</li></ol>
         <button v-if="review.workflow_id" type="button" @click="openWorkflow">Open workflow to prepare final fit</button>

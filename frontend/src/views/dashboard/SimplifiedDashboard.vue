@@ -19,7 +19,7 @@
       <WorkspaceContextItem
         v-if="activeDashboardTab === 'starter'"
         label="Starter"
-        :value="activeGoalProject ? `${activeGoalProject.name}: ${activeGoalProject.goal_plan?.intent_label}` : 'Describe a goal'"
+        :value="activeGoalProject ? `${activeGoalProject.name}: ${activeGoalProject.goal_plan?.intent_label}` : ''"
       />
       <WorkspaceContextItem
         v-else

@@ -1,8 +1,7 @@
 <template>
   <section aria-label="Local AI exchanges">
     <h2>Local AI exchanges</h2>
-    <p>Last 20 basic BYOK requests in this session. History clears when the backend exits.
-      Secrets are redacted; records may still contain scientific information you typed.</p>
+    <p>Last 20 requests · session only <MethodHelp topic="localChat" label="Exchange history" context="History clears when the backend exits. Secrets are redacted, but scientific content may remain." /></p>
     <Button label="Refresh exchanges" @click="refresh" />
     <Button label="Clear exchanges" :disabled="!exchanges.length" @click="clear" />
     <p v-if="error" role="alert">{{ error }}</p>
@@ -15,6 +14,7 @@
       <h3>Instructions and current view</h3><pre>{{ section(entry.request, 'system') }}</pre>
       <h3>Provider response</h3><pre>{{ entry.response || 'No response received.' }}</pre>
       <details><summary>Request details (redacted)</summary><pre>{{ entry.request || 'No provider request sent.' }}</pre></details>
+      <p>May contain scientific information you typed.</p>
       <Button label="Save exchange" @click="save(entry)" />
     </details>
   </section>
@@ -22,6 +22,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import MethodHelp from '@/components/MethodHelp.vue';
 import Button from 'primevue/button';
 import api from '@/api/client';
 import { downloadText } from '@/utils/download';

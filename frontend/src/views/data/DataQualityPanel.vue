@@ -83,7 +83,7 @@
       <div class="dq-flags">
         <span class="dq-range-label">QC Checks</span>
         <div class="dq-flag-list">
-          <div v-for="flag in qcFlags" :key="flag.message" class="dq-flag">
+          <div v-for="flag in qcFlags.filter(item => item.severity !== 'success')" :key="flag.message" class="dq-flag">
             <Tag
               :severity="flag.severity"
               :value="
@@ -93,6 +93,10 @@
             />
             <span class="dq-flag-message">{{ flag.message }}</span>
           </div>
+          <details v-if="qcFlags.some(item => item.severity === 'success')">
+            <summary>{{ qcFlags.filter(item => item.severity === 'success').length }} checks passed</summary>
+            <ul><li v-for="flag in qcFlags.filter(item => item.severity === 'success')" :key="flag.message">{{ flag.message }}</li></ul>
+          </details>
         </div>
       </div>
     </div>

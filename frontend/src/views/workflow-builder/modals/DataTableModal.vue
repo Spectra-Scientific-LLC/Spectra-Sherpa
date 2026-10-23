@@ -79,9 +79,15 @@
             <strong>{{ filteredRowCount }}</strong> matched
           </span>
           <span v-if="previewTableData.length < dataShape.rows" class="stat-item warning">
-            Showing first {{ previewTableData.length }} of {{ dataShape.rows }} rows; filters apply
-            to this preview
+            {{ previewTableData.length }} previewed
           </span>
+          <MethodHelp
+            topic="displayExports"
+            label="Table and export scope"
+            :context="previewTableData.length < dataShape.rows
+              ? `Filters apply to the first ${previewTableData.length} rows. CSV exports all ${dataShape.rows} active rows.`
+              : `CSV exports all ${dataShape.rows} active rows, regardless of table filters.`"
+          />
         </div>
 
         <Button
@@ -93,7 +99,6 @@
         />
       </div>
 
-      <span class="export-scope">CSV: {{ dataShape.rows }} active rows <MethodHelp topic="displayExports" label="CSV export scope" /></span>
       <p v-if="cohort.population" role="status">Active cohort: {{ cohort.population.total }} of {{ cohort.population.available }} retained rows; {{ cohort.population.excluded }} excluded. {{ cohort.population.shown_features }} of {{ cohort.population.available_features }} features; {{ cohort.population.excluded_features }} excluded.</p>
       <p v-if="exportError" role="alert">{{ exportError }}</p>
       <p v-if="tableProjectionError" role="alert">{{ tableProjectionError }}</p>

@@ -11,7 +11,6 @@
           @blur="saveRunName"
           @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
         />
-        <span>Run #{{ detail.run.id }}</span>
         <Tag :value="detail.run.status" />
         <span :title="detail.run.executed_at">{{ detail.run.run_kind }} · {{ formatTimestamp(detail.run.executed_at) }}</span>
       </div>
@@ -20,7 +19,7 @@
     <div class="run-detail__actions" role="group" aria-label="Run actions">
       <Button icon="pi pi-arrow-left" label="History" class="p-button-text" aria-label="Back to Runs" @click="backToRuns" />
       <Button v-if="detail?.run.workflow_id && detail.run.project_id && !loading && !error"
-        icon="pi pi-sitemap" :label="detail.run.workflow_name ? `Workflow: ${detail.run.workflow_name}` : 'Workflow'" class="p-button-text" @click="openWorkflow" />
+        icon="pi pi-sitemap" label="Workflow" :title="detail.run.workflow_name || 'Source workflow'" :aria-label="detail.run.workflow_name ? `Workflow: ${detail.run.workflow_name}` : 'Workflow'" class="p-button-text" @click="openWorkflow" />
       <Button v-if="detail?.run.workflow_id && !loading && !error" icon="pi pi-file" label="Report"
         @click="openReport" />
       <Button v-if="detail?.run.status === 'completed' && detail.run.source_type !== 'paired_evaluation' && !loading && !error" icon="pi pi-send" label="Open Deploy"
@@ -44,10 +43,10 @@
       </p>
       <SavedPairedEvaluation v-if="detail.run.source_type === 'paired_evaluation'" :run-id="detail.run.id" />
       <template v-else>
-      <ModelSummaryCard :summary="modelSummary" :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)"
-        @edit-selection="openWorkflow" />
       <p v-if="summaryError" role="status" class="summary-error">{{ summaryError }}</p>
       <SelectButton :model-value="tab" :options="tabs" aria-label="Run view" @update:model-value="setTab" />
+      <ModelSummaryCard :summary="modelSummary" :compact="tab === 'Results'"
+        :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
       <section v-if="tab === 'Summary'" class="summary">
         <dl>
           <dt>Executed</dt><dd :title="detail.run.executed_at">{{ formatTimestamp(detail.run.executed_at) }}</dd>

@@ -525,9 +525,9 @@ describe("Persistent run inspection", () => {
     });
     const { wrapper } = await open('?project=1&view=Summary');
     expect((wrapper.get('[aria-label="Run name"]').element as HTMLInputElement).value).toBe('PLS — abc12345');
-    expect(wrapper.get('.run-detail__identity').text()).toContain('Run #42');
+    expect(wrapper.get('.run-detail__identity').text()).not.toContain('Run #42');
     expect(wrapper.get('.summary').text()).toContain('PLS — abc12345');
-    expect(wrapper.get('[aria-label="Run actions"]').text()).toContain('Workflow: Peak Find + PLS');
+    expect(wrapper.get('[aria-label="Workflow: Peak Find + PLS"]').text()).toBe('Workflow');
     wrapper.unmount();
   });
   it("shows run identity and grouped actions before the final evidence warning", async () => {

@@ -90,10 +90,7 @@
             @click="addSample"
           />
         </div>
-        <p>
-          Define the materials expected before acquisition. Measured samples remain an immutable
-          dataset version.
-        </p>
+        <details><summary>Planning and measured data</summary><p>Plans define expected materials; measured samples remain an immutable dataset version.</p></details>
         <div v-if="draft.samples.length" class="editor-grid sample-grid">
           <template v-for="sample in draft.samples" :key="sample.sample_id">
             <InputText v-model="sample.sample_id" aria-label="Sample ID" placeholder="Sample ID" />
@@ -245,7 +242,7 @@
             />
           </div>
         </div>
-        <p>Click a well to include or exclude it, then assign a planned sample or mixture.</p>
+        <p>Select wells and assign samples or mixtures.</p>
         <PlateMap96Well
           :wells="displayWells"
           :selected-well="selectedWell"
@@ -357,9 +354,7 @@
         </div>
         <div class="match-summary">
           <Tag :value="`${draft.matching.matches?.length ?? 0} retained matches`" severity="info" />
-          <span
-            >Saved matches take precedence; unmatched measured rows use planned plate order.</span
-          >
+          <details><summary>Matching order</summary>Saved matches take precedence; unmatched measured rows use planned plate order.</details>
         </div>
       </section>
 

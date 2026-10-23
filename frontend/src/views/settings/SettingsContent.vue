@@ -6,8 +6,6 @@
     <div v-if="isHostedPro" class="demo-region">
       <div class="demo-notice" role="status">
         <h3>Hosted providers are managed by your operator</h3>
-        <p>Provider keys and deployment connections are not configured from this workspace.
-          Your data disclosure permissions and acquisition preferences remain editable below.</p>
       </div>
       <ApiKeysTab hitran-only />
       <IntegrationsTab privacy-only />
@@ -16,10 +14,6 @@
       <div v-if="showGuidanceSettings" class="my-preferences">
         <span class="eyebrow">Your Account</span>
         <h3 class="my-preferences-title">My preferences</h3>
-        <p class="my-preferences-subtitle">
-          These settings are personal to your account and can be changed even on a managed
-          deployment.
-        </p>
         <GuidanceSettingsSection class="pro-guidance" />
       </div>
     </div>
@@ -28,15 +22,7 @@
         <div class="demo-notice-body">
           <span class="eyebrow">Managed</span>
           <h3>Deployment settings managed by administrator</h3>
-          <p>
-            LLM providers and integrations are pre-configured for this environment. Add your own
-            HITRAN key below to use live HITRAN synthesis; shared deployment keys are not provided
-            for HITRAN.
-          </p>
-          <p class="demo-hint">
-            In a self-hosted or local installation, this page also lets you configure LLM providers,
-            API keys, and data-privacy preferences.
-          </p>
+          <p>HITRAN requires your own key.</p>
         </div>
       </div>
 
@@ -48,10 +34,6 @@
       <div v-if="showGuidanceSettings" class="my-preferences">
         <span class="eyebrow">Your Account</span>
         <h3 class="my-preferences-title">My preferences</h3>
-        <p class="my-preferences-subtitle">
-          These settings are personal to your account and can be changed even on a managed
-          deployment.
-        </p>
         <GuidanceSettingsSection class="demo-guidance" />
       </div>
     </div>

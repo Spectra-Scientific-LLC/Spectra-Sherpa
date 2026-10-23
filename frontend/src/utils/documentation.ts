@@ -1,6 +1,8 @@
 /** Shared documentation destinations. Topic paths are source-checked in tests. */
 export const DOCS_BASE_URL = "https://docs.spectrascientific.ai";
 export const METHOD_TOPICS = {
+  workflow: "workflows/build-a-workflow/#your-first-workflow-step-by-step",
+  comparison: "chemometrics/validation-application/#compare-saved-models-in-a-project",
   componentSelection: "chemometrics/validation-design/#component-selection",
   qualification: "chemometrics/validation-application/#qualification-and-prediction-intervals",
   diagnostics: "chemometrics/validation-application/#diagnostic-review",

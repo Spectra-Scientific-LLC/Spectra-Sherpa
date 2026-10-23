@@ -29,6 +29,13 @@ port types, operational status and user-selected sheet colors have separate
 roles. Saved sheet-color selections are not rewritten when plot preferences
 change. Existing blue actions and purple workspace accents remain distinct.
 
+Detailed View and Quick Plot opt into `ss-panel-theme`, the shared dark context
+in `controls.css`. It aliases interface roles to the existing panel tokens for
+fields, buttons, tables and labels; teleported dropdown menus carry that same
+class. Do not add embedded-view light overrides or individual control palettes.
+Both views provide the typed `PLOT_SURFACE` context as `panel`, including nested
+and legacy charts. Other pages retain their existing light context.
+
 ## Scientific encoding
 
 `categoricalPalette()` and `seriesPalette()` retain the established default
@@ -52,10 +59,12 @@ identification alongside color.
 
 ## Screen and offline exports
 
-`themedPlotLayout()` supplies explicit light plot paper and readable title,
-axis and legend text. Full renders, layout-only redraws, PNG downloads and
-report capture use that same policy. Scientific reference geometry and scale
-limits remain unchanged. Static SVG validation figures use `PRINT_PLOT_THEME`.
+`themedPlotLayout()` supplies explicit paper and readable title, axis and legend
+text for the declared surface. `PANEL_PLOT_THEME` derives dark paper and text
+from the panel tokens, without changing categorical colors, numeric scales or
+reference geometry. Full renders, layout-only redraws and direct PNG downloads
+retain that surface. Report capture stays light; standalone print and static SVG
+figures use `PRINT_PLOT_THEME`, independent of the current workspace panel.
 
 Standalone HTML embeds the public token stylesheet; it does not fetch a theme
 or require an internet connection. `themeToken()` resolves the bundled CSS for
@@ -77,6 +86,9 @@ dark-panel text, status messages, primary controls and both gradient stops of
 every node header. Disabled controls are distinct from ordinary muted labels.
 Input boundaries and focus rings require at least 3:1 against their declared
 light surfaces; decorative separators are not control boundaries.
+The high-contrast categorical palette keeps the same category colors across
+dark panels and light reports, with at least 3:1 against both plot papers.
+It must not silently remap category identity when a figure is exported.
 These tests are not a claim of full WCAG conformance: inheritance, overlays,
 dynamic backgrounds, keyboard focus and real pixels still need Chrome review.
 
@@ -89,3 +101,17 @@ execution. Do not claim a passing plot as a passing table.
 
 See the [PR 2 qualification record](theme-qualification.md) for observed
 coverage, compatibility exceptions and remaining limitations.
+
+## Compact plot context
+
+PlotlyChart combines retained population metadata and display-setting limits
+into one collapsed MethodHelp control. Quick Plot and Detailed View use that
+same renderer. Matching Original/Preprocessed counts are stated once; different
+counts and exclusions remain distinct. Independent-axis/color-scale context
+stays in the help text, not a second permanent banner.
+
+Optional metadata-styling unavailability belongs in that context when no
+styling was requested. Failed requested styling, missing comparison input and
+plot refusals remain visible. Never infer population identity from equal row
+counts: the disclosure says only that the counts match. Data-table pagination
+and actual execution errors are not replaced by a working plot or hidden help.

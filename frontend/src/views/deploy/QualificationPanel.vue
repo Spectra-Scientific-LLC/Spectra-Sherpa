@@ -8,7 +8,7 @@
     <p v-if="!records.length && !busy">No qualification assessment is retained for this workflow.</p>
     <article v-for="record in records" :key="record.record_digest">
       <h4>{{ record.kind === 'assessment' ? record.payload.assessment : record.payload.decision }}</h4>
-      <p>{{ record.record_digest }}</p>
+
       <p v-if="record.kind === 'assessment'">Population: {{ record.payload.context?.intended_population }} · Policy: {{ record.payload.policy?.policy_name }} {{ record.payload.policy?.policy_version }}</p>
       <ul v-if="record.kind === 'assessment'">
         <li v-for="criterion in record.payload.criteria" :key="criterion.name">{{ criterion.name }}: {{ criterion.state }} — {{ criterion.detail }}</li>
@@ -18,11 +18,11 @@
         Sampling independence: {{ record.payload.calculation.independence.sampling_independence_status }}.
         {{ record.payload.calculation.independence.limitation }}
       </p>
-      <details><summary>Exact retained evidence and assumptions</summary><pre>{{ JSON.stringify(record.payload, null, 2) }}</pre></details>
+      <details><summary>Exact retained evidence and assumptions</summary><p>{{ record.record_digest }}</p><pre>{{ JSON.stringify(record.payload, null, 2) }}</pre></details>
       <button v-if="record.kind === 'assessment'" type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy" @click="selectReview(record)">Review this assessment</button>
     </article>
     <fieldset v-if="review">
-      <legend>Human decision for {{ review.record_digest }}</legend>
+      <legend>Review assessment</legend>
       <p>Intended use: {{ review.payload.context.intended_use }}</p>
       <p>Population: {{ review.payload.context.intended_population }}</p>
       <p>Instrument: {{ review.payload.context.instrument_id || 'Unavailable' }}</p>
@@ -34,7 +34,7 @@
     </fieldset>
     <details v-if="canonicalArtifactId">
       <summary>Assess an independent validation cohort</summary>
-      <p>Prepare a laboratory policy below, or load an existing policy under Advanced.</p>
+
       <label>Dataset <select v-model="experimentId" @change="loadFiles"><option :value="null">Select dataset</option><option v-for="experiment in experiments" :key="experiment.id" :value="experiment.id">{{ experiment.name }}</option></select></label>
       <label>Reference file <select v-model="fileId"><option :value="null">Select file</option><option v-for="file in files" :key="file.id" :value="file.id">{{ file.file_path }} ({{ file.stage }})</option></select></label>
       <label>Asset identity, if needed <input v-model="assetId" /></label>

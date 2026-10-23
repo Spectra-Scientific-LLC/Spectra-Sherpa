@@ -94,13 +94,13 @@
               <span class="meta-key">Title</span>
               <span class="meta-val">{{ dataStore.catalogDatasetInfo.file_metadata.name }}</span>
             </div>
-            <div v-if="dataStore.catalogDatasetInfo.n_samples" class="meta-row">
+            <div v-if="!catalogBoxPlotData.length && dataStore.catalogDatasetInfo.n_samples" class="meta-row">
               <span class="meta-key">Samples</span>
               <span class="meta-val">{{
                 dataStore.catalogDatasetInfo.n_samples.toLocaleString()
               }}</span>
             </div>
-            <div v-if="dataStore.catalogDatasetInfo.n_features" class="meta-row">
+            <div v-if="!catalogBoxPlotData.length && dataStore.catalogDatasetInfo.n_features" class="meta-row">
               <span class="meta-key">Features</span>
               <span class="meta-val">{{
                 dataStore.catalogDatasetInfo.n_features.toLocaleString()

@@ -19,10 +19,11 @@
         @grid-change="onSourceOrGridChange"
         @preview-change="invalidatePreview"
       />
-      <div class="synthesis-note" :class="{ warn: isHitranSource(settings.source) && !hitranAvailable }">
+      <div v-if="isHitranSource(settings.source) && !hitranAvailable" class="synthesis-note warn" role="alert">
         <i class="pi pi-info-circle" />
         <span>{{ sourceStatusText }}</span>
       </div>
+      <MethodHelp v-else :topic="isHitranSource(settings.source) ? 'hitran' : 'referenceLibrary'" label="Synthesis source" :context="sourceStatusText" />
       <div v-if="persistenceWarning" class="synthesis-note warn">
         <i class="pi pi-exclamation-triangle" />
         <span>{{ persistenceWarning }}</span>
@@ -180,7 +181,7 @@
       </div>
     </Panel>
 
-    <Panel header="Concentration Profiles" toggleable>
+    <Panel header="Concentration Profiles" toggleable :collapsed="!selectedComponents.length">
       <div v-if="selectedComponents.length" class="curve-list">
         <div
           v-for="(component, index) in selectedComponents"
@@ -309,20 +310,18 @@
       />
     </Panel>
 
-    <Panel header="Component Spectra Review" toggleable>
+    <Panel header="Component Spectra Review" toggleable :collapsed="!selectedComponents.length">
       <PlotlyChart
         :data="componentPreviewTraces"
         :layout="componentPreviewLayout"
         :config="plotConfig"
         emptyMessage="Load one or more component spectra to preview them."
       />
-      <div class="synthesis-note">
-        <i class="pi pi-chart-line" />
-        <span>Review intensities are normalized 0-1 for visual comparison; synthesis uses the physical coefficients from the downloaded spectra.</span>
-      </div>
+      <span>Normalized intensity (0–1)</span>
+      <MethodHelp topic="referenceLibrary" label="Spectrum preview" context="Preview intensities are normalized; synthesis uses the downloaded physical coefficients." />
     </Panel>
 
-    <Panel header="Synthesis Review" toggleable>
+    <Panel header="Synthesis Review" toggleable :collapsed="!selectedComponents.length">
       <div v-if="commonOverlapProblem" class="synthesis-note error output-size-note">
         <i class="pi pi-ban" />
         <span>
@@ -530,7 +529,7 @@
       </div>
     </Panel>
 
-    <Panel header="Save" toggleable>
+    <Panel header="Save" toggleable :collapsed="!previewResult">
       <div class="save-row">
         <div class="field save-name">
           <label for="synth-name">Dataset name</label>
@@ -577,6 +576,7 @@ import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import DisabledReason from "@/components/DisabledReason.vue";
+import MethodHelp from "@/components/MethodHelp.vue";
 import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import Button from "primevue/button";

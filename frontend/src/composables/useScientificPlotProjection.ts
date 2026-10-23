@@ -968,7 +968,8 @@ function preprocessingComparison(input: any, output: any, heatmap: boolean, colo
     };
     const notice = `${shown} of ${total} active rows shown${shown < total ? `; first ${shown} rows, ${total - shown} unplotted` : ""}${population ? `; ${population.excluded} rows and ${population.excluded_features} features excluded` : ""}${color?.notice ? `; ${color.notice}` : ""}`;
     return { ...plot,
-      layout: { ...plot.layout, meta: { ...plot.layout.meta, display_population: displayPopulation } },
+      layout: { ...plot.layout, meta: { ...plot.layout.meta, display_population: displayPopulation,
+        ...(color?.notice ? { color_encoding_notice: color.notice } : {}) } },
       data: plot.data.map((trace: any) => ({ ...trace,
       meta: { ...trace.meta, ...(population && trace.meta?.source_row_index != null
         ? { source_row_index: population.source_row_indices[trace.meta.source_row_index] } : {}) },
@@ -976,6 +977,10 @@ function preprocessingComparison(input: any, output: any, heatmap: boolean, colo
   };
   const original = panel(input, "immediate node input");
   const processed = panel(output, "preprocessed output");
+  const comparisonRefusals = !original.data.length && !processed.data.length && original.notice === processed.notice
+    ? [`Both panels: ${original.notice}`]
+    : [!original.data.length ? `Original: ${original.notice}` : "",
+      !processed.data.length ? `Preprocessed: ${processed.notice}` : ""].filter(Boolean);
   const scaleNotice = heatmap
     ? "Panels use independent axes and color scales; matching colors do not imply equal values."
     : "Panels use independent axes; matching heights do not imply equal values.";
@@ -1007,7 +1012,12 @@ function preprocessingComparison(input: any, output: any, heatmap: boolean, colo
           preprocessed: processed.layout.meta?.display_population ?? null,
         },
         comparison_notices: [original.notice, processed.notice],
+        comparison_refusals: comparisonRefusals,
         comparison_scale_notice: scaleNotice,
+        comparison_color_notices: {
+          original: original.layout.meta?.color_encoding_notice ?? null,
+          preprocessed: processed.layout.meta?.color_encoding_notice ?? null,
+        },
       },
     },
   };

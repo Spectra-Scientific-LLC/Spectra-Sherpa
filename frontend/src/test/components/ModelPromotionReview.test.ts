@@ -50,7 +50,7 @@ describe('shared promotion review', () => {
     vi.mocked(api.get).mockResolvedValue({ data: { ...snapshot, workflow_id: 12, source_run_id: 7, fitting_plan: { state: 'complete_declared_development_fit', declared_development_count: 174 } } });
     const wrapper = mount(Review, { props: { artifactUid: 'model', projectId: 1 }, global: { stubs } });
     await flushPromises();
-    expect(wrapper.text()).toContain('All 174 declared development samples');
+    expect(wrapper.text()).toContain('Complete development fit · 174 samples');
     await wrapper.findAll('button').find(b => b.text() === 'Open workflow to prepare final fit')!.trigger('click');
     await flushPromises();
     expect(navigate).toHaveBeenCalledWith({ path: '/workflow', query: { workflow_id: 12, project_id: 1, promotion_artifact: 'model', promotion_source_run: 7 } });

@@ -8,10 +8,13 @@
       <span v-if="matrix.truncated || displayedRows.length < matrix.matrix.length">
         of {{ matrix.total_rows.toLocaleString() }} x {{ matrix.total_cols.toLocaleString() }}
       </span>
+      <MethodHelp
+        v-if="displayedRows.length < matrix.matrix.length"
+        topic="displayExports"
+        label="Table display limits"
+        context="Display Settings limit the rows shown. Dataset values and exports are unchanged."
+      />
     </div>
-    <p v-if="displayedRows.length < matrix.matrix.length" role="status">
-      Display limit: {{ displayedRows.length }} of {{ matrix.matrix.length }} fetched rows. Increase Display Settings to show more; dataset and exports are unchanged.
-    </p>
     <div ref="scrollEl" class="matrix-scroll" @scroll="onScroll">
       <table class="matrix-table">
         <thead>
@@ -57,6 +60,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, ref, watch } from "vue";
 import { displayNumber, useDisplayPreferences } from "@/composables/useDisplayPreferences";
 import type { DataMatrixResponse } from "@/stores/data";

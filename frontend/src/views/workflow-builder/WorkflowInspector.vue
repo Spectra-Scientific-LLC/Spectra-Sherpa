@@ -1304,11 +1304,11 @@
       </div>
 
       <!-- Read-only Metadata View (for non-data-source nodes) -->
-      <div
+      <details
         v-else-if="selectedNode && spectraMetadata && selectedResultShowsMetadata"
         class="inspector-metadata readonly"
       >
-        <span class="section-label">Metadata (read-only)</span>
+        <summary class="section-label">Metadata</summary>
         <div class="metadata-preview">
           <div v-if="spectraSpeciesNames.length" class="meta-preview-item">
             <span class="meta-key">Species:</span>
@@ -1355,7 +1355,7 @@
             @click="showMetadataModal = true"
           />
         </div>
-      </div>
+      </details>
     </template>
   </div>
 

@@ -12,6 +12,7 @@
         <div v-if="state.hasOutput && presentationOptions.length > 1" class="plot-controls">
           <label for="detail-plot-presentation">Scientific result</label>
           <Dropdown
+            panelClass="ss-panel-theme"
 id="detail-plot-presentation" v-model="selectedPresentationId"
             :options="presentationOptions" option-label="label" option-value="value" />
         </div>
@@ -85,6 +86,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>X Axis</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="pcaXAxis"
                         :options="pcaXAxisOptions"
                         optionLabel="label"
@@ -95,6 +97,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>Y Axis</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="pcaYAxis"
                         :options="pcaYAxisOptions"
                         optionLabel="label"
@@ -116,6 +119,7 @@ embedded :model-value="true"
                     >
                       <label>Color by</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="scoreColorMode"
                         :options="state.scoreColorOptions"
                         optionLabel="label"
@@ -145,6 +149,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>X Axis</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="pcaXAxis"
                         :options="pcaXAxisOptions"
                         optionLabel="label"
@@ -155,6 +160,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>Y Axis</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="pcaYAxis"
                         :options="pcaYAxisOptions"
                         optionLabel="label"
@@ -204,11 +210,11 @@ embedded :model-value="true"
                   <div class="plot-controls">
                     <div class="control-group">
                       <label>Horizontal Component</label>
-                      <Dropdown v-model="pcaXAxis" :options="pcaXAxisOptions" optionLabel="label" optionValue="value" optionDisabled="disabled" />
+                      <Dropdown panelClass="ss-panel-theme" v-model="pcaXAxis" :options="pcaXAxisOptions" optionLabel="label" optionValue="value" optionDisabled="disabled" />
                     </div>
                     <div class="control-group">
                       <label>Vertical Component</label>
-                      <Dropdown v-model="pcaYAxis" :options="pcaYAxisOptions" optionLabel="label" optionValue="value" optionDisabled="disabled" />
+                      <Dropdown panelClass="ss-panel-theme" v-model="pcaYAxis" :options="pcaYAxisOptions" optionLabel="label" optionValue="value" optionDisabled="disabled" />
                     </div>
                   </div>
                   <PlotlyChart
@@ -325,6 +331,7 @@ embedded :model-value="true"
                     <div class="control-group mcr-candidate-picker">
                       <label>Review Target / Component Pair</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="selectedMcrCandidate"
                         :options="mcrCandidateOptions"
                         optionLabel="label"
@@ -502,6 +509,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>X Axis</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="pcaXAxis"
                         :options="state.pcaAxisOptions"
                         optionLabel="label"
@@ -511,6 +519,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>Y Axis</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="pcaYAxis"
                         :options="state.pcaAxisOptions"
                         optionLabel="label"
@@ -531,6 +540,7 @@ embedded :model-value="true"
                     >
                       <label>Color by</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="scoreColorMode"
                         :options="state.scoreColorOptions"
                         optionLabel="label"
@@ -622,6 +632,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>X Axis</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="pcaXAxis"
                         :options="state.pcaAxisOptions"
                         optionLabel="label"
@@ -631,6 +642,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>Y Axis</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="pcaYAxis"
                         :options="state.pcaAxisOptions"
                         optionLabel="label"
@@ -651,6 +663,7 @@ embedded :model-value="true"
                     >
                       <label>Color by</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="scoreColorMode"
                         :options="state.scoreColorOptions"
                         optionLabel="label"
@@ -698,6 +711,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>X Axis</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="pcaXAxis"
                         :options="state.pcaAxisOptions"
                         optionLabel="label"
@@ -707,6 +721,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>Y Axis</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="pcaYAxis"
                         :options="state.pcaAxisOptions"
                         optionLabel="label"
@@ -727,6 +742,7 @@ embedded :model-value="true"
                     >
                       <label>Color by</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="scoreColorMode"
                         :options="state.scoreColorOptions"
                         optionLabel="label"
@@ -770,6 +786,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>Target</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="regressionTargetIdx"
                         :options="state.regressionTargetOptions"
                         optionLabel="label"
@@ -978,6 +995,7 @@ embedded :model-value="true"
                     <div class="control-group library-sample-picker">
                       <label>Spectrum</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="selectedLibrarySample"
                         :options="libraryCompareSampleOptions"
                         optionLabel="label"
@@ -1125,6 +1143,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>Display</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="spectraDisplayMode"
                         :options="state.spectraDisplayOptions"
                         optionLabel="label"
@@ -1215,6 +1234,7 @@ embedded :model-value="true"
                     <div class="control-group">
                       <label>Display</label>
                       <Dropdown
+                        panelClass="ss-panel-theme"
                         v-model="genericDisplayMode"
                         :options="state.genericDisplayOptions"
                         optionLabel="label"
@@ -1225,6 +1245,7 @@ embedded :model-value="true"
                       <div class="control-group">
                         <label>X Axis</label>
                         <Dropdown
+                          panelClass="ss-panel-theme"
                           v-model="featureXAxis"
                           :options="state.featureOptions"
                           optionLabel="label"
@@ -1234,6 +1255,7 @@ embedded :model-value="true"
                       <div class="control-group">
                         <label>Y Axis</label>
                         <Dropdown
+                          panelClass="ss-panel-theme"
                           v-model="featureYAxis"
                           :options="state.featureOptions"
                           optionLabel="label"

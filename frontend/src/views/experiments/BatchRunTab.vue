@@ -32,7 +32,7 @@
     </div>
     <section aria-label="Batch combinations" class="batch-combinations">
       <h4>Combinations ({{ combinations.length }})</h4>
-      <p v-if="!combinations.length" class="batch-hint">Choose at least one workflow and one dataset definition to see the combinations to run.</p>
+      <p v-if="!combinations.length" class="batch-hint">Select a workflow and dataset definition.</p>
       <p v-if="checkedCombinationCount > 32" role="alert">Select at most 32 combinations for one batch. Deselect combinations below.</p>
       <ul v-if="combinations.length">
         <li v-for="(combination, index) in combinations" :key="combination.key">
