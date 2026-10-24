@@ -71,6 +71,28 @@ def test_desktop_lock_retains_pointer_lock_security_patch() -> None:
     assert Version(version) >= Version("44.5.0")  # GHSA-x562-297c-g43g
 
 
+def test_full_npm_locks_retain_october_23_security_patches() -> None:
+    frontend = json.loads(FRONTEND_LOCK.read_text(encoding="utf-8"))
+    assert Version(frontend["packages"]["node_modules/happy-dom"]["version"]) >= Version("21.0.4")
+    declaration = json.loads((PACKAGE_ROOT / "frontend/package.json").read_text(encoding="utf-8"))
+    assert declaration["devDependencies"]["happy-dom"] == "^21.0.4"
+    desktop = json.loads((PACKAGE_ROOT / "desktop/electron/package-lock.json").read_text(encoding="utf-8"))
+    assert Version(desktop["packages"]["node_modules/electron"]["version"]) >= Version("44.9.1")
+    undici = [
+        Version(item["version"]) for path, item in desktop["packages"].items() if path.endswith("node_modules/undici")
+    ]
+    assert undici
+    assert all(Version("7.30.1") <= version < Version("8") for version in undici)
+
+
+def test_public_security_workflow_audits_full_frontend_and_desktop_locks() -> None:
+    workflow = (PACKAGE_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "--frontend-scope full" in workflow
+    command = next(line for line in workflow.splitlines() if "run: python scripts/audit_dependencies.py" in line)
+    assert "--skip-desktop" not in command
+    assert "--skip-frontend" not in command
+
+
 def test_hitran_extra_forces_pip_to_upgrade_vulnerable_nbconvert() -> None:
     project = tomllib.loads((PACKAGE_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["poetry"]
     dependency = project["dependencies"]["nbconvert"]
@@ -120,6 +142,7 @@ def test_monorepo_security_workflow_blocks_all_extras_and_dev_tool_findings(mono
     # reviewed, unexpired suppressions in audit-ignore.toml waive a dev-tool
     # advisory; every other dev finding still fails the job.
     assert "--frontend-scope full" in workflow
+    assert "npm audit (desktop full lockfile)" in workflow
     assert "Frontend dev-tool audit findings are non-blocking" not in workflow
 
 

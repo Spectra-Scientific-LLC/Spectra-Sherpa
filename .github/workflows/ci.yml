@@ -408,8 +408,8 @@ jobs:
       - name: Bandit (medium+ severity)
         run: bandit -r src/ -ll -q
 
-      - name: Dependency audit (public manifests)
-        run: python scripts/audit_dependencies.py --repo . --all-extras-mode warn
+      - name: Dependency audit (Python and full frontend/desktop locks)
+        run: python scripts/audit_dependencies.py --repo . --all-extras-mode warn --frontend-scope full
 
   docs:
     name: Docs Build & Hygiene

@@ -31,6 +31,21 @@ allowlist derived from `TRUSTED_HOSTS`, `DOMAIN`, `API_BASE_URL`, and configured
 CORS origins. Dependency scans should stay on the patched FastAPI/Starlette
 line; do not reintroduce a Starlette pre-1.0 pin without a fresh advisory review.
 
+Dependency checks include the complete frontend and Electron shell lockfiles,
+including development and optional packages. Run this without installing npm
+packages, downloading Electron binaries or building desktop packages:
+
+```sh
+python scripts/audit_dependencies.py --repo . --skip-python
+```
+
+Both lockfiles are required; scanner failures and unreviewed moderate-or-higher
+advisories fail the check. The optional `--frontend-scope runtime` mode is a
+diagnostic only and never narrows the desktop audit. CI and publication use
+full scope. Existing time-limited, explicitly reviewed npm waivers are enforced
+by `scripts/audit-ignore.toml`; the current list is empty. Dependency patches
+do not authorize releasing or packaging the desktop application.
+
 ## Response Timeline
 
 - **Acknowledgement**: Within 3 business days
