@@ -57,8 +57,8 @@ spectra-sherpa = "spectra_sherpa.cli:main"
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
-fastapi = ">=0.137.0,<0.144.0"
-starlette = ">=1.3.1,<1.8.0"
+fastapi = ">=0.137.0,<0.157.0"
+starlette = ">=1.3.1,<1.10.0"
 uvicorn = {version = ">=0.49,<0.55", extras = ["standard"]}
 # 2.1.0 sdist has duplicate normalized extras and fails uv metadata parsing.
 sqlalchemy = ">=2.0.31,<3.0.0,!=2.1.0"
