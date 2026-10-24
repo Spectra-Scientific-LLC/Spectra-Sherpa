@@ -231,6 +231,15 @@ export function proposeMeasuredSamples(
     targets: { ...row.targets },
     annotations: { ...row.annotations },
   }));
+  if (!plan.wells.length) {
+    return {
+      rows: proposed,
+      differences: [],
+      plateFormatChanged: false,
+      refusal: null,
+      status: compareAcquisitionPlan(proposed, [], measuredPlateFormatId),
+    };
+  }
   const orderedMatches = [...(plan.matching.matches ?? [])].sort(
     (left, right) => left.sequence_order - right.sequence_order,
   );

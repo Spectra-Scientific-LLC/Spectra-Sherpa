@@ -19,7 +19,7 @@
           icon="pi pi-check"
           class="p-button-sm"
           :loading="saving"
-          :disabled="experimentId == null || loading || !dirty"
+          :disabled="!planLoaded || loading || !dirty"
           @click="savePlan"
         />
       </div>
@@ -47,7 +47,7 @@
           option-label="label"
           option-value="value"
           option-disabled="disabled"
-          :disabled="!canAuthor || loading"
+          :disabled="!canAuthor || loading || !planLoaded"
         />
       </div>
       <dl class="plan-facts">
@@ -476,6 +476,7 @@ const saving = ref(false);
 const loadError = ref<string | null>(null);
 const saveError = ref<string | null>(null);
 const revision = ref("");
+const planLoaded = ref(false);
 const baseline = ref("");
 const selectedWell = ref<string | null>(null);
 const measuredRows = ref<SampleTableRow[]>([]);
@@ -500,7 +501,7 @@ const draft = ref(blankDraft());
 watch(preferredFormatId, () => { selectedWell.value = null; });
 const canAuthor = computed(() => !isCapabilityDisabled("sample_table_authoring"));
 const serializedDraft = computed(() => JSON.stringify({ plate_format_id: preferredFormatId.value, ...draft.value }));
-const dirty = computed(() => baseline.value !== serializedDraft.value);
+const dirty = computed(() => planLoaded.value && baseline.value !== serializedDraft.value);
 const sampleOptions = computed(() =>
   draft.value.samples.map((item) => ({
     label: `${item.sample_id}${item.name ? ` — ${item.name}` : ""}`,
@@ -557,7 +558,8 @@ const planForProposal = computed<AcquisitionPlan>(() => ({
 const measuredProposal = computed(() =>
   proposeMeasuredSamples(measuredRows.value, planForProposal.value, measuredFormatId.value),
 );
-const measuredDifferenceCount = computed(() => measuredProposal.value.differences.length + Number(measuredProposal.value.plateFormatChanged) + Number(Boolean(measuredProposal.value.refusal)));
+const measuredDifferenceCount = computed(() => !measuredAvailable.value || !draft.value.wells.length ? 0
+  : measuredProposal.value.differences.length + Number(measuredProposal.value.plateFormatChanged) + Number(Boolean(measuredProposal.value.refusal)));
 const syncLabel = computed(() =>
   measuredLoading.value
     ? "Checking measured samples"
@@ -565,12 +567,14 @@ const syncLabel = computed(() =>
       ? "No measured source selected"
       : !measuredAvailable.value
         ? "No published measured-sample version"
+        : !draft.value.wells.length
+          ? "No planned wells"
         : measuredDifferenceCount.value
           ? "Publication needed"
           : "Plan and measured samples synchronized",
 );
 const syncSeverity = computed(() =>
-  measuredDifferenceCount.value || (props.sourceFileId && !measuredAvailable.value)
+  !draft.value.wells.length ? "secondary" : measuredDifferenceCount.value || (props.sourceFileId && !measuredAvailable.value)
     ? "warning"
     : props.sourceFileId
       ? "success"
@@ -581,6 +585,8 @@ const syncDetail = computed(() =>
     ? "Select a source file in My Dataset to preview synchronization."
     : !measuredAvailable.value
       ? "Open Measured samples in My Dataset to review and publish the first immutable version."
+      : !draft.value.wells.length
+        ? ""
       : measuredDifferenceCount.value
         ? `${measuredDifferenceCount.value} proposed field changes are waiting for review in My Dataset.`
         : `${measuredProposal.value.status.matched}/${measuredProposal.value.status.planned} planned wells match the published measured-sample version.`,
@@ -590,6 +596,8 @@ const planStatus = computed(() =>
     ? "No dataset selected"
     : loading.value
       ? `Loading ${props.experimentName || "dataset"}`
+      : loadError.value
+        ? "Plan unavailable"
       : dirty.value
         ? "Unsaved changes"
         : `${draft.value.wells.length} wells saved`,
@@ -767,8 +775,10 @@ async function loadMeasuredRows(): Promise<void> {
 async function loadPlan(): Promise<void> {
   const experimentId = props.experimentId;
   const token = ++requestToken;
+  planLoaded.value = false;
+  loading.value = false;
   draft.value = blankDraft();
-  baseline.value = JSON.stringify(draft.value);
+  baseline.value = serializedDraft.value;
   revision.value = "";
   selectedWell.value = null;
   loadError.value = null;
@@ -776,21 +786,18 @@ async function loadPlan(): Promise<void> {
   if (experimentId == null) return;
   loading.value = true;
   try {
-    const [{ data }, presetResponse, preferenceResponse] = await Promise.all([
+    const [{ data }, presetResponse] = await Promise.all([
       api.get<AcquisitionPlan>(`/experiments/${experimentId}/acquisition-plan`),
       api
         .get<AcquisitionPreset[]>("/acquisition-preferences/presets")
         .catch(() => ({ data: [] as AcquisitionPreset[] })),
-      api
-        .get<{ default_plate_format_id: string }>("/acquisition-preferences")
-        .catch(() => ({ data: { default_plate_format_id: defaultPlateFormatId } })),
     ]);
     if (token === requestToken) {
-      preferredFormatId.value = preferenceResponse.data.default_plate_format_id;
-      preferredFormatId.value = data.plate_format_id || preferredFormatId.value;
+      preferredFormatId.value = data.plate_format_id;
       draft.value = clonePlan(data);
       revision.value = data.revision;
       baseline.value = serializedDraft.value;
+      planLoaded.value = true;
       presets.value = presetResponse.data;
       await loadMeasuredRows();
     }
@@ -801,7 +808,7 @@ async function loadPlan(): Promise<void> {
   }
 }
 async function savePlan(): Promise<void> {
-  if (props.experimentId == null || !canAuthor.value || saving.value) return;
+  if (props.experimentId == null || !planLoaded.value || loading.value || !canAuthor.value || saving.value) return;
   const experimentId = props.experimentId;
   const token = requestToken;
   const submitted = serializedDraft.value;

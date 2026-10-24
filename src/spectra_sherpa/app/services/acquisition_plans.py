@@ -174,7 +174,8 @@ async def read_acquisition_plan(session: AsyncSession, experiment_id: int) -> di
         "experiment_id": experiment_id,
         "plate_format_label": plate_format.label,
         "capacity": plate_format.capacity,
-        "revision": _plan_revision(document),
+        # An absent plan is one stable CAS state, independent of mutable defaults.
+        "revision": _plan_revision(document if stored is not None else {"state": "absent"}),
     }
 
 

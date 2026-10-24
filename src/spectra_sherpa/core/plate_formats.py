@@ -111,6 +111,11 @@ def infer_legacy_plate_format(wells: list[str]) -> PlateFormat:
     be explicitly declared, never guessed from the occupied subset of wells.
     """
     plate = get_plate_format("plate-96")
-    for well in wells:
-        plate.parse_well(well)
+    for row_number, well in enumerate(wells, start=1):
+        if not str(well).strip():
+            continue
+        try:
+            plate.parse_well(well)
+        except ValueError as exc:
+            raise ValueError(f"Legacy table row {row_number}: {exc}") from exc
     return plate

@@ -136,6 +136,7 @@ describe("MultiWellAcquisitionPanel", () => {
     await flushPromises();
 
     expect(api.get).toHaveBeenCalledWith("/experiments/12/acquisition-plan");
+    expect(api.get).not.toHaveBeenCalledWith("/acquisition-preferences");
     expect(wrapper.text()).toContain("1/96");
     expect(wrapper.text()).toContain("Measured rows changed");
     expect(wrapper.text()).toContain("0");
@@ -177,6 +178,67 @@ describe("MultiWellAcquisitionPanel", () => {
     );
   });
 
+  it("keeps an unresolved or failed load clean and refuses a blank save", async () => {
+    let rejectLoad!: (error: Error) => void;
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      url.includes("presets")
+        ? Promise.resolve({ data: [] })
+        : new Promise((_resolve, reject) => {
+            rejectLoad = reject;
+          }),
+    );
+    const wrapper = shallowMount(MultiWellAcquisitionPanel, {
+      props: { experimentId: 12, experimentOptions: [] },
+    });
+    expect(wrapper.text()).not.toContain("Unsaved changes");
+    expect(wrapper.get('button-stub[label="Save acquisition plan"]').attributes("disabled")).toBe(
+      "true",
+    );
+    rejectLoad(new Error("Plan could not be loaded"));
+    await flushPromises();
+    expect(wrapper.text()).toContain("Plan unavailable");
+    expect(wrapper.text()).not.toContain("Unsaved changes");
+    await wrapper.get('button-stub[label="Save acquisition plan"]').trigger("click");
+    expect(api.put).not.toHaveBeenCalled();
+    expect(wrapper.get("#acquisition-format").attributes("disabled")).toBe("true");
+  });
+
+  it("does not demand an unresolvable publication for a plan with no wells", async () => {
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes("presets")
+          ? []
+          : url.includes("analysis-binding")
+            ? {
+                plate_format_id: "plate-1536",
+                rows: [
+                  {
+                    row_index: 0,
+                    source_file_id: 41,
+                    sample_id: "sample",
+                    include: true,
+                    targets: {},
+                    annotations: {},
+                    plate_id: "plate-1",
+                    well: "AF48",
+                  },
+                ],
+              }
+            : { ...plan, plate_format_id: "plate-6", capacity: 6, wells: [] },
+      }),
+    );
+    const wrapper = shallowMount(MultiWellAcquisitionPanel, {
+      props: { experimentId: 12, sourceFileId: 41, experimentOptions: [] },
+    });
+    await flushPromises();
+    expect(wrapper.find('tag-stub[value="No planned wells"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("Publication needed");
+    expect(wrapper.text()).not.toContain("waiting for review");
+    expect(
+      (wrapper.vm as unknown as { measuredDifferenceCount: number }).measuredDifferenceCount,
+    ).toBe(0);
+  });
+
   it("switches datasets through the owning Data workspace", async () => {
     const wrapper = shallowMount(MultiWellAcquisitionPanel, {
       props: {
@@ -212,7 +274,7 @@ describe("MultiWellAcquisitionPanel", () => {
     await wrapper.find('button-stub[label="Retry save"]').trigger("click");
     await flushPromises();
     expect(api.put).toHaveBeenCalledTimes(2);
-    expect(api.get).toHaveBeenCalledTimes(3);
+    expect(api.get).toHaveBeenCalledTimes(2);
   });
 
   it("shows a read-only plan when authoring is disabled by the demo contract", async () => {

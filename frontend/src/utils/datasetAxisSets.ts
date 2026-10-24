@@ -103,8 +103,7 @@ function textValues(value: unknown, length: number | null): string[] | null {
 
 function alignedLength(axis: Record<string, unknown>): number | null {
   const direct = [axis.data, axis.labels, axis.include_mask].find(Array.isArray) as
-    | unknown[]
-    | undefined;
+    unknown[] | undefined;
   if (direct) return direct.length;
   for (const key of ["alternate_scales", "alternate_label_sets", "class_sets"] as const) {
     const sets = axis[key];
@@ -305,7 +304,76 @@ export function projectDatasetAxisDisplay(
       titleSetName = titleSet.name;
     }
   }
-  return { values, labels, title, units, quantity, axisType, scaleName, labelSetName, titleSetName };
+  return {
+    values,
+    labels,
+    title,
+    units,
+    quantity,
+    axisType,
+    scaleName,
+    labelSetName,
+    titleSetName,
+  };
 }
 
 export const PRIMARY_AXIS_SET = PRIMARY;
+
+/** Descriptive source facts, not permission to render or align malformed axes. */
+export function summarizeDatasetAxis(
+  rawAxis: unknown,
+  range: { min?: unknown; max?: unknown } = {},
+) {
+  const state = datasetAxisDisplayState(rawAxis);
+  const axis = isRecord(rawAxis) ? rawAxis : {};
+  const scales = Array.isArray(axis.alternate_scales) ? axis.alternate_scales.filter(isRecord) : [];
+  const selected = scales.find((scale) => scale.name === axis.primary_scale_name);
+  const coordinates = Array.isArray(axis.data)
+    ? axis.data
+    : Array.isArray(selected?.values)
+      ? selected.values
+      : [];
+  const vectors = [axis.data, axis.labels, axis.include_mask, selected?.values].filter(
+    Array.isArray,
+  );
+  const lengths = new Set(vectors.map((vector) => vector.length));
+  const misaligned = lengths.size > 1;
+  const finite = misaligned
+    ? []
+    : coordinates.filter(
+        (value): value is number => typeof value === "number" && Number.isFinite(value),
+      );
+  const catalogMin = typeof range.min === "number" && Number.isFinite(range.min) ? range.min : null;
+  const catalogMax = typeof range.max === "number" && Number.isFinite(range.max) ? range.max : null;
+  const catalogRange =
+    !misaligned &&
+    !coordinates.length &&
+    catalogMin !== null &&
+    catalogMax !== null &&
+    catalogMin <= catalogMax;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const value of finite) {
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+  }
+  return {
+    count:
+      misaligned || !vectors.length
+        ? null
+        : state.kind === "valid"
+          ? state.length
+          : (vectors[0]?.length ?? null),
+    numeric_coordinate_count: finite.length,
+    omitted_coordinate_count: misaligned ? 0 : coordinates.length - finite.length,
+    min: finite.length ? min : catalogRange ? catalogMin : null,
+    max: finite.length ? max : catalogRange ? catalogMax : null,
+    range_source: finite.length
+      ? "finite_axis_coordinates"
+      : catalogRange
+        ? "catalog_summary"
+        : null,
+    units: Array.isArray(axis.data) ? axis.units : (selected?.units ?? axis.units),
+    ...(state.kind === "invalid" ? { validation_warning: state.message } : {}),
+  };
+}

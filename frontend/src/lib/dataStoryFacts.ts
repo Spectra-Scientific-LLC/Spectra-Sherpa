@@ -1,4 +1,4 @@
-import { datasetAxisDisplayState, projectDatasetAxisDisplay } from "@/utils/datasetAxisSets";
+import { summarizeDatasetAxis } from "@/utils/datasetAxisSets";
 
 type StoryFacts = Record<string, unknown>;
 const MAX_FACTS_CHARS = 12_000;
@@ -194,17 +194,9 @@ function acquisitionSummary(metadata: StoryFacts): StoryFacts | null {
 /** Shared parsed facts for BYOK and hosted narration; transport adds no projection. */
 export function buildDataStoryFacts(dataset: StoryFacts): StoryFacts {
   const axis = object(dataset.x_axis);
-  const axisState = datasetAxisDisplayState(dataset.x_axis);
-  const axisDisplay = projectDatasetAxisDisplay(axisState,
-    !Array.isArray(axis.data) && typeof axis.primary_scale_name === "string"
-      ? `scale:${axis.primary_scale_name}` : undefined);
-  const axisData = axisDisplay?.values ?? [];
-  let axisMin = Infinity;
-  let axisMax = -Infinity;
-  for (const value of axisData) {
-    axisMin = Math.min(axisMin, value);
-    axisMax = Math.max(axisMax, value);
-  }
+  const axisSummary = summarizeDatasetAxis(dataset.x_axis, {
+    min: axis.min ?? dataset.wavelength_min, max: axis.max ?? dataset.wavelength_max,
+  });
   const metadata = object(dataset.metadata);
   const extra = object(dataset.extra);
   const domain = object(dataset.domain);
@@ -229,11 +221,7 @@ export function buildDataStoryFacts(dataset: StoryFacts): StoryFacts {
     units: shortText(dataset.units),
     data_role: shortText(dataset.data_role),
     signal: signalSummary(dataset.data),
-    x_axis: { ...object(bounded(axis)), count: axisState.kind === "valid" ? axisState.length : null,
-      numeric_coordinate_count: axisData.length,
-      min: axisData.length ? axisMin : null,
-      max: axisData.length ? axisMax : null,
-      ...(axisState.kind === "invalid" ? { unavailable_reason: axisState.message } : {}) },
+    x_axis: { ...object(bounded(axis)), ...axisSummary, units: shortText(axisSummary.units ?? metadata.x_units) },
     y_axis: bounded(yAxisWithoutRows),
     sample_axis: bounded(sampleAxisWithoutRows),
     sample_metadata_columns: sampleTableSummary(axisWithTable),

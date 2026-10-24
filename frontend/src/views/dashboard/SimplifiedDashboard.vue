@@ -302,6 +302,7 @@ import StarterPanel from "@/views/dashboard/StarterPanel.vue";
 import type { StarterOverview, StarterStartRequest } from "@/lib/starterAdapter";
 import type { ReferenceDatasetOption } from "@/stores/workflow-types";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { legacyStorageRedirect } from "@/router/storageRedirect";
 
 const DATA_ENTRY_MODE_KEY = "sherpa:data-entry-mode";
 const DATA_ENTRY_PROJECT_KEY = "sherpa:data-entry-project-id";
@@ -318,8 +319,9 @@ function selectDashboardTab(tab: string): void {
 }
 async function syncDashboardRoute(): Promise<void> {
   // Preserve bookmarks without keeping a second Storage surface.
-  if (route.hash === "#storage" || route.query?.tab === "storage") {
-    await router.replace({ path: "/settings", query: { tab: "storage" }, hash: "" });
+  const destination = legacyStorageRedirect(route);
+  if (destination) {
+    await router.replace(destination);
     return;
   }
   activeDashboardTab.value = dashboardTabFromHash();
@@ -327,7 +329,7 @@ async function syncDashboardRoute(): Promise<void> {
 watch(
   () => [route.hash, route.query?.tab],
   () => void syncDashboardRoute(),
-  { flush: "post" },
+  { flush: "post", immediate: true },
 );
 const toast = useToast();
 const projectStore = useProjectStore();
@@ -423,7 +425,6 @@ onMounted(async () => {
     workflowStore.fetchTemplates(undefined, true),
     workflowStore.fetchCompatibilityMatrix(),
   ]);
-  await syncDashboardRoute();
 });
 
 // The Starter checklist follows the active project once it carries a plan.

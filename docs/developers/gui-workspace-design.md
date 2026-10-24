@@ -25,6 +25,10 @@ For the installed application, use the versioned user guides.
 
 ## Plate maps
 
+Hover updates belong to the details card, not the cell grid. Keyboard focus
+keeps its details through automatic scrolling while the focused well remains
+visible; a stationary pointer must not replace that context during the pan.
+
 The shared format registry (`src/spectra_sherpa/data/plate_formats_v1.json`)
 owns plate geometry and coordinates. API schemas, planning, sample tables and
 the shared plate renderer derive from it. Keep legacy tables without an explicit
@@ -38,6 +42,10 @@ to a well that has scrolled away. Format changes must not silently hide or disca
 existing assignments.
 
 ## Scientific context and copy
+
+Descriptive source summaries can report finite coordinate bounds and recorded
+catalog bounds, with their origin and missing-coordinate counts. They do not
+authorize rendering or weaken the strict plot-axis alignment validator.
 
 Keep population, units, exclusions and consequential warnings visible.
 Put methodology behind contextual `?` help, and short explanations in hover.

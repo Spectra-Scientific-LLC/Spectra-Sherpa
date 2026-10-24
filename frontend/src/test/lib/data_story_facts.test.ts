@@ -30,8 +30,52 @@ describe("provider-independent parsed Data Story facts", () => {
       alternate_scales: [{ name: "shift", values: [1800, 1200, 600], units: "cm^-1", source_set_index: 0 }] },
     }).facts.x_axis).toMatchObject({ count: 3, numeric_coordinate_count: 3, min: 600, max: 1800 });
     expect(buildDataStoryContext({ x_axis: { data: [1, 2], labels: ["only one"] } }).facts.x_axis)
-      .toMatchObject({ count: null, min: null, max: null, unavailable_reason: expect.any(String) });
+      .toMatchObject({ count: null, min: null, max: null, validation_warning: expect.any(String) });
     expect(buildDataStoryContext({}).facts.x_axis).toMatchObject({ count: null, min: null, max: null });
+  });
+
+  it.each(["synthetic_reference", "eigenvector", "oes"])(
+    "keeps catalog-only spectral bounds for %s",
+    (catalog) => {
+      const dataset = {
+        source: catalog,
+        n_features: 200,
+        wavelength_min: 400,
+        wavelength_max: 4000,
+        metadata: { x_units: "cm^-1" },
+      };
+      const { facts } = buildDataStoryContext(dataset);
+      expect(facts.x_axis).toMatchObject({
+        count: null,
+        numeric_coordinate_count: 0,
+        min: 400,
+        max: 4000,
+        units: "cm^-1",
+        range_source: "catalog_summary",
+      });
+      const localFacts = JSON.parse(
+        localStoryMessage(dataset, "Range?").split("Dataset facts: ")[1],
+      );
+      expect(localFacts).toEqual(facts);
+    },
+  );
+
+  it("summarizes finite coordinates without relaxing display alignment or altering labels", () => {
+    const dataset = {
+      x_axis: { data: [4000, null, NaN, 400], labels: [" first ", "b", "c", "last "] },
+    };
+    expect(buildDataStoryContext(dataset).facts.x_axis).toMatchObject({
+      count: 4,
+      numeric_coordinate_count: 2,
+      omitted_coordinate_count: 2,
+      min: 400,
+      max: 4000,
+      validation_warning: expect.any(String),
+    });
+    expect(dataset.x_axis.labels[0]).toBe(" first ");
+    expect(
+      buildDataStoryContext({ x_axis: { labels: [" first ", "second"] } }).facts.x_axis,
+    ).toMatchObject({ count: 2, numeric_coordinate_count: 0, min: null, max: null });
   });
 
   it("keeps canonical synthetic origin and recipe when generic metadata is omitted", () => {

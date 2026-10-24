@@ -4,6 +4,7 @@ import {
   datasetAxisDisplayState,
   PRIMARY_AXIS_SET,
   projectDatasetAxisDisplay,
+  summarizeDatasetAxis,
 } from "@/utils/datasetAxisSets";
 
 function axis() {
@@ -37,6 +38,37 @@ function axis() {
 }
 
 describe("dataset axis-set presentation authority", () => {
+  it("keeps descriptive partial bounds separate from strict display permission", () => {
+    const partial = { data: [3, NaN, null, 1], labels: [" a ", "b", "c", "d"] };
+    expect(datasetAxisDisplayState(partial).kind).toBe("invalid");
+    expect(summarizeDatasetAxis(partial)).toMatchObject({
+      count: 4,
+      numeric_coordinate_count: 2,
+      omitted_coordinate_count: 2,
+      min: 1,
+      max: 3,
+    });
+    expect(summarizeDatasetAxis({ data: [1, 2], labels: ["only"] })).toMatchObject({
+      count: null,
+      min: null,
+      max: null,
+    });
+    expect(summarizeDatasetAxis(undefined, { min: 0, max: 10 })).toMatchObject({
+      count: null,
+      min: 0,
+      max: 10,
+      range_source: "catalog_summary",
+    });
+    expect(summarizeDatasetAxis(undefined, { min: NaN, max: 10 })).toMatchObject({
+      min: null,
+      max: null,
+    });
+    expect(summarizeDatasetAxis({ data: [2, 4] }, { min: 0, max: 10 })).toMatchObject({
+      min: 2,
+      max: 4,
+      range_source: "finite_axis_coordinates",
+    });
+  });
   it("projects alternate scales, labels, and titles without changing alignment", () => {
     const state = datasetAxisDisplayState(axis(), 3);
     expect(state.kind).toBe("valid");

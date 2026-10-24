@@ -3,6 +3,7 @@ import { createRouter, createWebHistory, type RouteLocation } from "vue-router";
 
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useAuthStore } from "@/stores/auth";
+import { legacyStorageRedirect } from "./storageRedirect";
 
 // OSS owns the core routes. Managed-auth routes (/login, /register,
 // /admin) are contributed dynamically at boot by the server-provided
@@ -21,6 +22,7 @@ const routes = [
   // break — they collapse to the canonical routes.
   {
     path: "/dashboard",
+    beforeEnter: (to: RouteLocation) => legacyStorageRedirect(to) ?? true,
     component: () => import("@/views/dashboard/SimplifiedDashboard.vue"),
     meta: { nav: "dashboard" },
   },

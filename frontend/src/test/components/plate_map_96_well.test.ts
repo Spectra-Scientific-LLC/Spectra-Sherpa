@@ -9,6 +9,45 @@ afterEach(() => {
 });
 
 describe("PlateMap96Well", () => {
+  it("does not rerender 1536 cells on hover and retains focused details through scrolling", async () => {
+    const parentUpdated = vi.fn();
+    const wrapper = mount(PlateMap96Well, {
+      attachTo: document.body,
+      props: {
+        plateFormatId: "plate-1536",
+        interactive: true,
+          wells: [{ well_position: "AF48", label: "last sample", assigned: true }, { well_position:"A01",label:"first sample",assigned:true }],
+      },
+      global: {
+        mixins: [
+          {
+            updated() {
+              if (this.$options.__name === "PlateMap96Well") parentUpdated();
+            },
+          },
+        ],
+      },
+    });
+    const well = wrapper.get('[aria-label="last sample"]');
+    vi.spyOn(well.element,"getBoundingClientRect").mockReturnValue(new DOMRect(40,40,64,64));
+    vi.spyOn(wrapper.get('.plate-viewport').element,"getBoundingClientRect").mockReturnValue(new DOMRect(0,0,500,500));
+    await well.trigger("mouseenter");
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain("AF48");
+    expect(parentUpdated).not.toHaveBeenCalled();
+    await well.trigger("mouseleave");
+    (well.element as HTMLElement).focus();
+    await wrapper.vm.$nextTick();
+    await wrapper.get('[aria-label="first sample"]').trigger("mouseenter");
+    await wrapper.get(".plate-viewport").trigger("scroll");
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain("AF48");
+    expect(parentUpdated).not.toHaveBeenCalled();
+    await wrapper.setProps({ selectedWell: "AF48" });
+    expect(parentUpdated).toHaveBeenCalled();
+    (well.element as HTMLElement).blur();
+    await wrapper.vm.$nextTick();
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    wrapper.unmount();
+  });
   it.each([
     [6, "B03"],
     [12, "C04"],

@@ -24,6 +24,26 @@ async def _create_experiment(client: AsyncClient, name: str = "Plate study") -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("wells", [[], [{"well_position": "H12"}]])
+async def test_unsaved_revision_ignores_preference_changes_but_refuses_real_concurrent_save(client, wells):
+    experiment_id = await _create_experiment(client)
+    url = f"/api/v1/experiments/{experiment_id}/acquisition-plan"
+    initial = (await client.get(url)).json()
+    await client.put("/api/v1/acquisition-preferences", json={"default_plate_format_id": "plate-384"})
+    preview = (await client.get(url)).json()
+    assert preview["plate_format_id"] == "plate-384"
+    assert preview["revision"] == initial["revision"]
+    saved = await client.put(
+        url, json={"expected_revision": initial["revision"], "plate_format_id": "plate-96", "wells": wells}
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["revision"] != initial["revision"]
+    stale = await client.put(url, json={"expected_revision": initial["revision"], "plate_format_id": "plate-6"})
+    assert stale.status_code == 409
+    assert (await client.get(url)).json() == saved.json()
+
+
+@pytest.mark.asyncio
 async def test_acquisition_plan_round_trip_is_canonical_and_dataset_scoped(client: AsyncClient):
     first = await _create_experiment(client, "First")
     second = await _create_experiment(client, "Second")

@@ -6,7 +6,7 @@
       role="region"
       :aria-label="`${plateFormat.label} map`"
       tabindex="0"
-      @scroll="hideWellDetails"
+      @scroll="detailsCard?.viewportScrolled(viewport)"
     >
       <div
         class="plate-grid"
@@ -25,46 +25,43 @@
         >
           {{ col }}
         </div>
-        <template v-for="(row, rowIndex) in plateFormat.rows" :key="row">
+        <template v-for="row in plateRows" :key="row.label">
           <div
             class="row-label"
-            :style="{ gridRow: rowIndex + 2, gridColumn: 1 }"
+            :style="{ gridRow: row.gridRow, gridColumn: 1 }"
             aria-hidden="true"
           >
-            {{ row }}
+            {{ row.label }}
           </div>
-
           <div
-            v-for="col in plateFormat.columns"
-            :key="plateWellPosition(row, col)"
+            v-for="cell in row.cells"
+            :key="cell.position"
             class="well"
-            :style="{ gridRow: rowIndex + 2, gridColumn: col + 1 }"
-            :aria-label="getWellTitle(plateWellPosition(row, col))"
-            :tabindex="interactive || getWellDetails(plateWellPosition(row, col)) ? 0 : -1"
+            :style="{ gridRow: row.gridRow, gridColumn: cell.gridColumn }"
+            :aria-label="cell.title"
+            :tabindex="interactive || cell.details ? 0 : -1"
             role="button"
             :class="{
-              'well-assigned': getWellValue(plateWellPosition(row, col)),
-              'well-excluded': isWellExcluded(plateWellPosition(row, col)),
-              'well-collision': hasWellCollision(plateWellPosition(row, col)),
-              'well-selected': selectedWell === plateWellPosition(row, col),
+              'well-assigned': cell.label,
+              'well-excluded': cell.excluded,
+              'well-collision': cell.collision,
+              'well-selected': selectedWell === cell.position,
             }"
-            @mouseenter="showWellDetails(plateWellPosition(row, col), $event)"
-            @mouseleave="hideWellDetails"
-            @focus="showWellDetails(plateWellPosition(row, col), $event)"
-            @blur="hideWellDetails"
-            @click="onWellClick(plateWellPosition(row, col))"
-            @keydown.enter.prevent="onWellClick(plateWellPosition(row, col))"
-            @keydown.space.prevent="onWellClick(plateWellPosition(row, col))"
+            @mouseenter="detailsCard?.show(cell.details, $event)"
+            @mousemove="detailsCard?.show(cell.details, $event, true)"
+            @mouseleave="detailsCard?.hidePointer()"
+            @focus="detailsCard?.show(cell.details, $event)"
+            @blur="detailsCard?.hide()"
+            @click="emit('well-click', cell.position)"
+            @keydown.enter.prevent="emit('well-click', cell.position)"
+            @keydown.space.prevent="emit('well-click', cell.position)"
           >
-            <div class="well-position">{{ plateWellPosition(row, col) }}</div>
-            <div v-if="getWellValue(plateWellPosition(row, col))" class="well-content">
-              {{ getWellValue(plateWellPosition(row, col)) }}
-            </div>
+            <div class="well-position">{{ cell.position }}</div>
+            <div v-if="cell.label" class="well-content">{{ cell.label }}</div>
           </div>
         </template>
       </div>
     </div>
-
     <div v-if="showLegend" class="plate-legend">
       <div class="legend-item">
         <div class="legend-swatch well-empty"></div>
@@ -84,50 +81,13 @@
       </div>
     </div>
   </div>
-
-  <Teleport to="body">
-    <aside
-      v-if="hoveredWell"
-      ref="hoverCard"
-      class="plate-well-hover-card"
-      :style="hoverCardStyle"
-      role="tooltip"
-    >
-      <div class="hover-card-heading">
-        <span class="hover-card-well">{{ hoveredWell.well_position }}</span>
-        <strong>{{ hoveredWell.label || "Assigned sample" }}</strong>
-      </div>
-      <dl v-if="hoveredWell.details?.length" class="hover-card-details">
-        <template v-for="detail in hoveredWell.details" :key="detail.label">
-          <dt>{{ detail.label }}</dt>
-          <dd>{{ detail.value || "—" }}</dd>
-        </template>
-      </dl>
-      <p v-else class="hover-card-summary">
-        {{ hoveredWell.tooltip || hoveredWell.label || hoveredWell.well_position }}
-      </p>
-    </aside>
-  </Teleport>
+  <PlateWellHoverCard ref="detailsCard" />
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { defaultPlateFormatId, formatWell, getPlateFormat } from "@/utils/plateFormats";
-
-interface PlateWellDetail {
-  label: string;
-  value: string;
-}
-
-interface PlateWell {
-  well_position: string;
-  mixture_id?: number | null;
-  label?: string;
-  assigned?: boolean;
-  tooltip?: string;
-  excluded?: boolean;
-  details?: PlateWellDetail[];
-}
+import PlateWellHoverCard, { type PlateWell } from "./PlateWellHoverCard.vue";
 
 const props = defineProps<{
   wells: PlateWell[];
@@ -143,115 +103,75 @@ const emit = defineEmits<{
 
 const plateFormat = computed(() => getPlateFormat(props.plateFormatId ?? defaultPlateFormatId));
 const viewport = ref<HTMLElement | null>(null);
-const hoverCard = ref<HTMLElement | null>(null);
-const hoveredWell = ref<PlateWell | null>(null);
-const hoverCardStyle = ref<Record<string, string>>({ left: "12px", top: "12px" });
-
-const plateWellPosition = (row: string, column: number) =>
-  formatWell(plateFormat.value, plateFormat.value.rows.indexOf(row), column - 1);
-
+const detailsCard = ref<InstanceType<typeof PlateWellHoverCard> | null>(null);
+watch(
+  () => props.wells,
+  () => detailsCard.value?.hide(),
+);
 watch(
   () => props.plateFormatId,
   () => {
-    hoveredWell.value = null;
+    detailsCard.value?.hide();
     if (viewport.value) {
       viewport.value.scrollTop = 0;
       viewport.value.scrollLeft = 0;
     }
   },
 );
-
 const wellsByPosition = computed(() => {
   const map = new Map<string, PlateWell[]>();
-  props.wells.forEach((well) => {
+  for (const well of props.wells) {
     const position = well.well_position.toUpperCase();
     const entries = map.get(position) ?? [];
     entries.push(well);
     map.set(position, entries);
-  });
+  }
   return map;
 });
-
 const collisionCount = computed(
-  () => Array.from(wellsByPosition.value.values()).filter((entries) => entries.length > 1).length,
+  () => [...wellsByPosition.value.values()].filter((entries) => entries.length > 1).length,
 );
-
-const getWellValue = (position: string) => {
-  const entries = wellsByPosition.value.get(position.toUpperCase()) ?? [];
-  if (entries.length > 1) return `${entries.length} samples`;
-  const well = entries[0];
-  if (!well || (!well.assigned && !well.mixture_id && !well.label)) return null;
-  return well.label || `Mix ${well.mixture_id}`;
-};
-
-const getWellTitle = (position: string) => {
-  const entries = wellsByPosition.value.get(position.toUpperCase()) ?? [];
-  if (entries.length > 1) return `${position}: ${entries.length} conflicting sample assignments`;
-  return entries[0]?.tooltip || getWellValue(position) || position;
-};
-
-const getWellDetails = (position: string): PlateWell | null => {
-  const entries = wellsByPosition.value.get(position.toUpperCase()) ?? [];
-  if (entries.length === 0) return null;
-  if (entries.length === 1) return entries[0];
-  return {
-    well_position: position,
-    assigned: true,
-    label: `${entries.length} conflicting samples`,
-    tooltip: "Resolve the duplicate physical assignment before saving.",
-    details: entries.map((entry, index) => ({
-      label: `Sample ${index + 1}`,
-      value: entry.label || entry.tooltip || "Unnamed sample",
-    })),
-  };
-};
-
-const isWellExcluded = (position: string) =>
-  (wellsByPosition.value.get(position.toUpperCase()) ?? []).some((well) => well.excluded);
-
-const hasWellCollision = (position: string) =>
-  (wellsByPosition.value.get(position.toUpperCase())?.length ?? 0) > 1;
-
-const positionHoverCard = (anchor: HTMLElement) => {
-  const card = hoverCard.value;
-  if (!card) return;
-  const anchorRect = anchor.getBoundingClientRect();
-  const gap = 10;
-  const viewportPadding = 12;
-  const cardWidth = card.offsetWidth || 300;
-  const cardHeight = card.offsetHeight || 240;
-
-  let left = anchorRect.right + gap;
-  if (left + cardWidth > window.innerWidth - viewportPadding) {
-    left = anchorRect.left - cardWidth - gap;
-  }
-  left = Math.max(viewportPadding, Math.min(left, window.innerWidth - cardWidth - viewportPadding));
-
-  let top = anchorRect.top;
-  if (top + cardHeight > window.innerHeight - viewportPadding) {
-    top = anchorRect.bottom - cardHeight;
-  }
-  top = Math.max(viewportPadding, Math.min(top, window.innerHeight - cardHeight - viewportPadding));
-
-  hoverCardStyle.value = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` };
-};
-
-const showWellDetails = async (position: string, event: MouseEvent | FocusEvent) => {
-  const details = getWellDetails(position);
-  const anchor = event.currentTarget as HTMLElement | null;
-  if (!details || !anchor) return;
-  hoveredWell.value = details;
-  await nextTick();
-  positionHoverCard(anchor);
-};
-
-const hideWellDetails = () => {
-  hoveredWell.value = null;
-};
-
-const onWellClick = (position: string) => {
-  emit("well-click", position);
-};
+// Hover state is owned by the child; descriptors rebuild only for plate data/geometry.
+const plateRows = computed(() =>
+  plateFormat.value.rows.map((row, rowIndex) => ({
+    label: row,
+    gridRow: rowIndex + 2,
+    cells: Array.from({ length: plateFormat.value.columns }, (_, colIndex) => {
+      const position = formatWell(plateFormat.value, rowIndex, colIndex);
+      const entries = wellsByPosition.value.get(position) ?? [];
+      const well = entries[0];
+      const collision = entries.length > 1;
+      const label = collision
+        ? `${entries.length} samples`
+        : well && (well.assigned || well.mixture_id || well.label)
+          ? well.label || `Mix ${well.mixture_id}`
+          : null;
+      const details: PlateWell | null = collision
+        ? {
+            well_position: position,
+            assigned: true,
+            label: `${entries.length} conflicting samples`,
+            tooltip: "Resolve the duplicate physical assignment before saving.",
+            details: entries.map((entry, index) => ({
+              label: `Sample ${index + 1}`,
+              value: entry.label || entry.tooltip || "Unnamed sample",
+            })),
+          }
+        : (well ?? null);
+      return {
+        position,
+        gridColumn: colIndex + 2,
+        label,
+        details,
+        collision,
+        excluded: entries.some((entry) => entry.excluded),
+        title: collision
+          ? `${position}: ${entries.length} conflicting sample assignments`
+          : well?.tooltip || label || position,
+      };
+    }),
+  })),
+);
 </script>
 
 <style scoped>
@@ -292,63 +212,6 @@ const onWellClick = (position: string) => {
   left: 0;
   z-index: 3;
   background: var(--ss-surface);
-}
-
-.plate-well-hover-card {
-  position: fixed;
-  z-index: 12000;
-  width: min(20rem, calc(100vw - 24px));
-  max-height: calc(100vh - 24px);
-  overflow: hidden;
-  padding: 0.85rem;
-  border: 1px solid var(--ss-action-tint);
-  border-radius: 0.75rem;
-  background: color-mix(in srgb, var(--ss-surface) 98%, transparent);
-  box-shadow: 0 14px 34px color-mix(in srgb, var(--ss-shadow-color) 22%, transparent);
-  color: var(--ss-text-strong);
-  font-size: 0.82rem;
-  pointer-events: none;
-}
-
-.hover-card-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 0.55rem;
-  padding-bottom: 0.55rem;
-  border-bottom: 1px solid var(--ss-border);
-}
-
-.hover-card-well {
-  padding: 0.15rem 0.4rem;
-  border-radius: 0.35rem;
-  background: var(--ss-action-tint);
-  color: var(--ss-action);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.hover-card-details {
-  display: grid;
-  grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr);
-  gap: 0.35rem 0.75rem;
-  margin: 0.65rem 0 0;
-  font-size: 0.82rem;
-}
-
-.hover-card-details dt {
-  color: var(--ss-text-muted);
-}
-
-.hover-card-details dd {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-weight: 600;
-}
-
-.hover-card-summary {
-  margin: 0.65rem 0 0;
-  font-size: 0.82rem;
 }
 
 .row-label {

@@ -65,6 +65,15 @@ def test_api_plate_enum_and_limit_are_derived_from_registry():
         }
 
 
+def test_legacy_error_reports_original_row_including_unassigned_rows():
+    from spectra_sherpa.app.services.dag.nodes.data.sample_table import _validate_plate_well_coordinates
+
+    with pytest.raises(ValueError, match="Sample table.*row 3.*outside 96-well plate"):
+        _validate_plate_well_coordinates(
+            ["", "p1", "p1"], ["", "A01", "H13"], format_values=None, row_prefix="Sample table"
+        )
+
+
 @pytest.mark.parametrize("format_id", list(PLATE_FORMATS))
 def test_sample_table_coordinates_preserve_explicit_format(format_id):
     from spectra_sherpa.app.services.dag.nodes.data.sample_table import _validate_plate_well_coordinates
