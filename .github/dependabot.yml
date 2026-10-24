@@ -19,6 +19,19 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
+      # These exact scientific runtimes need qualification, not a routine
+      # version bump. update-types applies to version updates; do not use a
+      # versions exclusion that could also suppress a security update.
+      - dependency-name: "scikit-learn"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      - dependency-name: "spectrochempy"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
     labels:
       - "dependencies"
       - "oss"

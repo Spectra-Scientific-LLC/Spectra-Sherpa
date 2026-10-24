@@ -86,3 +86,18 @@ unchanged divergence nor a manifest entry is an exemption.
 
 Pre-commit runs source checks from the correct frontend directory using installed
 tools. It must not download unpinned tools, build or stage static bundles.
+
+## Scientific runtime updates
+
+Routine dependency maintenance preserves the qualified scikit-learn and
+SpectroChemPy pins. Even a patch update can be refused by managed-runtime
+attestation; do not change contracts or qualification receipts merely to make
+an automated update pass. Engine upgrades require a separate reviewed
+scientific-runtime qualification, including saved-model compatibility and the
+optional adapter's paired proof. The current pins remain the supported runtimes
+until that work lands.
+
+Dependabot's named `ignore.update-types` rules exclude these engines from
+routine version updates, not security updates. Do not replace them with
+`ignore.versions`, disable alerts, suppress audits or weaken runtime admission.
+See the [Dependabot options reference](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
