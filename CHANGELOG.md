@@ -11,7 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Dependency security: require nbconvert7.17.2 or later in the HITRAN extra,
   including pip upgrades; update the paused desktop shell's Electron dependency
-  to44.5.0. No notebook stack is added to base installs; packaging remains paused.
+  to44.9.1. No notebook stack is added to base installs; packaging remains paused.
+- Patch Happy DOM to21.0.4 and the desktop downloader's Undici to7.30.1.
+  CI and publication audit full frontend and desktop locks, including test and
+  optional tooling; scanner errors and missing locks fail rather than skip.
 - Batch preflight keeps internal HTTP and invalid-input exception details in
   server logs and returns recovery advice without interrupting other pairs.
   Legacy-model refusals retain the canonical exploratory-use warning.

@@ -9,6 +9,7 @@ the curated release bundle has been materialized into the public clone.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
@@ -135,14 +136,17 @@ def audit_python(repo: Path, *, ignore_file: Path, all_extras_mode: str) -> None
             print(f"::warning::{message}", flush=True)
 
 
-def audit_frontend(repo: Path, *, scope: str, ignore_file: Path) -> None:
+def audit_npm(directory: Path, *, scope: str, ignore_file: Path) -> None:
+    """Audit a committed lock, independent of installed packages or lifecycle scripts."""
     _require_tool("npm")
-    frontend = repo / "frontend"
-    if not (frontend / "package-lock.json").is_file():
-        print("frontend/package-lock.json not present; skipping frontend runtime audit.", flush=True)
-        return
+    if not (directory / "package-lock.json").is_file():
+        raise SystemExit(f"required npm audit lockfile missing: {directory / 'package-lock.json'}")
+    print(f"Auditing {directory} ({scope} lockfile)", flush=True)
     if scope == "runtime":
-        _run(["npm", "audit", "--omit=dev", "--audit-level=moderate"], cwd=frontend)
+        _run(
+            ["npm", "audit", "--offline=false", "--package-lock-only", "--omit=dev", "--audit-level=moderate"],
+            cwd=directory,
+        )
         return
 
     # Full lockfile, including dev tooling. Dev findings block by default;
@@ -150,12 +154,33 @@ def audit_frontend(repo: Path, *, scope: str, ignore_file: Path) -> None:
     # advisory, and every other advisory in the report still fails the gate.
     waivers = _load_npm_audit_ignores(ignore_file)
     result = subprocess.run(
-        ["npm", "audit", "--audit-level=moderate", "--json"],
-        cwd=frontend,
+        [
+            "npm",
+            "audit",
+            "--offline=false",
+            "--package-lock-only",
+            "--include=dev",
+            "--include=optional",
+            "--audit-level=moderate",
+            "--json",
+        ],
+        cwd=directory,
         check=False,
         capture_output=True,
         text=True,
     )
+    try:
+        report = json.loads(result.stdout)
+    except (ValueError, TypeError):
+        raise SystemExit(f"npm audit returned an invalid JSON report for {directory}") from None
+    if (
+        result.returncode not in {0, 1}
+        or not isinstance(report, dict)
+        or report.get("error")
+        or report.get("auditReportVersion") != 2
+        or not isinstance(report.get("vulnerabilities"), dict)
+    ):
+        raise SystemExit(f"npm audit returned an incomplete or failed report for {directory}")
     if result.returncode == 0:
         return
     found = set(GHSA_ID.findall(result.stdout))
@@ -172,6 +197,16 @@ def audit_frontend(repo: Path, *, scope: str, ignore_file: Path) -> None:
         )
 
 
+def audit_frontend(repo: Path, *, scope: str, ignore_file: Path) -> None:
+    audit_npm(repo / "frontend", scope=scope, ignore_file=ignore_file)
+
+
+def audit_desktop(repo: Path, *, ignore_file: Path) -> None:
+    # Electron and its downloader are declared as dev dependencies, but ship or
+    # execute in the desktop delivery chain. A runtime-only audit omits both.
+    audit_npm(repo / "desktop/electron", scope="full", ignore_file=ignore_file)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -181,11 +216,12 @@ def main() -> int:
         help="Path to the public Spectra-Sherpa repository layout.",
     )
     parser.add_argument("--skip-python", action="store_true", help="Skip pip-audit checks.")
-    parser.add_argument("--skip-frontend", action="store_true", help="Skip npm audit checks.")
+    parser.add_argument("--skip-frontend", action="store_true", help="Skip the frontend npm audit.")
+    parser.add_argument("--skip-desktop", action="store_true", help="Skip the desktop full-lockfile npm audit.")
     parser.add_argument(
         "--frontend-scope",
         choices=["runtime", "full"],
-        default="runtime",
+        default="full",
         help="npm audit scope: runtime omits dev dependencies; full includes them with reviewed suppressions.",
     )
     parser.add_argument(
@@ -211,6 +247,8 @@ def main() -> int:
         audit_python(repo, ignore_file=ignore_file, all_extras_mode=args.all_extras_mode)
     if not args.skip_frontend:
         audit_frontend(repo, scope=args.frontend_scope, ignore_file=ignore_file)
+    if not args.skip_desktop:
+        audit_desktop(repo, ignore_file=ignore_file)
     print("Spectra-Sherpa dependency audit passed.", flush=True)
     return 0
 
