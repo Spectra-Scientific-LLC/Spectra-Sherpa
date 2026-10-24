@@ -104,6 +104,12 @@ Plot capture waits for layout/fonts/animation and gives the actual canvas a
 temporary stable compositor layer and antialiasing mode. It does not resize or
 clone plots. The same capture helper's negative tests reject changed text,
 colors and one-pixel geometry; raster differences are not waived by tolerance.
+Geometry measurements also wait for finite transitions on the containing
+surface and its ancestors: a visible Plotly SVG can still be scaled by its
+dialog's opening transition. The viewport regression holds the real theme's
+transition mid-flight, then verifies the unchanged 850px minimum and rejects
+genuinely short or internally clipped figures. It neither disables the product
+animation nor relaxes the geometry or pixel assertions.
 Representative component screenshots are retained for review. axe checks the
 shared table and plot dialogs against WCAG A/AA rules, including keyboard access
 and contrast. They do not establish whole-product accessibility compliance.

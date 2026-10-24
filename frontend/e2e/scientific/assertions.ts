@@ -141,6 +141,25 @@ export async function closeDialog(page: Page): Promise<void> {
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
 
+/** Read geometry only after the surface and its containing dialog finish entering. */
+export async function settledSurfaceLayout(surface: Locator): Promise<void> {
+  await surface.evaluate(async el => {
+    await document.fonts.ready;
+    // A visible SVG can still be scaled by an ancestor's dialog transition.
+    // Include ancestors for embedded Detailed View, not just the chart subtree.
+    const animations = new Set(el.getAnimations({ subtree: true }));
+    for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+      parent.getAnimations().forEach(animation => animations.add(animation));
+    }
+    await Promise.all([...animations].filter(animation =>
+      animation.effect?.getComputedTiming().iterations !== Infinity,
+    ).map(animation => animation.finished.catch(() => undefined)));
+    await new Promise<void>(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+  });
+}
+
 /** Capture only after the plot has settled into the dialog's rendered layout. */
 export async function settledPlotScreenshot(page: Page, path: string): Promise<Buffer> {
   const canvas = page.getByRole("dialog").locator(".plotly-canvas");
@@ -157,12 +176,7 @@ export async function settledPlotScreenshot(page: Page, path: string): Promise<B
       }),
     )
     .toBeLessThanOrEqual(1);
-  await page.evaluate(() => document.fonts.ready.then(() => undefined));
-  await page.getByRole("dialog").evaluate(async el => {
-    await Promise.all(el.getAnimations({ subtree: true }).filter(animation =>
-      animation.effect?.getComputedTiming().iterations !== Infinity,
-    ).map(animation => animation.finished.catch(() => undefined)));
-  });
+  await settledSurfaceLayout(canvas);
   await page.mouse.move(0, 0);
   // Dialogs can leave the same SVG in different compositor tiles after reopen.
   // Retained Ubuntu artifacts show edge-coverage differences of 2–7 channel
