@@ -45,19 +45,30 @@ test("paired preprocessing plots retain their full height in Quick Plot and Deta
 
 test("figure geometry waits for ancestor transitions without accepting short or clipped plots @smoke", async ({ page }) => {
   // Use the application's actual PrimeVue theme, not a test-only transition.
-  await page.setContent('<div role="dialog" class="p-dialog p-dialog-enter-from p-dialog-enter-active"><section class="embedded-plot"><div class="plotly-container"><div class="plotly-chart" style="height:850px"><div class="plotly-canvas"><svg class="main-svg" width="800" height="850"></svg></div></div></div></section></div>');
+  // Install the theme before inserting the fixture, as the application does.
+  // Styling an already-rendered unstyled dialog starts unrelated transitions
+  // toward scale(.7); reversing those immediately can omit transform entirely.
+  await page.setContent("");
   await page.addStyleTag({ path: "node_modules/primevue/resources/themes/lara-light-blue/theme.css" });
+  await page.evaluate(() => {
+    document.body.innerHTML = '<div role="dialog" class="p-dialog p-dialog-enter-from p-dialog-enter-active"><section class="embedded-plot"><div class="plotly-container"><div class="plotly-chart" style="height:850px"><div class="plotly-canvas"><svg class="main-svg" width="800" height="850"></svg></div></div></div></section></div>';
+  });
   const dialog = page.getByRole("dialog");
   const plot = dialog.locator(".embedded-plot");
   await dialog.evaluate(async el => {
     // Flush the enter-from state, then deterministically hold its real CSS
     // transition mid-flight. Host speed cannot turn this into retry-to-green.
-    if (getComputedStyle(el).transform === "none") throw new Error("Expected the dialog enter-from scale");
+    if (new DOMMatrixReadOnly(getComputedStyle(el).transform).m22 !== 0.7) {
+      throw new Error("Expected the settled dialog enter-from scale");
+    }
     el.classList.remove("p-dialog-enter-from");
     const animations = el.getAnimations();
-    if (!animations.length) throw new Error("Expected the real dialog enter transition");
+    if (!animations.some(animation => animation instanceof CSSTransition && animation.transitionProperty === "transform")) {
+      throw new Error("Expected the real dialog transform transition");
+    }
+    animations.forEach(animation => animation.pause());
+    await Promise.all(animations.map(animation => animation.ready));
     for (const animation of animations) {
-      animation.pause();
       animation.currentTime = Number(animation.effect!.getTiming().duration) * 0.85;
     }
   });
