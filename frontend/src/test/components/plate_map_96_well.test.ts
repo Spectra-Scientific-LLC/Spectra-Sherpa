@@ -9,6 +9,45 @@ afterEach(() => {
 });
 
 describe("PlateMap96Well", () => {
+  it.each([
+    [6, "B03"],
+    [12, "C04"],
+    [24, "D06"],
+    [48, "F08"],
+    [96, "H12"],
+    [384, "P24"],
+    [1536, "AF48"],
+  ])("renders every well of a %s-well format", (capacity, last) => {
+    const wrapper = mount(PlateMap96Well, {
+      props: { wells: [], plateFormatId: `plate-${capacity}`, interactive: true },
+    });
+    expect(wrapper.findAll(".well")).toHaveLength(Number(capacity));
+    expect(wrapper.find(`[aria-label="${last}"]`).exists()).toBe(true);
+    expect(wrapper.get(".plate-viewport").attributes("tabindex")).toBe("0");
+    wrapper.unmount();
+  });
+
+  it("dismisses a tooltip on pan and resets the viewport on a format change", async () => {
+    const wrapper = mount(PlateMap96Well, {
+      attachTo: document.body,
+      props: {
+        plateFormatId: "plate-1536",
+        wells: [{ well_position: "AF48", label: "last sample", assigned: true }],
+      },
+    });
+    await wrapper.get('[aria-label="last sample"]').trigger("focus");
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain("AF48");
+    const viewport = wrapper.get(".plate-viewport");
+    await viewport.trigger("scroll");
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    (viewport.element as HTMLElement).scrollTop = 800;
+    (viewport.element as HTMLElement).scrollLeft = 1200;
+    await wrapper.setProps({ plateFormatId: "plate-6" });
+    expect((viewport.element as HTMLElement).scrollTop).toBe(0);
+    expect((viewport.element as HTMLElement).scrollLeft).toBe(0);
+    expect(wrapper.findAll(".well")).toHaveLength(6);
+    wrapper.unmount();
+  });
   it("shows structured sample-table properties beside an assigned well", async () => {
     const wrapper = mount(PlateMap96Well, {
       attachTo: document.body,

@@ -21,6 +21,39 @@ const targets: SampleTargetDefinition[] = [
 ];
 
 describe("portable sample table", () => {
+  it.each([
+    [6, "B03"],
+    [12, "C04"],
+    [24, "D06"],
+    [48, "F08"],
+    [96, "H12"],
+    [384, "P24"],
+    [1536, "AF48"],
+  ])("preserves the declared %s-well format in portable sample tables", (capacity, last) => {
+    const formatId = `plate-${capacity}`;
+    const rows = createSampleTableRows(2, 41, ["first", "last"], ["moisture"]);
+    rows.forEach((row) => {
+      row.targets.moisture = "1.5";
+    });
+    applyAcquisitionPlan(rows, ["A01", String(last)], formatId);
+    expect(validateSampleTable(rows, [targets[0]], "moisture", [], formatId).valid).toBe(true);
+    const csv = serializeSampleTableCsv(rows, [targets[0]], [], formatId);
+    expect(csv).toContain(`${formatId},plate-1,${last}`);
+  });
+  it("compares and applies high-density plan coordinates using their declared format", () => {
+    const rows = createSampleTableRows(2, 41, ["first", "last"], ["moisture"]);
+    applyAcquisitionPlan(rows, ["AA01", "AF48"], "plate-1536");
+    expect(rows.map((row) => row.well)).toEqual(["AA01", "AF48"]);
+    expect(compareAcquisitionPlan(rows, ["AA01", "AF48"], "plate-1536")).toMatchObject({
+      planned: 2,
+      matched: 2,
+      unmeasured: 0,
+      outsidePlan: 0,
+    });
+    expect(() => applyAcquisitionPlan(rows, ["AA01", "AF48"], "plate-96")).toThrow(
+      "outside 96-well plate",
+    );
+  });
   it("preserves exact source row identity and supplied sample labels", () => {
     const rows = createSampleTableRows(3, 41, ["QC, 1", "sample-2"], ["moisture"]);
     expect(rows.map((row) => [row.row_index, row.source_file_id, row.sample_id])).toEqual([
@@ -121,7 +154,13 @@ describe("portable sample table", () => {
       capacity: 96,
       revision: "a".repeat(64),
       samples: [
-        { sample_id: "oil", source_specimen_uid: null, name: "Oil", sample_type: null, notes: null },
+        {
+          sample_id: "oil",
+          source_specimen_uid: null,
+          name: "Oil",
+          sample_type: null,
+          notes: null,
+        },
       ],
       mixtures: [],
       factors: [

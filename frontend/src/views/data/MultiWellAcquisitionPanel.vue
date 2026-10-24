@@ -39,14 +39,15 @@
         />
       </div>
       <div class="field">
-        <label for="acquisition-format">Default plate format</label>
+        <label for="acquisition-format">Plate format</label>
         <Dropdown
           id="acquisition-format"
-          :model-value="plateFormat.id"
+          v-model="preferredFormatId"
           :options="formatOptions"
           option-label="label"
           option-value="value"
-          disabled
+          option-disabled="disabled"
+          :disabled="!canAuthor || loading"
         />
       </div>
       <dl class="plan-facts">
@@ -228,7 +229,7 @@
           </div>
           <div v-if="canAuthor" class="actions">
             <Button
-              label="Fill 96 wells"
+              :label="`Fill ${plateFormat.capacity} wells`"
               icon="pi pi-th-large"
               class="p-button-sm p-button-outlined"
               @click="fillPlate"
@@ -244,6 +245,7 @@
         </div>
         <p>Select wells and assign samples or mixtures.</p>
         <PlateMap96Well
+          :plate-format-id="plateFormat.id"
           :wells="displayWells"
           :selected-well="selectedWell"
           :interactive="canAuthor"
@@ -422,6 +424,7 @@ import {
   defaultPlateFormatId,
   formatWell,
   getPlateFormat,
+  parsePlateWell,
   plateFormats,
 } from "@/utils/plateFormats";
 import { proposeMeasuredSamples, type SampleTableRow } from "@/utils/sampleTable";
@@ -462,7 +465,12 @@ const toast = useToast();
 const { isCapabilityDisabled } = useAppConfig();
 const preferredFormatId = ref(defaultPlateFormatId);
 const plateFormat = computed(() => getPlateFormat(preferredFormatId.value));
-const formatOptions = plateFormats.map((format) => ({ label: format.label, value: format.id }));
+const formatOptions = computed(() => plateFormats.map((format) => ({
+  label: format.label, value: format.id,
+  disabled: draft.value.wells.some(well => {
+    try { parsePlateWell(well.well_position, format); return false; } catch { return true; }
+  }),
+})));
 const loading = ref(false);
 const saving = ref(false);
 const loadError = ref<string | null>(null);
@@ -471,6 +479,7 @@ const revision = ref("");
 const baseline = ref("");
 const selectedWell = ref<string | null>(null);
 const measuredRows = ref<SampleTableRow[]>([]);
+const measuredFormatId = ref(defaultPlateFormatId);
 const measuredLoading = ref(false);
 const measuredAvailable = ref(false);
 const presets = ref<AcquisitionPreset[]>([]);
@@ -488,8 +497,9 @@ const blankDraft = () => ({
   },
 });
 const draft = ref(blankDraft());
+watch(preferredFormatId, () => { selectedWell.value = null; });
 const canAuthor = computed(() => !isCapabilityDisabled("sample_table_authoring"));
-const serializedDraft = computed(() => JSON.stringify(draft.value));
+const serializedDraft = computed(() => JSON.stringify({ plate_format_id: preferredFormatId.value, ...draft.value }));
 const dirty = computed(() => baseline.value !== serializedDraft.value);
 const sampleOptions = computed(() =>
   draft.value.samples.map((item) => ({
@@ -538,16 +548,16 @@ const displayWells = computed(() =>
 const planForProposal = computed<AcquisitionPlan>(() => ({
   schema_version: "spectrasherpa-acquisition-plan/3",
   experiment_id: props.experimentId ?? 0,
-  plate_format_id: "plate-96",
+  plate_format_id: plateFormat.value.id as AcquisitionPlan["plate_format_id"],
   plate_format_label: plateFormat.value.label,
   capacity: plateFormat.value.capacity,
   revision: revision.value,
   ...draft.value,
 }));
 const measuredProposal = computed(() =>
-  proposeMeasuredSamples(measuredRows.value, planForProposal.value),
+  proposeMeasuredSamples(measuredRows.value, planForProposal.value, measuredFormatId.value),
 );
-const measuredDifferenceCount = computed(() => measuredProposal.value.differences.length);
+const measuredDifferenceCount = computed(() => measuredProposal.value.differences.length + Number(measuredProposal.value.plateFormatChanged) + Number(Boolean(measuredProposal.value.refusal)));
 const syncLabel = computed(() =>
   measuredLoading.value
     ? "Checking measured samples"
@@ -733,6 +743,7 @@ function selectExperiment(id: number | null): void {
 
 async function loadMeasuredRows(): Promise<void> {
   measuredRows.value = [];
+  measuredFormatId.value = defaultPlateFormatId;
   measuredAvailable.value = false;
   if (!props.sourceFileId) return;
   measuredLoading.value = true;
@@ -740,6 +751,7 @@ async function loadMeasuredRows(): Promise<void> {
     const { data } = await api.get<MeasuredSampleTableEditor>(
       `/builder/analysis-binding/${props.sourceFileId}`,
     );
+    measuredFormatId.value = data.plate_format_id ?? defaultPlateFormatId;
     measuredRows.value = data.rows.map((row) => ({
       ...row,
       targets: { ...row.targets },
@@ -778,7 +790,7 @@ async function loadPlan(): Promise<void> {
       preferredFormatId.value = data.plate_format_id || preferredFormatId.value;
       draft.value = clonePlan(data);
       revision.value = data.revision;
-      baseline.value = JSON.stringify(draft.value);
+      baseline.value = serializedDraft.value;
       presets.value = presetResponse.data;
       await loadMeasuredRows();
     }
@@ -789,17 +801,25 @@ async function loadPlan(): Promise<void> {
   }
 }
 async function savePlan(): Promise<void> {
-  if (props.experimentId == null || !canAuthor.value) return;
+  if (props.experimentId == null || !canAuthor.value || saving.value) return;
+  const experimentId = props.experimentId;
+  const token = requestToken;
+  const submitted = serializedDraft.value;
   saving.value = true;
   saveError.value = null;
   try {
     const { data } = await api.put<AcquisitionPlan>(
-      `/experiments/${props.experimentId}/acquisition-plan`,
-      { plate_format_id: plateFormat.value.id, expected_revision: revision.value, ...draft.value },
+      `/experiments/${experimentId}/acquisition-plan`,
+      { ...JSON.parse(submitted), expected_revision: revision.value },
     );
-    draft.value = clonePlan(data);
+    if (token !== requestToken) return;
+    const savedDraft = clonePlan(data);
+    if (serializedDraft.value === submitted) {
+      preferredFormatId.value = data.plate_format_id;
+      draft.value = savedDraft;
+    }
     revision.value = data.revision;
-    baseline.value = JSON.stringify(draft.value);
+    baseline.value = JSON.stringify({ plate_format_id: data.plate_format_id, ...savedDraft });
     emit("saved", data);
     toast.add({
       severity: "success",
@@ -808,7 +828,7 @@ async function savePlan(): Promise<void> {
       life: 3000,
     });
   } catch (cause) {
-    saveError.value = getErrorMessage(cause);
+    if (token === requestToken) saveError.value = getErrorMessage(cause);
   } finally {
     saving.value = false;
   }

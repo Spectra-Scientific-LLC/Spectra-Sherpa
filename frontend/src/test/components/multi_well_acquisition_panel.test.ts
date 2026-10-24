@@ -55,6 +55,76 @@ describe("MultiWellAcquisitionPanel", () => {
     vi.mocked(api.put).mockResolvedValue({ data: plan });
   });
 
+  it("saves format-only changes and fills the selected capacity", async () => {
+    vi.mocked(api.put).mockImplementation(async (_url, payload) => ({
+      data: {
+        ...plan,
+        ...(payload as object),
+        plate_format_label: "1536-well plate",
+        capacity: 1536,
+        revision: "b".repeat(64),
+      },
+    }));
+    const wrapper = shallowMount(MultiWellAcquisitionPanel, {
+      props: { experimentId: 12, experimentOptions: [] },
+    });
+    await flushPromises();
+    const format = wrapper.getComponent("#acquisition-format");
+    expect(format.attributes("disabled")).toBe("false");
+    format.vm.$emit("update:modelValue", "plate-1536");
+    await flushPromises();
+    expect(wrapper.getComponent({ name: "PlateMap96Well" }).props("plateFormatId")).toBe(
+      "plate-1536",
+    );
+    expect(wrapper.get('button-stub[label="Save acquisition plan"]').attributes("disabled")).toBe(
+      "false",
+    );
+    await wrapper.get('button-stub[label="Fill 1536 wells"]').trigger("click");
+    await wrapper.get('button-stub[label="Save acquisition plan"]').trigger("click");
+    await flushPromises();
+    const payload = vi.mocked(api.put).mock.calls[0][1] as {
+      plate_format_id: string;
+      wells: { well_position: string }[];
+    };
+    expect(payload.plate_format_id).toBe("plate-1536");
+    expect(payload.wells).toHaveLength(1536);
+    expect(payload.wells.at(-1)?.well_position).toBe("AF48");
+    // Shrinking cannot silently hide out-of-bounds assignments: clear first.
+    expect(
+      (
+        wrapper.vm as unknown as { formatOptions: { value: string; disabled: boolean }[] }
+      ).formatOptions.find((option) => option.value === "plate-6")?.disabled,
+    ).toBe(true);
+  });
+
+  it("keeps edits made during a save dirty against the returned format", async () => {
+    let resolveSave!: (value: { data: object }) => void;
+    vi.mocked(api.put).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const wrapper = shallowMount(MultiWellAcquisitionPanel, { props: { experimentId: 12 } });
+    await flushPromises();
+    const format = wrapper.getComponent("#acquisition-format");
+    format.vm.$emit("update:modelValue", "plate-384");
+    await flushPromises();
+    await wrapper.get('button-stub[label="Save acquisition plan"]').trigger("click");
+    format.vm.$emit("update:modelValue", "plate-1536");
+    await flushPromises();
+    resolveSave({
+      data: { ...plan, plate_format_id: "plate-384", capacity: 384, revision: "b".repeat(64) },
+    });
+    await flushPromises();
+    expect(wrapper.getComponent({ name: "PlateMap96Well" }).props("plateFormatId")).toBe(
+      "plate-1536",
+    );
+    expect(wrapper.get('button-stub[label="Save acquisition plan"]').attributes("disabled")).toBe(
+      "false",
+    );
+  });
+
   it("loads and saves the complete multi-well experiment contract", async () => {
     const wrapper = shallowMount(MultiWellAcquisitionPanel, {
       props: {

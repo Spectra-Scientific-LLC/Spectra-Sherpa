@@ -17,6 +17,76 @@ const source = {
 };
 
 describe("provider-independent parsed Data Story facts", () => {
+  it("counts a label-only feature axis without inventing numeric coordinates", () => {
+    const { facts } = buildDataStoryContext({ title: "Iris", n_samples: 150, n_features: 4,
+      x_axis: { axis_class: "FeatureAxis", labels: ["sepal length (cm)", "sepal width (cm)",
+        "petal length (cm)", "petal width (cm)"] } });
+    expect(facts.x_axis).toMatchObject({ count: 4, numeric_coordinate_count: 0, min: null, max: null });
+    expect(facts.synthesis).toBeNull();
+  });
+
+  it("uses declared alternate axis coordinates and refuses malformed axes", () => {
+    expect(buildDataStoryContext({ x_axis: { primary_scale_name: "shift",
+      alternate_scales: [{ name: "shift", values: [1800, 1200, 600], units: "cm^-1", source_set_index: 0 }] },
+    }).facts.x_axis).toMatchObject({ count: 3, numeric_coordinate_count: 3, min: 600, max: 1800 });
+    expect(buildDataStoryContext({ x_axis: { data: [1, 2], labels: ["only one"] } }).facts.x_axis)
+      .toMatchObject({ count: null, min: null, max: null, unavailable_reason: expect.any(String) });
+    expect(buildDataStoryContext({}).facts.x_axis).toMatchObject({ count: null, min: null, max: null });
+  });
+
+  it("keeps canonical synthetic origin and recipe when generic metadata is omitted", () => {
+    const extra = { "synthetic.metadata": { source: "synthesis", synthesis_source: "nist_quant_ir" },
+      recipe: { settings: { source: "nist_quant_ir", n_samples: 50, pathlength_cm: 10,
+        noise_sigma_au: 0.001, resolution_cm1: 1, apodization: "Blackman-Harris", api_key: "never-forward" },
+      components: [{ name: "Acetone", source: "nist_quant_ir", concentration_max_ppm: 100,
+        spectrum_units: "molar absorption coefficient", control_points: [{ x: 0, y: 0.15 }],
+        source_provenance: { credential: "never-forward" } }],
+      wavenumber: { min: 575.169, max: 3975.077, n_points: 7053, units: "cm^-1" },
+      raw_spectra: [[1234567]], path: "/private/not-for-llm" },
+      "ground_truth.spectra": [[9876543]] };
+    const parsed = { title: "An arbitrary editable title", extra,
+      metadata: Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`field${i}`, "x".repeat(400)])) };
+    const context = buildDataStoryContext(parsed);
+    expect(context.facts.metadata).toBeUndefined();
+    expect(context.facts.synthesis).toMatchObject({ origin: "synthetic", source: "nist_quant_ir",
+      component_count: 1, components: [{ name: "Acetone", concentration_max_ppm: 100 }],
+      settings: { n_samples: 50, pathlength_cm: 10, noise_sigma_au: 0.001, resolution_cm1: 1 },
+      wavenumber: { n_points: 7053, units: "cm^-1" } });
+    const encoded = JSON.stringify(context);
+    for (const secret of ["never-forward", "1234567", "9876543", "/private/not-for-llm", "control_points"]) {
+      expect(encoded).not.toContain(secret);
+    }
+    const localFacts = JSON.parse(localStoryMessage(parsed, "How acquired?").split("Dataset facts: ")[1]);
+    expect(localFacts).toEqual(context.facts);
+    expect(encoded.length).toBeLessThan(12000);
+  });
+
+  it("rejects non-scalar recipe values, including mirrored raw recipe and ground truth", () => {
+    const metadata = { "synthetic.metadata": { source: "synthesis", synthesis_source: "nist_quant_ir" },
+      recipe: { settings: { n_samples: 50, pathlength_cm: [[987654321]], source: { data: "not text" },
+        noise_sigma_au: NaN, seed: true, temperature_k: 296 },
+      wavenumber: { min: [[11223344]], max: Infinity, n_points: 7053, units: ["not text"] } },
+      ground_truth: { concentrations: [[55667788]] } };
+    const { facts } = buildDataStoryContext({ metadata });
+    expect(facts.synthesis).toMatchObject({ settings: { n_samples: 50, temperature_k: 296 },
+      wavenumber: { n_points: 7053 } });
+    expect((facts.synthesis as Record<string, unknown>).settings).toEqual({ n_samples: 50, temperature_k: 296 });
+    expect((facts.synthesis as Record<string, unknown>).wavenumber).toEqual({ n_points: 7053 });
+    for (const forbidden of ["987654321", "11223344", "55667788", "not text", '"recipe"', '"ground_truth"']) {
+      expect(JSON.stringify(facts)).not.toContain(forbidden);
+    }
+  });
+
+  it("supports the compatibility mirror, but never guesses synthetic origin from a title or recipe alone", () => {
+    const mirrored = { metadata: { "synthetic.metadata": { source: "synthetic_reference", synthesis_source: "hitran" },
+      recipe: { components: Array.from({ length: 20 }, (_, i) => ({ name: `Component ${i}` })) } } };
+    expect(buildDataStoryContext(mirrored).facts.synthesis)
+      .toMatchObject({ origin: "synthetic", source: "hitran", component_count: 20, omitted_components: 4 });
+    for (const parsed of [{ title: "Synthetic NIST acetone" }, { extra: { recipe: { settings: { source: "nist_quant_ir" } } } }]) {
+      expect(buildDataStoryContext(parsed).facts.synthesis).toBeNull();
+    }
+  });
+
   it("summarizes all acquisition timestamps before truncating displayed examples", () => {
     const metadata = { source_member_metadata: Array.from({ length: 33 }, (_, i) => ({
       metadata: { "omnic.acquisition": { acquired_at: new Date(Date.UTC(2026, 7, 23, 23, 0, i * 150)).toISOString() } },

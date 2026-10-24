@@ -56,6 +56,8 @@ export interface AcquisitionPlanDifference {
 export interface AcquisitionPlanProposal {
   rows: SampleTableRow[];
   differences: AcquisitionPlanDifference[];
+  plateFormatChanged: boolean;
+  refusal: string | null;
   status: AcquisitionPlanComparison;
 }
 
@@ -166,8 +168,9 @@ export function assignSequential96WellCoordinates(rows: SampleTableRow[]): void 
 export function compareAcquisitionPlan(
   rows: readonly SampleTableRow[],
   plannedWells: readonly string[],
+  plateFormatId = defaultPlateFormatId,
 ): AcquisitionPlanComparison {
-  const format = getPlateFormat();
+  const format = getPlateFormat(plateFormatId);
   const normalizeWell = (well: string): string => {
     const coordinate = parsePlateWell(well, format);
     return formatWell(format, coordinate.row, coordinate.column);
@@ -197,13 +200,14 @@ export function compareAcquisitionPlan(
 export function applyAcquisitionPlan(
   rows: SampleTableRow[],
   plannedWells: readonly string[],
+  plateFormatId = defaultPlateFormatId,
 ): void {
   if (plannedWells.length !== rows.length) {
     throw new Error(
       `Exact assignment requires one planned well for each measured row (${plannedWells.length} planned, ${rows.length} measured).`,
     );
   }
-  const format = getPlateFormat();
+  const format = getPlateFormat(plateFormatId);
   const normalized = plannedWells.map((well) => {
     const coordinate = parsePlateWell(well, format);
     return formatWell(format, coordinate.row, coordinate.column);
@@ -220,6 +224,7 @@ export function applyAcquisitionPlan(
 export function proposeMeasuredSamples(
   rows: readonly SampleTableRow[],
   plan: AcquisitionPlan,
+  measuredPlateFormatId = defaultPlateFormatId,
 ): AcquisitionPlanProposal {
   const proposed = rows.map((row) => ({
     ...row,
@@ -278,11 +283,30 @@ export function proposeMeasuredSamples(
   return {
     rows: proposed,
     differences,
+    plateFormatChanged: measuredPlateFormatId !== plan.plate_format_id,
+    refusal: plateAssignmentFormatError(proposed, plan.plate_format_id),
     status: compareAcquisitionPlan(
       proposed,
       plan.wells.map((well) => well.well_position),
+      plan.plate_format_id,
     ),
   };
+}
+
+export function plateAssignmentFormatError(
+  rows: readonly SampleTableRow[],
+  formatId: string,
+): string | null {
+  const format = getPlateFormat(formatId);
+  for (const row of rows) {
+    if (!row.well.trim()) continue;
+    try {
+      parsePlateWell(row.well, format);
+    } catch {
+      return `Well ${row.well} is outside ${format.label}. Reassign or clear it before changing format.`;
+    }
+  }
+  return null;
 }
 
 function normalizedTargets(targets: readonly SampleTargetDefinition[]): SampleTargetDefinition[] {

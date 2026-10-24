@@ -363,3 +363,39 @@ async def test_user_can_read_and_update_default_plate_format_and_list_presets(cl
     assert updated.json() == initial.json()
     assert presets.status_code == 200
     assert presets.json() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("capacity", [6, 12, 24, 48, 96, 384, 1536])
+async def test_all_plate_formats_persist_full_capacity_and_preferences(client: AsyncClient, capacity):
+    from spectra_sherpa.core.plate_formats import get_plate_format
+
+    plate = get_plate_format(f"plate-{capacity}")
+    preference = await client.put("/api/v1/acquisition-preferences", json={"default_plate_format_id": plate.id})
+    assert preference.status_code == 200
+    experiment_id = await _create_experiment(client)
+    initial = (await client.get(f"/api/v1/experiments/{experiment_id}/acquisition-plan")).json()
+    assert initial["plate_format_id"] == plate.id
+    wells = [{"well_position": plate.format_well(r, c)} for r in range(len(plate.rows)) for c in range(plate.columns)]
+    saved = await client.put(
+        f"/api/v1/experiments/{experiment_id}/acquisition-plan",
+        json={"expected_revision": initial["revision"], "plate_format_id": plate.id, "wells": wells},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["capacity"] == capacity
+    assert len(saved.json()["wells"]) == capacity
+    assert saved.json()["wells"][-1]["well_position"] == plate.last_well
+    assert (await client.get(f"/api/v1/experiments/{experiment_id}/acquisition-plan")).json() == saved.json()
+    other_format = "plate-96" if capacity != 96 else "plate-384"
+    changed_default = await client.put(
+        "/api/v1/acquisition-preferences", json={"default_plate_format_id": other_format}
+    )
+    assert changed_default.status_code == 200
+    assert (await client.get(f"/api/v1/experiments/{experiment_id}/acquisition-plan")).json() == saved.json()
+    if capacity > 6:
+        refused = await client.put(
+            f"/api/v1/experiments/{experiment_id}/acquisition-plan",
+            json={"expected_revision": saved.json()["revision"], "plate_format_id": "plate-6"},
+        )
+        assert refused.status_code == 400
+        assert (await client.get(f"/api/v1/experiments/{experiment_id}/acquisition-plan")).json() == saved.json()

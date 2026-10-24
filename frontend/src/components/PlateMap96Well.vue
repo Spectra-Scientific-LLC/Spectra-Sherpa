@@ -1,40 +1,67 @@
 <template>
   <div class="plate-map-96">
-    <div class="plate-header">
-      <div class="row-label"></div>
-      <div v-for="col in 12" :key="col" class="col-label">
-        {{ col }}
-      </div>
-    </div>
-
-    <div v-for="row in rows" :key="row" class="plate-row">
-      <div class="row-label">{{ row }}</div>
-
+    <div
+      ref="viewport"
+      class="plate-viewport"
+      role="region"
+      :aria-label="`${plateFormat.label} map`"
+      tabindex="0"
+      @scroll="hideWellDetails"
+    >
       <div
-        v-for="col in 12"
-        :key="plateWellPosition(row, col)"
-        class="well"
-        :aria-label="getWellTitle(plateWellPosition(row, col))"
-        :tabindex="interactive || getWellDetails(plateWellPosition(row, col)) ? 0 : -1"
-        role="button"
-        :class="{
-          'well-assigned': getWellValue(plateWellPosition(row, col)),
-          'well-excluded': isWellExcluded(plateWellPosition(row, col)),
-          'well-collision': hasWellCollision(plateWellPosition(row, col)),
-          'well-selected': selectedWell === plateWellPosition(row, col),
+        class="plate-grid"
+        :style="{
+          gridTemplateColumns: `40px repeat(${plateFormat.columns}, 64px)`,
+          gridTemplateRows: `32px repeat(${plateFormat.rows.length}, 64px)`,
         }"
-        @mouseenter="showWellDetails(plateWellPosition(row, col), $event)"
-        @mouseleave="hideWellDetails"
-        @focus="showWellDetails(plateWellPosition(row, col), $event)"
-        @blur="hideWellDetails"
-        @click="onWellClick(plateWellPosition(row, col))"
-        @keydown.enter.prevent="onWellClick(plateWellPosition(row, col))"
-        @keydown.space.prevent="onWellClick(plateWellPosition(row, col))"
       >
-        <div class="well-position">{{ plateWellPosition(row, col) }}</div>
-        <div v-if="getWellValue(plateWellPosition(row, col))" class="well-content">
-          {{ getWellValue(plateWellPosition(row, col)) }}
+        <div class="plate-corner" aria-hidden="true"></div>
+        <div
+          v-for="col in plateFormat.columns"
+          :key="`column-${col}`"
+          class="col-label"
+          :style="{ gridRow: 1, gridColumn: col + 1 }"
+          aria-hidden="true"
+        >
+          {{ col }}
         </div>
+        <template v-for="(row, rowIndex) in plateFormat.rows" :key="row">
+          <div
+            class="row-label"
+            :style="{ gridRow: rowIndex + 2, gridColumn: 1 }"
+            aria-hidden="true"
+          >
+            {{ row }}
+          </div>
+
+          <div
+            v-for="col in plateFormat.columns"
+            :key="plateWellPosition(row, col)"
+            class="well"
+            :style="{ gridRow: rowIndex + 2, gridColumn: col + 1 }"
+            :aria-label="getWellTitle(plateWellPosition(row, col))"
+            :tabindex="interactive || getWellDetails(plateWellPosition(row, col)) ? 0 : -1"
+            role="button"
+            :class="{
+              'well-assigned': getWellValue(plateWellPosition(row, col)),
+              'well-excluded': isWellExcluded(plateWellPosition(row, col)),
+              'well-collision': hasWellCollision(plateWellPosition(row, col)),
+              'well-selected': selectedWell === plateWellPosition(row, col),
+            }"
+            @mouseenter="showWellDetails(plateWellPosition(row, col), $event)"
+            @mouseleave="hideWellDetails"
+            @focus="showWellDetails(plateWellPosition(row, col), $event)"
+            @blur="hideWellDetails"
+            @click="onWellClick(plateWellPosition(row, col))"
+            @keydown.enter.prevent="onWellClick(plateWellPosition(row, col))"
+            @keydown.space.prevent="onWellClick(plateWellPosition(row, col))"
+          >
+            <div class="well-position">{{ plateWellPosition(row, col) }}</div>
+            <div v-if="getWellValue(plateWellPosition(row, col))" class="well-content">
+              {{ getWellValue(plateWellPosition(row, col)) }}
+            </div>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -84,7 +111,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
+import { defaultPlateFormatId, formatWell, getPlateFormat } from "@/utils/plateFormats";
 
 interface PlateWellDetail {
   label: string;
@@ -106,19 +134,32 @@ const props = defineProps<{
   selectedWell?: string | null;
   showLegend?: boolean;
   interactive?: boolean;
+  plateFormatId?: string;
 }>();
 
 const emit = defineEmits<{
   (e: "well-click", wellPosition: string): void;
 }>();
 
-const rows = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const plateFormat = computed(() => getPlateFormat(props.plateFormatId ?? defaultPlateFormatId));
+const viewport = ref<HTMLElement | null>(null);
 const hoverCard = ref<HTMLElement | null>(null);
 const hoveredWell = ref<PlateWell | null>(null);
 const hoverCardStyle = ref<Record<string, string>>({ left: "12px", top: "12px" });
 
 const plateWellPosition = (row: string, column: number) =>
-  `${row}${String(column).padStart(2, "0")}`;
+  formatWell(plateFormat.value, plateFormat.value.rows.indexOf(row), column - 1);
+
+watch(
+  () => props.plateFormatId,
+  () => {
+    hoveredWell.value = null;
+    if (viewport.value) {
+      viewport.value.scrollTop = 0;
+      viewport.value.scrollLeft = 0;
+    }
+  },
+);
 
 const wellsByPosition = computed(() => {
   const map = new Map<string, PlateWell[]>();
@@ -218,6 +259,39 @@ const onWellClick = (position: string) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.plate-viewport {
+  max-width: 100%;
+  max-height: clamp(12rem, calc(100vh - 12rem), 34rem);
+  overflow: auto;
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--ss-border);
+  border-radius: 6px;
+  scroll-padding: 36px 0 0 44px;
+}
+
+.plate-viewport:focus-visible {
+  outline: 2px solid var(--ss-action);
+  outline-offset: 2px;
+}
+
+.plate-grid {
+  display: grid;
+  width: max-content;
+  gap: 4px;
+}
+
+.plate-corner {
+  grid-area: 1 / 1;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  background: var(--ss-surface);
 }
 
 .plate-well-hover-card {
@@ -232,6 +306,7 @@ const onWellClick = (position: string) => {
   background: color-mix(in srgb, var(--ss-surface) 98%, transparent);
   box-shadow: 0 14px 34px color-mix(in srgb, var(--ss-shadow-color) 22%, transparent);
   color: var(--ss-text-strong);
+  font-size: 0.82rem;
   pointer-events: none;
 }
 
@@ -276,16 +351,13 @@ const onWellClick = (position: string) => {
   font-size: 0.82rem;
 }
 
-.plate-header {
-  display: grid;
-  grid-template-columns: 40px repeat(12, 1fr);
-  gap: 4px;
-  margin-bottom: 4px;
-}
-
 .row-label {
   width: 40px;
-  height: 60px;
+  height: 64px;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--ss-surface);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -295,19 +367,17 @@ const onWellClick = (position: string) => {
 }
 
 .col-label {
-  height: 30px;
+  height: 32px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ss-surface);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--ss-text-secondary);
-}
-
-.plate-row {
-  display: grid;
-  grid-template-columns: 40px repeat(12, 1fr);
-  gap: 4px;
 }
 
 .well {
@@ -329,7 +399,6 @@ const onWellClick = (position: string) => {
 .well:hover {
   border-color: var(--ss-action);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--ss-action) 20%, transparent);
-  transform: scale(1.05);
 }
 
 .well-position {
@@ -375,6 +444,7 @@ const onWellClick = (position: string) => {
 
 .plate-legend {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   margin-top: 12px;
   padding: 12px;
@@ -412,19 +482,5 @@ const onWellClick = (position: string) => {
 .legend-swatch.well-collision {
   background: var(--ss-danger-surface);
   border-color: var(--ss-danger);
-}
-
-@media (max-width: 1200px) {
-  .well {
-    padding: 2px;
-  }
-
-  .well-position {
-    font-size: 0.6rem;
-  }
-
-  .well-content {
-    font-size: 0.65rem;
-  }
 }
 </style>

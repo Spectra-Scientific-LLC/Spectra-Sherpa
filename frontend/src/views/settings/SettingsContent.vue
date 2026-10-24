@@ -1,7 +1,10 @@
 <template>
   <section class="settings-content">
     <WorkspaceHeader title="Settings" />
-
+    <WorkspaceTabs
+:model-value="activeTab" :tab-ids="settingsTabIds" class="settings-tabs"
+      @update:model-value="selectSettingsTab">
+    <TabPanel v-if="isManaged" header="Preferences">
     <!-- Hosted Pro exposes personal disclosure and acquisition preferences. -->
     <div v-if="isHostedPro" class="demo-region">
       <div class="demo-notice" role="status">
@@ -38,19 +41,22 @@
       </div>
     </div>
 
-    <WorkspaceTabs v-else v-model="activeTab" :tab-ids="settingsTabIds" class="settings-tabs">
-      <TabPanel header="API Keys">
+    </TabPanel>
+      <TabPanel v-if="!isManaged" header="API Keys">
         <ApiKeysTab />
       </TabPanel>
-      <TabPanel header="Integrations">
+      <TabPanel v-if="!isManaged" header="Integrations">
         <IntegrationsTab />
       </TabPanel>
-      <TabPanel header="Data">
+      <TabPanel v-if="!isManaged" header="Data">
         <PlateFormatSettingsSection />
         <DisplayPreferencesSection />
       </TabPanel>
-      <TabPanel v-if="showGuidanceSettings" header="Guidance">
+      <TabPanel v-if="!isManaged && showGuidanceSettings" header="Guidance">
         <GuidanceSettingsSection />
+      </TabPanel>
+      <TabPanel header="Storage">
+        <RetainedStorageRecovery />
       </TabPanel>
     </WorkspaceTabs>
   </section>
@@ -58,7 +64,8 @@
 
 <script setup lang="ts">
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import TabPanel from "primevue/tabpanel";
 import ApiKeysTab from "./ApiKeysTab.vue";
@@ -66,19 +73,31 @@ import GuidanceSettingsSection from "./GuidanceSettingsSection.vue";
 import IntegrationsTab from "./IntegrationsTab.vue";
 import PlateFormatSettingsSection from "./PlateFormatSettingsSection.vue";
 import DisplayPreferencesSection from "./DisplayPreferencesSection.vue";
+import RetainedStorageRecovery from "@/components/RetainedStorageRecovery.vue";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
 
+const route = useRoute();
+const router = useRouter();
 const activeTab = ref("api-keys");
-const settingsTabIds = computed(() => [
-  "api-keys", "integrations", "data", ...(showGuidanceSettings.value ? ["guidance"] : []),
-]);
 const { isDemoMode } = useDemoMode();
 const { appMode, siteProfile, isFeatureEnabled } = useAppConfig();
 const isHostedPro = computed(() => appMode.value === "enterprise" && siteProfile?.value === "pro");
+const isManaged = computed(() => isHostedPro.value || isDemoMode.value);
 const showGuidanceSettings = computed(
   () => appMode.value !== "local" && isFeatureEnabled("sherpaGuidance"),
 );
+const settingsTabIds = computed(() => isManaged.value ? ["preferences", "storage"] : [
+  "api-keys", "integrations", "data", ...(showGuidanceSettings.value ? ["guidance"] : []), "storage",
+]);
+watch([() => route.query.tab, () => route.hash, settingsTabIds], () => {
+  const requested = typeof route.query.tab === "string" ? route.query.tab : route.hash?.slice(1);
+  activeTab.value = requested && settingsTabIds.value.includes(requested) ? requested : settingsTabIds.value[0];
+}, { immediate: true });
+function selectSettingsTab(tab: string): void {
+  activeTab.value = tab;
+  void router.replace({ query: { ...route.query, tab }, hash: "" });
+}
 </script>
 
 <style scoped>

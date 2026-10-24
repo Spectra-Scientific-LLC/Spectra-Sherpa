@@ -20,6 +20,22 @@ For the installed application, use the versioned user guides.
 - Use semantic theme tokens and the shared plot theme. Do not introduce
   component-local color authorities.
 - Preserve keyboard access, visible focus and readable layouts at narrow widths.
+- Storage recovery belongs to Settings, not the scientific project dashboard.
+  Legacy navigation must redirect without initiating reclamation.
+
+## Plate maps
+
+The shared format registry (`src/spectra_sherpa/data/plate_formats_v1.json`)
+owns plate geometry and coordinates. API schemas, planning, sample tables and
+the shared plate renderer derive from it. Keep legacy tables without an explicit
+format on their historical 96-well interpretation; overlapping coordinates do
+not establish another plate's size.
+
+Use fixed-size wells and text inside a two-axis scroll viewport. Row labels stay
+at the left and column labels at the top, aligned with their wells while panning.
+Do not shrink text to fit high-density plates or leave a floating tooltip anchored
+to a well that has scrolled away. Format changes must not silently hide or discard
+existing assignments.
 
 ## Scientific context and copy
 

@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from spectra_sherpa.core.plate_formats import DEFAULT_PLATE_FORMAT_ID, MAX_PLATE_CAPACITY, PlateFormatId
+
 Scalar = str | int | float | bool | None
 Identifier = Annotated[str, Field(min_length=1, max_length=100)]
 
@@ -99,11 +101,11 @@ class AcquisitionPlanDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal["spectrasherpa-acquisition-plan/3"] = "spectrasherpa-acquisition-plan/3"
-    plate_format_id: Literal["plate-96"] = "plate-96"
+    plate_format_id: PlateFormatId = DEFAULT_PLATE_FORMAT_ID
     samples: list[PlannedSample] = Field(default_factory=list, max_length=100000)
     mixtures: list[PlannedMixture] = Field(default_factory=list, max_length=10000)
     factors: list[PlannedFactor] = Field(default_factory=list, max_length=1000)
-    wells: list[AcquisitionPlanWell] = Field(default_factory=list, max_length=96)
+    wells: list[AcquisitionPlanWell] = Field(default_factory=list, max_length=MAX_PLATE_CAPACITY)
     acquisition_order: list[AcquisitionOrderStep] = Field(default_factory=list, max_length=100000)
     matching: AcquisitionMatching = Field(default_factory=AcquisitionMatching)
 
@@ -113,12 +115,12 @@ class AcquisitionPlanUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    plate_format_id: Literal["plate-96"] | None = None
+    plate_format_id: PlateFormatId | None = None
     expected_revision: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     samples: list[PlannedSample] | None = Field(default=None, max_length=100000)
     mixtures: list[PlannedMixture] | None = Field(default=None, max_length=10000)
     factors: list[PlannedFactor] | None = Field(default=None, max_length=1000)
-    wells: list[AcquisitionPlanWell] | None = Field(default=None, max_length=96)
+    wells: list[AcquisitionPlanWell] | None = Field(default=None, max_length=MAX_PLATE_CAPACITY)
     acquisition_order: list[AcquisitionOrderStep] | None = Field(default=None, max_length=100000)
     matching: AcquisitionMatching | None = None
 
@@ -143,10 +145,10 @@ class AcquisitionPlanPresetOut(BaseModel):
 class WorkbenchPreferencesOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    default_plate_format_id: Literal["plate-96"]
+    default_plate_format_id: PlateFormatId
 
 
 class WorkbenchPreferencesUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    default_plate_format_id: Literal["plate-96"]
+    default_plate_format_id: PlateFormatId

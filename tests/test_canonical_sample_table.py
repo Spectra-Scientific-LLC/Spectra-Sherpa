@@ -609,7 +609,7 @@ def test_sample_table_records_explicit_plate_format_and_rejects_unknown_format(t
     assert table is not None
     assert table["annotations"]["plate_format"] == ["plate-96"] * 3
 
-    path.write_text(path.read_text(encoding="utf-8").replace("plate-96", "plate-384"), encoding="utf-8")
+    path.write_text(path.read_text(encoding="utf-8").replace("plate-96", "plate-72"), encoding="utf-8")
     with pytest.raises(ValueError, match="Unknown plate format"):
         load_portable_sample_table(
             path,

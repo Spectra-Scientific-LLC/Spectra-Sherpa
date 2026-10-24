@@ -126,7 +126,7 @@ export interface ReferenceValueEvidence {
 export interface AcquisitionPlan {
   schema_version: "spectrasherpa-acquisition-plan/3";
   experiment_id: number;
-  plate_format_id: "plate-96";
+  plate_format_id: components["schemas"]["PlateFormatId"];
   plate_format_label: string;
   capacity: number;
   revision: string;
@@ -166,7 +166,7 @@ export interface MeasuredSampleTableEditor {
     type: "continuous" | "categorical";
   }>;
   annotation_columns: string[];
-  plate_format_id: "plate-96";
+  plate_format_id: components["schemas"]["PlateFormatId"];
   rows: Array<{
     row_index: number;
     source_file_id: number;

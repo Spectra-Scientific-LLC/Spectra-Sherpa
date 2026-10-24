@@ -4497,12 +4497,8 @@ export interface components {
             matching?: components["schemas"]["AcquisitionMatching"];
             /** Mixtures */
             mixtures?: components["schemas"]["PlannedMixture"][];
-            /**
-             * Plate Format Id
-             * @default plate-96
-             * @constant
-             */
-            plate_format_id?: "plate-96";
+            /** @default plate-96 */
+            plate_format_id?: components["schemas"]["PlateFormatId"];
             /** Plate Format Label */
             plate_format_label: string;
             /** Revision */
@@ -4547,8 +4543,7 @@ export interface components {
             matching?: components["schemas"]["AcquisitionMatching"] | null;
             /** Mixtures */
             mixtures?: components["schemas"]["PlannedMixture"][] | null;
-            /** Plate Format Id */
-            plate_format_id?: "plate-96" | null;
+            plate_format_id?: components["schemas"]["PlateFormatId"] | null;
             /** Samples */
             samples?: components["schemas"]["PlannedSample"][] | null;
             /** Wells */
@@ -7279,6 +7274,11 @@ export interface components {
             /** Source Specimen Uid */
             source_specimen_uid?: string | null;
         };
+        /**
+         * PlateFormatId
+         * @enum {string}
+         */
+        PlateFormatId: "plate-6" | "plate-12" | "plate-24" | "plate-48" | "plate-96" | "plate-384" | "plate-1536";
         /** PopulationSummary */
         PopulationSummary: {
             /** Admitted Count */
@@ -9136,19 +9136,11 @@ export interface components {
         };
         /** WorkbenchPreferencesOut */
         WorkbenchPreferencesOut: {
-            /**
-             * Default Plate Format Id
-             * @constant
-             */
-            default_plate_format_id: "plate-96";
+            default_plate_format_id: components["schemas"]["PlateFormatId"];
         };
         /** WorkbenchPreferencesUpdate */
         WorkbenchPreferencesUpdate: {
-            /**
-             * Default Plate Format Id
-             * @constant
-             */
-            default_plate_format_id: "plate-96";
+            default_plate_format_id: components["schemas"]["PlateFormatId"];
         };
         /** WorkflowBrief */
         WorkflowBrief: {

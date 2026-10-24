@@ -258,6 +258,7 @@
             :options="plateFormatOptions"
             optionLabel="label"
             optionValue="value"
+            optionDisabled="disabled"
             :disabled="plateFormatOptions.length === 1"
           />
         </div>
@@ -348,7 +349,7 @@
         <small v-else>No intended wells are saved for this dataset.</small>
       </div>
       <div
-        v-if="proposalDifferences.length"
+        v-if="proposalDifferences.length || proposalFormatChanged"
         class="proposal-preview"
         role="region"
         aria-label="Proposed measured sample differences"
@@ -371,7 +372,8 @@
             />
           </div>
         </div>
-        <DataTable :value="proposalDifferences.slice(0, 20)" size="small" stripedRows>
+        <small v-if="proposalFormatChanged && loadedPlan">Format: {{ selectedPlateFormat.label }} → {{ loadedPlan.plate_format_label }}</small>
+        <DataTable v-if="proposalDifferences.length" :value="proposalDifferences.slice(0, 20)" size="small" stripedRows>
           <Column field="rowIndex" header="Row" />
           <Column field="field" header="Field" />
           <Column field="before" header="Published/current" />
@@ -418,7 +420,7 @@
         />
         <Tag :value="`${previewPlateCoverage.empty} empty wells`" severity="secondary" />
       </div>
-      <PlateMap96Well :wells="previewPlateWells" showLegend />
+      <PlateMap96Well :plate-format-id="plateFormatId" :wells="previewPlateWells" showLegend />
     </section>
 
     <section class="control-section sample-table-section" aria-labelledby="sample-table-title">
@@ -518,6 +520,7 @@
           {{ publicationRowCount }} rows. The current version remains immutable and existing
           workflows keep their current file IDs.
         </p>
+        <small v-if="plateFormatId !== originalPlateFormatId">Plate format: {{ getPlateFormat(originalPlateFormatId).label }} → {{ selectedPlateFormat.label }}</small>
       </div>
       <Tag value="Explicit publication required" severity="warning" />
     </section>
@@ -570,6 +573,7 @@ import {
   createSampleTableRows,
   isReservedSampleTableColumn,
   normalizeAnnotationColumnName,
+  plateAssignmentFormatError,
   proposeMeasuredSamples,
   serializeSampleTableCsv,
   validateSampleTable,
@@ -661,6 +665,7 @@ const annotationsExpanded = ref(true);
 const plateAssignmentExpanded = ref(true);
 const sampleTableExpanded = ref(true);
 const plateFormatId = ref(defaultPlateFormatId);
+const originalPlateFormatId = ref(defaultPlateFormatId);
 const plateStart = ref("A01");
 const initialPlateFormat = getPlateFormat();
 const plateEnd = ref(
@@ -679,6 +684,7 @@ const plannedWells = ref<string[]>([]);
 const loadedPlan = ref<AcquisitionPlan | null>(null);
 const proposedRows = ref<SampleTableRow[]>([]);
 const proposalDifferences = ref<ReturnType<typeof proposeMeasuredSamples>["differences"]>([]);
+const proposalFormatChanged = ref(false);
 const pendingPublication = ref<SampleTableSavePayload | null>(null);
 const planLoading = ref(false);
 const planError = ref("");
@@ -703,10 +709,11 @@ const plateDirectionOptions = [
   { label: "Across rows", value: "rows" },
   { label: "Down columns", value: "columns" },
 ];
-const plateFormatOptions = plateFormats.map((format) => ({
+const plateFormatOptions = computed(() => plateFormats.map((format) => ({
   label: format.label,
   value: format.id,
-}));
+  disabled: Boolean(plateAssignmentFormatError(rows.value, format.id)),
+})));
 const selectedPlateFormat = computed(() => getPlateFormat(plateFormatId.value));
 const wellOptions = computed(() =>
   Array.from({ length: selectedPlateFormat.value.capacity }, (_, index) =>
@@ -777,6 +784,7 @@ function openEditor(): void {
   plateError.value = "";
   manualPlateEditing.value = false;
   plateFormatId.value = defaultPlateFormatId;
+  originalPlateFormatId.value = plateFormatId.value;
   targetsExpanded.value = true;
   annotationsExpanded.value = true;
   plateAssignmentExpanded.value = true;
@@ -818,6 +826,7 @@ async function loadMeasuredSamples(): Promise<void> {
     selectedTarget.value = data.selected_target;
     setReferenceDeclaration(data.reference_declaration);
     plateFormatId.value = data.plate_format_id;
+    originalPlateFormatId.value = plateFormatId.value;
     manualPlateEditing.value = rows.value.some((row) => Boolean(row.plate_id || row.well));
   } catch (error: unknown) {
     editorLoadError.value = getErrorMessage(
@@ -987,9 +996,13 @@ const planAssignmentHint = computed(() =>
     ? "Preview matching by retained acquisition records, then planned plate order"
     : `A proposal needs planned wells and measured rows (${plannedWells.value.length} planned, ${rows.value.length} measured).`,
 );
-const planComparison = computed(() => compareAcquisitionPlan(rows.value, plannedWells.value));
+const planComparison = computed(() => compareAcquisitionPlan(rows.value, plannedWells.value,
+  loadedPlan.value?.plate_format_id ?? plateFormatId.value));
 const planDifferenceCount = computed(() =>
-  loadedPlan.value ? proposeMeasuredSamples(rows.value, loadedPlan.value).differences.length : 0,
+  loadedPlan.value ? (() => {
+    const proposal = proposeMeasuredSamples(rows.value, loadedPlan.value, plateFormatId.value);
+    return proposal.differences.length + Number(proposal.plateFormatChanged) + Number(Boolean(proposal.refusal));
+  })() : 0,
 );
 const planSyncLabel = computed(() =>
   planDifferenceCount.value ? "Publication needed" : "Plan and measured samples synchronized",
@@ -997,18 +1010,34 @@ const planSyncLabel = computed(() =>
 
 function previewAcquisitionPlan(): void {
   if (!loadedPlan.value) return;
-  const proposal = proposeMeasuredSamples(rows.value, loadedPlan.value);
+  const proposal = proposeMeasuredSamples(rows.value, loadedPlan.value, plateFormatId.value);
+  if (proposal.refusal) {
+    plateError.value = proposal.refusal;
+    confirmPlanAssignment.value = false;
+    clearProposal();
+    return;
+  }
   proposedRows.value = proposal.rows;
   proposalDifferences.value = proposal.differences;
-  if (!proposal.differences.length)
+  proposalFormatChanged.value = proposal.plateFormatChanged;
+  if (!proposal.differences.length && !proposal.plateFormatChanged)
     plateError.value = "The measured samples already match this acquisition plan.";
   confirmPlanAssignment.value = false;
 }
 function clearProposal(): void {
   proposedRows.value = [];
   proposalDifferences.value = [];
+  proposalFormatChanged.value = false;
 }
 function applyProposal(): void {
+  if (!loadedPlan.value || !proposedRows.value.length) return;
+  const refusal = plateAssignmentFormatError(proposedRows.value, loadedPlan.value.plate_format_id);
+  if (refusal) {
+    plateError.value = refusal;
+    clearProposal();
+    return;
+  }
+  plateFormatId.value = loadedPlan.value.plate_format_id;
   rows.value = proposedRows.value.map(cloneRow);
   const proposalColumns = new Set(rows.value.flatMap((row) => Object.keys(row.annotations)));
   annotationColumns.value = [...new Set([...annotationColumns.value, ...proposalColumns])];
@@ -1239,6 +1268,7 @@ const publicationRowCount = computed(
 
 function markSaved(): void {
   originalRows.value = rows.value.map(cloneRow);
+  originalPlateFormatId.value = plateFormatId.value;
   pendingPublication.value = null;
   visible.value = false;
 }

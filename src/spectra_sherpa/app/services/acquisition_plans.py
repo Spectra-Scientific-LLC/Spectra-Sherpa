@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.db.session import begin_serialized_sqlite_write
-from spectra_sherpa.app.models.acquisition_plan import AcquisitionPlan
+from spectra_sherpa.app.models.acquisition_plan import AcquisitionPlan, UserWorkbenchPreferences
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_specimen import ExperimentSpecimen
 from spectra_sherpa.app.schemas.acquisition_plans import AcquisitionPlanDocument
@@ -152,11 +152,23 @@ async def _validate_source_specimens(session: AsyncSession, experiment_id: int, 
 
 
 async def read_acquisition_plan(session: AsyncSession, experiment_id: int) -> dict[str, object]:
-    plate_format = get_plate_format(DEFAULT_PLATE_FORMAT_ID)
     stored = await _stored_plan(session, experiment_id)
-    document = canonicalize_acquisition_plan(
-        stored.document if stored is not None else empty_acquisition_plan(format_id=plate_format.id)
-    )
+    if stored is not None:
+        document = canonicalize_acquisition_plan(stored.document)
+    else:
+        # Preferences initialize only an unsaved plan; retained plans own their
+        # format and must not change when the user's default changes later.
+        experiment = await session.get(Experiment, experiment_id)
+        format_id = DEFAULT_PLATE_FORMAT_ID
+        if experiment is not None:
+            preferred = await session.scalar(
+                select(UserWorkbenchPreferences.default_plate_format_id).where(
+                    UserWorkbenchPreferences.user_id == experiment.user_id
+                )
+            )
+            format_id = preferred or format_id
+        document = canonicalize_acquisition_plan(empty_acquisition_plan(format_id=format_id))
+    plate_format = get_plate_format(document["plate_format_id"])
     return {
         **document,
         "experiment_id": experiment_id,

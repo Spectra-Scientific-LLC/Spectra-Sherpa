@@ -3,10 +3,46 @@
   "default_format_id": "plate-96",
   "formats": [
     {
+      "id": "plate-6",
+      "label": "6-well plate",
+      "rows": ["A", "B"],
+      "columns": 3
+    },
+    {
+      "id": "plate-12",
+      "label": "12-well plate",
+      "rows": ["A", "B", "C"],
+      "columns": 4
+    },
+    {
+      "id": "plate-24",
+      "label": "24-well plate",
+      "rows": ["A", "B", "C", "D"],
+      "columns": 6
+    },
+    {
+      "id": "plate-48",
+      "label": "48-well plate",
+      "rows": ["A", "B", "C", "D", "E", "F"],
+      "columns": 8
+    },
+    {
       "id": "plate-96",
       "label": "96-well plate",
       "rows": ["A", "B", "C", "D", "E", "F", "G", "H"],
       "columns": 12
+    },
+    {
+      "id": "plate-384",
+      "label": "384-well plate",
+      "rows": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P"],
+      "columns": 24
+    },
+    {
+      "id": "plate-1536",
+      "label": "1536-well plate",
+      "rows": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "AA", "AB", "AC", "AD", "AE", "AF"],
+      "columns": 48
     }
   ]
 }

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Staging GUI corrections
 
+- Storage recovery moves from Dashboard to Settings; existing Dashboard Storage
+  bookmarks redirect to the new subtab without reclaiming files automatically.
+- Multi-well planning and measured-sample previews support 6-, 12-, 24-, 48-,
+  96-, 384- and 1536-well formats from one registry. Plate maps pan in both
+  directions with fixed-size text and persistent row/column headers. Saved
+  plans retain their own format; legacy tables without a format remain 96-well.
+- Data Story counts labelled feature axes correctly and retains parsed
+  synthesis origin and recipe settings, distinct from laboratory acquisition.
+
 - Dependency security: require nbconvert7.17.2 or later in the HITRAN extra,
   including pip upgrades; update the paused desktop shell's Electron dependency
   to44.9.1. No notebook stack is added to base installs; packaging remains paused.
