@@ -60,6 +60,14 @@ count and dirty state there; a clean plan needs no disabled Save/status row.
 
 ## Scientific context and copy
 
+Runs has one workspace header, context strip and subtab navigation. Reuse
+`WorkspaceState` for empty/loading/error surfaces; Inspect and Compare use the
+same page variant when no result is selected. Models groups Local Model History,
+Saved Models and Imported Models in the existing collapsible Panel component,
+without a second inner title or border. Use the same compact PrimeVue action
+buttons as History; panel grouping must not hide a selected model's detail or
+change scientific evidence, permission checks, pagination or export contents.
+
 Descriptive source summaries can report finite coordinate bounds and recorded
 catalog bounds, with their origin and missing-coordinate counts. They do not
 authorize rendering or weaken the strict plot-axis alignment validator.

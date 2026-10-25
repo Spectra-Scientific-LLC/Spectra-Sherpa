@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the filtered entry count in the subtitle.
 - Source subtitles show the same dataset names used for saving. Multi-well
   reports configured wells in the subtitle and offers Save only after edits.
+- Runs shares empty-state and action styling across its subtabs. Models separates
+  local history, saved evidence and imported models into consistent collapsible
+  sections without changing model actions or scientific evidence.
 - Storage recovery moves from Dashboard to Settings; existing Dashboard Storage
   bookmarks redirect to the new subtab without reclaiming files automatically.
 - Multi-well planning and measured-sample previews support 6-, 12-, 24-, 48-,

@@ -17,25 +17,29 @@
       <p v-if="runNameError" role="alert">{{ runNameError }}</p>
     </header>
     <div class="run-detail__actions" role="group" aria-label="Run actions">
-      <Button icon="pi pi-arrow-left" label="History" class="p-button-text" aria-label="Back to Runs" @click="backToRuns" />
+      <Button icon="pi pi-arrow-left" label="History" class="p-button-text p-button-sm" aria-label="Back to Runs" @click="backToRuns" />
       <Button v-if="detail?.run.workflow_id && detail.run.project_id && !loading && !error"
-        icon="pi pi-sitemap" label="Workflow" :title="detail.run.workflow_name || 'Source workflow'" :aria-label="detail.run.workflow_name ? `Workflow: ${detail.run.workflow_name}` : 'Workflow'" class="p-button-text" @click="openWorkflow" />
+        icon="pi pi-sitemap" label="Workflow" :title="detail.run.workflow_name || 'Source workflow'" :aria-label="detail.run.workflow_name ? `Workflow: ${detail.run.workflow_name}` : 'Workflow'" class="p-button-text p-button-sm" @click="openWorkflow" />
       <Button v-if="detail?.run.workflow_id && !loading && !error" icon="pi pi-file" label="Report"
+        class="p-button-text p-button-sm"
         @click="openReport" />
       <Button v-if="detail?.run.status === 'completed' && detail.run.source_type !== 'paired_evaluation' && !loading && !error" icon="pi pi-send" label="Open Deploy"
+        class="p-button-text p-button-sm"
         @click="router.push({ path: '/deploy', query: { run: detail.run.id, project: detail.run.project_id, application: `run:${detail.run.id}` } })" />
       <template v-if="detail?.run.produced_artifact_uids?.length && !loading && !error">
-        <select v-if="detail.run.produced_artifact_uids.length > 1" v-model="promotionArtifactUid" aria-label="Fitted model for review">
+        <select v-if="detail.run.produced_artifact_uids.length > 1" v-model="promotionArtifactUid" class="p-inputtext p-inputtext-sm" aria-label="Fitted model for review">
           <option value="">Choose a fitted model</option><option v-for="uid in detail.run.produced_artifact_uids" :key="uid" :value="uid">{{ uid }}</option>
         </select>
-        <Button label="Review for promotion" :disabled="detail.run.produced_artifact_uids.length > 1 && !promotionArtifactUid" @click="promotionArtifactUid = promotionArtifactUid || detail.run.produced_artifact_uids[0]; promotionOpen = true" />
+        <Button label="Review for promotion" class="p-button-text p-button-sm" :disabled="detail.run.produced_artifact_uids.length > 1 && !promotionArtifactUid" @click="promotionArtifactUid = promotionArtifactUid || detail.run.produced_artifact_uids[0]; promotionOpen = true" />
       </template>
       <ContextualActions :context="!loading && !error && detail && detail.run.project_id === project.currentProjectId && project.currentProjectId != null
         ? { surface: 'run', projectId: project.currentProjectId, runId: detail.run.id } : null" />
     </div>
     <ModelPromotionReview v-if="promotionOpen && promotionArtifactUid && detail" :artifact-uid="promotionArtifactUid" :project-id="detail.run.project_id" :workflow-id="detail.run.workflow_id" :run-id="detail.run.id" @close="promotionOpen = false" @confirmed="promotionOpen = false" />
-    <div v-if="error"><p role="alert">{{ error }}</p><Button icon="pi pi-refresh" label="Retry" @click="loadRun()" /></div>
-    <ProgressSpinner v-else-if="loading" />
+    <WorkspaceState v-if="error" kind="error" variant="page" :message="error">
+      <Button icon="pi pi-refresh" label="Retry" class="p-button-text p-button-sm" @click="loadRun()" />
+    </WorkspaceState>
+    <WorkspaceState v-else-if="loading" kind="loading" variant="page" message="Loading run…" />
     <template v-else-if="detail">
       <p v-if="detail.error" role="status" class="evidence-gaps">
         <strong>{{ detail.run.status === 'partial' ? 'Incomplete saved run:' : 'Run issue:' }}</strong>
@@ -82,7 +86,7 @@
             </dl>
             <SavedValue :value="detail.environment_snapshot.packages" />
             <details><summary>Capture and numerical library details</summary><SavedValue :value="detail.environment_snapshot" /></details>
-            <Button label="Export environment evidence" @click="exportEnvironment" />
+            <Button label="Export environment evidence" class="p-button-text p-button-sm" @click="exportEnvironment" />
           </template>
           <p v-else>Not recorded for this run. The current server environment is not substituted.</p>
         </section>
@@ -114,7 +118,7 @@
             <p>{{ view.claimScope }}</p>
             <p>Method: {{ view.method || 'Unavailable' }} · Fitted reference: {{ view.referenceCount ?? 'Unavailable' }} samples · T² limit: {{ view.t2Limit ?? 'Unavailable' }} · Q limit: {{ view.qLimit ?? 'Unavailable' }}</p>
             <p v-if="view.rows.length > 200">Showing the first 200 of {{ view.rows.length }} rows. Download the complete table.</p>
-            <Button label="Download prediction trust CSV" @click="exportApplicationTrust(view)" />
+            <Button label="Download prediction trust CSV" class="p-button-text p-button-sm" @click="exportApplicationTrust(view)" />
             <div class="application-trust__scroll">
               <table>
                 <thead><tr><th>Applied dataset position</th><th>Prediction</th><th>Global T²/Q screen</th><th>T²</th><th>Q</th><th>Evidence note</th><th>Advisor</th></tr></thead>
@@ -123,7 +127,7 @@
                     <td>{{ row.sampleIndex + 1 }}</td><td>{{ formatPrediction(row.prediction) }}</td>
                     <td>{{ trustLabel(row.status) }}</td><td>{{ row.t2 ?? '—' }}</td><td>{{ row.q ?? '—' }}</td>
                     <td>{{ row.reason || 'Global screening is not proof of prediction correctness.' }}</td>
-                    <td><Button label="Ask Sherpa" :disabled="!applicationAdvisorAvailable" @click="askApplicationAdvisor(view, row.sampleIndex)" /></td>
+                    <td><Button label="Ask Sherpa" class="p-button-text p-button-sm" :disabled="!applicationAdvisorAvailable" @click="askApplicationAdvisor(view, row.sampleIndex)" /></td>
                   </tr>
                 </tbody>
               </table>
@@ -137,9 +141,7 @@
           <p>The computation may have completed, but these named outputs are not fully recoverable from this saved run.</p>
           <ul>
             <li v-for="gap in evidenceGaps" :key="`${gap.node_id}:${gap.output}`">
-              <button type="button" @click="openEvidenceGap(gap)">
-                {{ evidenceGapLabel(gap) }}
-              </button>
+              <Button :label="evidenceGapLabel(gap)" class="p-button-link p-button-sm" @click="openEvidenceGap(gap)" />
               <Tag :value="evidenceScopeLabel(gap.category)" severity="warn" />
               <span>{{ gap.reason }}</span>
               <small>{{ gap.recovery }}</small>
@@ -149,7 +151,7 @@
             v-if="detail.run.workflow_id && detail.run.project_id"
             label="Open workflow to re-run"
             icon="pi pi-refresh"
-            class="p-button-outlined"
+            class="p-button-outlined p-button-sm"
             @click="openWorkflow"
           />
         </section>
@@ -174,13 +176,13 @@
                 <p>Applied workflow version: {{ detail.run.workflow_version_id ?? 'Unavailable' }}</p>
                 <p>{{ nodeTrust.claimScope }} Method: {{ nodeTrust.method || 'Unavailable' }} · Fitted reference: {{ nodeTrust.referenceCount ?? 'Unavailable' }} samples · T² limit: {{ nodeTrust.t2Limit ?? 'Unavailable' }} · Q limit: {{ nodeTrust.qLimit ?? 'Unavailable' }}</p>
                 <p v-if="nodeTrust.rows.length > 200">Showing the first 200 of {{ nodeTrust.rows.length }} rows. Download the complete table.</p>
-                <Button label="Download prediction trust CSV" @click="exportApplicationTrust(nodeTrust)" />
+                <Button label="Download prediction trust CSV" class="p-button-text p-button-sm" @click="exportApplicationTrust(nodeTrust)" />
                 <div class="application-trust__scroll"><table>
                   <thead><tr><th>File dataset position</th><th>Prediction</th><th>Global T²/Q screen</th><th>T²</th><th>Q</th><th>Advisor</th></tr></thead>
                   <tbody><tr v-for="row in nodeTrust.rows.slice(0, 200)" :key="row.sampleIndex">
                     <td>{{ row.sampleIndex + 1 }}</td><td>{{ formatPrediction(row.prediction) }}</td>
                     <td>{{ trustLabel(row.status) }}</td><td>{{ row.t2 ?? '—' }}</td><td>{{ row.q ?? '—' }}</td>
-                    <td><Button label="Ask Sherpa" :disabled="!applicationAdvisorAvailable" @click="askRunApplicationAdvisor(row.sampleIndex)" /></td>
+                    <td><Button label="Ask Sherpa" class="p-button-text p-button-sm" :disabled="!applicationAdvisorAvailable" @click="askRunApplicationAdvisor(row.sampleIndex)" /></td>
                   </tr></tbody>
                 </table></div>
               </section>
@@ -239,6 +241,7 @@ import { useRoute, useRouter } from 'vue-router';
 import Button from 'primevue/button';
 import SelectButton from 'primevue/selectbutton';
 import ProgressSpinner from 'primevue/progressspinner';
+import WorkspaceState from '@/components/workspace/WorkspaceState.vue';
 import Dropdown from 'primevue/dropdown';
 import Tag from 'primevue/tag';
 import api from '@/api/client';
@@ -826,7 +829,6 @@ details { border-top: 1px solid var(--surface-border); padding: .75rem 0; }
 .evidence-gaps { margin-top: 1.25rem; padding: 1rem; border: 1px solid var(--ss-warning); border-radius: .5rem; }
 .evidence-gaps ul { display: grid; gap: .75rem; padding-left: 1.25rem; }
 .evidence-gaps li { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); align-items: baseline; gap: .35rem .75rem; }
-.evidence-gaps li button { border: 0; padding: 0; background: none; color: var(--primary-color); font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
 .evidence-gaps li small { grid-column: 1 / -1; }
 .application-trust { margin-top: 1rem; padding: 1rem; border: 1px solid var(--surface-border); border-radius: .5rem; }
 .application-trust__scroll { max-height: 28rem; overflow: auto; margin-top: .75rem; }

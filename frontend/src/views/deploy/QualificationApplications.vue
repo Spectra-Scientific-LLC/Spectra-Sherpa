@@ -1,22 +1,23 @@
 <template>
-  <details :open="!!reviewWorkflowId">
-    <summary>Review imported fitted applications</summary>
+  <Panel header="Imported Models" toggleable :collapsed="!reviewWorkflowId">
     <MethodHelp topic="qualification" label="Analytical qualification" />
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-else-if="loading">Loading qualification candidates…</p>
     <p v-else-if="!applications.length">No imported canonical application is available in this project.</p>
     <label v-else>Application
-      <select v-model="selectedId">
+      <select v-model="selectedId" class="p-inputtext p-inputtext-sm">
         <option :value="null">Select an application</option>
         <option v-for="application in applications" :key="application.canonical_artifact_id" :value="application.canonical_artifact_id">{{ application.name }} — {{ application.artifact_digest }}</option>
       </select>
     </label>
-    <button v-if="selected" type="button" @click="reviewOpen = true">Review for promotion</button>
+    <Button v-if="selected" label="Review for promotion" class="p-button-text p-button-sm" @click="reviewOpen = true" />
     <ModelPromotionReview v-if="selected && reviewOpen" :key="selected.canonical_artifact_id" :workflow-id="selected.workflow_id" :canonical-artifact-id="selected.canonical_artifact_id" :project-id="projectId" @close="reviewOpen = false" @confirmed="reviewOpen = false" />
-  </details>
+  </Panel>
 </template>
 <script setup lang="ts">
 import MethodHelp from "@/components/MethodHelp.vue";
+import Panel from "primevue/panel";
+import Button from "primevue/button";
 import { computed, ref, watch } from "vue";
 import api from "@/api/client";
 import { useAuthStore } from "@/stores/auth";

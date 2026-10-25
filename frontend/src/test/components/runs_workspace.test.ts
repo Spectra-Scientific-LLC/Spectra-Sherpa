@@ -97,6 +97,29 @@ describe("Runs workspace", () => {
     expect(view.findComponent({ name: "RunDetailContent" }).exists()).toBe(false);
     view.unmount();
   });
+  it("uses the same canonical empty-state presentation for Inspect and Compare", async () => {
+    for (const tab of ["inspect", "compare"]) {
+      m.query = { tab };
+      const view = mountView(); await flushPromises();
+      const message = tab === "inspect" ? "Choose a run in History." : "Select 2–10 runs in History to compare.";
+      const state = view.findAllComponents({ name: "WorkspaceState" })
+        .find(component => component.props("message") === message)!;
+      expect(state.props("kind")).toBe("empty");
+      expect(state.props("variant")).toBe("page");
+      expect(state.classes()).toContain("workspace-state--page");
+      view.unmount();
+    }
+  });
+  it("groups model history, saved evidence and imports without duplicate inner titles", async () => {
+    m.query = { tab: "models" };
+    const view = mountView(); await flushPromises();
+    const panels = view.findAllComponents({ name: "Panel" });
+    expect(panels.map(panel => panel.props("header"))).toEqual(["Local Model History", "Saved Models"]);
+    expect(panels.every(panel => panel.props("toggleable"))).toBe(true);
+    expect(panels.map(panel => panel.props("collapsed"))).toEqual([false, true]);
+    expect(view.getComponent({ name: "QualificationApplications" }).exists()).toBe(true);
+    view.unmount();
+  });
   it("reopens exact source-run component evidence for a saved model", async () => {
     m.query.tab = "artifacts";
     const model = { artifact_uid: "model-1", name: "PLS moisture", display_name: "PLS moisture",

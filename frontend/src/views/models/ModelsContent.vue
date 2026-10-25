@@ -169,10 +169,9 @@
 
         <TabPanel header="Inspect">
           <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" @renamed="refreshRuns" />
-          <div v-else class="empty-state">
-            <p class="empty-state__title">Choose a run in History.</p>
+          <WorkspaceState v-else kind="empty" variant="page" message="Choose a run in History.">
             <Button label="Open History" icon="pi pi-arrow-left" class="p-button-text" @click="activeTabId = 'run_history'" />
-          </div>
+          </WorkspaceState>
         </TabPanel>
         <TabPanel header="Compare">
           <EvidenceComparisonView v-if="typeof route.query.evidence === 'string' && projectStore.currentProjectId" :project-id="projectStore.currentProjectId" :encoded-references="route.query.evidence" />
@@ -193,13 +192,7 @@
         <TabPanel header="Models">
           <WorkspaceState v-if="loading" kind="loading" message="Loading models…" />
           <WorkspaceState v-if="error" kind="error" :message="error"><Button label="Retry" @click="loadModels" /></WorkspaceState>
-          <QualificationApplications v-if="projectStore.currentProjectId" :project-id="projectStore.currentProjectId" :review-workflow-id="Number(route.query.review_workflow) || undefined" />
-          <SavedModelProjectTable
-            v-if="projectStore.currentProjectId"
-            :project-id="projectStore.currentProjectId"
-            :refresh-key="modelOverviewRevision"
-            @select="selectOverviewModel"
-          />
+          <Panel v-model:collapsed="localModelsCollapsed" header="Local Model History" toggleable class="model-section">
           <div class="artifact-toolbar">
             <InputText
               v-model="artifactSearch"
@@ -209,8 +202,8 @@
             <span class="artifact-count">
               {{ selectedArtifactUidList.length }} selected
             </span>
-            <Button icon="pi pi-chevron-left" aria-label="Previous models" :disabled="modelOffset === 0 || loading" @click="changeModelPage(-50)" />
-            <Button icon="pi pi-chevron-right" aria-label="Next models" :disabled="!moreModels || loading" @click="changeModelPage(50)" />
+            <Button icon="pi pi-chevron-left" class="p-button-text p-button-sm" aria-label="Previous models" :disabled="modelOffset === 0 || loading" @click="changeModelPage(-50)" />
+            <Button icon="pi pi-chevron-right" class="p-button-text p-button-sm" aria-label="Next models" :disabled="!moreModels || loading" @click="changeModelPage(50)" />
             <Button
               v-if="!isDemoMode || privatePredictionAllowed"
               label="Review for promotion"
@@ -227,11 +220,7 @@
               :key="model.artifact_uid"
               class="object-row"
               :class="{ active: selectedModel?.artifact_uid === model.artifact_uid }"
-              role="button"
-              tabindex="0"
               @click="toggleSelect(model)"
-              @keydown.enter.prevent="toggleSelect(model)"
-              @keydown.space.prevent="toggleSelect(model)"
             >
               <input
                 type="checkbox"
@@ -243,7 +232,7 @@
               />
               <span class="dot ready"></span>
               <div class="object-row__main">
-                <strong>{{ model.display_name || model.name }}</strong>
+                <Button :label="model.display_name || model.name" class="p-button-link p-button-sm" @click.stop="toggleSelect(model)" />
                 <small>{{ modelSubtitle(model) }}</small>
               </div>
               <span class="object-row__time" :title="absoluteTimestamp(model.updated_at)">
@@ -306,12 +295,12 @@
               <div>
                 <dt>Produced by</dt>
                 <dd>
-                  <button
+                  <Button
                     v-if="selectedModel.source_run_id != null"
-                    type="button"
-                    class="detail-link"
+                    class="p-button-link p-button-sm"
+                    :label="`Run #${selectedModel.source_run_id}`"
                     @click="inspectRun(selectedModel.source_run_id)"
-                  >Run #{{ selectedModel.source_run_id }}</button>
+                  />
                   <span v-else>Source run not recorded</span>
                 </dd>
               </div>
@@ -322,7 +311,7 @@
               <div>
                 <dt>Used by</dt>
                 <dd>
-                  <button type="button" class="detail-link" @click="showModelApplications(selectedModel.artifact_uid)">Application runs</button>
+                  <Button label="Application runs" class="p-button-link p-button-sm" @click="showModelApplications(selectedModel.artifact_uid)" />
                 </dd>
               </div>
               <div>
@@ -389,6 +378,21 @@
             />
             <MethodHelp v-else topic="qualification" label="Model qualification" />
           </section>
+          </Panel>
+          <Panel header="Saved Models" toggleable collapsed class="model-section">
+            <SavedModelProjectTable
+              v-if="projectStore.currentProjectId"
+              :project-id="projectStore.currentProjectId"
+              :refresh-key="modelOverviewRevision"
+              @select="selectOverviewModel"
+            />
+          </Panel>
+          <QualificationApplications
+            class="model-section"
+            v-if="projectStore.currentProjectId"
+            :project-id="projectStore.currentProjectId"
+            :review-workflow-id="Number(route.query.review_workflow) || undefined"
+          />
         </TabPanel>
 
         <TabPanel header="Batch">
@@ -496,6 +500,7 @@ import DataTable from "primevue/datatable";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
 import InputText from "primevue/inputtext";
+import Panel from "primevue/panel";
 import TabPanel from "primevue/tabpanel";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
@@ -589,6 +594,7 @@ const headerActionItems = computed(() => [
 const models = ref<ModelSummary[]>([]);
 const modelOverviewRevision = ref(0);
 const selectedModel = ref<ModelSummary | null>(null);
+const localModelsCollapsed = ref(false);
 const selectedReferenceEvidence = ref<ReferenceValueEvidence | null>(null);
 const selectedReferenceFitRows = ref<number | null>(null);
 const selectedReferenceError = ref<string | null>(null);
@@ -1374,6 +1380,7 @@ async function selectOverviewModel(uid: string): Promise<void> {
   const projectId = projectStore.currentProjectId;
   const model = models.value.find(item => item.artifact_uid === uid);
   if (model) {
+    localModelsCollapsed.value = false;
     selectedModel.value = model;
     selectedModelNameDraft.value = model.display_name || model.name;
     await nextTick();
@@ -1384,6 +1391,7 @@ async function selectOverviewModel(uid: string): Promise<void> {
     const response = await api.get<ModelSummary>(`/models/${encodeURIComponent(uid)}`);
     if (request !== overviewSelectionRequest || projectId !== projectStore.currentProjectId) return;
     if (response.data.project_id !== projectId) throw new Error('Model project changed');
+    localModelsCollapsed.value = false;
     selectedModel.value = response.data;
     selectedModelNameDraft.value = response.data.display_name || response.data.name;
     await nextTick();
@@ -2083,25 +2091,8 @@ function safeFilename(value: string): string {
 
 /* Empty / loading state ------------------------------------------ */
 
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 3rem 1rem;
-  text-align: left;
-}
-
-.empty-state__title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 500;
-}
-
-.empty-state p {
-  margin: 0;
-  color: var(--text-color-secondary);
-  font-size: 0.875rem;
+.model-section + .model-section {
+  margin-top: 1rem;
 }
 
 /* Context strip ---------------------------------------------------- */
@@ -2552,17 +2543,10 @@ function safeFilename(value: string): string {
 .object-row__main {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 0.1rem;
   min-width: 0;
   flex: 1;
-}
-
-.object-row__main strong {
-  font-size: 0.9375rem;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .object-row__main small {
@@ -2740,19 +2724,6 @@ function safeFilename(value: string): string {
 .metric-chip__value {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-}
-
-.detail-link {
-  background: transparent;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: var(--primary-color);
-  cursor: pointer;
-}
-
-.detail-link:hover {
-  text-decoration: underline;
 }
 
 .detail-actions {

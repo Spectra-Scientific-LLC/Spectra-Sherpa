@@ -55,8 +55,8 @@
         </li>
       </ul>
       <div class="batch-actions">
-        <Button label="Check compatibility" :loading="checking" :disabled="!canCheck" @click="checkCompatibility" />
-        <Button label="Run selected combinations" icon="pi pi-play" :loading="submitting" :disabled="!canSubmit" @click="handleSubmit" />
+        <Button label="Check compatibility" class="p-button-text p-button-sm" :loading="checking" :disabled="!canCheck" @click="checkCompatibility" />
+        <Button label="Run selected combinations" class="p-button-sm" icon="pi pi-play" :loading="submitting" :disabled="!canSubmit" @click="handleSubmit" />
       </div>
       <p v-if="progress" role="status">{{ progress }}</p>
     </section>
