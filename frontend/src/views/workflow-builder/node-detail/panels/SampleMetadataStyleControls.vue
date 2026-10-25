@@ -1,8 +1,9 @@
 <template>
   <div v-if="colorOptions.length" class="control-group">
-    <label>Color by metadata</label>
+    <label>Color by</label>
     <Dropdown
       panelClass="ss-panel-theme"
+      aria-label="Color by"
       :model-value="colorValue"
       :options="colorOptions"
       optionLabel="label"
@@ -11,9 +12,10 @@
     />
   </div>
   <div v-if="styleOptions.length" class="control-group">
-    <label>{{ styleLabel }} by metadata</label>
+    <label>{{ styleLabel }} by</label>
     <Dropdown
       panelClass="ss-panel-theme"
+      :aria-label="`${styleLabel} by`"
       :model-value="styleValue"
       :options="styleOptions"
       optionLabel="label"

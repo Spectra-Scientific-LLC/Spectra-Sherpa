@@ -62,8 +62,8 @@ _TEST_MANIFEST_LIMITS = {
 @pytest.mark.parametrize(
     ("node_type", "runtime_family", "capabilities", "output_count"),
     [
-        ("data.collection_load", RuntimeFamily.SHERPA_NATIVE.value, (WorkerCapability.READ_DATASET.value,), 2),
-        ("data.load_group", RuntimeFamily.SHERPA_NATIVE.value, (WorkerCapability.READ_DATASET.value,), 1),
+        ("data.collection_load", RuntimeFamily.SHERPA_NATIVE.value, (WorkerCapability.READ_DATASET.value,), 3),
+        ("data.load_group", RuntimeFamily.SHERPA_NATIVE.value, (WorkerCapability.READ_DATASET.value,), 3),
         ("data.nist_library", RuntimeFamily.SHERPA_NATIVE.value, (WorkerCapability.READ_DATASET.value,), 1),
         ("data.synthetic_curve", RuntimeFamily.SHERPA_NATIVE.value, (), 1),
     ],
@@ -681,7 +681,9 @@ async def test_load_group_is_deterministic_and_binds_exact_member_bytes(
     )
     monkeypatch.setattr(node, "_load_single_file", load_member)
 
-    dataset = await node.execute()
+    outputs = await node.execute()
+    assert set(outputs) == {"default", "target", "__source_population", "exclusions"}
+    dataset = outputs["default"]
     metadata = get_spectra_meta(dataset)
 
     assert isinstance(dataset, SherpaDataset)
@@ -708,7 +710,7 @@ async def test_load_group_meets_reviewed_absolute_performance_ceiling(
     )
 
     with PerformanceCeiling("data.load_group", "100-files-by-400-features", 5.0).measure():
-        result = await node.execute()
+        result = (await node.execute())["default"]
 
     assert result.X.shape == (100, 400)
 
@@ -1310,7 +1312,7 @@ async def test_project_collection_source_is_manifest_bound_and_fail_fast(
     node = LoadGroupNode("group", parameters)
     node.bind_execution_runtime(ExecutionRuntime(dataset_source_resolver=Resolver()))
 
-    result = await node.execute()
+    result = (await node.execute())["default"]
 
     assert result.shape == (2, 4)
     assert result.sample_axis.labels == ["a 001", "b 001"]

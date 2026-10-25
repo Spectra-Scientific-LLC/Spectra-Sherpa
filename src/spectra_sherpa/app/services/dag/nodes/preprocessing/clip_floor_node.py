@@ -13,6 +13,7 @@ from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
 from spectra_sherpa.app.services.dag import supervision_binding
 from spectra_sherpa.app.services.dag.node_base import NodePolicy
+from spectra_sherpa.app.services.dag.population_display import RowLocalPopulationProjection
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
@@ -114,7 +115,7 @@ def _build_clip_floor_result(
 
 
 @register_node
-class ClipFloorNode(Node):
+class ClipFloorNode(RowLocalPopulationProjection, Node):
     """Set every value below one explicit finite floor to that floor."""
 
     metadata = NodeMetadata(

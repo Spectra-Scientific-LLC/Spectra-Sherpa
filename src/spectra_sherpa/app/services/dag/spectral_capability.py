@@ -93,7 +93,9 @@ _BASE_AXIS_FIELDS = frozenset(
     }
 )
 _FEATURE_AXIS_FIELDS = _BASE_AXIS_FIELDS | frozenset({"include_mask", "selection_scores", "selection_method"})
-_SAMPLE_AXIS_FIELDS = _BASE_AXIS_FIELDS | frozenset({"classes", "include_mask", "exclusion_reasons"})
+_SAMPLE_AXIS_FIELDS = _BASE_AXIS_FIELDS | frozenset(
+    {"classes", "include_mask", "exclusion_reasons", "workflow_observation_refs"}
+)
 _DATASET_METADATA_FIELDS = frozenset(
     {
         "title",

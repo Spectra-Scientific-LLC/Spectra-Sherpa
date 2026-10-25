@@ -469,6 +469,7 @@ export const buildNodeOutput = (
     {
       data: primary.data || [],
       metadata: {
+        ...(isRecord(resultRecord.__workflow_population) ? { workflow_population: resultRecord.__workflow_population } : {}),
         ...(isRecord(resultRecord.metadata) ? resultRecord.metadata : {}),
         ...(primary.metadata || {}),
         ...(primary.descriptor ? { scientific_value: primary.descriptor } : {}),

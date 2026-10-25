@@ -194,6 +194,17 @@ def build_canonical_executable_export(
         node_id = str(wf_node.node_id)
         node_type = str(wf_node.node_type)
         parameters = dict(wf_node.parameters or {})
+        from spectra_sherpa.app.lib.workflow_population import workflow_exclusion_count
+
+        if workflow_exclusion_count(parameters):
+            # Executable exports replace Workbench-owned sources with portable
+            # deployment inputs. Never silently discard a source-bound decision
+            # while doing so. The editable workflow and active-result exports
+            # remain available; replay needs an explicit portable source binding.
+            raise ValueError(
+                f"Node {node_id} has workflow-bound exclusions. Python/notebook export cannot yet replay "
+                "this source curation; export the editable workflow or active result instead."
+            )
         if node_type == "data.load_group" and parameters.get("source_mode") == "experiment_collection":
             raise ValueError(
                 "Legacy project collection sources must be reopened and saved through "

@@ -8,6 +8,17 @@
       <DisplaySubsetIndicator v-if="hasSubset" />
       <MethodHelp v-if="contextText" topic="displayExports" label="Plot context" :context="contextText" />
     </div>
+    <div v-if="populationUnavailable" class="plot-context-controls">
+      <span role="status">Excluded overlay unavailable</span>
+      <MethodHelp topic="workflowExclusions" label="Excluded observation projection" :context="populationUnavailable" />
+    </div>
+    <div v-if="populationActions && selectedObservations.length" class="observation-actions" aria-label="Workflow observation selection">
+      <span>{{ selectedObservations.length }} selected</span>
+      <Button label="Exclude selected" size="small" :disabled="!canExclude" @click="changeObservationSelection(true)" />
+      <Button label="Restore selected" size="small" :disabled="!canRestore" @click="changeObservationSelection(false)" />
+      <Button label="Clear selection" size="small" text @click="selectedObservations = []" />
+      <span v-if="populationError" role="alert">{{ populationError }}</span>
+    </div>
     <div v-show="!isEmpty" ref="chartEl" class="plotly-canvas"></div>
   </div>
 </template>
@@ -23,6 +34,9 @@ import { displayPlot } from "@/utils/displayPlot";
 import { plotContext, plotHasSubset } from "@/utils/plotContext";
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { PLOT_SURFACE } from "@/theme/plotTheme";
+import Button from "primevue/button";
+import { WORKFLOW_POPULATION_ACTIONS, type WorkflowPopulationActions } from "@/utils/workflowPopulation";
+import { displayObservationTraces, traceObservationRefs } from "@/utils/workflowPopulationTrace";
 
 type PlotlyData = Record<string, unknown>;
 type PlotlyLayout = Record<string, unknown>;
@@ -62,6 +76,7 @@ const props = defineProps<{
   attentionPlotKey?: string;
   context?: string;
   sourcePopulation?: { shown: number; total: number };
+  workflowPopulation?: { availability?: string; reason?: string; sources?: Record<string, { workflow_excluded_count?: number }> };
 }>();
 
 const emit = defineEmits<{
@@ -77,8 +92,45 @@ onBeforeUnmount(() => releasePlot(attentionId));
 const chartEl = ref<HTMLDivElement | null>(null);
 const displayPreferences = useDisplayPreferences();
 const plotSurface = inject(PLOT_SURFACE, "screen");
+const providedPopulationActions = inject<WorkflowPopulationActions | null>(WORKFLOW_POPULATION_ACTIONS, null);
+const populationScope = providedPopulationActions?.scope?.();
+const populationActions = computed(() => providedPopulationActions?.scope?.() === populationScope ? providedPopulationActions : null);
+const selectedObservations = ref<string[]>([]);
+const populationError = ref("");
+const canExclude = computed(() => selectedObservations.value.some(ref => {
+  const state = populationActions.value?.resolve(ref);
+  return state?.restorable && !state.excluded;
+}));
+const canRestore = computed(() => selectedObservations.value.some(ref => populationActions.value?.resolve(ref)?.excluded));
+const observationData = computed(() => displayObservationTraces(props.data || [], populationActions.value, new Set(selectedObservations.value)));
+const observationConfig = computed(() => ({ ...props.config,
+  ...(populationActions.value && props.data.some(trace => traceObservationRefs(trace).length) ? {
+    modeBarButtonsToRemove: ((props.config?.modeBarButtonsToRemove ?? []) as string[]).filter(name => !["lasso2d", "select2d"].includes(name)),
+  } : {}),
+}));
+const changeObservationSelection = (exclude: boolean) => {
+  try {
+    if (!populationActions.value) throw new Error("Reopen the plot in the current workflow.");
+    populationActions.value.change(selectedObservations.value, exclude);
+    populationError.value = "";
+    selectedObservations.value = [];
+  } catch (error) { populationError.value = error instanceof Error ? error.message : "Could not change workflow exclusions."; }
+};
+const observationEvent = (event: unknown, toggle = false) => {
+  if (!populationActions.value || !event || typeof event !== "object") return;
+  const points = (event as { points?: Array<{ pointIndex?: number; pointNumber?: number; data?: PlotlyData }> }).points ?? [];
+  const refs = points.flatMap(point => {
+    const refs = point.data ? traceObservationRefs(point.data) : [];
+    const index = point.pointIndex ?? point.pointNumber;
+    return typeof index === "number" && refs[index] && populationActions.value?.resolve(refs[index]) ? [refs[index]] : [];
+  });
+  if (!refs.length) return;
+  const selected = new Set(toggle ? selectedObservations.value : []);
+  for (const ref of refs) if (toggle && selected.has(ref)) selected.delete(ref); else selected.add(ref);
+  selectedObservations.value = [...selected];
+};
 const displayed = computed(() => displayPlot(
-  props.data || [], props.layout || {}, displayPreferences,
+  observationData.value, props.layout || {}, displayPreferences,
   new Set(props.selectedPointIds || []),
   plotSurface,
 ));
@@ -88,6 +140,10 @@ const contextText = computed(() => plotContext(
   props.layout || {}, props.context,
   displayed.value.omitted ? displayed.value.omissionDescription : "",
 ));
+const populationUnavailable = computed(() => props.workflowPopulation?.availability === "unavailable"
+  && Object.values(props.workflowPopulation.sources ?? {}).some(source => (source.workflow_excluded_count ?? 0) > 0)
+  ? props.workflowPopulation.reason || "This operation has no scientifically defined out-of-fit observation projection. Active results remain unchanged."
+  : "");
 const emptyMessage = computed(
   () => refusal.value || props.emptyMessage || "No renderable plot data available.",
 );
@@ -155,6 +211,7 @@ const setupEventListeners = (element: HTMLDivElement) => {
   if (typeof plotlyElement.on !== "function") return;
 
   plotlyElement.on("plotly_click", (data) => {
+    observationEvent(data, true);
     emit("click", data as PlotlyClickEvent);
   });
 
@@ -163,6 +220,7 @@ const setupEventListeners = (element: HTMLDivElement) => {
   });
 
   plotlyElement.on("plotly_selected", (data) => {
+    observationEvent(data);
     if (!applyingLinkedSelection) emit("selected", data);
   });
   plotlyElement.on("plotly_deselect", () => {
@@ -280,7 +338,7 @@ const render = (layoutOnly = false): Promise<boolean> => {
             element,
             cloneForPlotly(displayed.value.data),
             cloneForPlotly(displayed.value.layout),
-            { responsive: true, displaylogo: false, ...cloneForPlotly(props.config || {}) },
+            { responsive: true, displaylogo: false, ...cloneForPlotly(observationConfig.value) },
           );
         }
       } finally {
@@ -335,7 +393,7 @@ onMounted(() => {
 
 // Full re-render when data or config change
 watch(
-  () => [props.data, props.config],
+  () => [observationData.value, observationConfig.value],
   () => {
     void render();
   },
@@ -372,6 +430,14 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.observation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  color: var(--ss-text);
+}
 .plotly-chart {
   position: relative;
   width: 100%;

@@ -21,6 +21,7 @@ from spectra_sherpa.app.services.dag.fitted_input_identity import (
     require_fitted_input_identity,
 )
 from spectra_sherpa.app.services.dag.node_base import NodePolicy
+from spectra_sherpa.app.services.dag.population_display import RetainedTransformPopulationProjection
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
@@ -167,7 +168,7 @@ def _scale_dispatch(
 
 
 @register_node
-class ScaleNode(Node):
+class ScaleNode(RetainedTransformPopulationProjection, Node):
     """Fit and apply mean centering, autoscaling, or Pareto scaling."""
 
     metadata = NodeMetadata(

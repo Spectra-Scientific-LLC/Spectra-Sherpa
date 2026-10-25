@@ -103,6 +103,9 @@
       <p v-if="responseUnit">Response unit: {{ responseUnit }}</p>
       <p v-if="exportError" role="alert">{{ exportError }}</p>
       <p v-if="tableProjectionError" role="alert">{{ tableProjectionError }}</p>
+      <SampleSelectionMap
+        v-if="nodeType === 'data.filter_samples'"
+        :value="nodeOutput?.presentation_value" :count="nodeOutput?.data?.length ?? 0" :limit="rowLimit" />
       <!-- Data Table -->
       <div class="table-wrapper">
         <DataTable
@@ -110,8 +113,8 @@
           :value="tableData"
           :scrollable="true"
           scrollHeight="360px"
-          :paginator="tableData.length > 100"
-          :rows="100"
+          :paginator="tableData.length > (rowLimit || tableData.length)"
+          :rows="rowLimit || tableData.length"
           paginatorTemplate="FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink"
           currentPageReportTemplate="{first}–{last} of {totalRecords} preview rows"
           class="data-table"
@@ -183,6 +186,7 @@ import InputText from "primevue/inputtext";
 import Button from "primevue/button";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
+import SampleSelectionMap from "@/components/SampleSelectionMap.vue";
 import { isAuditField, scientificMetadata, scientificColumnLabel, scientificResponseUnit } from "@/utils/scientificDisplay";
 import { isProjectedScientificKind } from "@/utils/scientificPresentation";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";

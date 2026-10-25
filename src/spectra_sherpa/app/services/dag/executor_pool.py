@@ -228,8 +228,21 @@ class IsolatedWorkerPool:
         try:
             yield
         finally:
+            replacement = self._workflow.get()
+            if replacement is not None and replacement is not worker:
+                replacement.close()
             worker.close()
             self._workflow.reset(token)
+
+    def recover_optional_projection_failure(self):
+        """A failed display child is discarded, never retried in the API.
+
+        The next computational dispatch gets a fresh isolated worker under
+        the same execution scope. Global shutdown and cancellation still win.
+        """
+        worker = self._workflow.get()
+        if worker is not None and worker._closed and not self._closed:
+            self._workflow.set(_WorkflowWorker(self))
 
     async def run(self, function, *args, timeout: float):
         workflow = self._workflow.get()
@@ -311,6 +324,51 @@ def get_default_pool() -> Optional[ProcessPoolExecutor | IsolatedWorkerPool]:
     return _default_process_pool
 
 
+def _worker_node(node_type: str, node_id: str, parameters: dict, worker_context: WorkerExecutionContext | None):
+    """One capability-checked construction path for execution and projection."""
+    import spectra_sherpa.app.services.dag.nodes.classification  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
+    import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
+
+    try:
+        import spectra_sherpa.app.services.dag.nodes.output  # noqa: F401
+    except Exception:
+        pass  # output nodes are rarely offloaded
+    try:
+        node = node_registry.create_node(node_type, node_id, parameters)
+    except (KeyError, ValueError) as exc:
+        raise WorkerImplementationUnavailable(f"implementation_unavailable: {node_type}") from exc
+    admitted = frozenset(node.metadata.resolved_required_worker_capabilities() if node.metadata else ())
+    if admitted - _SUPPORTED_WORKER_CAPABILITIES:
+        raise PermissionError(f"unsupported worker capabilities: {sorted(admitted - _SUPPORTED_WORKER_CAPABILITIES)}")
+    required = frozenset(resolved_runtime_worker_capabilities(node))
+    if required:
+        if worker_context is None:
+            raise PermissionError("worker execution context is required")
+        missing = required - frozenset(worker_context.capabilities)
+        if missing:
+            raise PermissionError(f"worker capabilities are missing: {sorted(missing)}")
+    node.bind_execution_runtime(ExecutionRuntime() if worker_context is None else worker_context.runtime)
+    return node
+
+
+def _run_population_in_worker(node_type, node_id, parameters, outputs, inputs, worker_context):
+    """Apply a declared display operation in the same isolated workflow lease."""
+    reject_spectrochempy_transport((outputs, inputs), boundary="population worker input")
+    node = _worker_node(node_type, node_id, parameters, worker_context)
+    projector = getattr(node, "project_population", None)
+    if projector is None:
+        return {}
+    try:
+        result = asyncio.run(projector(outputs, inputs))
+    except Exception as exc:
+        # An honest display refusal is not a worker failure: keep the lease
+        # healthy for subsequent computational nodes in this workflow.
+        result = {"__projection_refusal": f"{type(exc).__name__}: {exc}"}
+    reject_spectrochempy_transport(result, boundary="population worker output")
+    return result
+
+
 def _run_node_in_worker(
     node_type: str,
     node_id: str,
@@ -329,37 +387,7 @@ def _run_node_in_worker(
     registry_started = perf_counter()
     reject_spectrochempy_transport(args, boundary="worker input")
     reject_spectrochempy_transport(kwargs, boundary="worker input")
-    # Import node modules to populate the registry in the worker process.
-    # These are guarded at module scope in the main process by conftest /
-    # app startup, but spawned workers start fresh.
-    import spectra_sherpa.app.services.dag.nodes.classification  # noqa: F401
-    import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
-    import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
-
-    try:
-        import spectra_sherpa.app.services.dag.nodes.output  # noqa: F401
-    except Exception:
-        pass  # output nodes are rarely offloaded
-
-    try:
-        node = node_registry.create_node(node_type, node_id, parameters)
-    except (KeyError, ValueError) as exc:
-        raise WorkerImplementationUnavailable(f"implementation_unavailable: {node_type}") from exc
-    admitted_capabilities = frozenset(node.metadata.resolved_required_worker_capabilities() if node.metadata else ())
-    unknown_capabilities = admitted_capabilities - _SUPPORTED_WORKER_CAPABILITIES
-    if unknown_capabilities:
-        raise PermissionError(f"unsupported worker capabilities: {sorted(unknown_capabilities)}")
-    required_capabilities = frozenset(resolved_runtime_worker_capabilities(node))
-    if required_capabilities:
-        if worker_context is None:
-            raise PermissionError("worker execution context is required")
-        missing_capabilities = required_capabilities - frozenset(worker_context.capabilities)
-        if missing_capabilities:
-            raise PermissionError(f"worker capabilities are missing: {sorted(missing_capabilities)}")
-    if worker_context is None:
-        node.bind_execution_runtime(ExecutionRuntime())
-    else:
-        node.bind_execution_runtime(worker_context.runtime)
+    node = _worker_node(node_type, node_id, parameters, worker_context)
     execution_started = perf_counter()
     if kwargs:
         if list(kwargs.keys()) == ["default"]:

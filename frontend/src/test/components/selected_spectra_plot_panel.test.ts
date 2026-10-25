@@ -138,6 +138,21 @@ describe("SelectedSpectraPlotPanel", () => {
     expect(curves[0].customdata[0]).toEqual(["B", "blue", "None", "b.spa"]);
   });
 
+  it("keeps honest result-row labels when unlabeled spectra are metadata-styled", async () => {
+    const selected = retainedSource();
+    delete selected.members[0].dataset.y_axis!.labels;
+    const wrapper = mount(SelectedSpectraPlotPanel, {
+      props: { plotDatasetCount: 1, plotFileCount: 1, plotDatasets: [selected] },
+    });
+    wrapper.getComponent({ name: "SampleMetadataStyleControls" }).vm.$emit("update:colorValue", "group");
+    await wrapper.vm.$nextTick();
+    const curves = wrapper.getComponent({ name: "PlotlyChart" }).props("data")
+      .filter((trace: { customdata?: unknown }) => trace.customdata);
+    expect(curves[0]).toMatchObject({ name: "Result row 2", y: [4, 5, 6] });
+    expect(curves[0].customdata[0]).toEqual(["Result row 2", "blue", "None", "b.spa"]);
+    wrapper.unmount();
+  });
+
   it("applies each dataset's own selection independently in a multi-dataset overlay", async () => {
     const first = retainedSource();
     const second = retainedSource();

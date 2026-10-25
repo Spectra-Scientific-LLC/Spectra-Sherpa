@@ -1281,6 +1281,26 @@ class PCANode(Node):
     def apply_fitted_state(self, input_data: Any, state: Any) -> np.ndarray:
         return apply_pca_fitted_state(input_data, state)
 
+    async def project_population(self, outputs: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+        """Apply the retained fit for display; never recompute calibration limits."""
+        from spectra_sherpa.app.services.dag.population_display import application_input, applied_dataset
+
+        source = inputs.get("default", inputs.get("input_data"))
+        if not isinstance(source, SherpaDataset):
+            return {}
+        scores = applied_dataset(
+            self.apply_fitted_state(application_input(source), outputs["fitted_state"]), source, outputs["scores"]
+        )
+        state = _pca_diagnostic_state(
+            model=outputs["fitted_state"],
+            scores=application_input(scores),
+            eigenvalues=outputs["eigenvalues"],
+            input_data=application_input(source),
+        )
+        state["scores"] = scores
+        state["calibration_state"] = outputs["diagnostic_state"]
+        return {"default": scores, "scores": scores, "X_scores": scores, "diagnostic_state": state}
+
 
 def execute_pca_node(
     input_data: Any,

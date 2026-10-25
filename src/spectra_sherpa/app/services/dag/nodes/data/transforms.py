@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
+import numpy as np
+
 from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
@@ -370,6 +372,23 @@ class FilterSamplesNode(Node):
             *(f"{indent}    {name}={value!r}," for name, value in arguments.items()),
             f"{indent})",
         ]
+
+    async def project_population(self, outputs: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+        from spectra_sherpa.app.services.dag.population_display import observation_refs
+
+        source = inputs.get("X", inputs.get("default"))
+        active = outputs["default"]
+        if source is None:
+            return {}
+        kept = set(observation_refs(active))
+        included = source.sample_axis.include_mask
+        refs = observation_refs(source)
+        # A branch filter keeps its own active membership. Globally excluded
+        # observations remain a display-only companion, never numerical input.
+        mask = np.asarray(
+            [ref in kept or (included is not None and not included[i]) for i, ref in enumerate(refs)], dtype=bool
+        )
+        return {"default": source[mask]}
 
     async def execute(self, X: Any = None, **kwargs: Any) -> dict[str, Any]:
         """Filter dataset samples by labels or aligned sample metadata."""

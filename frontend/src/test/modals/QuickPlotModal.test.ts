@@ -12,6 +12,27 @@ import { datasetMetadataGroupingState } from "@/utils/sampleMetadataGrouping";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe("QuickPlotModal", () => {
+  it("offers Color by and Symbol by for unlabeled Iris-style categorical responses", async () => {
+    const value = { data: [[0, 1], [2, 3], [4, 5]], y_axis: { data: [0, 2, 3] },
+      target: [0, 1, 1], target_context: { target_type: "categorical", target_name: "Species" } };
+    const wrapper = mount(QuickPlotModal, { props: {
+      embedded: true, modelValue: true, nodeType: "model.pca", nodeLabel: "PCA",
+      nodeOutput: { data: value.data, presentation_value: value,
+        metadata: { n_components: 2, scientific_presentation: scientificPresentation("pca_scores") } },
+    }, global: { stubs: globalStubs } });
+    const vm = wrapper.vm as any;
+    vm.selectedPlotKey = "scientific_pca_scores";
+    await nextTick();
+    expect(wrapper.text()).toContain("Color by");
+    expect(wrapper.text()).toContain("Symbol by");
+    expect(vm.sampleColorFieldOptions).toContainEqual({ label: "Response: Species", value: "Response: Species" });
+    vm.sampleSymbolField = "Response: Species";
+    await nextTick();
+    const traces = vm.displayPlotData.filter((trace: any) => trace.hoverinfo !== "skip");
+    expect(traces.flatMap((trace: any) => trace.x)).toHaveLength(3);
+    expect(new Set(traces.flatMap((trace: any) => trace.marker.symbol)).size).toBe(2);
+    wrapper.unmount();
+  });
   it.each(["data.file_load", "preprocess.scale"])("keeps alternate coordinate controls for %s without inventing absent labels", async (nodeType) => {
     const wire = { data: [[1, 2, 3]], x_axis: { data: [1000, 900, 800], title: "Wavenumber", units: "cm-1",
       alternate_scales: [{ name: "Wavelength", values: [10000, 11111, 12500], title: "Wavelength", units: "nm", source_set_index: 1 }] },
@@ -179,7 +200,7 @@ describe("QuickPlotModal", () => {
         metadata: { n_components: 2, explained_variance_ratio: [0.8, 0.15] } },
     }, global: { stubs: globalStubs } });
     const vm = wrapper.vm as any;
-    expect(wrapper.text()).toContain('Color by metadata');
+    expect(wrapper.text()).toContain('Color by');
     expect(vm.sampleColorFieldOptions.map((option: any) => option.value)).toContain('claimed_botanical_group');
     vm.sampleColorField = 'claimed_botanical_group';
     await nextTick();
@@ -705,7 +726,7 @@ describe("QuickPlotModal", () => {
       data: scores,
       y_axis: {
         labels: ["sample 1", "sample 2"],
-        sample_table: { sample_id: ["sample 2", "sample 1"] },
+        sample_table: { sample_id: ["sample 1", "sample 1"] },
       },
     };
     const wrapper = mount(QuickPlotModal, {
@@ -731,7 +752,7 @@ describe("QuickPlotModal", () => {
     });
 
     expect((wrapper.vm as any).plotContextExtra).toContain(
-      "Metadata grouping refused: sample IDs do not exactly match score-row labels.",
+      "Metadata grouping refused: sample IDs must be unique and row-aligned.",
     );
     expect(wrapper.text()).not.toContain("No data to display");
     expect((wrapper.vm as any).displayPlotData).toHaveLength(1);
@@ -744,7 +765,7 @@ describe("QuickPlotModal", () => {
     expect((wrapper.vm as any).displayPlotLayout.showlegend).toBe(false);
     expect(scientificPlotRefusal((wrapper.vm as any).displayPlotLayout)).toBeNull();
     expect((wrapper.vm as any).displayPlotLayout.meta.metadata_grouping_notice).toContain(
-      "sample IDs do not exactly match score-row labels",
+      "sample IDs must be unique and row-aligned",
     );
     const vm = wrapper.vm as any;
     expect(wrapper.find('[role="alert"]').exists()).toBe(false);
@@ -754,8 +775,8 @@ describe("QuickPlotModal", () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(false);
     vm.metadataStyleRequested = true;
     await nextTick();
-    expect(wrapper.get('[role="alert"]').text()).toContain("sample IDs do not exactly match");
-    expect(vm.plotContextExtra).not.toContain("sample IDs do not exactly match");
+    expect(wrapper.get('[role="alert"]').text()).toContain("sample IDs must be unique");
+    expect(vm.plotContextExtra).not.toContain("sample IDs must be unique");
     vm.sampleColorField = "__none__";
     await nextTick();
     expect(wrapper.find('[role="alert"]').exists()).toBe(false);

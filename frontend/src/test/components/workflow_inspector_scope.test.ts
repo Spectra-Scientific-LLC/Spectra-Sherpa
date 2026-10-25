@@ -68,6 +68,22 @@ beforeEach(() => {
 afterEach(() => { for (const wrapper of wrappers) wrapper.unmount(); wrappers = []; });
 
 describe("Inspector retained evidence request ownership", () => {
+  it("keeps exact active plots available when the optional excluded overlay is missing", async () => {
+    const wrapper = mountInspector();
+    const value = output();
+    value.metadata = { ...value.metadata, workflow_population: {
+      sources: { source_1: { workflow_excluded_count: 2 } }, availability: "available", outputs: {} } } as any;
+    await wrapper.setProps({ nodeOutput: value });
+    apiGet.mockImplementation((path: string) => path.endsWith("/__workflow_population")
+      ? Promise.reject(new Error("Retained overlay quota exhausted")) : Promise.resolve(response(200)));
+    const vm = wrapper.vm as any;
+    await vm.openQuickPlot(); await flushPromises();
+    expect(vm.showQuickPlotModal).toBe(true);
+    expect(vm.quickPlotEvidenceError).toBe("");
+    expect(vm.quickPlotNodeOutput.data).toEqual([[200]]);
+    expect(vm.quickPlotNodeOutput.metadata.workflow_population.availability).toBe("unavailable");
+    expect(vm.quickPlotNodeOutput.metadata.workflow_population.outputs).toEqual({});
+  });
   const transitions = [
     ["run", () => { workflow.restoredRunId = 32; }, () => { workflow.restoredRunId = 31; }],
     ["project", () => { project.currentProjectId = 2; }, () => { project.currentProjectId = 1; }],

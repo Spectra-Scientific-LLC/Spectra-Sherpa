@@ -40,9 +40,37 @@ class HistoricalValidationGraph(ValidationGraph):
 # changes to exact new consumers below. Archived declarations/digests are not
 # rewritten; contract() still verifies declarations and never admits execution.
 _INSPECTION_CONSUMERS = {
+    "baseline.penalized_ls": (
+        "b3b824ef38585a9f7e1e673f2369f03c3d2e4900028168f79948aa35592095da",
+        "2ed48350a7f23decb5ab1e8db40a80f77292a08bb6619e430c106ed2d7a1ca77",
+    ),
+    "preprocess.emsc": (
+        "631c4572049eb1905849bf92a2ea724a431e4b5adb1784833e94f9f362440d16",
+        "b7761f7e53738c91e7406e8629602e4275f6dd0a1473ad00429fd8ec78458516",
+    ),
+    "preprocess.msc": (
+        "7ef892787a6eba403892932a0fe46be310cd018bd9b7b912c91cf9107dc8b808",
+        "fedd3abb19b61b25bebf14e3f26fd75295aa00d1c8d4582543817199072bc6fa",
+    ),
+    "preprocess.normalize": (
+        "bd82b536be57256c0c54233d85bb5c8206b93a4c670aca4e878b1c3be824180e",
+        "9d1e46702f16620d4e6540b8cc0ce6c3120b4a39c3503993f8c68a820e642441",
+    ),
+    "preprocess.smooth": (
+        "4d405cdbf887713619a462b33e9c941a62abcd281176f590415c46bf606507b6",
+        "64d1a235cd8ae5422bcdb2fea4877ff53536853132d009b3a28b013df571713d",
+    ),
+    "preprocess.derivative": (
+        "99e268546748f7c1cbe0bbd1ad29f7d23291e77b5200e7900dbee3ae55e168a7",
+        "415e23d4cfec34c30c104cbb6cf926a1c4dbdde34792d8a7cd828539e94da454",
+    ),
+    "preprocess.scale": (
+        "cbe147638d9ba374a04f1f333fb50c81e3cc031c3a62046012c979f0ec2472d7",
+        "9baeb1b89c4ea311d9cc47b8bc4188c01faa88637ecfe36475cd20af99af3b87",
+    ),
     "preprocess.osc": (
         "02a4281542fe5fe2a349dbc5e61a42e82fa4a9f346ddb21fd5bf2d64b96c7b1b",
-        "4a65ee10a4cdd63629b8c7960da20d1f595ecc756e10041247b33416923a0938",
+        "c2ce772bcbfbf52b98294bbefa78ef1de11686f5d3086c46cb250ca0fcdaf252",
     ),
     "selection.variable_select": (
         "3209ca10ae4dfa04fe81b944d866182bb88bf5f3f9677c2618c5c100542b4f52",
@@ -76,13 +104,13 @@ _INSPECTION_CONSUMERS = {
     ),
     "classification.plsda": (
         "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-        "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
+        "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
         # Reviewed typed public refusals preserve every legacy admission check.
         # This pair permits historical inspection only, never old execution.
-        "d3fb0d37037ce5c51bd5e8343386d8dc9bce131f53c08d368b21da3af97b54d9",
+        "e5b31488bd88dd6e39380f533fed6c560afe9de17f4e68860d2aea23c8fad0e1",
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",
@@ -106,7 +134,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.fitted_pls": (
         "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
-        "ba02705c9868ae460e80af30207f8fa1c60f5ff20e8e6588be267292811472da",
+        "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
     ),
     "model.fitted_svr": (
         "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
@@ -208,6 +236,13 @@ class HistoricalReconstructionContext:
         if current is None:
             raise ValidationGraphError("historical operation lacks a current structural authority")
         archived = catalog["contracts"].get(operation) or catalog.get("profile_contracts", {}).get(operation)
+        if archived is None and catalog["profile"]["operations"].get(operation) == digest:
+            # Reuse an already integrity-pinned payload; do not mint another
+            # historical catalog just because this profile omitted its bytes.
+            staging = inspection_predecessor_catalog("9f37d08a914c3e276859c0ba10b5d2187d5d5ba4ff85f6d00b35cba23e7369f4")
+            candidate = staging["contracts"].get(operation) or staging.get("profile_contracts", {}).get(operation)
+            if candidate is not None and candidate["digest"] == digest:
+                archived = candidate
         if archived is None:
             if catalog["profile"]["operations"].get(operation) != digest or current.digest != digest:
                 raise ValidationGraphError("unknown historical operation/contract identity")
@@ -216,11 +251,12 @@ class HistoricalReconstructionContext:
         if contract.digest != archived["digest"] or contract.digest != digest:
             raise ValidationGraphError("unknown historical operation/contract identity")
         inspected = _INSPECTION_CONSUMERS.get(operation)
-        inspected_consumer = inspected == (catalog["current_contracts"][operation], current.digest)
+        previous_consumer = catalog["current_contracts"].get(operation, digest)
+        inspected_consumer = inspected == (previous_consumer, current.digest)
         component_curve_consumer = inspected_consumer and operation == "model.fitted_pls"
         classifier_curve_consumer = inspected_consumer and operation == "classification.plsda"
         legacy_application_consumer = inspected_consumer and operation == "model.load_apply"
-        if current.digest != catalog["current_contracts"][operation] and not inspected_consumer:
+        if current.digest != previous_consumer and not inspected_consumer:
             raise ValidationGraphError("current implementation is not qualified for historical reconstruction")
         # A parameter-schema digest alone is not a schema. Reusing the current
         # admission requires the exact reviewed consumer and unchanged complete

@@ -19,6 +19,7 @@ import {
   type ScientificPlotProjectionDeps,
 } from "@/composables/scientificPlotProjectionCore";
 import { resolvePortPayload } from "@/utils/nodeOutput";
+import { populationPlotOutput } from "@/utils/workflowPopulation";
 import { datasetAxisDisplayState, projectDatasetAxisDisplay } from "@/utils/datasetAxisSets";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel, shouldReverseFeatureAxis } from "@/utils/plotLabels";
@@ -1031,7 +1032,7 @@ export function useQuickPlotProjection(
   selection?: QuickPlotSelection,
 ) {
   const cohort = computed(() => projectActiveSpectralCohort(retainedNodeOutput.value));
-  const nodeOutput = computed(() => cohort.value.output);
+  const nodeOutput = computed<any>(() => populationPlotOutput(cohort.value.output));
   // ---- Type detection ----
 
   const plotMetadata = computed(() => {

@@ -15,6 +15,7 @@ from scipy import sparse
 
 from spectra_sherpa.app.services.dag import supervision_binding
 from spectra_sherpa.app.services.dag.node_base import NodePolicy
+from spectra_sherpa.app.services.dag.population_display import RowLocalPopulationProjection
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
@@ -319,7 +320,7 @@ def _penalized_baseline_export(params, inp, node_id, indent, use_scp):
 
 
 @register_node
-class BaselinePenalizedLSNode(TransformSpecNode):
+class BaselinePenalizedLSNode(RowLocalPopulationProjection, TransformSpecNode):
     """Subtract a penalized least-squares baseline using exact saved parameters."""
 
     metadata = NodeMetadata(

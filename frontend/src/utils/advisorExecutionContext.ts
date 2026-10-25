@@ -9,6 +9,11 @@
 const toDimension = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
+/** Row-navigation references are never LLM summary data, including retained params. */
+const summaryParameters = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== "workflow_exclusions")) : {};
+
 export function bindAdvisorExecutionContext<T extends { nodes: Array<Record<string, unknown>> }>(
   context: T,
   execution: {
@@ -18,6 +23,7 @@ export function bindAdvisorExecutionContext<T extends { nodes: Array<Record<stri
     lastExecutionResults?: Record<string, unknown> | null;
     restoredRunId?: number | null;
     lastExecutionParams?: Record<string, Record<string, unknown>>;
+    workflowExcludedCount?: number;
     // Structural rather than Record<string, unknown>: SherpaDatasetContext is an
     // interface, so it has no implicit index signature and would not assign.
     // Only the dimensions are read here; the rest passes through untouched.
@@ -36,6 +42,11 @@ export function bindAdvisorExecutionContext<T extends { nodes: Array<Record<stri
     : "Draft workflow only. Execution results are unavailable for interpretation because the draft changed or its producing run identity is missing. Inspect the saved run or execute the current draft.";
   return {
     ...context,
+    ...(typeof execution.workflowExcludedCount === "number" ? { workflow_population: {
+      scope: "active_workflow", applied_at: "load_data_before_all_branches",
+      excluded_count: execution.workflowExcludedCount, results_need_run: !allowed,
+      authority: "Current workflow setting, not execution evidence. Excluded projections do not contribute to fitting or validation.",
+    } } : {}),
     // A selection reference is not browser-authored result authority. Hosted
     // Advisor resolves this historical run under server ownership/disclosure checks.
     retained_run_id: Number.isInteger(runId) && Number(runId) > 0 ? runId : null,
@@ -46,12 +57,12 @@ export function bindAdvisorExecutionContext<T extends { nodes: Array<Record<stri
     execution_returned_nodes: Object.keys(execution.lastExecutionResults ?? {}),
     nodes: context.nodes.map((node) =>
       allowed
-        ? { ...node, parameters: execution.lastExecutionParams?.[String(node.node_id)] ?? {} }
+        ? { ...node, parameters: summaryParameters(execution.lastExecutionParams?.[String(node.node_id)]) }
         : {
             node_id: node.node_id,
             node_type: node.node_type,
             label: node.label,
-            parameters: node.parameters,
+            parameters: summaryParameters(node.parameters),
             execution_status: "draft",
             result_shape: null,
             result_statistics: null,

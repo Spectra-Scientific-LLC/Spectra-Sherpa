@@ -24,6 +24,7 @@ from spectra_sherpa.app.lib import collection_definition as collection_definitio
 from spectra_sherpa.app.lib import dataset_view_receipts as dataset_views_contract
 from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib import sample_labels as sample_labels_contract
+from spectra_sherpa.app.lib import workflow_population as workflow_population_contract
 from spectra_sherpa.app.lib.collection_assembly import (
     CollectionMember,
     assemble_collection,
@@ -43,6 +44,7 @@ from spectra_sherpa.app.lib.registered_reference_collection_identity import (
 )
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
 from spectra_sherpa.app.lib.target_authority import verify_target_authority
+from spectra_sherpa.app.lib.workflow_population import canonical_exclusions, source_population_outputs
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
@@ -95,6 +97,7 @@ def _canonical_load_group_parameters(
     """Validate the closed local-folder or project-collection source grammar."""
 
     projected = dict(parameters)
+    projected["workflow_exclusions"] = canonical_exclusions(projected.get("workflow_exclusions"))
     source_mode = projected.get("source_mode", "local_folder")
     if source_mode not in {"local_folder", "experiment_collection"}:
         raise ValueError("source_mode is not admitted")
@@ -166,6 +169,7 @@ def _draft_load_group_parameters(parameters: dict[str, object]) -> dict[str, obj
 
 def _canonical_collection_load_parameters(parameters: dict[str, object]) -> dict[str, object]:
     projected = dict(parameters)
+    projected["workflow_exclusions"] = canonical_exclusions(projected.get("workflow_exclusions"))
     projected.setdefault("dataset_view_id", None)
     projected.setdefault("dataset_view_sha256", "")
     experiment_id = projected.get("experiment_id")
@@ -810,6 +814,9 @@ class LoadGroupNode(Node):
         description="Load one exact compatible collection as a grouped dataset",
         parameters=[
             NodeParameter(
+                "workflow_exclusions", "Workflow Exclusions", "json", default=None, required=False, category="internal"
+            ),
+            NodeParameter(
                 name="source_mode",
                 label="Collection Source",
                 param_type="select",
@@ -920,7 +927,7 @@ class LoadGroupNode(Node):
         ],
         input_types=[],  # No inputs - this is a source node
         input_ports=[],
-        output_type="SherpaDataset",
+        output_type="dict",
         output_ports=[
             PortMetadata(
                 name="default",
@@ -928,7 +935,15 @@ class LoadGroupNode(Node):
                 required=True,
                 label="Grouped Spectra",
                 description="Strictly compatible spectra bound to a deterministic source manifest",
-            )
+            ),
+            PortMetadata("target", "spectrasherpa://types/TargetMatrix/1.0", False, "Target Values"),
+            PortMetadata(
+                "exclusions",
+                "spectrasherpa://types/WorkflowPopulation/1.0",
+                False,
+                "Exclusion State",
+                description="Exact original and result row mapping for this workflow",
+            ),
         ],
         help_url="docs/nodes/data.md#load-group",
         canonical_parameter_validator=_canonical_load_group_parameters,
@@ -959,7 +974,13 @@ class LoadGroupNode(Node):
                 },
                 source_resolver=self.require_execution_runtime().require_dataset_source_resolver(),
             )
-            return (await reader.execute())["default"]
+            loaded = await reader.execute()
+            return source_population_outputs(
+                loaded["default"],
+                node_id=self.node_id,
+                exclusions=parameters.get("workflow_exclusions"),
+                source_binding=parameters,
+            )
 
         folder_path = str(parameters["folder_path"])
         pattern = str(parameters["pattern"])
@@ -1203,7 +1224,9 @@ class LoadGroupNode(Node):
             },
             node_id=self.node_id,
         )
-        return result
+        return source_population_outputs(
+            result, node_id=self.node_id, exclusions=parameters.get("workflow_exclusions"), source_binding=parameters
+        )
 
     def _load_single_file(self, file_path: Path, *, asset_id: str | None = None) -> _LoadedDataset:
         """
@@ -1352,6 +1375,9 @@ class CollectionLoadNode(Node):
         label="Collection Load",
         description="Load exact selected members of a project dataset",
         parameters=[
+            NodeParameter(
+                "workflow_exclusions", "Workflow Exclusions", "json", default=None, required=False, category="internal"
+            ),
             NodeParameter("experiment_id", "Experiment", "number", default=None, min_value=1, category="internal"),
             NodeParameter(
                 "stage",
@@ -1408,6 +1434,13 @@ class CollectionLoadNode(Node):
         output_ports=[
             PortMetadata("default", "spectrasherpa://types/SpectralDataset/1.0", True, "Selected Dataset"),
             PortMetadata("target", "spectrasherpa://types/TargetMatrix/1.0", False, "Target Values"),
+            PortMetadata(
+                "exclusions",
+                "spectrasherpa://types/WorkflowPopulation/1.0",
+                False,
+                "Exclusion State",
+                description="Exact original and result row mapping for this workflow",
+            ),
         ],
         canonical_parameter_validator=_canonical_collection_load_parameters,
         policy=NodePolicy(safe_for_auto_apply=False, requires_human_review=True, data_egress_risk="none"),
@@ -1421,7 +1454,16 @@ class CollectionLoadNode(Node):
             {"dataset_id": parameters["experiment_id"], **parameters},
             source_resolver=self.require_execution_runtime().require_dataset_source_resolver(),
         )
-        return await reader.execute()
+        loaded = await reader.execute()
+        return {
+            **loaded,
+            **source_population_outputs(
+                loaded["default"],
+                node_id=self.node_id,
+                exclusions=parameters.get("workflow_exclusions"),
+                source_binding=parameters,
+            ),
+        }
 
 
 bind_stable_execution_contract(
@@ -1429,7 +1471,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.DATA_SOURCE,
     implementation_id="spectrasherpa.data.collection_load",
-    implementation_version="1.1.0",
+    implementation_version="1.2.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="generates_samples",
@@ -1440,6 +1482,7 @@ bind_stable_execution_contract(
     license_id="CeCILL-B",
     help_reference="docs/nodes/data.md",
     implementation_modules=(
+        workflow_population_contract,
         dataset_views_contract,
         sample_preparation_contract,
         source_contracts,
@@ -1467,7 +1510,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.DATA_SOURCE,
     implementation_id="spectrasherpa.data.load_group",
-    implementation_version="6.0.0",
+    implementation_version="6.1.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="generates_samples",
@@ -1478,6 +1521,7 @@ bind_stable_execution_contract(
     license_id="CeCILL-B",
     help_reference="docs/nodes/data.md",
     implementation_modules=(
+        workflow_population_contract,
         source_contracts,
         collection_assembly_contract,
         collection_definition_contract,

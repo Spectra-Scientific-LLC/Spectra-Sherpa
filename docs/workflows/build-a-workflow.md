@@ -85,6 +85,75 @@ offered in **Add Nodes**.
 | Understand what a node does | Select it → Inspector help, or look it up in the [Node Library](../nodes/index.md) |
 | Compare calibration settings fairly | [Compare calibration workflows](optimize-saved-result.md) — one sheet per alternative, same folds |
 
+## Workflow-wide observation exclusions
+
+In a workflow plot with exact source-row references, click observations or use
+box/lasso selection, then **Exclude selected**. **Restore selected** restores
+only the selected workflow exclusions; navigating to another node in the same
+sheet does not change the scope. **Restore all** is a workflow action.
+[The PCA walkthrough](../chemometrics/pca.md#exclusions-and-row-numbers) gives a
+150 → 148 → 149 → 150 example.
+
+The decision belongs to **Load Data**, not the plot or model. Collection Load,
+File Load and Load Group materialize the active population before any branch:
+spectra, responses, groups and sample metadata remain aligned. All connected
+nodes receive that population. A downstream **Filter Samples** can further
+restrict its own branch; restoring a workflow exclusion does not change it.
+Restoration also does not undo exclusions already saved in My Dataset.
+Each source owns its own exact ordered references, even if two sources have
+the same editable labels. Changing the source invalidates its old decisions
+instead of applying them to a different set of observations.
+
+The **Exclusion State** output records every source row, its original label,
+typed sample ID when present, source inclusion, workflow exclusion and current
+result row. It is a membership table, not an alternate spectral input. My
+Dataset stays unchanged. Save/reopen preserves the sheet's decisions and each
+retained run preserves its own original population.
+
+For a portable sample-table source, its table port follows the same retained
+rows as its data and response ports. Original zero-based source indices are
+preserved, including gaps; they are not new result-row numbers. Attaching the
+table preserves the source references used for later selection and restoration.
+
+Editable workflow files preserve these source-bound settings. Python/notebook
+exports (including executable bundles) currently refuse a nonempty workflow
+exclusion: their portable deployment-input substitution cannot yet replay the
+Workbench source binding. They do not silently export an uncurated fit.
+Active-result CSV/JSON downloads remain available.
+
+### Excluded observations on plots
+
+Numerical ports, data tables, CSV exports and fit/evaluation metrics contain
+the active result. Display-only companions may additionally show excluded
+observations with open-cross symbols (spectral lines are dotted). They cannot
+be connected to computational nodes or counted as fit/validation rows.
+
+| Operation | Excluded-observation display |
+| --- | --- |
+| Load Data and branch Filter | Source values, with exact membership and source references |
+| Declared row-local preprocessing (normalization, smoothing, derivatives, clipping and supported baseline corrections) | The same per-spectrum transformation, without a cohort refit |
+| Scale/Center, MSC, EMSC and OSC | Application of the exact retained active-population transform state |
+| PCA scores and T²/Q diagnostics | Application to the current PCA fit; diagnostic limits and fitted population stay unchanged |
+| Loadings, aggregate summaries and component-selection curves | Fit-level results; no per-observation position to overlay |
+| Other operations without a declared application, including unassigned split branches | Active results only; an unavailable overlay is identified rather than guessed |
+
+Display limits still apply; the visible **Subset** indicator is separate from
+an exclusion decision. Excluded observations are prioritized within those
+limits, not guaranteed to bypass them. Plot-driven curation supports up to
+100,000 observations in a two-dimensional sample-feature source. N-D sources
+retain their shape and axis masks for explicit projection; plot-driven source
+curation is unavailable, rather than guessing how to flatten them. Larger
+two-dimensional datasets still load with their saved source
+inclusion applied, without plot-driven workflow curation. An excluded
+projection exceeding the 64 MiB input budget is unavailable, without changing
+the computational result.
+
+Sherpa Advisor and existing Guidance receive workflow exclusion counts and
+scope through their normal permission-controlled context. Those counts are
+settings, not proof that a rerun succeeded, and do not confer independent
+validation. Neither system receives private navigation references through the
+summary context or changes exclusions automatically.
+
 ## When Something Refuses to Run
 
 Refusals are deliberate and explain themselves: a node that needs a target

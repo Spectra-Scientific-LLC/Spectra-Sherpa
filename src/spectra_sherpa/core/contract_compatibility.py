@@ -761,6 +761,63 @@ def saved_state_compatibilities() -> tuple[SavedStateCompatibility, ...]:
     return tuple(result)
 
 
+# Source curation/display hooks change implementation identities, not fitted
+# state serializers or application formulas. Each previously admitted producer
+# is bound directly to the exact current reader; this grants no old execution.
+_WORKFLOW_POPULATION_PREDECESSORS = tuple(
+    SavedStateCompatibility(operation, predecessor, consumer, serializer)
+    for operation, serializer, consumer, predecessors in (
+        (
+            "classification.plsda",
+            "spectrasherpa.sherpa-plsda-state/5",
+            "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+            (
+                "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
+                "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+                "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
+                "526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
+                "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+                "7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
+                "85b2a1fd3938dee8a3a12f61397a07052883cd3f0bfa4d977151b600fe4992b6",
+                "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+                "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+                "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+                "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
+            ),
+        ),
+        (
+            "model.fitted_pls",
+            "spectra.sherpa-simpls-regression-json/9",
+            "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
+            (
+                "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
+                "3939dc715653c735c11d3993942bd8e8baf5343fd42e21341d5cde130dafdde3",
+                "473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
+                "5ae3215d3c522a75b16baecdf35e736537052f411fbf9833509a535320ee27d5",
+                "9db6a10ca3c53faf7b0a69cee4aba35ebef148019ca21bf09ed226d578456997",
+                "ba02705c9868ae460e80af30207f8fa1c60f5ff20e8e6588be267292811472da",
+            ),
+        ),
+        (
+            "model.pca",
+            "spectrasherpa.model-artifact.pca/3",
+            "869a320a282d9484457f4e3237a0a098c26403c65ed1e699482403231630b608",
+            (
+                "2d4457cd7ca9ce699326aad70e1b4a77deb74d6cea88afd08066f106f45df161",
+                "5e809716a8266c4ddd5fb3902b8a68c264019fd05237bdb1397f664ae31dea10",
+                "85b458d4b762f028fd9e825c47642460faf9f4682122def13416c88082a879f6",
+                "ad9ee0dc72e2a6e9984134d8cfd7da6176ae725641c240f488f31713b57fcf94",
+                "bcf69d89f62cb9e9ad1cfb46fc1f32b258c130dd571eb457df73fb535f685f0f",
+                "c8f6c57e2e5ffe3f7ff3a6f5528cfef28ceea6eabfdac4d2c4572481d391ca75",
+                "def76c765075b59a536e8c6bd72be0418c20d0ea4611f11ce5ec7f1a17ca891b",
+                "eeca5bea6642ec33c4a51c825acd58217d1a8c17784cfa318e4840e4c4ba73a9",
+            ),
+        ),
+    )
+    for predecessor in predecessors
+)
+
+
 def saved_state_predecessor_is_compatible(
     predecessor: object,
     consumer: str,
@@ -791,6 +848,7 @@ def saved_state_predecessor_is_compatible(
             *_FEATURE_PRESENTATION_PREDECESSORS,
             *_DIAGNOSTIC_REFUSAL_PREDECESSORS,
             *_SCIENTIFIC_AUDIT_PREDECESSORS,
+            *_WORKFLOW_POPULATION_PREDECESSORS,
         )
         if entry.predecessor_digest == predecessor
         and entry.consumer_digest == consumer

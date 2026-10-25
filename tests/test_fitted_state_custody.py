@@ -51,7 +51,7 @@ def test_custody_capabilities_bind_the_current_registered_execution_contracts() 
         for serializer, operation_id in _OPERATIONS.items()
     }
     current = predecessor_catalog()["current_contracts"]
-    assert observed == {
+    expected = {
         serializer: (
             digest
             if serializer
@@ -68,6 +68,16 @@ def test_custody_capabilities_bind_the_current_registered_execution_contracts() 
         )
         for serializer, digest in _CONTRACTS.items()
     }
+    expected.update(
+        {
+            FITTED_PLS_STATE_SERIALIZER: "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
+            PLSDA_FITTED_STATE_SERIALIZER: "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+            "spectra.scale-reference-json.v2": "9baeb1b89c4ea311d9cc47b8bc4188c01faa88637ecfe36475cd20af99af3b87",
+        }
+    )
+    assert observed == expected
+    for serializer in expected:
+        fitted_state_custody_capability(serializer, expected[serializer])
     assert current["model.fitted_pls"] == "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4"
     assert current["classification.plsda"] == "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb"
 

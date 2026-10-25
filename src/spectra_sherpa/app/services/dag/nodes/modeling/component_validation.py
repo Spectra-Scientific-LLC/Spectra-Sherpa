@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from spectra_sherpa.app.lib.workflow_population import WORKFLOW_POPULATION_OPERATION
+
 SAFE_PREMODEL_OPERATIONS = frozenset(
     {
         "data.train_test_split",
@@ -24,6 +26,7 @@ KNOWN_IMPORT_OPERATIONS = frozenset(
         "import.matlab_dso",
         "import.matlab_process_log",
         "import.registered_reference",
+        WORKFLOW_POPULATION_OPERATION,
     }
 )
 

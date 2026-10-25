@@ -24,6 +24,7 @@ from spectra_sherpa.app.services.dag.nodes.data.sample_table import (
     inspect_portable_sample_table,
     load_portable_sample_table,
     load_portable_sample_table_editor,
+    subset_sample_table_payload,
     validate_sample_table_payload,
 )
 from spectra_sherpa.app.services.dataset_analysis_readiness import validate_analysis_binding
@@ -305,6 +306,75 @@ def test_sample_table_loader_emits_one_closed_json_safe_value(tmp_path: Path) ->
             "batch": ["calibration", "holdout", "calibration"],
         },
     }
+
+
+def test_source_subset_keeps_original_rows_and_attachment_navigation(tmp_path: Path) -> None:
+    from spectra_sherpa.app.lib.workflow_population import source_population_outputs
+    from spectra_sherpa.app.services.dag.nodes.data.sample_preparation import attach_target_dataset
+
+    table = load_portable_sample_table(_write_table(tmp_path / "samples.csv"), selected_target="moisture")
+    original = _spectra()
+    first = source_population_outputs(original, node_id="load")
+    state = first["exclusions"]
+    curated = source_population_outputs(
+        original,
+        node_id="load",
+        exclusions={"source_digest": state["source_digest"], "excluded_refs": [state["rows"][1]["observation_ref"]]},
+    )["default"]
+    subset = subset_sample_table_payload(table, [0, 2], source=original)
+    assert subset["row_indices"] == subset["annotations"]["row_index"] == [0, 2]
+    assert subset["sample_ids"] == ["sample-0001", "sample-0003"]
+    attached = attach_target_dataset(
+        curated, np.array([10.0, 12.0]), target_type="continuous", node_id="attach", sample_table=subset
+    )
+    assert attached.sample_axis.workflow_observation_refs == curated.sample_axis.workflow_observation_refs
+    assert attached.sample_axis.sample_table["row_index"] == [0, 2]
+    assert table["row_indices"] == [0, 1, 2]
+    reordered = original[[2, 1, 0]]
+    with pytest.raises(ValueError, match="ordered identities"):
+        subset_sample_table_payload(table, [0, 2], source=reordered)
+
+
+@pytest.mark.parametrize("indices", [[True, 2], [0.0, 2], [-1, 2], [0, 0], [2, 0]])
+def test_in_memory_subset_rejects_nonexact_source_indices(tmp_path: Path, indices: list) -> None:
+    table = load_portable_sample_table(_write_table(tmp_path / "samples.csv"), selected_target="moisture")
+    table["row_indices"] = indices
+    with pytest.raises(ValueError, match="source order"):
+        validate_sample_table_payload(table)
+
+
+@pytest.mark.asyncio
+async def test_file_load_table_port_matches_active_response_and_keeps_source_rows(tmp_path: Path) -> None:
+    from spectra_sherpa.app.services.dag.nodes.data.file_load_node import FileLoadNode
+    from spectra_sherpa.core.execution_runtime import ExecutionRuntime, ResolvedExperimentFile
+    from spectra_sherpa.core.prepared_data import PreparedDataOverrides
+
+    path = _write_table(tmp_path / "samples.csv")
+
+    class Resolver:
+        async def resolve_experiment_file(self, **_identity):
+            return ResolvedExperimentFile(
+                path=str(path),
+                original_file_path=path.name,
+                created_datetime="2026-10-25T00:00:00Z",
+                prepared_overrides=PreparedDataOverrides(
+                    selected_target="moisture", target_type="continuous"
+                ).to_sidecar_dict(),
+            )
+
+    node = FileLoadNode("load", {"experiment_id": 7, "file_id": 73})
+    node.bind_execution_runtime(ExecutionRuntime(dataset_source_resolver=Resolver()))
+    first = await node.execute()
+    state = first["exclusions"]
+    node.parameters["workflow_exclusions"] = {
+        "source_digest": state["source_digest"],
+        "excluded_refs": [state["rows"][1]["observation_ref"]],
+    }
+    output = await node.execute()
+    assert output["default"].n_samples == len(output["target"]) == len(output["sample_table"]["target_values"]) == 2
+    assert output["sample_table"]["row_indices"] == [0, 2]
+    assert output["sample_table"]["source_file_id"] == 41  # X custody, not the table artifact's file ID73
+    assert output["sample_table"]["sample_ids"] == output["default"].sample_axis.labels
 
 
 def test_sample_table_round_trip_preserves_lexical_identities_and_categories(tmp_path: Path) -> None:

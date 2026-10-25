@@ -501,12 +501,15 @@ const singlePlotData = computed(() => {
     sampleColorField.value !== "__none__" &&
     metadataGrouping.value.columns[sampleColorField.value]
   ) {
+    const styleLabels = selectedRows(metadataGrouping.value.sampleLabels);
     const traces = buildMetadataLineTraces(
       x,
       rows as number[][],
       {
         ...metadataGrouping.value,
-        sampleIds: labels,
+        sampleIds: metadataGrouping.value.sampleIds ? selectedRows(metadataGrouping.value.sampleIds) : null,
+        sampleLabels: styleLabels.map((fallback, index) =>
+          typeof labels[index] === "string" && labels[index].length > 0 ? labels[index] : fallback),
         columns: Object.fromEntries(
           Object.entries(metadataGrouping.value.columns).map(([key, values]) => [
             key,

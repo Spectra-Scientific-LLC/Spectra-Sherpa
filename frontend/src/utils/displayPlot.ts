@@ -39,10 +39,16 @@ function cleanPlotLayout(layout: Layout): Layout {
 
 function sampled(trace: Trace, maxRows: number, priorityIds: ReadonlySet<string>): Trace {
   const length = Array.isArray(trace.x) ? trace.x.length : Array.isArray(trace.y) ? trace.y.length : 0;
+  const meta = trace.meta as Record<string, unknown> | undefined;
+  const refs = meta?.workflow_observation_refs;
+  const included = meta?.workflow_included;
   const priority = Array.isArray(trace.customdata) && trace.customdata.length === length
     ? trace.customdata.flatMap((id, index) =>
         typeof id === "string" && priorityIds.has(id) ? [index] : [])
     : [];
+  if (Array.isArray(refs) && refs.length === length) refs.forEach((ref, i) => {
+    if ((typeof ref === "string" && priorityIds.has(ref)) || (Array.isArray(included) && included[i] === false)) priority.push(i);
+  });
   const indexes = Array.from({ length: maxRows }, (_, index) =>
     maxRows === 1 ? 0 : Math.floor(index * (length - 1) / (maxRows - 1)));
   if (priority.length) {
@@ -60,6 +66,17 @@ function sampled(trace: Trace, maxRows: number, priorityIds: ReadonlySet<string>
     indexes.sort((a, b) => a - b);
   }
   const result = { ...trace };
+  if (Array.isArray(trace.selectedpoints)) {
+    const selected = new Set(trace.selectedpoints);
+    result.selectedpoints = indexes.flatMap((original, displayed) => selected.has(original) ? [displayed] : []);
+  }
+  if (meta) {
+    result.meta = { ...meta };
+    for (const key of ["workflow_observation_refs", "workflow_included"]) {
+      if (Array.isArray(meta[key]) && meta[key].length === length)
+        (result.meta as Record<string, unknown>)[key] = indexes.map(i => (meta[key] as unknown[])[i]);
+    }
+  }
   for (const key of ["x", "y", "customdata", "text", "hovertext", "ids"]) {
     if (Array.isArray(trace[key]) && trace[key].length === length)
       result[key] = indexes.map((index) => (trace[key] as unknown[])[index]);
@@ -85,17 +102,30 @@ export function displayPlot(
   let omitted = 0;
   let omittedTraces = 0;
   let shown = data;
-  const allSpectralLines = data.length > prefs.maxRows && data.every((trace) =>
+  const isLegend = (trace: Trace) => trace.showlegend !== false && Array.isArray(trace.x) &&
+    trace.x.length === 1 && trace.x[0] === null && Array.isArray(trace.y) && trace.y[0] === null;
+  const curves = data.filter(trace => !isLegend(trace));
+  const allSpectralLines = curves.length > prefs.maxRows && curves.every((trace) =>
     trace.type === "scatter" && String(trace.mode || "").includes("lines") &&
-    !String(trace.mode || "").includes("markers"));
+    (!String(trace.mode || "").includes("markers") ||
+      Array.isArray((trace.meta as Trace | undefined)?.workflow_observation_refs)));
   if (allSpectralLines) {
-    omitted = data.length - prefs.maxRows;
+    omitted = curves.length - prefs.maxRows;
     omittedTraces = omitted;
-    shown = Array.from({ length: prefs.maxRows }, (_, index) =>
-      data[Math.floor(index * (data.length - 1) / (prefs.maxRows - 1))]);
+    const priority = curves.flatMap((trace, index) => {
+      const meta = trace.meta as Trace | undefined;
+      return Array.isArray(meta?.workflow_included) && meta.workflow_included.some(value => value === false)
+        ? [index] : [];
+    });
+    const chosen = new Set(priority.slice(0, prefs.maxRows));
+    for (let index = 0; index < prefs.maxRows && chosen.size < prefs.maxRows; index += 1)
+      chosen.add(prefs.maxRows === 1 ? 0 : Math.floor(index * (curves.length - 1) / (prefs.maxRows - 1)));
+    // Priority rows can overlap the regular grid. Fill, without duplicating curves.
+    for (let index = 0; chosen.size < prefs.maxRows; index += 1) chosen.add(index);
+    shown = [...chosen].sort((a, b) => a - b).map(index => curves[index]).concat(data.filter(isLegend));
   }
   const markerCounts = shown.map((trace) => trace.type === "scatter" &&
-    String(trace.mode || "").includes("markers") && !String(trace.mode || "").includes("lines")
+    String(trace.mode || "").includes("markers") && !String(trace.mode || "").includes("lines") && !isLegend(trace)
     ? Array.isArray(trace.x) ? trace.x.length : Array.isArray(trace.y) ? trace.y.length : 0 : 0);
   const markerBudgets = markerCounts.map(() => 0);
   let remaining = prefs.maxRows;

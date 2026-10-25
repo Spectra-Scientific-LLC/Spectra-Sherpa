@@ -458,8 +458,8 @@ def validate_sample_table_payload(value: object) -> SampleTablePayload:
     if not all(isinstance(item, list) for item in (row_indices, sample_ids, include, target_values)):
         raise ValueError("sample_table row fields must be JSON arrays")
     count = len(cast(Sequence[Any], row_indices))
-    if list(row_indices) != list(range(count)):
-        raise ValueError("sample_table row_indices must preserve exact zero-based source order")
+    if any(type(index) is not int or index < 0 for index in row_indices) or row_indices != sorted(set(row_indices)):
+        raise ValueError("sample_table row_indices must preserve exact increasing zero-based source order")
     if any(len(cast(Sequence[Any], item)) != count for item in (sample_ids, include, target_values)):
         raise ValueError("sample_table row fields are not aligned")
     if any(not isinstance(item, str) or not item.strip() for item in sample_ids):
@@ -480,6 +480,37 @@ def validate_sample_table_payload(value: object) -> SampleTablePayload:
         target_names=set(cast(Mapping[str, str], target_definitions)),
     )
     return cast(SampleTablePayload, dict(value))
+
+
+def subset_sample_table_payload(value: object, positions: Sequence[int], *, source: Any) -> SampleTablePayload:
+    """Project source-owned rows without renumbering their original custody.
+
+    CSV ingestion still requires the complete contiguous source table. A
+    computational port may carry an ordered subset of that admitted table;
+    source row indices and all annotations keep their original values.
+    """
+    table = validate_sample_table_payload(value)
+    count = len(table["row_indices"])
+    axis = source.sample_axis
+    source_ids = sample_ids(source)
+    if source_ids is None and axis is not None:
+        source_ids = axis.labels
+    if source.n_samples != count or source_ids is None or list(source_ids) != table["sample_ids"]:
+        raise ValueError("sample_table subset must match the admitted source's exact ordered identities")
+    provenance = get_spectra_meta(source)
+    if provenance is None or provenance.provenance is None or provenance.provenance.file_id is None:
+        raise ValueError("sample_table subset requires exact source-file provenance")
+    if any(type(index) is not int or index < 0 or index >= count for index in positions) or list(positions) != sorted(
+        set(positions)
+    ):
+        raise ValueError("sample_table subset positions must preserve exact source order")
+    result = dict(table)
+    for field in ("row_indices", "sample_ids", "include", "target_values"):
+        result[field] = [table[field][index] for index in positions]
+    result["annotations"] = {
+        name: [column[index] for index in positions] for name, column in table["annotations"].items()
+    }
+    return validate_sample_table_payload(result)
 
 
 def apply_sample_table_to_dataset(dataset: Any, value: object) -> SampleTablePayload:
@@ -521,6 +552,11 @@ def apply_sample_table_to_dataset(dataset: Any, value: object) -> SampleTablePay
             "sample_id": list(table["sample_ids"]),
         },
         title=getattr(prior_axis, "title", None) if prior_axis is not None else "Sample",
+        workflow_observation_refs=(
+            list(prior_axis.workflow_observation_refs)
+            if prior_axis is not None and prior_axis.workflow_observation_refs is not None
+            else None
+        ),
     )
     dataset.sample_axis = axis
     return table
@@ -533,5 +569,6 @@ __all__ = [
     "inspect_portable_sample_table",
     "load_portable_sample_table",
     "load_portable_sample_table_editor",
+    "subset_sample_table_payload",
     "validate_sample_table_payload",
 ]

@@ -118,6 +118,41 @@ def test_dictionary_default_and_private_port_omissions_are_explicit():
     assert ports["_runtime"].storage is None
 
 
+def test_display_population_is_retained_but_private_source_cannot_escape():
+    from spectra_sherpa.app.lib.axes import SampleAxis
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+    from spectra_sherpa.app.lib.workflow_population import source_population_outputs
+    from spectra_sherpa.app.services.dag.population_display import DISPLAY_KEY
+
+    dataset = SherpaDataset(np.arange(12, dtype=float).reshape(3, 4), sample_axis=SampleAxis(count=3))
+    source = source_population_outputs(dataset, node_id="load")
+    state = source["exclusions"]
+    source = source_population_outputs(
+        dataset,
+        node_id="load",
+        exclusions={"source_digest": state["source_digest"], "excluded_refs": [state["rows"][1]["observation_ref"]]},
+    )
+    full = source.pop("__source_population")
+    companion = {
+        "sources": {"load": {"workflow_excluded_count": 1}},
+        "availability": "available",
+        "outputs": {"default": full},
+    }
+    outputs = {**source, DISPLAY_KEY: companion, "__source_population": full, "_runtime": {"secret": 3}}
+    inline = serialize_result(outputs)
+    assert DISPLAY_KEY in inline
+    assert "__source_population" not in inline and "_runtime" not in inline
+    evidence = RunEvidence.model_validate(retention.retain_run_outputs(1, {"load": outputs}, {}))
+    ports = evidence.outputs["load"]
+    assert ports[DISPLAY_KEY].state == "exact"
+    reopened = retention.read_output(1, ports[DISPLAY_KEY])
+    assert reopened["outputs"]["default"]["y_axis"]["include_mask"] == [True, False, True]
+    assert len(reopened["outputs"]["default"]["y_axis"]["workflow_observation_refs"]) == 3
+    assert len(retention.read_output(1, ports["default"])["data"]) == 2
+    assert ports["__source_population"].state == "missing"
+    assert ports["_runtime"].state == "missing"
+
+
 def test_unexpected_serialization_failure_does_not_destroy_run_evidence(monkeypatch):
     def fail_serialization(*_args, **_kwargs):
         raise RuntimeError("unexpected serializer failure")

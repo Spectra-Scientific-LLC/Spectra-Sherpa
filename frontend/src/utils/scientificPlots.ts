@@ -10,6 +10,7 @@ import { scientificNumber } from "@/utils/scientificEncoding";
 import { refusedScientificPlot, scientificPlotRefusal } from "@/utils/scientificPlotState";
 import { normalizeSampleLabel } from "@/utils/sampleLabels";
 import { evaluationRoleLabel, scientificResponseUnit } from "@/utils/scientificDisplay";
+import { observationTraceMetadata } from "@/utils/workflowPopulation";
 
 // Plotly accepts a broad, renderer-defined payload. Keep scientific inputs
 // validated above this boundary while allowing the renderer record itself to
@@ -814,7 +815,7 @@ const diagnosticLabels = (value: unknown, count: number): string[] => {
         ? compacted?.last
         : undefined;
     const label = raw === null || raw === undefined ? "" : String(raw).trim();
-    return label || `Sample ${index + 1}`;
+    return label || `Result row ${index + 1}`;
   });
 };
 
@@ -869,6 +870,7 @@ export function buildT2QDiagnosticsPlot(
   const hasQLimit = Number.isFinite(qLimit);
   const regular = rows.filter((row) => !row.outlier);
   const outliers = rows.filter((row) => row.outlier);
+  const rowIndices = new Map(rows.map((row, i) => [row, i]));
   const trace = (selected: T2QDiagnosticRow[], outlier: boolean): PlotRecord => ({
     type: "scatter",
     mode: outlier ? "markers+text" : "markers",
@@ -876,6 +878,7 @@ export function buildT2QDiagnosticsPlot(
     x: selected.map((row) => row.t2),
     y: selected.map((row) => row.q),
     text: selected.map((row) => row.sample),
+    ...observationTraceMetadata(metadata.observation_axis, rows.length, selected.map(row => rowIndices.get(row)!)),
     name: outlier ? "Screened outlier" : "Calibration sample",
     marker: {
       color: outlier ? SCIENTIFIC_COLORS.alert : SCIENTIFIC_COLORS.observation,
