@@ -31,7 +31,7 @@
 
     <div v-if="editorLoading" class="editor-state" role="status">
       <i class="pi pi-spin pi-spinner" aria-hidden="true" />
-      <span>Loading saved measured samples...</span>
+      <span>Loading measured samples...</span>
     </div>
     <div v-else-if="editorLoadError" class="validation-errors editor-load-error" role="alert">
       <i class="pi pi-exclamation-triangle" aria-hidden="true" />
@@ -259,7 +259,7 @@
             optionLabel="label"
             optionValue="value"
             optionDisabled="disabled"
-            :disabled="plateFormatOptions.length === 1"
+            :disabled="editorLoading || plateFormatOptions.length === 1"
           />
         </div>
         <div class="field compact-field">
@@ -561,6 +561,8 @@ import InputText from "primevue/inputtext";
 import Tag from "primevue/tag";
 
 import api from "@/api/client";
+import { useScopedRequest } from "@/composables/useScopedRequest";
+import type { components } from "@/types/api/v1";
 import PlateMap96Well from "@/components/PlateMap96Well.vue";
 import {
   defaultPlateFormatId,
@@ -693,6 +695,10 @@ const planError = ref("");
 const confirmPlanAssignment = ref(false);
 const editorLoading = ref(false);
 const editorLoadError = ref("");
+const editorRequests = useScopedRequest(
+  () => [visible.value, props.sourceFileId, props.experimentId, props.analysisBinding?.revision],
+  () => { editorLoading.value = false; },
+);
 const bindingRevision = ref<string | null>(null);
 const bindingRevisionLoading = ref(false);
 const bindingRevisionNotice = ref("");
@@ -804,13 +810,27 @@ function openEditor(): void {
 }
 
 async function loadMeasuredSamples(): Promise<void> {
-  if (!props.analysisBinding) return;
+  const request = editorRequests.begin();
   editorLoading.value = true;
   editorLoadError.value = "";
   try {
+    if (!props.analysisBinding) {
+      const initialPlate = JSON.stringify([plateFormatId.value, rows.value.map(row => [row.plate_id, row.well])]);
+      const { data } = await api.get<components["schemas"]["WorkbenchPreferencesOut"]>(
+        "/acquisition-preferences", { signal: request.signal },
+      );
+      if (!request.isCurrent()) return;
+      if (JSON.stringify([plateFormatId.value, rows.value.map(row => [row.plate_id, row.well])]) !== initialPlate) return;
+      // Preferences seed only a new measured table. Saved tables retain their
+      // own format, and an acquisition plan remains an explicit proposal.
+      plateFormatId.value = getPlateFormat(data.default_plate_format_id).id;
+      originalPlateFormatId.value = plateFormatId.value;
+      return;
+    }
     const { data } = await api.get<MeasuredSampleTableEditor>(
-      `/builder/analysis-binding/${props.sourceFileId}`,
+      `/builder/analysis-binding/${props.sourceFileId}`, { signal: request.signal },
     );
+    if (!request.isCurrent()) return;
     if (data.revision !== bindingRevision.value) {
       throw new Error("Measured samples changed. Close and reopen this editor.");
     }
@@ -832,12 +852,13 @@ async function loadMeasuredSamples(): Promise<void> {
     originalPlateFormatId.value = plateFormatId.value;
     manualPlateEditing.value = rows.value.some((row) => Boolean(row.plate_id || row.well));
   } catch (error: unknown) {
+    if (!request.isCurrent()) return;
     editorLoadError.value = getErrorMessage(
       error,
-      "Unable to load the saved measured-sample version.",
+      "Unable to load measured-sample settings.",
     );
   } finally {
-    editorLoading.value = false;
+    if (request.isCurrent()) editorLoading.value = false;
   }
 }
 

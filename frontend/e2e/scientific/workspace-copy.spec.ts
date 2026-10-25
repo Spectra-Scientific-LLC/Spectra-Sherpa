@@ -1,6 +1,32 @@
 import { test, expect } from "@playwright/test";
 import { createDataset, instantiate, runWorkflow } from "./journeys";
 
+test("new measured tables use Settings format and large plates have one keyboard entry", async ({ page, request }) => {
+  const dataset = await createDataset(request, "Plate preference", { source: "sklearn", name: "iris" });
+  const preferences = await request.put("/api/v1/acquisition-preferences", { data: { default_plate_format_id: "plate-1536" } });
+  expect(preferences.ok(), await preferences.text()).toBeTruthy();
+  await page.goto(`/data?project=${dataset.project.id}&experimentId=${dataset.experiment.id}&fileId=${dataset.files[0].id}&tab=my-dataset`);
+  await page.getByRole("checkbox", { name: "Preview sklearn_iris.csv", exact: true }).check();
+  await page.getByRole("button", { name: "sklearn_iris.csv", exact: true }).click();
+  const focused = page.locator(".focused-dataset-details");
+  if (await focused.getAttribute("open") === null) await focused.locator(":scope > summary").click();
+  await page.getByRole("button", { name: "Edit measured samples", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Measured samples", exact: true });
+  await expect(editor.locator("#plate-format")).toContainText("1536-well plate");
+  await expect(editor.locator("#plate-end")).toContainText("AF48");
+  await editor.getByRole("button", { name: "Assign", exact: true }).click();
+  const plate = editor.locator(".plate-viewport");
+  await expect(plate.locator('.well[tabindex="0"]')).toHaveCount(1);
+  await plate.locator(".well").first().focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(plate.locator(".well:focus .well-position")).toHaveText("B01");
+  await page.keyboard.press("Control+End");
+  await expect(plate.locator(".well:focus .well-position")).toHaveText("D06");
+  await expect(plate.locator('.well[tabindex="0"]')).toHaveCount(1);
+  await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+  await request.put("/api/v1/acquisition-preferences", { data: { default_plate_format_id: "plate-96" } });
+});
+
 for (const alias of ["project", "project_id"]) {
   test(`Data ${alias} link yields to explicit project selection across reload and Back`, async ({ page, request }) => {
     const first = await createDataset(request, `Copy first ${alias}`, { source: "sklearn", name: "iris" });

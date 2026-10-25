@@ -62,6 +62,45 @@ describe("PlateMap96Well", () => {
     });
     expect(wrapper.findAll(".well")).toHaveLength(Number(capacity));
     expect(wrapper.find(`[aria-label="${last}"]`).exists()).toBe(true);
+    expect(wrapper.get(".plate-viewport").attributes("tabindex")).toBe("-1");
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("uses one tab stop and arrow/Home/End navigation across a 1536-well plate", async () => {
+    const wrapper = mount(PlateMap96Well, { attachTo: document.body,
+      props: { wells: [], plateFormatId: "plate-1536", interactive: true } });
+    const first = wrapper.get('[aria-label="A01"]');
+    (first.element as HTMLElement).focus();
+    await first.trigger("keydown", { key: "ArrowDown" });
+    expect(document.activeElement).toBe(wrapper.get('[aria-label="B01"]').element);
+    await wrapper.get('[aria-label="B01"]').trigger("keydown", { key: "End", ctrlKey: true });
+    const last = wrapper.get('[aria-label="AF48"]');
+    expect(document.activeElement).toBe(last.element);
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(1);
+    await last.trigger("keydown", { key: "Enter" });
+    expect(wrapper.emitted("well-click")).toEqual([["AF48"]]);
+    await last.trigger("keydown", { key: "Home", ctrlKey: true });
+    expect(document.activeElement).toBe(first.element);
+    wrapper.unmount();
+  });
+
+  it("reconciles the roving tab stop after format, selection and assignment changes", async () => {
+    const wrapper = mount(PlateMap96Well, { attachTo: document.body,
+      props: { wells: [], plateFormatId: "plate-1536", interactive: true } });
+    (wrapper.get('[aria-label="AF48"]').element as HTMLElement).focus();
+    await wrapper.setProps({ plateFormatId: "plate-96" });
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(1);
+    const first = wrapper.get('[aria-label="A01"]');
+    (first.element as HTMLElement).focus();
+    await first.trigger("keydown", { key: "ArrowDown" });
+    await wrapper.setProps({ selectedWell: "C01" });
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(1);
+    await wrapper.setProps({ interactive: false, wells: [] });
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(0);
+    expect(wrapper.get(".plate-viewport").attributes("tabindex")).toBe("0");
+    (wrapper.get('[aria-label="A01"]').element as HTMLElement).focus();
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(0);
     expect(wrapper.get(".plate-viewport").attributes("tabindex")).toBe("0");
     wrapper.unmount();
   });

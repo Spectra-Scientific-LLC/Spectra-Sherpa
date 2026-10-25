@@ -7,6 +7,7 @@
       :aria-label="`${plateFormat.label} map`"
       tabindex="0"
       @scroll="detailsCard?.viewportScrolled(viewport)"
+      @keydown="navigateWells"
     >
       <div
         class="plate-grid"
@@ -39,7 +40,8 @@
             class="well"
             :style="{ gridRow: row.gridRow, gridColumn: cell.gridColumn }"
             :aria-label="cell.title"
-            :tabindex="interactive || cell.details ? 0 : -1"
+            tabindex="-1"
+            :data-well-position="cell.position"
             role="button"
             :class="{
               'well-assigned': cell.label,
@@ -50,7 +52,7 @@
             @mouseenter="detailsCard?.show(cell.details, $event)"
             @mousemove="detailsCard?.show(cell.details, $event, true)"
             @mouseleave="detailsCard?.hidePointer()"
-            @focus="detailsCard?.show(cell.details, $event)"
+            @focus="focusWell($event); detailsCard?.show(cell.details, $event)"
             @blur="detailsCard?.hide()"
             @click="emit('well-click', cell.position)"
             @keydown.enter.prevent="emit('well-click', cell.position)"
@@ -85,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, onUpdated, ref, watch } from "vue";
 import { defaultPlateFormatId, formatWell, getPlateFormat } from "@/utils/plateFormats";
 import PlateWellHoverCard, { type PlateWell } from "./PlateWellHoverCard.vue";
 
@@ -172,6 +174,60 @@ const plateRows = computed(() =>
     }),
   })),
 );
+let focusedWellPosition: string | undefined;
+function syncTabStops(): void {
+  if (!viewport.value) return;
+  const cells = [...viewport.value.querySelectorAll<HTMLElement>(".well")];
+  const eligible = cells.filter(cell => props.interactive || wellsByPosition.value.has(cell.dataset.wellPosition!));
+  const current = eligible.find(cell => cell === document.activeElement)
+    ?? eligible.find(cell => cell.dataset.wellPosition === props.selectedWell)
+    ?? eligible.find(cell => cell.dataset.wellPosition === focusedWellPosition)
+    ?? eligible[0];
+  cells.forEach(cell => { cell.tabIndex = cell === current ? 0 : -1; });
+  viewport.value.tabIndex = current ? -1 : 0;
+  focusedWellPosition = current?.dataset.wellPosition;
+}
+onMounted(syncTabStops);
+onUpdated(syncTabStops);
+
+// Rove DOM focus without rerendering the complete plate on every keypress.
+function focusWell(event: FocusEvent): void {
+  const target = event.currentTarget as HTMLElement;
+  if (!props.interactive && !wellsByPosition.value.has(target.dataset.wellPosition!)) {
+    syncTabStops();
+    return;
+  }
+  viewport.value?.querySelectorAll<HTMLElement>('.well[tabindex="0"]').forEach(cell => {
+    if (cell !== target) cell.tabIndex = -1;
+  });
+  target.tabIndex = 0;
+  focusedWellPosition = target.dataset.wellPosition;
+}
+
+function navigateWells(event: KeyboardEvent): void {
+  const target = event.target as HTMLElement;
+  if (!target.classList.contains("well") || !viewport.value) return;
+  const cells = [...viewport.value.querySelectorAll<HTMLElement>(".well")];
+  const index = cells.indexOf(target), columns = plateFormat.value.columns;
+  const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[event.key];
+  let next = index;
+  if (step !== undefined) next += step;
+  else if (event.key === "Home") next = event.ctrlKey ? 0 : Math.floor(index / columns) * columns;
+  else if (event.key === "End") next = event.ctrlKey ? cells.length - 1 : Math.floor(index / columns) * columns + columns - 1;
+  else return;
+  event.preventDefault();
+  // Read-only plates expose assigned wells only; empty cells remain available
+  // to mouse users, and interactive authors can navigate every coordinate.
+  const direction = event.key === "End" ? -1 : event.key === "Home" ? 1 : next >= index ? 1 : -1;
+  while (next >= 0 && next < cells.length) {
+    if (props.interactive || wellsByPosition.value.has(cells[next].dataset.wellPosition!)) {
+      cells[next].focus();
+      cells[next].scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      return;
+    }
+    next += step ?? direction;
+  }
+}
 </script>
 
 <style scoped>
