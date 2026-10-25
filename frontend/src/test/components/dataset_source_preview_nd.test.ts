@@ -61,6 +61,11 @@ describe("DatasetSourcePreview n-D projection boundary", () => {
     expect(wrapper.text()).toContain("Provider file required");
     expect(wrapper.text()).toContain("Import the downloaded provider ZIP");
     expect(mocks.fetchDataMatrix).not.toHaveBeenCalled();
+    expect(wrapper.find(".source-preview-title").exists()).toBe(true);
+    await wrapper.setProps({ hideHeading: true });
+    expect(wrapper.find(".source-preview-title").exists()).toBe(false);
+    expect(wrapper.attributes("aria-label")).toBe("Eigenvector Corn M5");
+    expect(wrapper.text()).toContain("Provider file required");
   });
 
   it("keeps a native n-D source shape and requires explicit projection", async () => {

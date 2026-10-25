@@ -1,11 +1,11 @@
 <template>
-  <section class="source-preview">
+  <section class="source-preview" :aria-label="title">
     <div v-if="!sourceRef && !acquisitionRequired" class="preview-empty">
       <i class="pi pi-table"></i>
       <span>Choose a source to preview.</span>
     </div>
     <template v-else-if="acquisitionRequired">
-      <header class="source-preview-title">
+      <header v-if="!hideHeading" class="source-preview-title">
         <strong class="meta-name" :title="title">{{ title }}</strong>
       </header>
       <div class="preview-acquisition" role="status">
@@ -20,7 +20,7 @@
       </div>
     </template>
     <template v-else>
-      <header class="source-preview-title">
+      <header v-if="!hideHeading" class="source-preview-title">
         <strong class="meta-name" :title="title">{{ title }}</strong>
         <small v-if="matrix">{{
           matrix.shape.map((value) => value.toLocaleString()).join(" × ")
@@ -38,7 +38,11 @@
             <i :class="['pi', filesCollapsed ? 'pi-chevron-right' : 'pi-chevron-down']"></i>
             <span>Files</span>
           </span>
-          <small class="section-summary">{{ filesSummary }}</small>
+          <small class="section-summary">
+            <template v-if="hideHeading && matrix">{{
+              matrix.shape.map((value) => value.toLocaleString()).join(" × ")
+            }} · </template>{{ filesSummary }}
+          </small>
         </button>
         <div
           :id="`source-preview-${sourceDomId}-files`"
@@ -396,6 +400,7 @@ const props = defineProps<{
   sourceRef: DataMatrixRef | null;
   scopeKey?: string;
   title?: string;
+  hideHeading?: boolean;
   overrides?: PreparedDataOverrides;
   files?: SourcePreviewFile[];
   csvPlan?: CsvImportPlan | null;

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Staging GUI corrections
 
+- Data source subtabs lead to My Dataset before Workflow. Synthesis Guide and
+  Upload Load share the page header; reference previews align with the catalog
+  and show their selected dataset title once in the context strip.
 - Storage recovery moves from Dashboard to Settings; existing Dashboard Storage
   bookmarks redirect to the new subtab without reclaiming files automatically.
 - Multi-well planning and measured-sample previews support 6-, 12-, 24-, 48-,

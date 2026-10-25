@@ -48,6 +48,12 @@ not repeat that work. Keep a malformed current assignment repairable, but do not
 admit it for publication. A refused synchronization proposal is a conflict, not
 a publishable change or evidence that the populations are synchronized.
 
+Data source subtabs (Import, Synthesis, Upload, Library and Multi-well) end in
+the existing My Dataset action; My Dataset alone offers the Workflow handoff.
+Keep Synthesis Guide and Upload Load beside that header action, not in separate
+toolbar rows. Import's selected reference title belongs in the context strip;
+its preview sections align with the catalog rather than repeat the title.
+
 ## Scientific context and copy
 
 Descriptive source summaries can report finite coordinate bounds and recorded

@@ -2,7 +2,40 @@
   <section class="data-content">
     <WorkspaceHeader title="Data" :actions="headerActionItems">
       <Button
-        v-if="!workflowSelectionContextRequested"
+        v-if="activeTab === TAB_UPLOAD"
+        label="Load"
+        icon="pi pi-folder-open"
+        class="p-button-sm"
+        :disabled="dataUploadDisabled"
+        aria-haspopup="true"
+        aria-controls="upload-source-menu"
+        @click="toggleUploadSourceMenu"
+      />
+      <Menu
+        v-if="activeTab === TAB_UPLOAD"
+        id="upload-source-menu"
+        ref="uploadSourceMenuRef"
+        :model="uploadSourceMenuItems"
+        :popup="true"
+      />
+      <Button
+        v-if="activeTab === TAB_SYNTHESIS"
+        label="Guide"
+        icon="pi pi-book"
+        class="p-button-sm p-button-outlined"
+        data-action="synthesis_open_guide"
+        @click="openSynthesisGuide"
+      />
+      <Button
+        v-if="activeTab !== TAB_MY_DATASET"
+        label="My Dataset"
+        icon="pi pi-arrow-right"
+        iconPos="right"
+        class="p-button-sm"
+        @click="openMyDataset"
+      />
+      <Button
+        v-else-if="!workflowSelectionContextRequested"
         label="Workflow"
         data-action="open_workflow"
         icon="pi pi-arrow-right"
@@ -22,6 +55,12 @@
       >
         {{ activeSubtabDetail }}
       </WorkspaceContextItem>
+      <WorkspaceContextItem
+        v-if="activeTab === TAB_IMPORT && previewRefDataset"
+        label="Dataset"
+        :value="previewRefTitle"
+        wrap
+      />
       <WorkspaceContextItem
         v-if="activeTab === TAB_MY_DATASET"
         label="Dataset"
@@ -431,6 +470,7 @@
               class="source-preview-pane"
               :sourceRef="previewRefSource"
               :title="previewRefTitle"
+              hide-heading
               :files="previewRefFiles"
               :overrides="previewRefOverrides"
               :acquisition-required="previewRefDataset?.source === 'registered'"
@@ -487,20 +527,6 @@
                 />
               </div>
               <div class="upload-source-actions" aria-label="Choose scientific sources">
-                <Button
-                  label="Choose sources"
-                  icon="pi pi-folder-open"
-                  :disabled="dataUploadDisabled"
-                  aria-haspopup="true"
-                  aria-controls="upload-source-menu"
-                  @click="toggleUploadSourceMenu"
-                />
-                <Menu
-                  id="upload-source-menu"
-                  ref="uploadSourceMenuRef"
-                  :model="uploadSourceMenuItems"
-                  :popup="true"
-                />
                 <input
                   ref="uploadFilesInputRef"
                   class="visually-hidden-file-input"
@@ -523,9 +549,6 @@
                   @change="onNativeFileSelection"
                 />
               </div>
-              <small class="field-hint"
-                >Files, folders or ZIPs.</small
-              >
               <div v-if="stagedUploadMembers.length" class="selected-member-rows upload-members">
                 <div
                   v-for="member in stagedUploadMembers"
@@ -2259,17 +2282,36 @@ const activeTabId = computed({
 });
 const measuredSamplesRevision = ref(0);
 const isGuidedExampleSession = ref(false);
+function openMyDataset() {
+  activeTabId.value = "my-dataset";
+}
+function openSynthesisGuide() {
+  router.push("/documentation");
+}
 const headerActionItems = computed(() => [
-  ...(workflowSelectionContextRequested.value
-    ? []
-    : [
-        {
-          label: "Workflow",
-          icon: "pi pi-arrow-right",
-          disabled: workflowHandoffBusy.value,
-          command: () => goToWorkflow(),
-        },
-      ]),
+  ...(activeTab.value === TAB_UPLOAD
+    ? [{
+        label: "Load",
+        icon: "pi pi-folder-open",
+        disabled: dataUploadDisabled.value,
+        items: uploadSourceMenuItems,
+      }]
+    : []),
+  ...(activeTab.value === TAB_SYNTHESIS
+    ? [{ label: "Guide", icon: "pi pi-book", command: openSynthesisGuide }]
+    : []),
+  ...(activeTab.value !== TAB_MY_DATASET
+    ? [{ label: "My Dataset", icon: "pi pi-arrow-right", command: openMyDataset }]
+    : workflowSelectionContextRequested.value
+      ? []
+      : [
+          {
+            label: "Workflow",
+            icon: "pi pi-arrow-right",
+            disabled: workflowHandoffBusy.value,
+            command: () => goToWorkflow(),
+          },
+        ]),
 ]);
 const uploadSourceMenuItems = [
   {
