@@ -54,6 +54,9 @@ Keep Synthesis/Library Guide and Upload Load beside that header action, not in
 separate toolbar rows. Library's filtered entry count belongs in the subtitle;
 Database precedes its source dropdown. Import's selected title belongs in the context strip;
 its preview sections align with the catalog rather than repeat the title.
+Show the actual save-destination name in each source subtab's context, derived
+from the same value as its save handler. Multi-well exposes its configured-well
+count and dirty state there; a clean plan needs no disabled Save/status row.
 
 ## Scientific context and copy
 

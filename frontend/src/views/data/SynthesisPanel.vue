@@ -1821,7 +1821,7 @@ async function previewSynthesis() {
 async function saveSynthesis() {
   if (saving.value) return;
   const bundle = synthesisBundle.value;
-  const bundleName = datasetName.value || `Synthetic bundle (${bundle.length})`;
+  const bundleName = resolvedDatasetName.value;
   const projectId = projectStore.currentProjectId;
   const presentation = savePresentation.begin();
   try {
@@ -1829,7 +1829,7 @@ async function saveSynthesis() {
       ? bundle.map((item, index) => ({
           payload: item.payload, name: index === 0 ? bundleName : item.name,
         }))
-      : [{ payload: buildRequestPayload(), name: datasetName.value || defaultDatasetName() }];
+      : [{ payload: buildRequestPayload(), name: resolvedDatasetName.value }];
     const result = await synthesisStore.save(projectId, items);
     if (!result) return;
     if (presentation.isCurrent() && result.result) previewResult.value = result.result;
@@ -2218,7 +2218,10 @@ async function reopenRecipe(recipe: SavedRecipeRecord, title?: string | null): P
   });
 }
 
-defineExpose({ reopenRecipe });
+const resolvedDatasetName = computed(() => datasetName.value || (
+  synthesisBundle.value.length ? `Synthetic bundle (${synthesisBundle.value.length})` : defaultDatasetName()
+));
+defineExpose({ reopenRecipe, datasetName: resolvedDatasetName });
 
 function isSelected(componentId: string) {
   return selectedComponents.value.some((component) => component.id === componentId);

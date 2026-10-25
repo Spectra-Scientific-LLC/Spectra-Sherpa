@@ -56,9 +56,15 @@
         {{ activeSubtabDetail }}
       </WorkspaceContextItem>
       <WorkspaceContextItem
-        v-if="activeTab === TAB_IMPORT && previewRefDataset"
-        label="Dataset"
+        v-if="activeTab === TAB_IMPORT && previewRefDataset && previewRefTitle !== sourceSaveName"
+        label="Reference"
         :value="previewRefTitle"
+        wrap
+      />
+      <WorkspaceContextItem
+        v-if="activeTab !== TAB_MY_DATASET"
+        label="Dataset"
+        :value="sourceSaveName"
         wrap
       />
       <WorkspaceContextItem
@@ -450,7 +456,7 @@
                 <InputText
                   id="import-dataset-name"
                   v-model="importDatasetName"
-                  :placeholder="defaultImportDatasetName()"
+                :placeholder="resolvedImportDatasetName"
                 />
               </div>
               <Button
@@ -988,7 +994,7 @@
               <InputText
                 id="library-dataset-name"
                 v-model="libraryDatasetName"
-                :placeholder="defaultLibraryDatasetName()"
+                :placeholder="resolvedLibraryDatasetName"
               />
             </div>
             <div v-if="activeLibraryImportJob" class="library-import-progress" aria-live="polite">
@@ -1021,6 +1027,7 @@
       <!-- ======================== MULTI-WELL TAB ======================== -->
       <TabPanel header="Multi-well">
         <MultiWellAcquisitionPanel
+          ref="multiWellPanelRef"
           :experiment-id="dataStore.activeExperimentId"
           :experiment-name="selectedExperimentName"
           :experiment-options="dataStore.experiments"
@@ -1775,6 +1782,7 @@ const workflowSelectionContextError = ref<string | null>(null);
 const workflowSelectionApplying = ref(false);
 const workflowSelectionReason = ref("");
 const synthesisPanelRef = ref<InstanceType<typeof SynthesisPanel> | null>(null);
+const multiWellPanelRef = ref<InstanceType<typeof MultiWellAcquisitionPanel> | null>(null);
 const uploadSourceMenuRef = ref<InstanceType<typeof Menu> | null>(null);
 const uploadFilesInputRef = ref<HTMLInputElement | null>(null);
 const uploadFolderInputRef = ref<HTMLInputElement | null>(null);
@@ -2750,6 +2758,18 @@ watch(
 const importDatasetName = ref("");
 const libraryDatasetName = ref("");
 const uploadDatasetName = ref("");
+const resolvedImportDatasetName = computed(() => importDatasetName.value.trim() || defaultImportDatasetName());
+const resolvedUploadDatasetName = computed(() => uploadDatasetName.value.trim() || defaultUploadDatasetName());
+const resolvedLibraryDatasetName = computed(() => libraryDatasetName.value.trim() || defaultLibraryDatasetName());
+const sourceSaveName = computed(() => {
+  switch (activeTab.value) {
+    case TAB_IMPORT: return resolvedImportDatasetName.value;
+    case TAB_UPLOAD: return resolvedUploadDatasetName.value;
+    case TAB_LIBRARY: return resolvedLibraryDatasetName.value;
+    case TAB_SYNTHESIS: return synthesisPanelRef.value?.datasetName || "";
+    default: return selectedExperimentName.value;
+  }
+});
 
 function clearUploadFileSelection() {
   selectedFile.value = null;
@@ -3486,15 +3506,13 @@ const activeSubtabValue = computed(() => {
     case TAB_SYNTHESIS:
       return synthesisStateLabel.value;
     case TAB_UPLOAD:
-      return dataStore.activeExperimentId
-        ? `Add to ${selectedExperimentName.value}`
-        : "Pick a dataset first";
+      return "Scientific files";
     case TAB_LIBRARY:
       return selectedLibraryKeys.size
         ? `${selectedLibraryKeys.size} in basket`
         : "Pure compound library";
     case TAB_MULTI_WELL:
-      return dataStore.activeExperimentId ? selectedExperimentName.value : "Pick a dataset first";
+      return "Acquisition plan";
     case TAB_MY_DATASET:
       return selectedExperimentName.value;
     default:
@@ -3519,7 +3537,7 @@ const activeSubtabDetail = computed(() => {
     case TAB_LIBRARY:
       return `${filteredLibrary.value.length} ${filteredLibrary.value.length === 1 ? "entry" : "entries"}`;
     case TAB_MULTI_WELL:
-      return "";
+      return multiWellPanelRef.value?.summary ?? "";
     case TAB_MY_DATASET:
       return (
         inspectedDatasetShape.value ||
@@ -4254,7 +4272,7 @@ async function onImportSelectedDatasets(): Promise<boolean> {
     // typed name (or a sensible default if blank), then ingests the
     // selected references into it. The user no longer has to pre-create a
     // dataset via the dialog.
-    const name = importDatasetName.value.trim() || defaultImportDatasetName();
+    const name = resolvedImportDatasetName.value;
     const created = await dataStore.createExperiment(
       name,
       undefined,
@@ -4517,7 +4535,7 @@ async function importLibraryRows(selectedRows: LibraryRow[]) {
   if (hitranLibraryImportActive.value) return;
   importingLibrary.value = true;
   try {
-    const name = libraryDatasetName.value.trim() || defaultLibraryDatasetName();
+    const name = resolvedLibraryDatasetName.value;
     const libraryDraft = dataDraftSnapshot().library;
     const created = await dataStore.createExperiment(
       name,
@@ -6513,7 +6531,7 @@ async function onUploadFile() {
     // Synthesis-style flow: each click creates a new My Dataset with the
     // typed name (or the file name as default), then uploads the file into
     // it. The user no longer has to pre-create a dataset via the dialog.
-    const name = uploadDatasetName.value.trim() || defaultUploadDatasetName();
+    const name = resolvedUploadDatasetName.value;
     const created = await dataStore.createExperiment(
       name,
       undefined,

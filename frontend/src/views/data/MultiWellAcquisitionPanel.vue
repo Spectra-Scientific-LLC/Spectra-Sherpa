@@ -1,30 +1,5 @@
 <template>
   <section class="multi-well" aria-label="Multi-well acquisition plan">
-    <header class="plan-header">
-      <div>
-        <span>{{ planStatus }}</span>
-      </div>
-      <div class="actions">
-        <Button
-          icon="pi pi-refresh"
-          class="p-button-text p-button-sm"
-          aria-label="Reload acquisition plan"
-          :loading="loading"
-          :disabled="experimentId == null"
-          @click="loadPlan"
-        />
-        <Button
-          v-if="canAuthor"
-          label="Save acquisition plan"
-          icon="pi pi-check"
-          class="p-button-sm"
-          :loading="saving"
-          :disabled="!planLoaded || loading || !dirty || Boolean(planFormatError)"
-          @click="savePlan"
-        />
-      </div>
-    </header>
-
     <div class="plan-controls">
       <div class="field">
         <label for="acquisition-dataset">Dataset</label>
@@ -51,10 +26,6 @@
         />
       </div>
       <dl class="plan-facts">
-        <div>
-          <dt>Planned wells</dt>
-          <dd>{{ draft.wells.length }}/{{ plateFormat.capacity }}</dd>
-        </div>
         <div>
           <dt>Measured rows changed</dt>
           <dd>{{ measuredDifferenceCount }}</dd>
@@ -405,6 +376,15 @@
         </div>
       </section>
     </div>
+    <Button
+      v-if="canAuthor && dirty"
+      label="Save acquisition plan"
+      icon="pi pi-check"
+      class="p-button-sm plan-save"
+      :loading="saving"
+      :disabled="!planLoaded || loading || Boolean(planFormatError)"
+      @click="savePlan"
+    />
   </section>
 </template>
 
@@ -602,10 +582,9 @@ const planStatus = computed(() =>
       ? `Loading ${props.experimentName || "dataset"}`
       : loadError.value
         ? "Plan unavailable"
-      : dirty.value
-        ? "Unsaved changes"
-        : `${draft.value.wells.length} wells saved`,
+      : `${draft.value.wells.length} ${draft.value.wells.length === 1 ? "well" : "wells"} configured${dirty.value ? " · Unsaved changes" : ""}`,
 );
+defineExpose({ summary: planStatus });
 
 function clonePlan(data: AcquisitionPlan) {
   return JSON.parse(
@@ -861,7 +840,6 @@ watch(() => props.syncRefreshRevision, loadMeasuredRows);
   gap: 1rem;
   min-width: 0;
 }
-.plan-header,
 .plan-controls,
 .actions,
 .title-row,
@@ -876,15 +854,9 @@ watch(() => props.syncRefreshRevision, loadMeasuredRows);
   display: flex;
   gap: 0.65rem;
 }
-.plan-header,
 .section-heading {
   justify-content: space-between;
 }
-.plan-header {
-  border-bottom: 1px solid var(--surface-border);
-  padding-bottom: 0.85rem;
-}
-.plan-header h3,
 .plan-section h4 {
   margin: 0;
 }
@@ -1035,10 +1007,12 @@ watch(() => props.syncRefreshRevision, loadMeasuredRows);
   .review-grid {
     grid-template-columns: 1fr;
   }
-  .plan-header,
   .section-heading {
     align-items: flex-start;
     flex-direction: column;
   }
+}
+.plan-save {
+  justify-self: end;
 }
 </style>

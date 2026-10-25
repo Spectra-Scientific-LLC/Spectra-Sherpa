@@ -181,12 +181,16 @@ describe("MultiWellAcquisitionPanel", () => {
 
     expect(api.get).toHaveBeenCalledWith("/experiments/12/acquisition-plan");
     expect(api.get).not.toHaveBeenCalledWith("/acquisition-preferences");
-    expect(wrapper.text()).toContain("1/96");
+    expect((wrapper.vm as unknown as { summary: string }).summary).toBe("1 well configured");
+    expect(wrapper.find(".plan-header").exists()).toBe(false);
+    expect(wrapper.find('[aria-label="Reload acquisition plan"]').exists()).toBe(false);
+    expect(wrapper.find('button-stub[label="Save acquisition plan"]').exists()).toBe(false);
     expect(wrapper.text()).toContain("Measured rows changed");
     expect(wrapper.text()).toContain("0");
 
     wrapper.findComponent({ name: "PlateMap96Well" }).vm.$emit("well-click", "A02");
     await wrapper.vm.$nextTick();
+    expect((wrapper.vm as unknown as { summary: string }).summary).toBe("2 wells configured · Unsaved changes");
     const save = wrapper.find('button-stub[label="Save acquisition plan"]');
     expect(save.exists()).toBe(true);
     await save.trigger("click");
@@ -235,14 +239,12 @@ describe("MultiWellAcquisitionPanel", () => {
       props: { experimentId: 12, experimentOptions: [] },
     });
     expect(wrapper.text()).not.toContain("Unsaved changes");
-    expect(wrapper.get('button-stub[label="Save acquisition plan"]').attributes("disabled")).toBe(
-      "true",
-    );
+    expect(wrapper.find('button-stub[label="Save acquisition plan"]').exists()).toBe(false);
     rejectLoad(new Error("Plan could not be loaded"));
     await flushPromises();
-    expect(wrapper.text()).toContain("Plan unavailable");
+    expect((wrapper.vm as unknown as { summary: string }).summary).toBe("Plan unavailable");
     expect(wrapper.text()).not.toContain("Unsaved changes");
-    await wrapper.get('button-stub[label="Save acquisition plan"]').trigger("click");
+    await (wrapper.vm as unknown as { savePlan: () => Promise<void> }).savePlan();
     expect(api.put).not.toHaveBeenCalled();
     expect(wrapper.get("#acquisition-format").attributes("disabled")).toBe("true");
   });
@@ -310,6 +312,7 @@ describe("MultiWellAcquisitionPanel", () => {
     await flushPromises();
 
     wrapper.findComponent({ name: "PlateMap96Well" }).vm.$emit("well-click", "A02");
+    await wrapper.vm.$nextTick();
     await wrapper.find('button-stub[label="Save acquisition plan"]').trigger("click");
     await flushPromises();
 

@@ -1079,6 +1079,21 @@ describe("DataContent file inspection", () => {
     },
   );
 
+  it.each([
+    ["import", "importDatasetName"], ["upload", "uploadDatasetName"], ["library", "libraryDatasetName"],
+  ] as const)("shows the actual %s save name in the subtitle", async (tab, field) => {
+    mocks.route.query = { tab };
+    const wrapper = mountDataContent();
+    await flushPromises();
+    (wrapper.vm as unknown as DataContentVm)[field] = "  Chemometric qualification  ";
+    await flushPromises();
+    expect(wrapper.get('[aria-label="Data workspace context"]').text()).toContain("Chemometric qualification");
+    const resolved = (wrapper.vm as unknown as Record<string, string>)[
+      tab === "import" ? "resolvedImportDatasetName" : tab === "upload" ? "resolvedUploadDatasetName" : "resolvedLibraryDatasetName"
+    ];
+    expect(resolved).toBe("Chemometric qualification");
+  });
+
   it("keeps Library help and filtered entry counts in the header context", async () => {
     mocks.route.query = { tab: "library" };
     const open = vi.spyOn(window, "open").mockReturnValue(null);
