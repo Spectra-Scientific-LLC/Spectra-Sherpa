@@ -340,7 +340,7 @@ export const projectScientificPresentation = (
 ): NodeOutput | null => {
   if (!output || !resolved) return null;
   const { portOutput, portOutputs, presentation, sourcePort, sourcePorts, contractDigest } = resolved;
-  const presentationValue =
+  let presentationValue =
     sourcePorts.length === 1
       ? portOutput.value
       : Object.fromEntries(sourcePorts.map((port) => [port, portOutputs[port].value]));
@@ -349,7 +349,7 @@ export const projectScientificPresentation = (
     // The primary output's axes do not describe another result merely because
     // it shares a node (e.g. held-out targets, centroids, or pure spectra).
     for (const key of ["sample_labels", "source_labels", "labels", "sample_table", "include_mask",
-      "wavenumbers", "x_axis", "y_axis", "feature_names", "x_title", "x_units", "y_title", "y_units"]) {
+      "wavenumbers", "x_axis", "y_axis", "feature_names", "x_title", "x_units", "y_title", "y_units", "scientific_matrix_role"]) {
       delete parentMetadata[key];
     }
   }
@@ -357,6 +357,21 @@ export const projectScientificPresentation = (
     ...parentMetadata,
     ...populatedMetadata(portOutput.metadata),
   };
+  if (presentation.kind === "regression_comparison" && presentationValue && typeof presentationValue === "object" && !Array.isArray(presentationValue)) {
+    const record = presentationValue as Record<string, unknown>;
+    const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata as Record<string, unknown> : {};
+    const diagnostics = output.metadata.diagnostics as Record<string, unknown> | undefined;
+    const identity = diagnostics?.response_identity as { names?: unknown; units?: unknown } | undefined;
+    // The exact model/evaluator's own response identity may qualify its comparison;
+    // never borrow the source X's signal units or another response's declaration.
+    if (Array.isArray(metadata.target_names) && Array.isArray(identity?.names)
+      && JSON.stringify(metadata.target_names) === JSON.stringify(identity.names)
+      && Array.isArray(identity.units) && identity.units.length === identity.names.length) {
+      presentationValue = { ...record, metadata: { ...metadata, response_identity: identity, target_units: identity.units } };
+      projectedMetadata.response_identity = identity;
+      projectedMetadata.target_units = identity.units;
+    }
+  }
   if (sourcePort === "train_indices" || sourcePort === "test_indices") {
     // Parent metadata describes the primary (usually training) dataset, not
     // this index vector. Never borrow its row identities for another split.

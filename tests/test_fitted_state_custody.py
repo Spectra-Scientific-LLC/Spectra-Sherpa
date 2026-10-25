@@ -21,14 +21,14 @@ from spectra_sherpa.sdk.fitted_state_custody import (
 )
 
 _CONTRACTS = {
-    "spectrasherpa.model.fitted_pcr/1": "e76876f01548800f4b3ee2bdf0382359e046793a1e02e61e424e17b552256bf3",
-    "spectrasherpa.model.fitted_svr/1": "a6be415b3b1ed88d25ef0a220d1059031ada900f4c470d2a7cb762c250edf8af",
+    "spectrasherpa.model.fitted_pcr/1": "99359a3588dfe55e29fd32428ce896d1ca503e3472e8b17a5982ed24d72a0d0d",
+    "spectrasherpa.model.fitted_svr/1": "b8ba060d1154848d0f96e25a0178c0c5eeff6658a4fc36de6ae3f7c82cb3f7ed",
     "spectrasherpa.model.fitted_linear_regression/1": (
-        "a0a31850e5ec62ce5d3d45050af62f715306d1da9d84442d76d70b1b738303f8"
+        "0ba997bbc87209703db011f38850ee82d93027bb72ab28db27aa108a8f9cca9a"
     ),
-    PLSDA_FITTED_STATE_SERIALIZER: "85b2a1fd3938dee8a3a12f61397a07052883cd3f0bfa4d977151b600fe4992b6",
+    PLSDA_FITTED_STATE_SERIALIZER: "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
     SIMCA_FITTED_STATE_SERIALIZER: "2a591ac8626fe115463326b7f6b30b1ad3721c6392e6e4a07af786de13777388",
-    FITTED_PLS_STATE_SERIALIZER: "473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
+    FITTED_PLS_STATE_SERIALIZER: "ba02705c9868ae460e80af30207f8fa1c60f5ff20e8e6588be267292811472da",
     "spectra.scale-reference-json.v2": "15bce0eb5aa942173878a911a7eba23cd3638f59fe37aa3c0e54f90506ff7e91",
     KNN_FITTED_STATE_SERIALIZER: "df59b9d414abefb1c93de58ef405f3044ad4c6a02b23dd62cf8cd38c131b58a7",
 }

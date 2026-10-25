@@ -24,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Validation expand independently. Compact PCA context uses fitted-sample
   wording without empty pretreatment or held-out boilerplate; real limitations
   and retained metrics remain available.
+- Scientific tables share declared feature/component/class headings with plots;
+  peak-feature units and regression response units remain visible in tables and
+  exports. Short reports omit fitted-state aliases and use scientific axis roles.
+- Dataset inclusion and Analysis Starters preserve the selected dataset view and
+  verified current-row identities, independently of editable display labels.
+- New PCA starters perform role-appropriate scaling inside PCA, including each
+  component-validation fold. Existing workflows are not rewritten; unsafe
+  upstream fitted preprocessing still refuses automatic reconstruction CV.
+- Intentional private-output omissions no longer appear as missing durable
+  scientific evidence. Preview figures summarize population counts without
+  printing row-identity arrays; full evidence and actionable warnings remain.
+
 - Storage recovery moves from Dashboard to Settings; existing Dashboard Storage
   bookmarks redirect to the new subtab without reclaiming files automatically.
 - Multi-well planning and measured-sample previews support 6-, 12-, 24-, 48-,

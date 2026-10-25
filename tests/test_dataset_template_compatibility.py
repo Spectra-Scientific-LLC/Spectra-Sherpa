@@ -265,9 +265,11 @@ def test_hyperspectral_pixel_tables_have_an_exclusion_aware_pca_path() -> None:
     assert nodes["inclusion_1"]["node_type"] == "data.filter_samples"
     assert nodes["inclusion_1"]["parameters"]["field"] == "source_inclusion"
     assert any(
-        edge["from_node_id"] == "inclusion_1" and edge["to_node_id"] == "preprocess_1"
+        edge["from_node_id"] == "inclusion_1" and edge["to_node_id"] == "model_1"
         for edge in pca["template_data"]["edges"]
     )
+    assert all(node["node_type"] != "preprocess.scale" for node in nodes.values())
+    assert nodes["model_1"]["parameters"]["standardized"] is False
 
 
 def test_parafac_starter_is_reachable_only_for_multiway_hyperspectral_data() -> None:

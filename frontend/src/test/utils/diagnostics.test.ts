@@ -7,6 +7,12 @@ import {
 } from "@/utils/diagnostics";
 
 describe("diagnostics formatting", () => {
+  it("keeps executed peak arguments and row indices in their canonical details block", () => {
+    expect(buildDiagnosticEntries({ n_peaks: 133,
+      scipy_find_peaks_arguments: { prominence: 0.1 },
+      scipy_peak_widths_sample_indices: [0, 1, 2],
+    }).map(entry => entry.key)).toEqual(["n_peaks"]);
+  });
   it("does not suppress a new field just because its name ends in definition", () => {
     expect(buildDiagnosticEntries({ population_definition: "independent specimens" }))
       .toEqual([{ key: "population_definition", label: "Population Definition", displayValue: "independent specimens", detail: undefined }]);

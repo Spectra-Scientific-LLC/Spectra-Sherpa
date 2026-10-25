@@ -12,6 +12,29 @@ import type { RunReportData } from "@/stores/report";
 import type { ReportNodePlotSection } from "./reportNodePlots";
 
 type RenderPlot = (data: any[], layout: Record<string, any>) => Promise<string>;
+/** Compact the declared display population; full mappings stay in retained evidence. */
+export function reportPopulationCaption(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  const population = value as Record<string, unknown>;
+  const count = (key: string) => typeof population[key] === "number" && Number.isSafeInteger(population[key]) && Number(population[key]) >= 0
+    ? Number(population[key]) : null;
+  const shown = count("shown");
+  const total = count("total");
+  const excluded = count("excluded");
+  if (shown === null || total === null || shown > total) return "Display population unavailable.";
+  return `${shown < total ? "Subset: " : ""}${shown} of ${total} active rows${excluded ? `; ${excluded} excluded` : ""}.`;
+}
+export function reportComparisonCaptions(metadata: Record<string, unknown>): string[] {
+  const populations = metadata.comparison_populations;
+  return [
+    ...(populations && typeof populations === "object" && !Array.isArray(populations)
+      ? Object.entries(populations).flatMap(([panel, population]) => {
+        const caption = reportPopulationCaption(population);
+        return caption ? [`${panel}: ${caption}`] : [];
+      }) : []),
+    ...(Array.isArray(metadata.comparison_refusals) ? metadata.comparison_refusals.filter((value): value is string => typeof value === "string") : []),
+  ];
+}
 export function reportGroupKey(data: any[], layout: Record<string, any>): string {
   if (!layout.showlegend) return "";
   const groups = new Map<string, string>();
@@ -77,6 +100,7 @@ export async function captureReportPlots(run: RunReportData, projectId: number, 
     try {
     const values: Record<string, any> = {}, inputs: Record<string, any> = {};
     for (const port of Object.keys(outputs[node.node_id] ?? {})) {
+      if (port.startsWith("_")) continue;
       if (/^(?:fitted_state|model|artifact)/.test(port)) continue;
       try { values[port] = await read(node.node_id, port); }
       catch (error) { section.notices.push(String(error)); }
@@ -121,8 +145,8 @@ export async function captureReportPlots(run: RunReportData, projectId: number, 
             const notice = ["Saved-run projection; default displayed axes. No fitting or validation is rerun.",
               displayed.omitted ? `${displayed.omissionDescription} omitted from this report plot by the visual display limit (not a count of unique samples); retained data are unchanged.` : "",
               groupKey,
-              meta.display_population ? `Display population: ${JSON.stringify(meta.display_population)}` : "",
-              meta.comparison_scale_notice ?? "", ...(meta.comparison_notices ?? [])].filter(Boolean).join(" ");
+              ...(meta.comparison_populations ? reportComparisonCaptions(meta) : [reportPopulationCaption(meta.display_population)]),
+              meta.comparison_scale_notice ?? ""].filter(Boolean).join(" ");
             // Report figures are static and already have a descriptive heading;
             // long per-sample legends overflow the page without adding evidence.
             try { section.plots.push({ title, image: await render(displayed.data, { ...displayed.layout, showlegend: false, legend: undefined }), notice }); }

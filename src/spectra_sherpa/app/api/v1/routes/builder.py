@@ -1518,6 +1518,18 @@ async def _finalize_file_info(
     session: AsyncSession,
     binding: DatasetAnalysisBinding | None = None,
 ) -> dict[str, Any]:
+    # The UI must not key inclusion edits by display labels or by the original
+    # receipt order: canonical row selection/reordering owns this projection.
+    result.setdefault("metadata", {}).pop("curation_sample_ids", None)
+    if dataset.meta.get("source_observations") is not None:
+        from spectra_sherpa.app.lib.collection_assembly import verified_source_observations
+
+        try:
+            result.setdefault("metadata", {})["curation_sample_ids"] = [
+                row["sample_id"] for row in verified_source_observations(dataset)
+            ]
+        except ValueError:
+            result.setdefault("metadata", {}).pop("curation_sample_ids", None)
     try:
         result["analysis_readiness"] = await dataset_analysis_readiness(dataset, session)
     except Exception:
@@ -2054,6 +2066,12 @@ async def get_file_info(
                     asset_id=payload.asset_id,
                 )
                 contents_file_count = len(files)
+                selected_files = files
+            sd, analysis_binding = await apply_saved_analysis_binding(
+                sd,
+                source_file=selected_files[0] if len(selected_files) == 1 else None,
+                session=session,
+            )
             result = serialize_result(sd, owner_user_id=current_user.id)
             if not isinstance(result, dict):
                 raise ValueError("dataset inspection did not produce a typed response")
@@ -2069,7 +2087,7 @@ async def get_file_info(
             # member identity; preserve the established inspection wire
             # projection without flattening ambiguous multi-file metadata.
             _project_single_member_metadata(metadata, contents_file_count=contents_file_count)
-            return await _finalize_file_info(result, dataset=sd, session=session)
+            return await _finalize_file_info(result, dataset=sd, session=session, binding=analysis_binding)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

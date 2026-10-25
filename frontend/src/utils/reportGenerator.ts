@@ -113,7 +113,10 @@ export interface RunReportEntry {
       }>;
     }>;
   };
-  saved_definition?: { nodes: { node_id: string; label?: string; node_type: string }[] } | null;
+  saved_definition?: {
+    nodes: { node_id: string; label?: string; node_type: string }[];
+    edges?: { from_node_id: string; to_node_id: string; from_output?: string; to_input?: string }[];
+  } | null;
 }
 
 export interface ReportComparison {

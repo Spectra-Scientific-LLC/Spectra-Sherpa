@@ -138,6 +138,7 @@ async def current_project_dataset_choice(
     return {
         "dataset": {
             "id": choice.id,
+            "dataset_view_id": choice.selected_dataset_view_id,
             "name": choice.selected_name,
             "digest": choice.selected_digest,
             "definition": receipt,

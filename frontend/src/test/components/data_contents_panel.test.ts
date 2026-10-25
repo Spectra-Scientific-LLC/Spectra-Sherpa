@@ -446,10 +446,11 @@ describe("DataContentsPanel", () => {
     mocks.dataStore.fileInfo = {
       n_samples: 150,
       n_features: 4,
-      y_axis: { sample_table: { Target: ids.map((_, index) => index % 3) } },
+      // Display labels are not curation IDs, even when they exist.
+      y_axis: { labels: ids.map((_, index) => `Source row ${index + 1}`), sample_table: { Target: ids.map((_, index) => index % 3) } },
       metadata: {
         source_collection: sourceCollection(1),
-        source_observations: ids.map((sample_id, source_row) => ({ sample_id, source_row })),
+        curation_sample_ids: ids,
       },
     };
     const wrapper = mount(DataContentsPanel, { props: {
@@ -465,6 +466,37 @@ describe("DataContentsPanel", () => {
       .toBe(false);
     await table.get('input[aria-label="Include sample iris-row-3"]').setValue(false);
     expect(wrapper.emitted("toggleSample")?.at(-1)).toEqual(["iris-row-3"]);
+    wrapper.unmount();
+  });
+
+  it("keeps reordered typed identities ahead of original receipt and display order", async () => {
+    const ids = ["C", "A", "B"];
+    mocks.dataStore.fileInfo = { n_samples: 3, n_features: 1,
+      y_axis: { labels: ["Specimen C", "Specimen A", "Specimen B"], sample_table: { sample_id: ids } },
+      metadata: { source_collection: sourceCollection(1), curation_sample_ids: ids, source_observations: ["A", "B", "C"].map(sample_id => ({ sample_id })) },
+    };
+    const wrapper = mount(DataContentsPanel, { props: { sampleInclusionEnabled: true,
+      sampleInclusion: { loading: false, rows: ids.map(sampleId => ({ sampleId, included: true, editable: true })) },
+    } });
+    const checks = wrapper.get("[aria-label='Collection sample table']").findAll('input[type="checkbox"]');
+    expect(checks.map(item => item.attributes("aria-label"))).toEqual(ids.map(id => `Include sample ${id}`));
+    await checks[0].setValue(false);
+    expect(wrapper.emitted("toggleSample")?.at(-1)).toEqual(["C"]);
+    wrapper.unmount();
+  });
+
+  it("projects verified IDs through a bounded preview's declared sample stride", async () => {
+    const ids = Array.from({ length: 150 }, (_, index) => `row-${index}`);
+    mocks.dataStore.fileInfo = { n_samples: 150, n_features: 1, data: [[1], [2], [3]],
+      y_axis: { labels: ["display 1", "display 2", "display 3"], sample_table: { target: [1, 2, 3] } },
+      metadata: { source_collection: sourceCollection(1), curation_sample_ids: ids,
+        preview_shape: [3, 1], sample_stride: 50, api_serialization: { mode: "bounded_preview" } },
+    };
+    const wrapper = mount(DataContentsPanel, { props: { sampleInclusionEnabled: true,
+      sampleInclusion: { loading: false, rows: ids.map(sampleId => ({ sampleId, included: true, editable: true })) },
+    } });
+    const checks = wrapper.get("[aria-label='Collection sample table']").findAll('input[type="checkbox"]');
+    expect(checks.map(item => item.attributes("aria-label"))).toEqual(["Include sample row-0", "Include sample row-50", "Include sample row-100"]);
     wrapper.unmount();
   });
 

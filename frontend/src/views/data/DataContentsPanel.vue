@@ -1554,17 +1554,33 @@ function selectedSampleTable(raw: unknown): unknown {
 // Use only the captured, ordered source receipt; never invent IDs from row numbers.
 const sourceObservationLabels = computed<string[] | null>(() => {
   const info = dataStore.fileInfo;
-  const observations = info?.metadata?.source_observations;
-  if (!info || !Array.isArray(observations) || observations.length !== info.n_samples) return null;
-  const ids = observations.map((row) => isRecord(row) ? row.sample_id : null);
+  const ids = info?.metadata?.curation_sample_ids;
+  if (!info || !Array.isArray(ids) || ids.length !== info.n_samples) return null;
   if (ids.some((id) => typeof id !== "string" || !id) ||
       new Set(ids).size !== ids.length) return null;
   return selectedRows(ids as string[]);
 });
 
-function exactSampleLabels(labels: unknown): unknown {
+function exactSampleLabels(labels: unknown, wirePreview = false): unknown {
+  // Curation keys are the captured observation IDs, not editable display labels.
+  if (sourceObservationLabels.value) {
+    const ids = sourceObservationLabels.value;
+    if (wirePreview && apiSerializationMetadata()?.mode === "bounded_preview") {
+      const metadata = dataStore.fileInfo?.metadata;
+      const shape = metadata?.preview_shape;
+      const rows = Array.isArray(shape) ? shape[0] : null;
+      const stride = metadata?.sample_stride;
+      if (typeof rows !== "number" || typeof stride !== "number" || !Number.isSafeInteger(rows) || !Number.isSafeInteger(stride) || rows < 1 || stride < 1 || (rows - 1) * stride >= ids.length) return null;
+      return Array.from({ length: rows }, (_, index) => ids[index * stride]);
+    }
+    return ids;
+  }
+  // A detached sample table cannot prove its own current row order.
   if (Array.isArray(labels) && labels.length > 0) return selectedRows(labels);
-  return sourceObservationLabels.value;
+  const typed = dataStore.fileInfo?.y_axis?.sample_table?.sample_id;
+  if (Array.isArray(typed) && typed.length === dataStore.fileInfo?.n_samples
+    && typed.every(id => typeof id === "string" && id.length > 0) && new Set(typed).size === typed.length) return selectedRows(typed);
+  return null;
 }
 
 const wireSampleTableState = computed<SampleTableState>(() => {
@@ -1585,7 +1601,7 @@ const wireSampleTableState = computed<SampleTableState>(() => {
     }
     rowCount = Number(previewShape[0]);
   }
-  const labels = exactSampleLabels(fileInfo.y_axis?.labels);
+  const labels = exactSampleLabels(fileInfo.y_axis?.labels, true);
   const selectedCount = selectedRowIndexes.value?.length ?? rowCount;
   return buildSampleTableState(
     selectedSampleTable(fileInfo.y_axis?.sample_table),

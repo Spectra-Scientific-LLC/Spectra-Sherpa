@@ -1,10 +1,11 @@
 <template>
-  <section class="peak-execution-details" aria-label="Executed peak-finding inputs">
-    <h4>Executed peak-finding inputs</h4>
+  <details class="peak-execution-details" aria-label="Executed peak-finding inputs">
+    <summary>Executed inputs</summary>
     <template v-if="call">
       <p>From this result's execution. Editing settings does not change this execution record.</p>
       <p>SciPy version: {{ record.scipy_version ?? "not retained" }}</p>
       <pre>{{ call }}</pre>
+      <pre v-if="record.scipy_find_peaks_arguments">{{ JSON.stringify(record.scipy_find_peaks_arguments, null, 2) }}</pre>
       <p v-if="typeof record.scipy_find_peaks_call_count === 'number'">
         Peak detection calls: {{ record.scipy_find_peaks_call_count }} (one per input spectrum).
       </p>
@@ -15,6 +16,7 @@
       <pre v-if="typeof record.scipy_peak_widths_call === 'string'">{{
         record.scipy_peak_widths_call
       }}</pre>
+      <pre v-if="Array.isArray(record.scipy_peak_widths_sample_indices)">Width-measured sample indices: {{ JSON.stringify(record.scipy_peak_widths_sample_indices) }}</pre>
       <p v-if="typeof record.consensus_binning === 'string'">{{ record.consensus_binning }}</p>
       <p v-if="typeof record.parameter_interpretation === 'string'">
         {{ record.parameter_interpretation }}
@@ -24,7 +26,7 @@
       Exact SciPy arguments were not retained with this result. Run the updated node to capture
       them; current settings cannot establish historical inputs.
     </p>
-  </section>
+  </details>
 </template>
 
 <script setup lang="ts">

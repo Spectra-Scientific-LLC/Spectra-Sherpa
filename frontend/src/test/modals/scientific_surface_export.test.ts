@@ -46,6 +46,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("Scientific surface export authority", () => {
+  it("retains response units beside exact reference and prediction values in CSV", async () => {
+    const w = table([{ sample: "gas-17", target: "Methane", reference: 10, predicted: 9, residual: 1, role: "held_out_test" }],
+      { response_identity: { names: ["Methane"], units: ["ppm"] }, target_units: ["ppm"] });
+    expect(w.text()).toContain("Response unit: ppm");
+    expect(await csv(w)).toBe("Index,sample,target,reference,predicted,residual,role,units\n1,gas-17,Methane,10,9,1,held_out_test,ppm\n");
+  });
+  it("retains per-column peak units and missing detections in CSV", async () => {
+    const w = table([[1200, null]], { column_names: ["peak_position_1", "magnitude_at_peak_1"],
+      column_units: { peak_position_1: "cm-1", magnitude_at_peak_1: "absorbance" } });
+    expect(await csv(w)).toBe("Index,peak_position_1 (cm-1),magnitude_at_peak_1 (absorbance)\n1,1200,\n");
+  });
   it("exports peak matrices with all four group columns and missing detections intact", async () => {
     const names = ["peak_position_1", "magnitude_at_peak_1", "group_position_1", "magnitude_at_group_position_1"];
     const w = table([[1202, 3, 1206, 2], [null, null, 1206, 1]], {

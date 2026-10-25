@@ -74,6 +74,39 @@ function factory(overrides: Record<string, any> = {}) {
 }
 
 describe("DataTableModal", () => {
+  it("does not label PCA loading columns as PCs even when model metadata is present", () => {
+    const wrapper = factory({ nodeOutput: {
+      data: [[.52, -.27, .58, .56], [.1, .2, .3, .4]],
+      metadata: { type: "PCA", isPCA: true, pc_labels: ["PC1 (73%)", "PC2 (23%)"], feature_names: ["sepal length", "sepal width", "petal length", "petal width"] },
+      descriptor: { dimensions: [{ role: "component", size: 2 }, { role: "feature", size: 4 }] },
+    } });
+    expect((wrapper.vm as any).tableColumns.slice(-4).map((column: any) => column.header))
+      .toEqual(["sepal length", "sepal width", "petal length", "petal width"]);
+    wrapper.unmount();
+  });
+
+  it("uses declared confusion classes on both table axes", () => {
+    const wrapper = factory({ nodeOutput: {
+      data: [[11, 1, 0], [0, 6, 6], [0, 3, 10]],
+      metadata: { labels: ["setosa", "versicolor", "virginica"], scientific_presentation: {
+        schema_version: "spectrasherpa-node-presentation/1", contract_digest: "a".repeat(64),
+        presentation_id: "confusion", kind: "confusion_matrix", source_port: "matrix", source_ports: ["matrix"], modes: ["plot", "table"],
+      } },
+    } });
+    expect((wrapper.vm as any).tableColumns.slice(-3).map((column: any) => column.header))
+      .toEqual(["setosa", "versicolor", "virginica"]);
+    wrapper.unmount();
+  });
+
+  it("keeps mixed peak column units on the matrix headers", () => {
+    const wrapper = factory({ nodeOutput: {
+      data: [[1200, .12]], metadata: { feature_names: ["peak_position_1", "magnitude_at_peak_1"],
+        column_units: { peak_position_1: "cm-1", magnitude_at_peak_1: "absorbance" } },
+    } });
+    expect((wrapper.vm as any).tableColumns.slice(-2).map((column: any) => column.header))
+      .toEqual(["peak_position_1 (cm-1)", "magnitude_at_peak_1 (absorbance)"]);
+    wrapper.unmount();
+  });
   it("preserves the selected component matrix's own axes even when its role is X_features", () => {
     const wrapper = factory({ nodeOutput: {
       data: [[.1, .2, .3], [.4, .5, .6]],

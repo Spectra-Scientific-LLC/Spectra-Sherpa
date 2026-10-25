@@ -82,6 +82,9 @@ def test_evidence_gaps_name_output_scope_and_recovery() -> None:
                 )
             },
             "pca": {
+                "_internal": OutputEvidence(
+                    state="missing", reason="Not retained: private runtime output excluded by policy."
+                ),
                 "runtime": OutputEvidence(
                     state="missing",
                     reason="Not retained: private runtime output excluded by policy.",
@@ -96,6 +99,8 @@ def test_evidence_gaps_name_output_scope_and_recovery() -> None:
     )
 
     gaps = {(gap.node_id, gap.output): gap for gap in evidence.gaps()}
+    assert ("pca", "_internal") not in gaps
+    assert "_internal" in evidence.outputs["pca"]
     assert gaps[("export", "artifact")].category == "storage_limit"
     assert "capacity" in gaps[("export", "artifact")].recovery
     assert gaps[("pca", "runtime")].category == "session_only"

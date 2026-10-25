@@ -98,6 +98,8 @@ async def test_project_choices_preserve_history_and_refuse_cross_project_targets
     default = await auth_client.post(url, json={"kind": "dataset", "experiment_id": experiment.id})
     first_default_event = await test_session.get(ProjectChoiceEvent, default.json()["id"])
     assert first_default_event is not None
+    default_binding = (await auth_client.get(f"{url}/current-dataset")).json()["dataset"]
+    assert default_binding["dataset_view_id"] is None
     assert first_default_event.selected_definition["source_files"][0]["sha256"] == "a" * 64
     same_default = await auth_client.post(url, json={"kind": "dataset", "experiment_id": experiment.id})
     assert same_default.json()["id"] == default.json()["id"]
@@ -127,6 +129,7 @@ async def test_project_choices_preserve_history_and_refuse_cross_project_targets
     active = await auth_client.get(f"{url}/current-dataset")
     assert active.status_code == 200
     assert active.json()["dataset"]["id"] == named.json()["id"]
+    assert active.json()["dataset"]["dataset_view_id"] == view.id
     assert active.json()["dataset"]["name"] == "M5 moisture"
     assert active.json()["dataset"]["definition"] == receipt
     portfolios = await auth_client.get(f"{url}/dataset-portfolios")

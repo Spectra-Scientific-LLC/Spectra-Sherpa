@@ -67,6 +67,17 @@ def cv_unavailable_reason(dataset: Any) -> str | None:
             if not hasattr(parameters, "get") or parameters.get("split") != "train":
                 return "Input split is not verified as the training partition; automatic component CV is unavailable."
             continue
+        if operation == "data.filter_samples":
+            parameters = getattr(entry, "parameters", None)
+            # Explicit source curation defines the analysis population; it
+            # learns no transform or target-dependent selector across folds.
+            if (
+                hasattr(parameters, "get")
+                and parameters.get("field") == "source_inclusion"
+                and parameters.get("invert") is False
+            ):
+                continue
+            return "Input sample filtering is not verified as explicit source inclusion."
         if operation in SAFE_PREMODEL_OPERATIONS or operation in KNOWN_IMPORT_OPERATIONS:
             continue
         return f"Input contains {operation}; its fold-local safety was not established."

@@ -857,6 +857,8 @@ bind_stable_execution_contract(
     implementation_modules=(
         pca_numerics,
         numerical_scaling,
+        component_validation,
+        pls_component_curve,
         pls_core,
         _vip,
         regression_comparison,

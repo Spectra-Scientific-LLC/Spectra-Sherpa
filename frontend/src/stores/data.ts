@@ -908,8 +908,11 @@ export const useDataStore = defineStore("data", () => {
     fileInfoLoading.value = true;
     fileInfoError.value = null;
     try {
-      const body: Record<string, unknown> = { file_path: filePath };
-      if (experimentId != null) body.experiment_id = experimentId;
+      // A project file is an exact one-member collection. Use the same loader
+      // as curation/workflow admission, rather than the loose-file preview.
+      const body: Record<string, unknown> = experimentId != null
+        ? { experiment_id: experimentId, file_ids: [fileId] }
+        : { file_path: filePath };
       if (assetId) body.asset_id = assetId;
       const response = await api.post<SherpaDatasetDict>("/builder/file-info", body, {
         signal: request.signal,

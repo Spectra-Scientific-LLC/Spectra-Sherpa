@@ -1441,6 +1441,8 @@ bind_stable_execution_contract(
     implementation_modules=(
         pca_numerics,
         numerical_scaling,
+        component_validation,
+        pca_component_curve,
         input_identity_authority,
         _chemometric_diagnostics,
         pca_authority,

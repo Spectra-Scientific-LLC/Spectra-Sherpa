@@ -79,6 +79,10 @@ class RunEvidence(BaseModel):
                 item = self.outputs[node_id][output]
                 if item.state == "exact":
                     continue
+                # Keep private values in the raw retention inventory, but do not
+                # advertise an intentional omission as recoverable missing science.
+                if output.startswith("_") and item.reason == "Not retained: private runtime output excluded by policy.":
+                    continue
                 category, recovery = _gap_category(item)
                 gaps.append(
                     EvidenceGap(

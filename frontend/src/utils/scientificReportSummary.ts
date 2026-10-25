@@ -2,6 +2,8 @@ import type { ReportData, RunReportEntry } from "./reportGenerator";
 import { reportGroups, reportRows, reportMarkdownText } from "./reportValues";
 import { scientificErrorMetricLabel, scientificMetricKey } from "./scientificDisplay";
 import { resolveMethodHelpUrl } from "./documentation";
+import type { ScientificValueDescriptor } from "@/stores/workflow-types";
+import { formatTimestamp } from "./format";
 
 type Row = [string, string];
 interface SummaryGroup { title: string; rows: Row[]; notices: string[]; table?: { headers: string[]; rows: string[][] } }
@@ -10,7 +12,7 @@ interface SummaryGroup { title: string; rows: Row[]; notices: string[]; table?: 
 // beside paper-style endpoint metrics; omit fold traces, model arrays and IDs.
 const labels: Record<string, string> = {
   n_samples: "Samples (n)", n_observations: "Observations (n)", n_features: "Variables (p)",
-  n_components: "Components / latent variables", n_selected: "Selected variables",
+  n_components: "Components (A)", n_selected: "Selected variables",
   requested_n_components: "Requested latent variables", effective_n_components: "Effective latent variables",
   x_explained_variance: "Explained X variance by latent component", y_explained_variance: "Explained Y variance by latent component",
   n_train: "Training samples", n_test: "Test samples", n_folds: "CV folds",
@@ -65,17 +67,28 @@ function variancePercent(fraction: number): string {
   return fraction < 1 && Number(rounded) >= 100 ? "<100%" : `${rounded}%`;
 }
 
-export function keyResultRows(value: unknown): Row[] {
+export function keyResultRows(value: unknown, descriptors?: Record<string, ScientificValueDescriptor>): Row[] {
   return (reportGroups({ result: value })[0]?.[1] ?? []).flatMap(([path, value]) => {
     const parts = path.split(" / ");
     // Lineage, source annotations and authority records belong to detailed
     // evidence, not paper-style endpoints (even when their leaves say "units").
-    if (parts.some(part => /^(?:scientific_projection|provenance|processing_history|target_context|selected_authority|target_authority|dataset_package|annotation_table|parameters)(?:\[\d+\])?$/i.test(part))) return [];
+    if (parts.some(part => /^(?:scientific_projection|provenance|processing_history|target_context|selected_authority|target_authority|dataset_package|annotation_table|parameters|recipe|model|fitted_state|diagnostic_state|evaluations|quality|component_curve)(?:\[\d+\])?$/i.test(part))) return [];
     // Retain per-target/class context, but not repetitive per-fold or row-level results.
-    if (parts.some((part) => /^(?:per_fold|folds|residuals|predictions|(?:x_|y_)?scores|loadings|coefficients|comparison|calibration_comparison|target\[|data(?:\[|$))/i.test(part))) return [];
+    if (parts.some((part) => /^(?:per_fold|folds|residuals|predictions|(?:x_|y_)?scores|(?:x_|y_)?loadings|variable_correlations|coefficients|comparison|calibration_comparison|target\[|data(?:\[|$))/i.test(part))) return [];
     const last = parts[parts.length - 1];
     const leaf = scientificMetricKey(last).toLowerCase();
-    const label = labels[leaf];
+    if (leaf === "target preview") return [];
+    const descriptor = descriptors?.[parts[0]];
+    const dimensions = descriptor?.shape_valid ? descriptor.dimensions : undefined;
+    const dimension = leaf === "n_samples" ? dimensions?.[0] : leaf === "n_features" ? dimensions?.[dimensions.length - 1] : null;
+    const roleLabels: Record<string, string> = {
+      sample: "Samples (n)", observation: "Observations (n)", feature: "Variables (p)",
+      spectral_variable: "Variables (p)", component: "Components (A)",
+      target: "Responses", actual_class: "Reference classes", predicted_class: "Predicted classes",
+    };
+    const label = dimension && Number(value) === dimension.size
+      ? roleLabels[dimension.role] ?? `${dimension.role.replace(/_/g, " ")} count`
+      : labels[leaf];
     if (!label) return [];
     const index = last.match(/\[\d+\]/g)?.join("") ?? "";
     const contexts = parts.slice(0, -1).filter(part => !["default", "metrics", "classification_metrics", "metadata", "extra", "quality_summary"].includes(part));
@@ -131,7 +144,7 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     `${gap.node_id} / ${gap.output}: ${gap.reason} ${gap.recovery}`)].filter((v): v is string => !!v);
   if (run.status !== "completed") notices.unshift(`Run outcome: ${run.status}. Results may be incomplete.`);
   const context: Row[] = [["Run", `#${run.id} — ${run.status}`]];
-  if (run.executed_at) context.push(["Executed", run.executed_at]);
+  if (run.executed_at) context.push(["Executed", formatTimestamp(run.executed_at)]);
   const validation = run.validation_summary?.schema_version === "spectrasherpa-readable-validation/1"
     && run.validation_summary.run_id === run.id ? run.validation_summary : undefined;
   if (run.workflow_identity?.source_name) context.push(["Saved data source", run.workflow_identity.source_name]);
@@ -209,6 +222,11 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
         ? "Autoscaled (mean-centred, divided by variable standard deviation)"
         : "Mean-centred; no variable scaling"]);
     }
+    if (node.node_type === "model.pca" && typeof settings.standardized === "boolean" && typeof settings.scaled === "boolean") {
+      context.push([`Scaling (${node.label || node.node_id})`, settings.standardized
+        ? "Autoscaled in PCA"
+        : settings.scaled ? "Min–max scaled in PCA" : "Mean-centred in PCA"]);
+    }
     if (typeof diagnostics.effective_n_components === "number") {
       context.push([`PLS latent components (${node.label || node.node_id})`,
         `${diagnostics.effective_n_components} fitted; requested ${diagnostics.requested_n_components ?? settings.n_components ?? "not recorded"} (not CV folds).`]);
@@ -244,16 +262,49 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     if (id.startsWith("_")) continue;
     const node = nodes.find(n => n.node_id === id);
     const payloads = [run.results_summary?.[id], run.diagnostics?.[id]];
+    // A declared PCA scree port aliases its producer's retained variance-ratio
+    // diagnostic. Keep one copy, only when the exact vectors agree.
+    const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    const retained = record(run.diagnostics?._scientific_presentations?.[id]);
+    const presentations = record(retained.contract).presentations;
+    if (Array.isArray(presentations)) for (const presentation of presentations) {
+      const declaration = record(presentation);
+      if (declaration.kind !== "pca_explained_variance" || !Array.isArray(declaration.source_ports) || declaration.source_ports.length !== 1) continue;
+      const port = String(declaration.source_ports[0]);
+      const result = record(payloads[0]);
+      const diagnostic = record(payloads[1]);
+      if (Array.isArray(result[port]) && Array.isArray(diagnostic.explained_variance_ratio)
+        && JSON.stringify(result[port]) === JSON.stringify(diagnostic.explained_variance_ratio)) {
+        payloads[0] = Object.fromEntries(Object.entries(result).filter(([key]) => key !== port));
+      }
+    }
     groups.push(...classificationTables(run.results_summary?.[id], `${run.name} — ${node?.label || id}`));
     const hasRegressionTable = regression.some(result => result.node_id === id);
-    const rows = payloads.flatMap((payload, index) => keyResultRows(index === 0 ? withoutRenderedClassRows(payload) : payload)).filter(([label]) => !(node?.node_type.startsWith("data.") && /components|latent variables/i.test(label))).filter(([label]) => !hasRegressionTable ||
+    let descriptors = run.diagnostics?._scientific_values?.[id] as Record<string, ScientificValueDescriptor> | undefined;
+    if (node?.node_type === "stats.summary") {
+      const inputs = (run.saved_definition?.edges ?? []).filter(edge => edge.to_node_id === id);
+      if (inputs.length === 1) {
+        const edge = inputs[0];
+        const values = run.diagnostics?._scientific_values as Record<string, Record<string, ScientificValueDescriptor>> | undefined;
+        const input = values?.[edge.from_node_id]?.[edge.from_output || "default"];
+        if (input?.shape_valid) descriptors = { ...descriptors, default: input };
+        // Statistics on a model result are an explicit derived projection,
+        // not another fit. Its count/variance aliases belong to that model.
+        if (input && ["score_matrix", "loading_matrix"].includes(input.scientific_kind)
+          && nodes.some(source => source.node_id === edge.from_node_id && modelTypes.test(source.node_type))
+          && run.results_summary?.[edge.from_node_id]) continue;
+      }
+    }
+    const rows = payloads.flatMap((payload, index) => keyResultRows(index === 0 ? withoutRenderedClassRows(payload) : payload, descriptors)).filter(([label]) => !(node?.node_type.startsWith("data.") && /components|latent variables/i.test(label))).filter(([label]) => !hasRegressionTable ||
       /latent variables|Variables \(p\)|Explained [XY] variance/.test(label));
     if (!rows.length && !node?.node_type.match(modelTypes)) continue;
     if (node) rows.unshift(["Analysis", node.node_type]);
     // Only retained settings, never defaults/current graph, supply method context.
     for (const [key, value] of reportRows(run.params_snapshot?.[id])) {
       if (key === "n_components" && !node?.node_type.match(modelTypes)) continue;
-      if (["n_components", "n_clusters", "method", "cv_folds", "n_splits"].includes(key)) rows.unshift([labels[key] ?? key, value]);
+      if (key === "n_components") {
+        if (!rows.some(([label, actual]) => label === "Components (A)" && actual === value)) rows.unshift(["Requested components", value]);
+      } else if (["n_clusters", "method", "cv_folds", "n_splits"].includes(key)) rows.unshift([labels[key] ?? key, value]);
     }
     const unique = rows.filter((row, i) => rows.findIndex(other => other[0] === row[0] && other[1] === row[1]) === i);
     const warnings: string[] = [];

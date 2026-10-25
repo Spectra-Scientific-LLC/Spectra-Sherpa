@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { captureReportPlots, reportGroupKey } from "@/utils/captureReportPlots";
+import { captureReportPlots, reportGroupKey, reportPopulationCaption, reportComparisonCaptions } from "@/utils/captureReportPlots";
 import { reportNodePlotsHtml, reportNodePlotsMarkdown } from "@/utils/reportNodePlots";
 import { generateProvenanceReport, type ReportData } from "@/utils/reportGenerator";
 import { generateMarkdownReport } from "@/utils/reportMarkdownGenerator";
@@ -15,6 +15,19 @@ function run(): RunReportData {
 beforeEach(() => vi.resetAllMocks());
 
 describe("retained node report plots", () => {
+  it("preserves panel refusal and population evidence without row identities", () => {
+    expect(reportComparisonCaptions({ comparison_populations: {
+      original: null, preprocessed: { shown: 3, total: 150, sample_labels: ["not a caption"] },
+    }, comparison_refusals: ["Original input unavailable."] })).toEqual([
+      "preprocessed: Subset: 3 of 150 active rows.", "Original input unavailable.",
+    ]);
+  });
+  it("summarizes population counts without dumping retained row identities", () => {
+    expect(reportPopulationCaption({ shown: 50, total: 150, excluded: 1, row_ids: ["private-identity"], indices: [1, 2] }))
+      .toBe("Subset: 50 of 150 active rows; 1 excluded.");
+    expect(reportPopulationCaption({ shown: 151, total: 150 })).toBe("Display population unavailable.");
+    expect(reportPopulationCaption({ shown: 150, total: 150 })).toBe("150 of 150 active rows.");
+  });
   it("keeps a compact class-to-color key in static report captions without wide plot legends", () => {
     const groups = ["Oil", "Water"].map((name, index) => ({
       type: "scatter", mode: "markers", name, marker: { color: index ? "#0072B2" : "#D55E00" },

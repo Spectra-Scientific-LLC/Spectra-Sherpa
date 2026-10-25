@@ -30,6 +30,53 @@ function fixture(): ReportData {
 }
 
 describe("deterministic short scientific report", () => {
+  it("omits a declared scree alias only when the retained diagnostic vector agrees", () => {
+    const data = fixture();
+    const run = data.runs![0];
+    run.results_summary = { pls: { explained_variance: [0.7, 0.2] } };
+    run.diagnostics = { pls: { explained_variance_ratio: [0.7, 0.2] }, _scientific_presentations: { pls: { contract: {
+      presentations: [{ kind: "pca_explained_variance", source_ports: ["explained_variance"] }],
+    } } } };
+    const rows = scientificSummaryGroups(data).flatMap(group => group.rows);
+    expect(rows).toContainEqual(["Explained variance ratio by component[1]", "0.7"]);
+    expect(rows).not.toContainEqual(["Explained variance[1]", "0.7"]);
+    run.results_summary.pls.explained_variance = [0.6, 0.3];
+    expect(scientificSummaryGroups(data).flatMap(group => group.rows)).toContainEqual(["Explained variance[1]", "0.6"]);
+  });
+  it("uses the exact saved input edge to label a score-summary dimension", () => {
+    const data = fixture();
+    const run = data.runs![0];
+    run.saved_definition = { nodes: [{ node_id: "stats", node_type: "stats.summary", label: "Score summary" }],
+      edges: [{ from_node_id: "pca", from_output: "scores", to_node_id: "stats", to_input: "default" }] };
+    run.results_summary = { stats: { default: { n_samples: 150, n_features: 2 } } };
+    run.params_snapshot = {};
+    run.diagnostics = { _scientific_values: { pca: { scores: { shape_valid: true,
+      dimensions: [{ role: "sample", size: 150 }, { role: "component", size: 2 }] } } } };
+    const rows = scientificSummaryGroups(data).flatMap(group => group.rows);
+    expect(rows).toContainEqual(["Components (A)", "2"]);
+    expect(rows).not.toContainEqual(["Variables (p)", "2"]);
+  });
+  it("labels score dimensions from the retained descriptor, not n_features spelling", () => {
+    const rows = keyResultRows({ scores: { n_samples: 150, n_features: 2 },
+      default: { n_samples: 150, n_features: 2 } }, {
+      default: { shape_valid: true, dimensions: [{ role: "sample", size: 150 }, { role: "component", size: 2 }] },
+    } as never);
+    expect(rows).toContainEqual(["Samples (n)", "150"]);
+    expect(rows).toContainEqual(["Components (A)", "2"]);
+    expect(rows).not.toContainEqual(["Variables (p)", "2"]);
+  });
+
+  it("omits implementation-state and evaluation aliases from the short report only", () => {
+    const payload = { n_components: 2, fitted_state: { state: { n_components: 2 } },
+      model: { n_components: 2 }, diagnostic_state: { n_components: 2 },
+      quality: { evaluations: [{ n_components: 2 }] },
+      variable_correlations: { n_samples: 2, n_features: 4 } };
+    expect(keyResultRows(payload)).toEqual([["Components (A)", "2"]]);
+    const data = fixture();
+    data.runs![0].results_summary = { pls: payload };
+    data.reportMode = "detailed";
+    expect(generateProvenanceReport(data)).toContain("fitted_state");
+  });
   it("omits projection metadata and irrelevant CV context from a preparation-only short report", () => {
     const data = fixture();
     const run = data.runs![0];
@@ -146,7 +193,9 @@ describe("deterministic short scientific report", () => {
   it("never treats sample comparison targets as aggregate result rows", () => {
     const previewRows = keyResultRows({ target: Array.from({ length: 20 }, (_, i) => i),
       target_truncated: true, target_original_rows: 174 });
-    expect(previewRows).toEqual([["Target preview", expect.stringContaining("20 of 174 target rows in preview")]]);
+    // Summary metrics use the full retained population, not the target preview.
+    // The complete-list option and detailed report retain row-level scope.
+    expect(previewRows).toEqual([]);
     expect(keyResultRows({ comparison: { data: Array.from({ length: 4 }, () => ({ target: "Glucose (wt %)", reference: 1, predicted: 2 })) } })).toEqual([]);
     expect(keyResultRows({ calibration_comparison: { metadata: { n_samples: 20 }, data: [{ target: "Glucose" }] } })).toEqual([]);
   });
@@ -175,7 +224,7 @@ describe("deterministic short scientific report", () => {
   });
   it.each([generateProvenanceReport, generateMarkdownReport])("curates key results and preserves evidence in both formats", generate => {
     const output = generate(fixture());
-    for (const text of ["Short summary", "train / R²", "cv / RMSE", "0.1235", "protein", "mg/L", "Components / latent variables", "Scores not retained", "not an external held-out test"]) expect(output).toContain(text);
+    for (const text of ["Short summary", "train / R²", "cv / RMSE", "0.1235", "protein", "mg/L", "Requested components", "Scores not retained", "not an external held-out test"]) expect(output).toContain(text);
     for (const text of ["verbose detail", "verbose settings", "verbose fold rows", "987654", "per_fold_rmse", "Pipeline Steps"]) expect(output).not.toContain(text);
   });
   it("rejects another run's validation summary and never substitutes current settings", () => {

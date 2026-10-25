@@ -81,20 +81,36 @@ export function scientificMetricKey(key: string): string {
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
+/** Typed heterogeneous column units; never infer them from a column's spelling. */
+export function scientificColumnLabel(key: string, metadata: unknown, label = key): string {
+  const unit = asRecord(asRecord(metadata).column_units)[key];
+  return typeof unit === "string" && unit.trim() && !label.endsWith(`(${unit.trim()})`) ? `${label} (${unit.trim()})` : label;
+}
+
+/** Compact common response-unit context for an independently usable result. */
+export function scientificResponseUnit(value: unknown): string | null {
+  const units = scientificMetricContext(value).target_units;
+  const declarations = Array.isArray(units) ? units : [units];
+  return declarations.length > 0 && declarations.every(unit => typeof unit === "string" && unit.trim() && unit === declarations[0])
+    ? String(declarations[0]) : null;
+}
+
 /** Inherit only response units and declared population roles, never spectral metadata. */
 export function scientificMetricContext(value: unknown, inherited: unknown = {}): Record<string, unknown> {
   const record = asRecord(value);
   const metadata = asRecord(record.metadata);
+  const diagnostics = asRecord(record.diagnostics ?? metadata.diagnostics);
   const parent = asRecord(inherited);
-  const units = [record.target_units, metadata.target_units,
+  const units = [record.target_units, metadata.target_units, diagnostics.target_units,
     asRecord(record.response_identity).units, asRecord(metadata.response_identity).units,
+    asRecord(diagnostics.response_identity).units,
     record.task_type === "regression" || typeof record.target === "string" || typeof record.target_name === "string" ? record.units : undefined,
   ].find(item => item !== undefined);
   const role = [asRecord(record.population_authority).role, asRecord(metadata.population_authority).role,
     record.evaluation_role, metadata.evaluation_role, record.role, metadata.role,
   ].find(item => item !== undefined);
   const names = [record.target_names, metadata.target_names, asRecord(record.response_identity).names,
-    asRecord(metadata.response_identity).names].find(item => item !== undefined);
+    asRecord(metadata.response_identity).names, asRecord(diagnostics.response_identity).names].find(item => item !== undefined);
   return {
     ...(units !== undefined ? { target_units: units } : "target_units" in parent ? { target_units: parent.target_units } : {}),
     ...(role !== undefined ? { role } : "role" in parent ? { role: parent.role } : {}),

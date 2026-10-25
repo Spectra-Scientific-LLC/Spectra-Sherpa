@@ -7,6 +7,44 @@ from spectra_sherpa.app.lib.synthetic_references import SYNTHETIC_REFERENCE_CATA
 
 
 @pytest.mark.anyio
+async def test_curation_ids_are_projected_by_canonical_current_row_authority(monkeypatch):
+    import numpy as np
+
+    from spectra_sherpa.app.api.v1.routes import builder
+    from spectra_sherpa.app.lib import collection_assembly
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+    dataset = SherpaDataset(X=np.eye(3))
+    dataset.meta["source_observations"] = [{"sample_id": name} for name in ["A", "B", "C"]]
+
+    async def ready(*args):
+        return {}
+
+    monkeypatch.setattr(builder, "dataset_analysis_readiness", ready)
+    monkeypatch.setattr(
+        collection_assembly,
+        "verified_source_observations",
+        lambda value: [{"sample_id": name} for name in ["C", "A", "B"]],
+    )
+    result = await builder._finalize_file_info({"metadata": {}}, dataset=dataset, session=None)
+    assert result["metadata"]["curation_sample_ids"] == ["C", "A", "B"]
+
+    def refused(value):
+        raise ValueError("receipt mismatch")
+
+    monkeypatch.setattr(collection_assembly, "verified_source_observations", refused)
+    result = await builder._finalize_file_info(
+        {"metadata": {"curation_sample_ids": ["stale"]}}, dataset=dataset, session=None
+    )
+    assert "curation_sample_ids" not in result["metadata"]
+    dataset.meta.pop("source_observations")
+    result = await builder._finalize_file_info(
+        {"metadata": {"curation_sample_ids": ["unverified"]}}, dataset=dataset, session=None
+    )
+    assert "curation_sample_ids" not in result["metadata"]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "source,name",
     [("sklearn", name) for name in ("iris", "wine", "breast_cancer")]
@@ -55,6 +93,8 @@ async def test_builtin_import_inspection_and_persisted_matrix(auth_client: Async
         expected = {"iris": (150, 4), "wine": (178, 13), "breast_cancer": (569, 30)}
         assert (dataset["n_samples"], dataset["n_features"]) == expected[name]
         assert dataset["data_role"] == "X_features"
+        ids = dataset["metadata"]["curation_sample_ids"]
+        assert len(ids) == len(set(ids)) == dataset["n_samples"]
         assert matrix["target"]["target_type"] == "categorical"
         assert matrix["target"]["n_classes"] == reference["target"]["n_classes"]
         assert sorted((item["label"], item["count"]) for item in matrix["target"]["classes"]) == sorted(

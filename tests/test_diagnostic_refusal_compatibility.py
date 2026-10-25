@@ -53,11 +53,21 @@ def test_source_only_registrations_preserve_all_previously_supported_producers()
     assert {entry.operation_id for entry in new} == set(_REVIEWED)
     previous = list(authority.saved_state_compatibilities())
     for name, entries in vars(authority).items():
-        if name.endswith("_PREDECESSORS") and name != "_DIAGNOSTIC_REFUSAL_PREDECESSORS":
+        if name.endswith("_PREDECESSORS") and name not in {
+            "_DIAGNOSTIC_REFUSAL_PREDECESSORS",
+            "_SCIENTIFIC_AUDIT_PREDECESSORS",
+        }:
             previous.extend(entries)
     for operation, (old, current) in _REVIEWED.items():
         contract = node_registry.get_metadata(operation).resolved_execution_contract()
-        assert contract.digest == current
+        # Earlier registrations stay historically pinned. New exact consumers
+        # have their own independent current-identity assertions.
+        assert contract.digest == current or authority.saved_state_predecessor_is_compatible(
+            current,
+            contract.digest,
+            operation_id=operation,
+            serializer=contract.payload["fitted_state_serializer"],
+        )
         serializer = contract.payload["fitted_state_serializer"]
         entries = [entry for entry in new if entry.operation_id == operation]
         expected = {old}

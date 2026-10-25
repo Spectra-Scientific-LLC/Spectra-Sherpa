@@ -107,10 +107,15 @@ describe("retained peak execution inputs", () => {
     const call =
       "scipy.signal.find_peaks(spectrum, height=None, threshold=None, distance=None, prominence=0.123456789, width=None, wlen=None, rel_height=0.5, plateau_size=None)";
     const wrapper = mount(PeakExecutionDetails, {
-      props: { diagnostics: { scipy_version: "1.17.1", scipy_find_peaks_call: call } },
+      props: { diagnostics: { scipy_version: "1.17.1", scipy_find_peaks_call: call,
+        scipy_find_peaks_arguments: { prominence: 0.123456789 },
+        scipy_peak_widths_sample_indices: [0, 2] } },
     });
     expect(wrapper.get("pre").text()).toBe(call);
     expect(wrapper.text()).toContain("1.17.1");
+    expect(wrapper.text()).toContain('"prominence": 0.123456789');
+    expect(wrapper.text()).toContain("Width-measured sample indices: [0,2]");
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
     expect(wrapper.text()).toContain("Editing settings does not change this execution record");
     await wrapper.setProps({ diagnostics: {} });
     expect(wrapper.find("pre").exists()).toBe(false);

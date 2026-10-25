@@ -19,6 +19,7 @@ import spectra_sherpa.app.services.dag.regression_comparison as regression_compa
 import spectra_sherpa.sdk.validate as sdk_validate
 from spectra_sherpa.app.services.dag.node_base import NodeResult, PortMetadata, register_node
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.core.target_units import resolve_target_units
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
     ManagedOptimizationEligibility,
@@ -131,6 +132,24 @@ def evaluate_labeled_regression(
     for index, row in enumerate(comparison["data"]):
         row["sample"] = labels[index // observed.shape[1]]
     comparison["metadata"]["sample_identity_mode"] = "source_label"
+    context = sample_context.target_context
+    per_response = []
+    for name in names:
+        authority = context.selected_authority
+        # A selected-column declaration qualifies that column only. Without
+        # one, target_units is the context's common multi-response declaration.
+        declarations = [context.target_units] if authority is None or authority.column == name else []
+        if authority is not None and authority.column == name:
+            declarations.append(authority.units)
+        per_response.append(resolve_target_units(declarations))
+    response_identity = {"names": names, "units": [unit.value for unit in per_response]}
+    unit_context = {name: unit.as_dict() for name, unit in zip(names, per_response)}
+    comparison["metadata"].update(
+        response_identity=response_identity, target_units=response_identity["units"], unit_context=unit_context
+    )
+    result.diagnostics.update(
+        response_identity=response_identity, target_units=response_identity["units"], unit_context=unit_context
+    )
     return result
 
 

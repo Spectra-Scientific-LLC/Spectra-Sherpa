@@ -74,6 +74,14 @@ const output = {
 } as NodeOutput;
 
 describe("scientific presentation resolver", () => {
+  it("does not classify a residual matrix using its parent's concentration role", () => {
+    const resolved = resolveScientificPresentation(metadata, output)!;
+    const projected = projectScientificPresentation({ ...output, metadata: {
+      scientific_matrix_role: "component_concentrations",
+    } }, { ...resolved, presentation: { ...resolved.presentation, kind: "spectra" },
+      portOutput: { data: [[1, 2]], value: [[1, 2]], metadata: {} } });
+    expect(projected?.metadata).not.toHaveProperty("scientific_matrix_role");
+  });
   it("does not borrow primary sample identities or spectral axes for another output", () => {
     const resolved = resolveScientificPresentation(metadata, output)!;
     const projected = projectScientificPresentation({ ...output, metadata: {

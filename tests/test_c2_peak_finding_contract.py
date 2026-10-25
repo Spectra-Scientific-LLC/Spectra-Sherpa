@@ -50,6 +50,19 @@ def _parameters() -> dict[str, object]:
     }
 
 
+def test_peak_tables_declare_each_coordinate_and_signal_unit() -> None:
+    dataset = _dataset()
+    dataset.units = "absorbance"
+    result = execute_peak_finding(dataset, parameters=_parameters(), node_id="peaks")
+    units = result.outputs["peaks"]["metadata"]["column_units"]
+    assert units["median_pos"] == "cm-1"
+    assert units["median_height"] == "absorbance"
+    assert units["median_absolute_window_integral"] == "absorbance · cm-1"
+    matrix_units = result.outputs["per_spectrum"].meta["column_units"]
+    assert matrix_units["peak_position_1"] == "cm-1"
+    assert matrix_units["magnitude_at_peak_1"] == "absorbance"
+
+
 def test_catalog_defaults_admit_and_execute_a_new_peak_node() -> None:
     from spectra_sherpa.app.services.dag.saved_graph_admission import admit_saved_workflow_graph
 
