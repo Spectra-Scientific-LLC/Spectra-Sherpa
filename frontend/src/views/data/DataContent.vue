@@ -19,12 +19,12 @@
         :popup="true"
       />
       <Button
-        v-if="activeTab === TAB_SYNTHESIS"
+        v-if="activeTab === TAB_SYNTHESIS || activeTab === TAB_LIBRARY"
         label="Guide"
         icon="pi pi-book"
         class="p-button-sm p-button-outlined"
-        data-action="synthesis_open_guide"
-        @click="openSynthesisGuide"
+        :data-action="activeTab === TAB_SYNTHESIS ? 'synthesis_open_guide' : undefined"
+        @click="openSourceGuide"
       />
       <Button
         v-if="activeTab !== TAB_MY_DATASET"
@@ -740,12 +740,8 @@
           <span class="p-tabview-title" data-action="open_library">Library</span>
         </template>
         <section v-if="!qualified" class="library-panel">
-          <div class="library-header">
-            <MethodHelp topic="referenceLibrary" label="Reference library and dataset import" />
-            <span class="library-count">{{ filteredLibrary.length }} entries</span>
-          </div>
           <div class="library-toolbar">
-            <div class="field compact-field">
+            <div class="field compact-field library-database-field">
               <label for="library-source">Database</label>
               <Dropdown
                 inputId="library-source"
@@ -1644,6 +1640,7 @@ import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vu
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import MethodHelp from "@/components/MethodHelp.vue";
+import { resolveMethodHelpUrl } from "@/utils/documentation";
 import PlotSelectionCheckbox from "@/components/data/PlotSelectionCheckbox.vue";
 import DataContentsPanel from "./DataContentsPanel.vue";
 import DataStoryCard from "./DataStoryCard.vue";
@@ -2285,8 +2282,13 @@ const isGuidedExampleSession = ref(false);
 function openMyDataset() {
   activeTabId.value = "my-dataset";
 }
-function openSynthesisGuide() {
-  router.push("/documentation");
+function openSourceGuide() {
+  if (activeTab.value === TAB_LIBRARY) {
+    const url = resolveMethodHelpUrl("referenceLibrary");
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  } else {
+    router.push("/documentation");
+  }
 }
 const headerActionItems = computed(() => [
   ...(activeTab.value === TAB_UPLOAD
@@ -2297,8 +2299,8 @@ const headerActionItems = computed(() => [
         items: uploadSourceMenuItems,
       }]
     : []),
-  ...(activeTab.value === TAB_SYNTHESIS
-    ? [{ label: "Guide", icon: "pi pi-book", command: openSynthesisGuide }]
+  ...([TAB_SYNTHESIS, TAB_LIBRARY].includes(activeTab.value)
+    ? [{ label: "Guide", icon: "pi pi-book", command: openSourceGuide }]
     : []),
   ...(activeTab.value !== TAB_MY_DATASET
     ? [{ label: "My Dataset", icon: "pi pi-arrow-right", command: openMyDataset }]
@@ -3515,7 +3517,7 @@ const activeSubtabDetail = computed(() => {
           ? `${stagedUploadMembers.value.length} staged file${stagedUploadMembers.value.length === 1 ? "" : "s"}`
           : "";
     case TAB_LIBRARY:
-      return "";
+      return `${filteredLibrary.value.length} ${filteredLibrary.value.length === 1 ? "entry" : "entries"}`;
     case TAB_MULTI_WELL:
       return "";
     case TAB_MY_DATASET:
@@ -7267,14 +7269,6 @@ function formatDate(dateStr: string): string {
   padding: 0;
 }
 
-.library-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
 .library-title {
   display: flex;
   align-items: center;
@@ -7287,27 +7281,6 @@ function formatDate(dateStr: string): string {
 
 .library-title i {
   color: var(--ss-text-muted);
-}
-
-.library-header p {
-  margin: 0;
-  color: var(--ss-text-muted);
-  font-size: 0.9rem;
-  line-height: 1.45;
-}
-
-/* Outline pill — same vocabulary as the Active tag on Project. */
-.library-count {
-  flex: 0 0 auto;
-  border: 1px solid var(--surface-border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-color-secondary);
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: lowercase;
-  padding: 0.05rem 0.45rem;
 }
 
 .library-toolbar {
@@ -7329,6 +7302,17 @@ function formatDate(dateStr: string): string {
   color: var(--ss-text-muted);
   font-size: 0.75rem;
   font-weight: 600;
+}
+
+.field.library-database-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.library-database-field label {
+  margin: 0;
 }
 
 .hitran-settings-row {

@@ -1065,7 +1065,7 @@ describe("DataContent file inspection", () => {
       const labels = header.findAll("button").map((button) => button.text());
       expect(labels).not.toContain("Workflow");
       expect(labels.filter((label) => ["Guide", "Load", "My Dataset"].includes(label)))
-        .toEqual(tab === "synthesis" ? ["Guide", "My Dataset"] : tab === "upload" ? ["Load", "My Dataset"] : ["My Dataset"]);
+        .toEqual(["synthesis", "library"].includes(tab) ? ["Guide", "My Dataset"] : tab === "upload" ? ["Load", "My Dataset"] : ["My Dataset"]);
       expect(wrapper.find(".synthesis-toolbar").exists()).toBe(false);
       if (tab === "synthesis") {
         await header.get('[data-action="synthesis_open_guide"]').trigger("click");
@@ -1078,6 +1078,29 @@ describe("DataContent file inspection", () => {
       expect(mocks.dataStore.activeExperimentId).toBe(11);
     },
   );
+
+  it("keeps Library help and filtered entry counts in the header context", async () => {
+    mocks.route.query = { tab: "library" };
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    try {
+      const wrapper = mountDataContent();
+      await flushPromises();
+      expect(wrapper.find(".library-header").exists()).toBe(false);
+      expect(wrapper.get(".library-database-field").element.firstElementChild?.textContent).toBe("Database");
+      expect(wrapper.get('[aria-label="Data workspace context"]').text()).toContain("2 entries");
+      (wrapper.vm as unknown as DataContentVm).librarySearch = "Acetone";
+      await flushPromises();
+      expect(wrapper.get('[aria-label="Data workspace context"]').text()).toContain("1 entry");
+      await wrapper.get(".workspace-header").findAll("button")
+        .find((button) => button.text() === "Guide")!.trigger("click");
+      expect(open).toHaveBeenCalledWith(
+        "https://docs.spectrascientific.ai/workflows/references-synthesis/#nist-library",
+        "_blank", "noopener,noreferrer",
+      );
+    } finally {
+      open.mockRestore();
+    }
+  });
 
   it("opens a dataset-scoped multi-well acquisition deep link", async () => {
     mocks.route.query = { tab: "multi-well", experiment: "11" };

@@ -50,8 +50,9 @@ a publishable change or evidence that the populations are synchronized.
 
 Data source subtabs (Import, Synthesis, Upload, Library and Multi-well) end in
 the existing My Dataset action; My Dataset alone offers the Workflow handoff.
-Keep Synthesis Guide and Upload Load beside that header action, not in separate
-toolbar rows. Import's selected reference title belongs in the context strip;
+Keep Synthesis/Library Guide and Upload Load beside that header action, not in
+separate toolbar rows. Library's filtered entry count belongs in the subtitle;
+Database precedes its source dropdown. Import's selected title belongs in the context strip;
 its preview sections align with the catalog rather than repeat the title.
 
 ## Scientific context and copy
