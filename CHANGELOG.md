@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runs shares empty-state and action styling across its subtabs. Models separates
   local history, saved evidence and imported models into consistent collapsible
   sections without changing model actions or scientific evidence.
+- Inspect opens the exact produced model under Models, where promotion is
+  reviewed. Run navigation shares the Export header row; Summary, Results and
+  Validation expand independently. Compact PCA context uses fitted-sample
+  wording without empty pretreatment or held-out boilerplate; real limitations
+  and retained metrics remain available.
 - Storage recovery moves from Dashboard to Settings; existing Dashboard Storage
   bookmarks redirect to the new subtab without reclaiming files automatically.
 - Multi-well planning and measured-sample previews support 6-, 12-, 24-, 48-,

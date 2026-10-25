@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createDataset } from "./journeys";
+import { createDataset, instantiate, runWorkflow } from "./journeys";
 
 for (const alias of ["project", "project_id"]) {
   test(`Data ${alias} link yields to explicit project selection across reload and Back`, async ({ page, request }) => {
@@ -76,4 +76,55 @@ test("workspace sections keep actions and context without duplicate introduction
   await page.goto("/report?tab=preview");
   await expect(page.getByText("Choose inputs in Setup, then generate the report.", { exact: true })).toBeVisible();
   await expect(page.getByText("Select a workflow to generate a report", { exact: true })).toHaveCount(0);
+});
+
+test("Inspect opens its exact fitted model under Models without promoting it", async ({ page, request }) => {
+  const dataset = await createDataset(request, "Model navigation", { source: "sklearn", name: "iris" });
+  const workflow = await instantiate(request, dataset, "pca");
+  const result = await runWorkflow(page, workflow, dataset.project);
+  const evidence = await request.get(`/api/v1/runs/${result.run_id}/evidence`, { params: { project_id: dataset.project.id } });
+  expect(evidence.ok(), await evidence.text()).toBeTruthy();
+  const { run } = await evidence.json();
+  expect(run.produced_artifact_uids).toHaveLength(1);
+  const uid = run.produced_artifact_uids[0];
+  const modelResponse = await request.get(`/api/v1/models/${encodeURIComponent(uid)}`);
+  expect(modelResponse.ok(), await modelResponse.text()).toBeTruthy();
+  const model = await modelResponse.json();
+  await page.goto(`/runs/${result.run_id}?tab=inspect&project=${dataset.project.id}`);
+  const inspect = page.getByRole("region", { name: "Inspect", exact: true });
+  const header = page.locator('.workspace-header');
+  await expect(inspect.getByRole("button", { name: "Review for promotion", exact: true })).toHaveCount(0);
+  await expect(inspect.getByRole("button", { name: "Open model", exact: true })).toHaveCount(0);
+  await expect(header.getByRole('button', { name: 'Back to Runs', exact: true })).toBeVisible();
+  await expect(header.getByRole('button', { name: /^Workflow/ })).toBeVisible();
+  await expect(header.getByRole('button', { name: 'Report', exact: true })).toBeVisible();
+  await expect(header.getByRole('button', { name: 'Open Deploy', exact: true })).toBeVisible();
+  const exportBox = await header.getByRole('button', { name: 'Export', exact: true }).boundingBox();
+  const modelBox = await header.getByRole('button', { name: 'Open model', exact: true }).boundingBox();
+  expect(Math.abs(modelBox!.y + modelBox!.height / 2 - exportBox!.y - exportBox!.height / 2)).toBeLessThanOrEqual(1);
+  await expect(inspect.locator('.plotly-canvas .main-svg').first()).toBeVisible();
+  const panels = inspect.locator('.p-panel');
+  expect(await panels.evaluateAll(elements => new Set(elements.map(element => element.getBoundingClientRect().left)).size)).toBe(1);
+  await test.info().attach('inspect-sections.png', { body: await page.screenshot(), contentType: 'image/png' });
+  await expect(inspect.getByRole('button', { name: 'Results', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await inspect.getByRole('button', { name: 'Validation', exact: true }).click();
+  await expect(inspect.getByRole('button', { name: 'Results', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(inspect.getByRole('button', { name: 'Validation', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await inspect.getByRole('button', { name: 'Summary', exact: true }).click();
+  await expect(inspect.getByRole('button', { name: 'Summary', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await page.setViewportSize({ width: 700, height: 1000 });
+  await header.getByRole('button', { name: 'Actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Open model', exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect.poll(() => new URL(page.url()).searchParams.get("artifact")).toBe(uid);
+  expect(new URL(page.url()).pathname).toBe("/runs");
+  for (let reopen = 0; reopen < 2; reopen++) {
+    if (reopen) await page.reload();
+    await expect(page.getByRole("button", { name: "Models", exact: true })).toHaveAttribute("aria-current", "true");
+    await expect(page.locator("#selected-model-detail")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Model name", exact: true })).toHaveValue(model.display_name || model.name);
+    await expect(page.locator("#selected-model-detail").getByRole("button", { name: model.is_deploy_ready ? "Withdraw deploy-ready" : "Review for promotion", exact: true })).toBeVisible();
+  }
+  const after = await request.get(`/api/v1/models/${encodeURIComponent(uid)}`);
+  expect((await after.json()).is_deploy_ready).toBe(model.is_deploy_ready);
 });

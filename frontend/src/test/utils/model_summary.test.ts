@@ -134,7 +134,9 @@ describe("model summary from retained records", () => {
     } }]);
     expect(summary.regression).toEqual([]);
     const compact = mount(ModelSummaryCard, { props: { summary, compact: true } });
-    expect(compact.get(".model-summary__populations").text()).toContain("24 calibration");
+    expect(compact.get(".model-summary__populations").text()).toContain("24 fitted samples");
+    expect(compact.text()).not.toContain("Held-out evaluation: Not retained.");
+    expect(compact.find('.model-summary__pretreatment').exists()).toBe(false);
     expect(compact.get(".model-summary__populations").element.closest("details")).toBeNull();
     expect(compact.get(".model-summary__details").attributes("open")).toBeUndefined();
     const text = mount(ModelSummaryCard, { props: { summary } }).text();
@@ -230,6 +232,18 @@ describe("model summary card", () => {
     expect(card.get('[role="note"]').text()).toContain("no retained CV or test predictions");
     expect(card.get('[role="note"]').element.closest("details")).toBeNull();
     expect(card.get("table").element.closest("details")).toBe(details.element);
+  });
+  it('separates compact context from detailed metrics without hiding limitations', () => {
+    const summary = buildModelSummary(plsDefinition, null, [{ source: { nodeId: 'model_1', port: 'calibration_comparison', kind: 'regression_comparison' }, value: calibration }]);
+    const context = mount(ModelSummaryCard, { props: { summary, compact: true, display: 'context' } });
+    expect(context.text()).toContain('Calibration fit only; no retained CV or test predictions.');
+    expect(context.find('details').exists()).toBe(false);
+    expect(context.find('table').exists()).toBe(false);
+    const details = mount(ModelSummaryCard, { props: { summary, display: 'details' } });
+    expect(details.find('.model-summary__header').exists()).toBe(false);
+    expect(details.find('details').exists()).toBe(false);
+    expect(details.text()).toContain('RMSEC (units not declared) 0.2894');
+    expect(details.find('table').exists()).toBe(true);
   });
 
   it("keeps unavailable CV and effective component warnings outside collapsed details", () => {

@@ -67,6 +67,14 @@ Saved Models and Imported Models in the existing collapsible Panel component,
 without a second inner title or border. Use the same compact PrimeVue action
 buttons as History; panel grouping must not hide a selected model's detail or
 change scientific evidence, permission checks, pagination or export contents.
+Inspect links each produced artifact to its exact selection under Models;
+promotion review belongs to Models, not the run's inspection actions.
+Inspect navigation actions share the Runs header's Export row and responsive
+action menu. Summary, Results and Validation use independent collapsible Panels;
+section navigation does not change the identity or content of retained evidence.
+Keep compact fitted-population context and consequential limitations outside
+those sections. PCA uses "fitted samples", not a predictive calibration label;
+an empty upstream pretreatment chain says nothing about scaling inside the model.
 
 Descriptive source summaries can report finite coordinate bounds and recorded
 catalog bounds, with their origin and missing-coordinate counts. They do not

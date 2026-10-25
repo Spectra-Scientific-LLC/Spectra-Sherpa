@@ -147,6 +147,25 @@ describe("Runs workspace", () => {
       view.unmount();
     }
   });
+  it.each([true, false])("opens the exact artifact deep link, including beyond the current page: listed=%s", async listed => {
+    m.query = { tab: "models", project: "1", artifact: "requested-model" };
+    const requested = { project_id: 1, artifact_uid: "requested-model", name: "Requested PCA", model_type: "pca" };
+    m.get.mockImplementation(async (path: string) => {
+      if (path === "/models") return { data: listed ? [requested] : [] };
+      if (path === "/models/requested-model") return { data: requested };
+      return { data: {} };
+    });
+    const view = mountView(); await flushPromises();
+    (view.vm as any).localModelsCollapsed = true;
+    await (view.vm as any).applyArtifactDeepLink(); await flushPromises();
+    expect(view.findAll('[role="tab"]')[3].attributes('aria-selected')).toBe('true');
+    expect(view.findAllComponents({ name: "Panel" })[0].props('collapsed')).toBe(false);
+    expect((view.vm as any).selectedModel.artifact_uid).toBe('requested-model');
+    expect(view.get('#selected-model-detail').isVisible()).toBe(true);
+    expect((view.vm as any).selectedArtifactUids.size).toBe(0);
+    if (!listed) expect(m.get).toHaveBeenCalledWith('/models/requested-model');
+    view.unmount();
+  });
   it("keeps the latest saved-model overview selection when an earlier lookup resolves late", async () => {
     m.query.tab = "artifacts";
     let resolveFirst!: (value: {data: unknown}) => void;
@@ -168,6 +187,30 @@ describe("Runs workspace", () => {
     resolveFirst({data: {project_id: 1, artifact_uid: "model-a", name: "First model", model_type: "pca"}});
     await flushPromises();
     expect((view.vm as any).selectedModel?.artifact_uid).toBe("model-b");
+    view.unmount();
+  });
+  it('rejects a delayed artifact deep link after a manual selection and clears unrelated details on failure', async () => {
+    let finish!: (value: { data: unknown }) => void;
+    const delayed = new Promise<{ data: unknown }>(resolve => { finish = resolve; });
+    const chosen = { project_id: 1, artifact_uid: 'chosen', name: 'Chosen PCA', model_type: 'pca' };
+    m.query = { tab: 'models' };
+    m.get.mockImplementation(async (path: string) => {
+      if (path === '/models') return { data: [chosen] };
+      if (path === '/models/slow') return delayed;
+      if (path === '/models/missing') throw new Error('Model not found');
+      return { data: {} };
+    });
+    const view = mountView(); await flushPromises();
+    m.query.artifact = 'slow';
+    const pending = (view.vm as any).applyArtifactDeepLink();
+    await view.get('.object-row').trigger('click'); await flushPromises();
+    finish({ data: { project_id: 1, artifact_uid: 'slow', name: 'Old PCA', model_type: 'pca' } });
+    await pending; await flushPromises();
+    expect((view.vm as any).selectedModel.artifact_uid).toBe('chosen');
+    m.query.artifact = 'missing';
+    await (view.vm as any).applyArtifactDeepLink(); await flushPromises();
+    expect((view.vm as any).selectedModel).toBeNull();
+    expect(view.find('#selected-model-detail').exists()).toBe(false);
     view.unmount();
   });
   it("shows History loading, empty and failure through the shared state, and Retry reloads", async () => {

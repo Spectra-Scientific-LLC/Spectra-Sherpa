@@ -16,26 +16,18 @@
       </div>
       <p v-if="runNameError" role="alert">{{ runNameError }}</p>
     </header>
+    <Teleport :to="actionsTarget || 'body'" :disabled="!actionsTarget">
     <div class="run-detail__actions" role="group" aria-label="Run actions">
-      <Button icon="pi pi-arrow-left" label="History" class="p-button-text p-button-sm" aria-label="Back to Runs" @click="backToRuns" />
-      <Button v-if="detail?.run.workflow_id && detail.run.project_id && !loading && !error"
-        icon="pi pi-sitemap" label="Workflow" :title="detail.run.workflow_name || 'Source workflow'" :aria-label="detail.run.workflow_name ? `Workflow: ${detail.run.workflow_name}` : 'Workflow'" class="p-button-text p-button-sm" @click="openWorkflow" />
-      <Button v-if="detail?.run.workflow_id && !loading && !error" icon="pi pi-file" label="Report"
-        class="p-button-text p-button-sm"
-        @click="openReport" />
-      <Button v-if="detail?.run.status === 'completed' && detail.run.source_type !== 'paired_evaluation' && !loading && !error" icon="pi pi-send" label="Open Deploy"
-        class="p-button-text p-button-sm"
-        @click="router.push({ path: '/deploy', query: { run: detail.run.id, project: detail.run.project_id, application: `run:${detail.run.id}` } })" />
-      <template v-if="detail?.run.produced_artifact_uids?.length && !loading && !error">
-        <select v-if="detail.run.produced_artifact_uids.length > 1" v-model="promotionArtifactUid" class="p-inputtext p-inputtext-sm" aria-label="Fitted model for review">
-          <option value="">Choose a fitted model</option><option v-for="uid in detail.run.produced_artifact_uids" :key="uid" :value="uid">{{ uid }}</option>
+      <template v-for="action in headerActions" :key="action.label">
+        <select v-if="action.items?.length" v-model="producedArtifactUid" class="p-inputtext p-inputtext-sm" aria-label="Fitted model to open">
+          <option value="">Choose a fitted model</option><option v-for="item in action.items" :key="item.label" :value="item.label">{{ item.label }}</option>
         </select>
-        <Button label="Review for promotion" class="p-button-text p-button-sm" :disabled="detail.run.produced_artifact_uids.length > 1 && !promotionArtifactUid" @click="promotionArtifactUid = promotionArtifactUid || detail.run.produced_artifact_uids[0]; promotionOpen = true" />
+        <Button :label="action.label" :icon="action.icon" :title="action.title" :aria-label="action.ariaLabel || action.label" class="p-button-text p-button-sm" :disabled="action.disabled" @click="action.command?.()" />
       </template>
+    </div>
+    </Teleport>
       <ContextualActions :context="!loading && !error && detail && detail.run.project_id === project.currentProjectId && project.currentProjectId != null
         ? { surface: 'run', projectId: project.currentProjectId, runId: detail.run.id } : null" />
-    </div>
-    <ModelPromotionReview v-if="promotionOpen && promotionArtifactUid && detail" :artifact-uid="promotionArtifactUid" :project-id="detail.run.project_id" :workflow-id="detail.run.workflow_id" :run-id="detail.run.id" @close="promotionOpen = false" @confirmed="promotionOpen = false" />
     <WorkspaceState v-if="error" kind="error" variant="page" :message="error">
       <Button icon="pi pi-refresh" label="Retry" class="p-button-text p-button-sm" @click="loadRun()" />
     </WorkspaceState>
@@ -48,10 +40,18 @@
       <SavedPairedEvaluation v-if="detail.run.source_type === 'paired_evaluation'" :run-id="detail.run.id" />
       <template v-else>
       <p v-if="summaryError" role="status" class="summary-error">{{ summaryError }}</p>
-      <SelectButton :model-value="tab" :options="tabs" aria-label="Run view" @update:model-value="setTab" />
-      <ModelSummaryCard :summary="modelSummary" :compact="tab === 'Results'"
+      <ModelSummaryCard :summary="modelSummary" compact display="context"
         :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
-      <section v-if="tab === 'Summary'" class="summary">
+      <section class="inspection">
+        <aside aria-label="Saved run nodes">
+          <button v-for="node in nodes" :key="node.id" :aria-current="selectedNode === node.id ? 'true' : undefined" @click="selectNode(node.id)">
+            <span>{{ node.label }}</span><small>{{ detail.node_statuses[node.id] || 'Not recorded' }}</small>
+          </button>
+        </aside>
+        <div class="result">
+      <Panel header="Summary" toggleable :collapsed="!expandedSections.includes('Summary')" @update:collapsed="setSectionCollapsed('Summary', $event)">
+      <section v-if="expandedSections.includes('Summary')" class="summary">
+        <ModelSummaryCard :summary="modelSummary" display="details" :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
         <dl>
           <dt>Executed</dt><dd :title="detail.run.executed_at">{{ formatTimestamp(detail.run.executed_at) }}</dd>
           <dt>Recorded run name</dt><dd>{{ detail.run.name }}</dd>
@@ -156,20 +156,15 @@
           />
         </section>
       </section>
-      <section v-else class="inspection">
-        <aside aria-label="Saved run nodes">
-          <button v-for="node in nodes" :key="node.id" :aria-current="selectedNode === node.id ? 'true' : undefined" @click="selectNode(node.id)">
-            <span>{{ node.label }}</span><small>{{ detail.node_statuses[node.id] || 'Not recorded' }}</small>
-          </button>
-        </aside>
-        <div class="result">
+      </Panel>
+          <Panel header="Results" toggleable :collapsed="!expandedSections.includes('Results')" @update:collapsed="setSectionCollapsed('Results', $event)">
+          <template v-if="expandedSections.includes('Results')">
           <p v-if="!selectedNode">No node results were retained.</p>
           <ProgressSpinner v-else-if="nodeLoading" />
           <template v-else>
             <h2>{{ selectedDefinition?.label || selectedNode }}</h2>
             <p v-if="nodeFailure" role="alert">{{ nodeFailure }}</p>
             <p v-for="message in outputMessages" :key="message" role="status">{{ message }}</p>
-            <template v-if="tab === 'Results'">
               <section v-if="nodeTrust" class="application-trust" aria-label="Retained prediction trust">
                 <h3>Per-file prediction trust</h3>
                 <p>Fitted model artifact: {{ values.model_id }}</p>
@@ -210,7 +205,12 @@
                 <summary>Raw saved outputs (for audit)</summary>
                 <details v-for="(value, port) in values" :key="port" @toggle="rawOpen[port] = ($event.target as HTMLDetailsElement).open"><summary>{{ port }}</summary><pre v-if="rawOpen[port]">{{ JSON.stringify(value, null, 2) }}</pre></details>
               </details>
-            </template>
+          </template>
+          </template>
+          </Panel>
+          <Panel header="Validation" toggleable :collapsed="!expandedSections.includes('Validation')" @update:collapsed="setSectionCollapsed('Validation', $event)">
+            <template v-if="expandedSections.includes('Validation')">
+            <p v-if="nodeLoading" role="status">Loading validation…</p>
             <template v-else>
               <h3>Diagnostics</h3>
               <SavedValue v-if="diagnostics" :value="diagnostics" scientific />
@@ -224,7 +224,8 @@
               <SavedValue v-if="selectedDefinition" :value="selectedDefinition.parameters" />
               <p v-else>Authored parameters were not retained.</p>
             </template>
-          </template>
+            </template>
+          </Panel>
         </div>
       </section>
       </template>
@@ -234,12 +235,11 @@
 
 <script setup lang="ts">
 import SavedPairedEvaluation from "@/components/SavedPairedEvaluation.vue";
-import ModelPromotionReview from "@/components/ModelPromotionReview.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- saved node payloads use the shared scientific renderer contract. */
 import { computed, ref, shallowRef, watch, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Button from 'primevue/button';
-import SelectButton from 'primevue/selectbutton';
+import Panel from 'primevue/panel';
 import ProgressSpinner from 'primevue/progressspinner';
 import WorkspaceState from '@/components/workspace/WorkspaceState.vue';
 import Dropdown from 'primevue/dropdown';
@@ -325,10 +325,38 @@ const applicationAdvisorAvailable = computed(() => appMode.value !== 'local' &&
   appConfig.value?.advisorContextPolicy !== 'receipt' &&
   (isFeatureEnabled('sherpaAdvisor') || appConfig.value?.siteProfile === 'pro'));
 const emit = defineEmits<{ (event: 'renamed'): void }>();
+defineProps<{ actionsTarget?: HTMLElement | null }>();
 const detail = ref<Detail | null>(null);
-const promotionOpen = ref(false);
-const promotionArtifactUid = ref('');
-watch(() => detail.value?.run.id, () => { promotionOpen.value = false; promotionArtifactUid.value = ''; });
+const producedArtifactUid = ref('');
+watch(() => detail.value?.run.id, () => { producedArtifactUid.value = ''; });
+function openProducedModel() {
+  const run = detail.value?.run;
+  const artifacts = run?.produced_artifact_uids || [];
+  const uid = artifacts.length === 1 ? artifacts[0] : producedArtifactUid.value;
+  if (!run?.project_id || !artifacts.includes(uid)) return;
+  void router.push({ path: '/runs', query: { tab: 'models', project: run.project_id, artifact: uid } });
+}
+type RunAction = { label: string; icon?: string; title?: string; ariaLabel?: string; disabled?: boolean; command: () => void; items?: RunAction[] };
+const headerActions = computed<RunAction[]>(() => {
+  const actions: RunAction[] = [{ label: 'History', icon: 'pi pi-arrow-left', ariaLabel: 'Back to Runs', command: backToRuns }];
+  const run = detail.value?.run;
+  if (!run || loading.value || error.value) return actions;
+  if (run.workflow_id && run.project_id) actions.push({ label: 'Workflow', icon: 'pi pi-sitemap', title: run.workflow_name || 'Source workflow', ariaLabel: run.workflow_name ? `Workflow: ${run.workflow_name}` : 'Workflow', command: openWorkflow });
+  if (run.workflow_id) actions.push({ label: 'Report', icon: 'pi pi-file', command: openReport });
+  if (run.status === 'completed' && run.source_type !== 'paired_evaluation') actions.push({ label: 'Open Deploy', icon: 'pi pi-send', command: () => { void router.push({ path: '/deploy', query: { run: run.id, project: run.project_id, application: `run:${run.id}` } }); } });
+  const artifacts = run.produced_artifact_uids || [];
+  if (artifacts.length) actions.push({ label: 'Open model', disabled: !run.project_id || (artifacts.length > 1 && !producedArtifactUid.value), command: openProducedModel,
+    // Responsive menus preserve explicit selection when the inline chooser is hidden.
+    items: artifacts.length > 1 ? artifacts.map(uid => ({ label: uid, command: () => { producedArtifactUid.value = uid; openProducedModel(); } })) : undefined });
+  return actions;
+});
+const headerMenuActions = computed(() => headerActions.value.map(action => {
+  if (!action.items) return action;
+  // Opening a submenu is navigation between choices, not an artifact choice.
+  const { command: _command, ...submenu } = action;
+  return { ...submenu, disabled: !detail.value?.run.project_id };
+}));
+defineExpose({ headerActions: headerMenuActions });
 const runNameDraft = ref('');
 const runNameSaving = ref(false);
 const runNameError = ref('');
@@ -386,6 +414,12 @@ const outputMessages = ref<string[]>([]);
 const modelSummary = shallowRef<ModelSummary | null>(null);
 const summaryError = ref('');
 const tabs = ["Summary", "Results", "Validation"];
+const expandedSections = ref<string[]>([]);
+const inspectingNode = computed(() => expandedSections.value.includes('Results') || expandedSections.value.includes('Validation'));
+function setSectionCollapsed(section: string, collapsed: boolean) {
+  expandedSections.value = collapsed ? expandedSections.value.filter(name => name !== section) : [...new Set([...expandedSections.value, section])];
+  if (!collapsed) setTab(section);
+}
 const tab = computed(() => {
   if (tabs.includes(String(route.query.view))) return String(route.query.view);
   const nodeId = selectedNode.value || preferredNode.value || "";
@@ -476,7 +510,7 @@ function clearNodeEvidence() {
 const nodeRequests = useScopedRequest(
   // This lane loads all retained ports for the node. Presentation selection is
   // a projection of those records, not a new owner (and can resolve on arrival).
-  () => [...runIdentity(), selectedNode.value, tab.value],
+  () => [...runIdentity(), selectedNode.value],
   clearNodeEvidence,
 );
 const nameRequests = useScopedRequest(runIdentity, () => {
@@ -748,7 +782,7 @@ async function loadModelSummary(request: ScopedRequestTicket) {
 async function loadNode() {
   const request = nodeRequests.begin();
   clearNodeEvidence();
-  if (!detail.value || !selectedNode.value || tab.value === 'Summary') return;
+  if (!detail.value || !selectedNode.value || !inspectingNode.value) return;
   const id = selectedNode.value;
   nodeLoading.value = true;
   const messages: string[] = [];
@@ -795,7 +829,11 @@ watch([() => auth.user?.id, () => auth.sessionRevision], () => {
   if (auth.user && project.currentProjectId != null) void loadRun(false);
 });
 watch([() => route.params.runId, () => route.query.project], () => void loadRun(), { immediate: true });
-watch([selectedNode, tab], () => void loadNode());
+watch([() => detail.value?.run.id, tab], ([id, view], [previousId]) => {
+  if (id !== previousId || !tabs.includes(String(route.query.view))) expandedSections.value = [view];
+  else if (!expandedSections.value.includes(view)) expandedSections.value.push(view);
+}, { immediate: true });
+watch([selectedNode, inspectingNode], () => void loadNode());
 onBeforeUnmount(() => { runRequests.dispose(); nodeRequests.dispose(); nameRequests.dispose(); cache.clear(); });
 </script>
 
@@ -808,7 +846,7 @@ onBeforeUnmount(() => { runRequests.dispose(); nodeRequests.dispose(); nameReque
 .run-detail__name { background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: 4px; color: var(--text-color); font: inherit; font-size: 1.125rem; font-weight: 600; max-width: min(100%, 30rem); padding: .3rem .45rem; }
 .run-detail__name:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 .run-detail__identity > span:last-child { color: var(--text-color-secondary); }
-.run-detail__actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; padding: 0 0 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--surface-border); }
+.run-detail__actions { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
 .run-detail :deep(.p-button) { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .run-detail :deep(.p-selectbutton) { display: flex; flex-wrap: wrap; }
 h2 { font-size: 1.15rem; }
@@ -821,7 +859,7 @@ aside { border-right: 1px solid var(--surface-border); }
 aside button { display: flex; flex-direction: column; width: 100%; text-align: left; border: 0; background: transparent; padding: .65rem; color: inherit; cursor: pointer; overflow-wrap: anywhere; }
 aside button[aria-current] { background: var(--highlight-bg); color: var(--highlight-text-color); }
 small { opacity: .7; }
-.result { min-width: 0; }
+.result { min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto; font-size: .8rem; }
 details { border-top: 1px solid var(--surface-border); padding: .75rem 0; }
 .audit-details > summary { cursor: pointer; color: var(--text-color-secondary); font-size: .875rem; }

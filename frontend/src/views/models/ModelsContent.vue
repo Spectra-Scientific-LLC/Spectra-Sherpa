@@ -1,6 +1,7 @@
 <template>
   <section class="models-content">
     <WorkspaceHeader title="Runs" :actions="headerActionItems">
+      <span v-show="activeTab === TAB_INSPECT" ref="inspectActionsTarget" />
       <Button label="Export" icon="pi pi-download" class="p-button-text p-button-sm"
         :disabled="!canExportActiveTab" @click="exportActiveTab" />
     </WorkspaceHeader>
@@ -168,7 +169,7 @@
         </TabPanel>
 
         <TabPanel header="Inspect">
-          <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" @renamed="refreshRuns" />
+          <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" ref="inspectContent" :actions-target="inspectActionsTarget" @renamed="refreshRuns" />
           <WorkspaceState v-else kind="empty" variant="page" message="Choose a run in History.">
             <Button label="Open History" icon="pi pi-arrow-left" class="p-button-text" @click="activeTabId = 'run_history'" />
           </WorkspaceState>
@@ -582,7 +583,10 @@ watch(
   },
   { immediate: true },
 );
+const inspectActionsTarget = ref<HTMLElement | null>(null);
+const inspectContent = ref<InstanceType<typeof RunDetailContent> | null>(null);
 const headerActionItems = computed(() => [
+  ...(activeTab.value === TAB_INSPECT ? inspectContent.value?.headerActions || [] : []),
   {
     label: "Export",
     icon: "pi pi-download",
@@ -889,27 +893,13 @@ const selectedModelMetricRows = computed(() => {
 const route = useRoute();
 
 async function applyArtifactDeepLink(): Promise<void> {
+  ++overviewSelectionRequest;
   const target = route.query.artifact;
   const uid = typeof target === "string" && target.length > 0 ? target : null;
   if (!uid) return;
   activeTab.value = TAB_MODELS;
   persistActiveRunsTab();
-  const match = models.value.find((model) => model.artifact_uid === uid);
-  if (match) {
-    selectedModel.value = match;
-    selectedModelNameDraft.value = match.display_name || match.name;
-  } else {
-    const projectId = projectStore.currentProjectId;
-    try {
-      const response = await api.get<ModelSummary>(`/models/${encodeURIComponent(uid)}`);
-      if (projectId !== projectStore.currentProjectId || route.query.artifact !== uid) return;
-      if (response.data.project_id !== projectId) throw new Error("Model does not belong to this project.");
-      selectedModel.value = response.data;
-      selectedModelNameDraft.value = response.data.display_name || response.data.name;
-    } catch (err) {
-      if (projectId === projectStore.currentProjectId) error.value = getErrorMessage(err, "Model not found.");
-    }
-  }
+  await selectOverviewModel(uid);
 }
 
 function clearRouteQueryParam(name: string): void {
@@ -1378,6 +1368,9 @@ function toggleSelect(model: ModelSummary): void {
 async function selectOverviewModel(uid: string): Promise<void> {
   const request = ++overviewSelectionRequest;
   const projectId = projectStore.currentProjectId;
+  selectedModel.value = null;
+  selectedModelNameDraft.value = '';
+  if (projectId == null) return;
   const model = models.value.find(item => item.artifact_uid === uid);
   if (model) {
     localModelsCollapsed.value = false;
@@ -1390,7 +1383,7 @@ async function selectOverviewModel(uid: string): Promise<void> {
   try {
     const response = await api.get<ModelSummary>(`/models/${encodeURIComponent(uid)}`);
     if (request !== overviewSelectionRequest || projectId !== projectStore.currentProjectId) return;
-    if (response.data.project_id !== projectId) throw new Error('Model project changed');
+    if (response.data.project_id !== projectId || response.data.artifact_uid !== uid) throw new Error('Model identity changed');
     localModelsCollapsed.value = false;
     selectedModel.value = response.data;
     selectedModelNameDraft.value = response.data.display_name || response.data.name;
