@@ -9,6 +9,123 @@ afterEach(() => {
 });
 
 describe("PlateMap96Well", () => {
+  it("does not rerender 1536 cells on hover and retains focused details through scrolling", async () => {
+    const parentUpdated = vi.fn();
+    const wrapper = mount(PlateMap96Well, {
+      attachTo: document.body,
+      props: {
+        plateFormatId: "plate-1536",
+        interactive: true,
+          wells: [{ well_position: "AF48", label: "last sample", assigned: true }, { well_position:"A01",label:"first sample",assigned:true }],
+      },
+      global: {
+        mixins: [
+          {
+            updated() {
+              if (this.$options.__name === "PlateMap96Well") parentUpdated();
+            },
+          },
+        ],
+      },
+    });
+    const well = wrapper.get('[aria-label="last sample"]');
+    vi.spyOn(well.element,"getBoundingClientRect").mockReturnValue(new DOMRect(40,40,64,64));
+    vi.spyOn(wrapper.get('.plate-viewport').element,"getBoundingClientRect").mockReturnValue(new DOMRect(0,0,500,500));
+    await well.trigger("mouseenter");
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain("AF48");
+    expect(parentUpdated).not.toHaveBeenCalled();
+    await well.trigger("mouseleave");
+    (well.element as HTMLElement).focus();
+    await wrapper.vm.$nextTick();
+    await wrapper.get('[aria-label="first sample"]').trigger("mouseenter");
+    await wrapper.get(".plate-viewport").trigger("scroll");
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain("AF48");
+    expect(parentUpdated).not.toHaveBeenCalled();
+    await wrapper.setProps({ selectedWell: "AF48" });
+    expect(parentUpdated).toHaveBeenCalled();
+    (well.element as HTMLElement).blur();
+    await wrapper.vm.$nextTick();
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    wrapper.unmount();
+  });
+  it.each([
+    [6, "B03"],
+    [12, "C04"],
+    [24, "D06"],
+    [48, "F08"],
+    [96, "H12"],
+    [384, "P24"],
+    [1536, "AF48"],
+  ])("renders every well of a %s-well format", (capacity, last) => {
+    const wrapper = mount(PlateMap96Well, {
+      props: { wells: [], plateFormatId: `plate-${capacity}`, interactive: true },
+    });
+    expect(wrapper.findAll(".well")).toHaveLength(Number(capacity));
+    expect(wrapper.find(`[aria-label="${last}"]`).exists()).toBe(true);
+    expect(wrapper.get(".plate-viewport").attributes("tabindex")).toBe("-1");
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it("uses one tab stop and arrow/Home/End navigation across a 1536-well plate", async () => {
+    const wrapper = mount(PlateMap96Well, { attachTo: document.body,
+      props: { wells: [], plateFormatId: "plate-1536", interactive: true } });
+    const first = wrapper.get('[aria-label="A01"]');
+    (first.element as HTMLElement).focus();
+    await first.trigger("keydown", { key: "ArrowDown" });
+    expect(document.activeElement).toBe(wrapper.get('[aria-label="B01"]').element);
+    await wrapper.get('[aria-label="B01"]').trigger("keydown", { key: "End", ctrlKey: true });
+    const last = wrapper.get('[aria-label="AF48"]');
+    expect(document.activeElement).toBe(last.element);
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(1);
+    await last.trigger("keydown", { key: "Enter" });
+    expect(wrapper.emitted("well-click")).toEqual([["AF48"]]);
+    await last.trigger("keydown", { key: "Home", ctrlKey: true });
+    expect(document.activeElement).toBe(first.element);
+    wrapper.unmount();
+  });
+
+  it("reconciles the roving tab stop after format, selection and assignment changes", async () => {
+    const wrapper = mount(PlateMap96Well, { attachTo: document.body,
+      props: { wells: [], plateFormatId: "plate-1536", interactive: true } });
+    (wrapper.get('[aria-label="AF48"]').element as HTMLElement).focus();
+    await wrapper.setProps({ plateFormatId: "plate-96" });
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(1);
+    const first = wrapper.get('[aria-label="A01"]');
+    (first.element as HTMLElement).focus();
+    await first.trigger("keydown", { key: "ArrowDown" });
+    await wrapper.setProps({ selectedWell: "C01" });
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(1);
+    await wrapper.setProps({ interactive: false, wells: [] });
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(0);
+    expect(wrapper.get(".plate-viewport").attributes("tabindex")).toBe("0");
+    (wrapper.get('[aria-label="A01"]').element as HTMLElement).focus();
+    expect(wrapper.findAll('.well[tabindex="0"]')).toHaveLength(0);
+    expect(wrapper.get(".plate-viewport").attributes("tabindex")).toBe("0");
+    wrapper.unmount();
+  });
+
+  it("dismisses a tooltip on pan and resets the viewport on a format change", async () => {
+    const wrapper = mount(PlateMap96Well, {
+      attachTo: document.body,
+      props: {
+        plateFormatId: "plate-1536",
+        wells: [{ well_position: "AF48", label: "last sample", assigned: true }],
+      },
+    });
+    await wrapper.get('[aria-label="last sample"]').trigger("focus");
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain("AF48");
+    const viewport = wrapper.get(".plate-viewport");
+    await viewport.trigger("scroll");
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    (viewport.element as HTMLElement).scrollTop = 800;
+    (viewport.element as HTMLElement).scrollLeft = 1200;
+    await wrapper.setProps({ plateFormatId: "plate-6" });
+    expect((viewport.element as HTMLElement).scrollTop).toBe(0);
+    expect((viewport.element as HTMLElement).scrollLeft).toBe(0);
+    expect(wrapper.findAll(".well")).toHaveLength(6);
+    wrapper.unmount();
+  });
   it("shows structured sample-table properties beside an assigned well", async () => {
     const wrapper = mount(PlateMap96Well, {
       attachTo: document.body,

@@ -11,7 +11,8 @@
         @click="startAnalysisFlow"
       />
       <ProjectImportAction ref="projectImportAction" />
-      <Button label="Project" icon="pi pi-arrow-right" iconPos="right"
+      <Button
+label="Project" icon="pi pi-arrow-right" iconPos="right"
         class="p-button-text p-button-sm" @click="router.push('/project')" />
     </WorkspaceHeader>
 
@@ -23,11 +24,9 @@
       />
       <WorkspaceContextItem
         v-else
-        :label="activeDashboardTab === 'storage' ? 'Storage' : activeDashboardTab === 'archive' ? 'Archive' : 'Your Project'"
+        :label="activeDashboardTab === 'archive' ? 'Archive' : 'Your Project'"
         :value="
-          activeDashboardTab === 'storage'
-            ? 'Across your projects'
-            : activeDashboardTab === 'archive'
+          activeDashboardTab === 'archive'
               ? `${projectStore.archivedProjects.length} archived projects`
               : projectStore.currentProject?.name || 'Choose a project'
         "
@@ -51,7 +50,7 @@
 
     <WorkspaceTabs
       :model-value="activeDashboardTab"
-      :tab-ids="['starter', 'projects', 'archive', 'storage']"
+      :tab-ids="['starter', 'projects', 'archive']"
       @update:model-value="selectDashboardTab"
     >
       <TabPanel header="Starter">
@@ -82,7 +81,8 @@
             >
               <div class="project-card-head">
                 <div class="title-stack">
-                  <button type="button" class="project-open"
+                  <button
+type="button" class="project-open"
                     :aria-label="`${project.id === projectStore.currentProjectId ? 'Open' : 'Select'} project ${project.name}`"
                     @click="selectProject(project)">{{ project.name }}</button>
                   <Tag
@@ -170,17 +170,6 @@
           </div>
         </div>
       </TabPanel>
-      <TabPanel header="Storage">
-        <section
-          id="storage"
-          ref="storageSection"
-          class="projects-section"
-          aria-label="Storage"
-          tabindex="-1"
-        >
-          <RetainedStorageRecovery />
-        </section>
-      </TabPanel>
     </WorkspaceTabs>
 
     <Dialog
@@ -204,7 +193,8 @@
           />
           <div v-if="selectedDatasetNeedsImport" class="dataset-import-notice" role="status">
             <span>Needs file import. Starting creates a project; import the provider file before running.</span>
-            <Button label="Data → Import" icon="pi pi-upload" class="p-button-text p-button-sm"
+            <Button
+label="Data → Import" icon="pi pi-upload" class="p-button-text p-button-sm"
               :disabled="isStartingAnalysis" @click="startBlankProject" />
           </div>
         </div>
@@ -289,7 +279,7 @@
 
 <script setup lang="ts">
 import RelativeTime from "@/components/RelativeTime.vue";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
@@ -299,7 +289,6 @@ import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import TabPanel from "primevue/tabpanel";
-import RetainedStorageRecovery from "@/components/RetainedStorageRecovery.vue";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import Dropdown from "primevue/dropdown";
@@ -313,6 +302,7 @@ import StarterPanel from "@/views/dashboard/StarterPanel.vue";
 import type { StarterOverview, StarterStartRequest } from "@/lib/starterAdapter";
 import type { ReferenceDatasetOption } from "@/stores/workflow-types";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { legacyStorageRedirect } from "@/router/storageRedirect";
 
 const DATA_ENTRY_MODE_KEY = "sherpa:data-entry-mode";
 const DATA_ENTRY_PROJECT_KEY = "sherpa:data-entry-project-id";
@@ -320,26 +310,26 @@ const DATA_ENTRY_DATASET_KEY = "sherpa:data-entry-dataset-intent";
 
 const router = useRouter();
 const route = useRoute();
-const storageSection = ref<HTMLElement | null>(null);
-const DASHBOARD_HASH_TABS: Record<string, string> = { "#starter": "starter", "#archive": "archive", "#storage": "storage" };
+const DASHBOARD_HASH_TABS: Record<string, string> = { "#starter": "starter", "#archive": "archive" };
 const dashboardTabFromHash = () => DASHBOARD_HASH_TABS[route.hash] ?? "projects";
 const activeDashboardTab = ref(dashboardTabFromHash());
 function selectDashboardTab(tab: string): void {
   activeDashboardTab.value = tab;
   void router.replace({ hash: tab === "projects" ? "" : `#${tab}` });
 }
-async function revealStorage(): Promise<void> {
+async function syncDashboardRoute(): Promise<void> {
+  // Preserve bookmarks without keeping a second Storage surface.
+  const destination = legacyStorageRedirect(route);
+  if (destination) {
+    await router.replace(destination);
+    return;
+  }
   activeDashboardTab.value = dashboardTabFromHash();
-  if (activeDashboardTab.value !== "storage") return;
-  await nextTick();
-  // The workspace scrolls inside .content, not window (Vue Router's target).
-  storageSection.value?.scrollIntoView({ block: "start" });
-  storageSection.value?.focus({ preventScroll: true });
 }
 watch(
-  () => route.hash,
-  () => void revealStorage(),
-  { flush: "post" },
+  () => [route.hash, route.query?.tab],
+  () => void syncDashboardRoute(),
+  { flush: "post", immediate: true },
 );
 const toast = useToast();
 const projectStore = useProjectStore();
@@ -435,7 +425,6 @@ onMounted(async () => {
     workflowStore.fetchTemplates(undefined, true),
     workflowStore.fetchCompatibilityMatrix(),
   ]);
-  await revealStorage();
 });
 
 // The Starter checklist follows the active project once it carries a plan.

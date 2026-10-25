@@ -89,11 +89,11 @@ def _validate_plate_well_coordinates(
     """Validate and normalize one unambiguous physical plate assignment."""
 
     normalized_wells = ["" if well is None else str(well).strip().upper() for well in well_values]
-    assigned_wells = [well for well in normalized_wells if well]
     if format_values is None:
-        plate_format = (
-            infer_legacy_plate_format(assigned_wells) if assigned_wells else get_plate_format(DEFAULT_PLATE_FORMAT_ID)
-        )
+        try:
+            plate_format = infer_legacy_plate_format(normalized_wells)
+        except ValueError as exc:
+            raise ValueError(f"{row_prefix}: {exc}") from exc
         normalized_formats = [plate_format.id] * len(normalized_wells)
     else:
         normalized_formats = ["" if value is None else str(value).strip() for value in format_values]

@@ -2,12 +2,12 @@
   <section class="model-overview" aria-label="Saved model comparison">
     <header>
       <div>
-        <h3>Saved models <MethodHelp topic="qualification" label="Validation and analytical qualification" /></h3>
+        <MethodHelp topic="qualification" label="Validation and analytical qualification" />
       </div>
-      <button type="button" :disabled="loading || !rows.length" @click="exportRows">Export this page's evidence</button>
+      <Button label="Export this page's evidence" icon="pi pi-download" class="p-button-text p-button-sm" :disabled="loading || !rows.length" @click="exportRows" />
     </header>
     <p v-if="loading" role="status">Reading saved-model evidence…</p>
-    <p v-else-if="error" role="alert">{{ error }} <button type="button" @click="load">Retry</button></p>
+    <p v-else-if="error" role="alert">{{ error }} <Button label="Retry" class="p-button-text p-button-sm" @click="load" /></p>
     <p v-else-if="!rows.length">{{ offset ? 'No more saved models on this page. Go to the previous page.' : 'No saved models in this project.' }}</p>
     <div v-else class="model-overview__scroll">
       <table>
@@ -25,9 +25,9 @@
         <tbody>
           <tr v-for="row in rows" :key="row.artifact_uid">
             <th scope="row">
-              <button type="button" :aria-label="`Open saved model ${row.name}, ${row.artifact_uid}`" @click="emit('select', row.artifact_uid)">{{ row.name }}</button>
+              <Button :label="row.name" class="p-button-link p-button-sm" :aria-label="`Open saved model ${row.name}, ${row.artifact_uid}`" @click="emit('select', row.artifact_uid)" />
               <small>{{ row.model_type }}</small>
-              <button type="button" :aria-label="`Export evidence dossier for ${row.name}, ${row.artifact_uid}`" @click="exportModel(row)">Export dossier</button>
+              <Button label="Export dossier" class="p-button-text p-button-sm" :aria-label="`Export evidence dossier for ${row.name}, ${row.artifact_uid}`" @click="exportModel(row)" />
             </th>
             <td>{{ target(row) }}</td>
             <td>{{ row.training_dataset_id == null ? 'Source unavailable' : `Dataset #${row.training_dataset_id}` }}</td>
@@ -70,9 +70,9 @@
       Rows outside a named group cannot be ranked. Open PCA, PLS, or PLS-DA models for retained diagnostics and Ask Sherpa where available.
     </p>
     <div v-if="rows.length || offset > 0" class="model-overview__paging">
-      <button type="button" :disabled="offset === 0 || loading" @click="offset = Math.max(0, offset - pageSize)">Previous</button>
+      <Button label="Previous" class="p-button-text p-button-sm" :disabled="offset === 0 || loading" @click="offset = Math.max(0, offset - pageSize)" />
       <span>{{ rows.length ? `Rows ${offset + 1}–${offset + rows.length}` : 'No rows on this page' }}</span>
-      <button type="button" :disabled="rows.length < pageSize || loading" @click="offset += pageSize">Next</button>
+      <Button label="Next" class="p-button-text p-button-sm" :disabled="rows.length < pageSize || loading" @click="offset += pageSize" />
     </div>
   </section>
 </template>
@@ -80,6 +80,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import api from '@/api/client';
+import Button from 'primevue/button';
 import MethodHelp from '@/components/MethodHelp.vue';
 import { downloadJson } from '@/utils/download';
 
@@ -196,9 +197,8 @@ function exportModel(row: Row): void {
 </script>
 
 <style scoped>
-.model-overview { border: 1px solid var(--surface-border); border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+.model-overview { min-width: 0; }
 .model-overview header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
-.model-overview h3 { margin: 0; font-size: 1.1rem; }
 .model-overview p { color: var(--text-color-secondary); margin: .35rem 0; }
 .model-overview__scroll { overflow-x: auto; max-width: 100%; }
 .model-overview table { border-collapse: collapse; font-size: .86rem; min-width: 1450px; width: 100%; }

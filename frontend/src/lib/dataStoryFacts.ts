@@ -1,6 +1,8 @@
+import { summarizeDatasetAxis } from "@/utils/datasetAxisSets";
+
 type StoryFacts = Record<string, unknown>;
 const MAX_FACTS_CHARS = 12_000;
-const OMIT_FIELD = /^(data|target|raw.*|.*(?:_path|Path)|path|.*(?:api_?key|secret|token|password|credential|authorization)|.*_matrix|.*_spectra)$/i;
+const OMIT_FIELD = /^(data|target|recipe|synthetic\.metadata|ground_truth(?:[._].*)?|raw.*|.*(?:_path|Path)|path|.*(?:api_?key|secret|token|password|credential|authorization)|.*_matrix|.*_spectra)$/i;
 const USER_CHOICE_FIELD = /^(?:selection|selected(?:_|$)|active(?:_|$)|current(?:_|$)|preview(?:_|$)|include(?:_|$)|included(?:_|$)|exclude(?:_|$)|excluded(?:_|$)|inclusion(?:_|$)|exclusion(?:_|$)|sample_(?:mask|inclusion|exclusion)(?:_|$)|dataset_view(?:_|$)|data_portfolio(?:_|$)|curation(?:_|$)|user_filter(?:_|$))/i;
 const isSourceFact = (key: string): boolean => !OMIT_FIELD.test(key) && !USER_CHOICE_FIELD.test(key);
 
@@ -192,15 +194,11 @@ function acquisitionSummary(metadata: StoryFacts): StoryFacts | null {
 /** Shared parsed facts for BYOK and hosted narration; transport adds no projection. */
 export function buildDataStoryFacts(dataset: StoryFacts): StoryFacts {
   const axis = object(dataset.x_axis);
-  const axisData = Array.isArray(axis.data) ? axis.data.filter((v): v is number =>
-    typeof v === "number" && Number.isFinite(v)) : [];
-  let axisMin = Infinity;
-  let axisMax = -Infinity;
-  for (const value of axisData) {
-    axisMin = Math.min(axisMin, value);
-    axisMax = Math.max(axisMax, value);
-  }
+  const axisSummary = summarizeDatasetAxis(dataset.x_axis, {
+    min: axis.min ?? dataset.wavelength_min, max: axis.max ?? dataset.wavelength_max,
+  });
   const metadata = object(dataset.metadata);
+  const extra = object(dataset.extra);
   const domain = object(dataset.domain);
   const sampleAxis = object(dataset.sample_axis);
   const yAxis = object(dataset.y_axis);
@@ -223,15 +221,14 @@ export function buildDataStoryFacts(dataset: StoryFacts): StoryFacts {
     units: shortText(dataset.units),
     data_role: shortText(dataset.data_role),
     signal: signalSummary(dataset.data),
-    x_axis: { ...object(bounded(axis)), count: axisData.length,
-      min: axisData.length ? axisMin : dataset.wavelength_min ?? null,
-      max: axisData.length ? axisMax : dataset.wavelength_max ?? null },
+    x_axis: { ...object(bounded(axis)), ...axisSummary, units: shortText(axisSummary.units ?? metadata.x_units) },
     y_axis: bounded(yAxisWithoutRows),
     sample_axis: bounded(sampleAxisWithoutRows),
     sample_metadata_columns: sampleTableSummary(axisWithTable),
     inner_axes: bounded(dataset.inner_axes),
     domain: bounded(domain),
     acquisition: acquisitionSummary(metadata),
+    synthesis: synthesisSummary(extra, metadata),
     target_context: bounded(dataset.target_context),
     target_distribution: targetSummary(dataset.target, object(dataset.target_context).target_names ?? dataset.target_names),
     targets: shortNames(dataset.target_names),
@@ -260,6 +257,43 @@ export function buildDataStoryFacts(dataset: StoryFacts): StoryFacts {
   }
   if (!omitted.length) delete facts.omitted_for_input_limit;
   return facts;
+}
+
+/** Narrate the saved recipe, never infer synthetic origin from a title or target. */
+function synthesisSummary(extra: StoryFacts, metadata: StoryFacts): StoryFacts | null {
+  // The NumPy ingestion authority retains these in extra; API compatibility
+  // metadata may mirror them. Do not depend on that optional mirror.
+  const embedded = object(extra["synthetic.metadata"] ?? metadata["synthetic.metadata"]);
+  const origin = embedded.source ?? metadata.source;
+  if (origin !== "synthesis" && origin !== "synthetic_reference") return null;
+  const recipe = object(extra.recipe ?? metadata.recipe);
+  const settings = object(recipe.settings);
+  const components = Array.isArray(recipe.components) ? recipe.components : [];
+  const scalarFields = (record: StoryFacts, numeric: string[], text: string[]): StoryFacts =>
+    Object.fromEntries([
+      ...numeric.filter(key => typeof record[key] === "number" && Number.isFinite(record[key]))
+        .map(key => [key, record[key]]),
+      ...text.filter(key => shortText(record[key], 80) !== null)
+        .map(key => [key, shortText(record[key], 80)]),
+    ]);
+  return {
+    origin: "synthetic",
+    source: shortText(embedded.synthesis_source ?? metadata.synthesis_source),
+    settings: scalarFields(settings, ["n_samples", "pathlength_cm", "temperature_k", "pressure_atm",
+      "noise_sigma_au", "snap_tolerance_cm1", "seed", "resolution_cm1"], ["source", "range_mode", "apodization"]),
+    component_count: components.length,
+    components: components.slice(0, 16).map(value => {
+      const component = object(value);
+      return {
+        name: shortText(component.name, 80), source: shortText(component.source, 80),
+        spectrum_units: shortText(component.spectrum_units, 80),
+        concentration_max_ppm: typeof component.concentration_max_ppm === "number" &&
+          Number.isFinite(component.concentration_max_ppm) ? component.concentration_max_ppm : null,
+      };
+    }),
+    omitted_components: Math.max(0, components.length - 16),
+    wavenumber: scalarFields(object(recipe.wavenumber), ["min", "max", "n_points"], ["units"]),
+  };
 }
 
 export function buildDataStoryContext(dataset: StoryFacts) {

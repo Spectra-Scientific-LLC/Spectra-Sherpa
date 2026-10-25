@@ -1,30 +1,5 @@
 <template>
   <section class="multi-well" aria-label="Multi-well acquisition plan">
-    <header class="plan-header">
-      <div>
-        <span>{{ planStatus }}</span>
-      </div>
-      <div class="actions">
-        <Button
-          icon="pi pi-refresh"
-          class="p-button-text p-button-sm"
-          aria-label="Reload acquisition plan"
-          :loading="loading"
-          :disabled="experimentId == null"
-          @click="loadPlan"
-        />
-        <Button
-          v-if="canAuthor"
-          label="Save acquisition plan"
-          icon="pi pi-check"
-          class="p-button-sm"
-          :loading="saving"
-          :disabled="experimentId == null || loading || !dirty"
-          @click="savePlan"
-        />
-      </div>
-    </header>
-
     <div class="plan-controls">
       <div class="field">
         <label for="acquisition-dataset">Dataset</label>
@@ -39,21 +14,18 @@
         />
       </div>
       <div class="field">
-        <label for="acquisition-format">Default plate format</label>
+        <label for="acquisition-format">Plate format</label>
         <Dropdown
           id="acquisition-format"
-          :model-value="plateFormat.id"
+          v-model="preferredFormatId"
           :options="formatOptions"
           option-label="label"
           option-value="value"
-          disabled
+          option-disabled="disabled"
+          :disabled="!canAuthor || loading || !planLoaded"
         />
       </div>
       <dl class="plan-facts">
-        <div>
-          <dt>Planned wells</dt>
-          <dd>{{ draft.wells.length }}/{{ plateFormat.capacity }}</dd>
-        </div>
         <div>
           <dt>Measured rows changed</dt>
           <dd>{{ measuredDifferenceCount }}</dd>
@@ -228,7 +200,7 @@
           </div>
           <div v-if="canAuthor" class="actions">
             <Button
-              label="Fill 96 wells"
+              :label="`Fill ${plateFormat.capacity} wells`"
               icon="pi pi-th-large"
               class="p-button-sm p-button-outlined"
               @click="fillPlate"
@@ -244,6 +216,7 @@
         </div>
         <p>Select wells and assign samples or mixtures.</p>
         <PlateMap96Well
+          :plate-format-id="plateFormat.id"
           :wells="displayWells"
           :selected-well="selectedWell"
           :interactive="canAuthor"
@@ -403,6 +376,15 @@
         </div>
       </section>
     </div>
+    <Button
+      v-if="canAuthor && dirty"
+      label="Save acquisition plan"
+      icon="pi pi-check"
+      class="p-button-sm plan-save"
+      :loading="saving"
+      :disabled="!planLoaded || loading || Boolean(planFormatError)"
+      @click="savePlan"
+    />
   </section>
 </template>
 
@@ -422,9 +404,9 @@ import {
   defaultPlateFormatId,
   formatWell,
   getPlateFormat,
-  plateFormats,
+  plateWellFormatAdmissions,
 } from "@/utils/plateFormats";
-import { proposeMeasuredSamples, type SampleTableRow } from "@/utils/sampleTable";
+import { acquisitionProposalState, proposeMeasuredSamples, type SampleTableRow } from "@/utils/sampleTable";
 import { getErrorMessage } from "@/utils/errors";
 import type {
   AcquisitionOrderStep,
@@ -462,15 +444,26 @@ const toast = useToast();
 const { isCapabilityDisabled } = useAppConfig();
 const preferredFormatId = ref(defaultPlateFormatId);
 const plateFormat = computed(() => getPlateFormat(preferredFormatId.value));
-const formatOptions = plateFormats.map((format) => ({ label: format.label, value: format.id }));
+const formatAdmissions = computed(() => plateWellFormatAdmissions([
+  ...draft.value.wells.map(well => well.well_position),
+  ...(draft.value.matching.matches ?? []).map(match => match.well_position ?? ""),
+ ]));
+const formatOptions = computed(() => formatAdmissions.value.map(({ format, error }) => ({
+  label: format.label, value: format.id,
+  disabled: format.id !== preferredFormatId.value && Boolean(error),
+})));
+const planFormatError = computed(() => formatAdmissions.value.find(
+  item => item.format.id === preferredFormatId.value)?.error ?? null);
 const loading = ref(false);
 const saving = ref(false);
 const loadError = ref<string | null>(null);
 const saveError = ref<string | null>(null);
 const revision = ref("");
+const planLoaded = ref(false);
 const baseline = ref("");
 const selectedWell = ref<string | null>(null);
 const measuredRows = ref<SampleTableRow[]>([]);
+const measuredFormatId = ref(defaultPlateFormatId);
 const measuredLoading = ref(false);
 const measuredAvailable = ref(false);
 const presets = ref<AcquisitionPreset[]>([]);
@@ -488,9 +481,10 @@ const blankDraft = () => ({
   },
 });
 const draft = ref(blankDraft());
+watch(preferredFormatId, () => { selectedWell.value = null; });
 const canAuthor = computed(() => !isCapabilityDisabled("sample_table_authoring"));
-const serializedDraft = computed(() => JSON.stringify(draft.value));
-const dirty = computed(() => baseline.value !== serializedDraft.value);
+const serializedDraft = computed(() => JSON.stringify({ plate_format_id: preferredFormatId.value, ...draft.value }));
+const dirty = computed(() => planLoaded.value && baseline.value !== serializedDraft.value);
 const sampleOptions = computed(() =>
   draft.value.samples.map((item) => ({
     label: `${item.sample_id}${item.name ? ` — ${item.name}` : ""}`,
@@ -538,16 +532,18 @@ const displayWells = computed(() =>
 const planForProposal = computed<AcquisitionPlan>(() => ({
   schema_version: "spectrasherpa-acquisition-plan/3",
   experiment_id: props.experimentId ?? 0,
-  plate_format_id: "plate-96",
+  plate_format_id: plateFormat.value.id as AcquisitionPlan["plate_format_id"],
   plate_format_label: plateFormat.value.label,
   capacity: plateFormat.value.capacity,
   revision: revision.value,
   ...draft.value,
 }));
 const measuredProposal = computed(() =>
-  proposeMeasuredSamples(measuredRows.value, planForProposal.value),
+  proposeMeasuredSamples(measuredRows.value, planForProposal.value, measuredFormatId.value),
 );
-const measuredDifferenceCount = computed(() => measuredProposal.value.differences.length);
+const measuredSync = computed(() => acquisitionProposalState(
+  measuredAvailable.value && draft.value.wells.length ? measuredProposal.value : null));
+const measuredDifferenceCount = computed(() => measuredSync.value.changeCount);
 const syncLabel = computed(() =>
   measuredLoading.value
     ? "Checking measured samples"
@@ -555,12 +551,12 @@ const syncLabel = computed(() =>
       ? "No measured source selected"
       : !measuredAvailable.value
         ? "No published measured-sample version"
-        : measuredDifferenceCount.value
-          ? "Publication needed"
-          : "Plan and measured samples synchronized",
+        : !draft.value.wells.length
+          ? "No planned wells"
+        : measuredSync.value.label,
 );
 const syncSeverity = computed(() =>
-  measuredDifferenceCount.value || (props.sourceFileId && !measuredAvailable.value)
+  !draft.value.wells.length ? "secondary" : measuredSync.value.refusal || measuredDifferenceCount.value || (props.sourceFileId && !measuredAvailable.value)
     ? "warning"
     : props.sourceFileId
       ? "success"
@@ -571,6 +567,10 @@ const syncDetail = computed(() =>
     ? "Select a source file in My Dataset to preview synchronization."
     : !measuredAvailable.value
       ? "Open Measured samples in My Dataset to review and publish the first immutable version."
+      : !draft.value.wells.length
+        ? ""
+      : measuredSync.value.refusal
+        ? measuredSync.value.refusal
       : measuredDifferenceCount.value
         ? `${measuredDifferenceCount.value} proposed field changes are waiting for review in My Dataset.`
         : `${measuredProposal.value.status.matched}/${measuredProposal.value.status.planned} planned wells match the published measured-sample version.`,
@@ -580,10 +580,11 @@ const planStatus = computed(() =>
     ? "No dataset selected"
     : loading.value
       ? `Loading ${props.experimentName || "dataset"}`
-      : dirty.value
-        ? "Unsaved changes"
-        : `${draft.value.wells.length} wells saved`,
+      : loadError.value
+        ? "Plan unavailable"
+      : `${draft.value.wells.length} ${draft.value.wells.length === 1 ? "well" : "wells"} configured${dirty.value ? " · Unsaved changes" : ""}`,
 );
+defineExpose({ summary: planStatus });
 
 function clonePlan(data: AcquisitionPlan) {
   return JSON.parse(
@@ -733,6 +734,7 @@ function selectExperiment(id: number | null): void {
 
 async function loadMeasuredRows(): Promise<void> {
   measuredRows.value = [];
+  measuredFormatId.value = defaultPlateFormatId;
   measuredAvailable.value = false;
   if (!props.sourceFileId) return;
   measuredLoading.value = true;
@@ -740,6 +742,7 @@ async function loadMeasuredRows(): Promise<void> {
     const { data } = await api.get<MeasuredSampleTableEditor>(
       `/builder/analysis-binding/${props.sourceFileId}`,
     );
+    measuredFormatId.value = data.plate_format_id ?? defaultPlateFormatId;
     measuredRows.value = data.rows.map((row) => ({
       ...row,
       targets: { ...row.targets },
@@ -755,8 +758,10 @@ async function loadMeasuredRows(): Promise<void> {
 async function loadPlan(): Promise<void> {
   const experimentId = props.experimentId;
   const token = ++requestToken;
+  planLoaded.value = false;
+  loading.value = false;
   draft.value = blankDraft();
-  baseline.value = JSON.stringify(draft.value);
+  baseline.value = serializedDraft.value;
   revision.value = "";
   selectedWell.value = null;
   loadError.value = null;
@@ -764,21 +769,18 @@ async function loadPlan(): Promise<void> {
   if (experimentId == null) return;
   loading.value = true;
   try {
-    const [{ data }, presetResponse, preferenceResponse] = await Promise.all([
+    const [{ data }, presetResponse] = await Promise.all([
       api.get<AcquisitionPlan>(`/experiments/${experimentId}/acquisition-plan`),
       api
         .get<AcquisitionPreset[]>("/acquisition-preferences/presets")
         .catch(() => ({ data: [] as AcquisitionPreset[] })),
-      api
-        .get<{ default_plate_format_id: string }>("/acquisition-preferences")
-        .catch(() => ({ data: { default_plate_format_id: defaultPlateFormatId } })),
     ]);
     if (token === requestToken) {
-      preferredFormatId.value = preferenceResponse.data.default_plate_format_id;
-      preferredFormatId.value = data.plate_format_id || preferredFormatId.value;
+      preferredFormatId.value = data.plate_format_id;
       draft.value = clonePlan(data);
       revision.value = data.revision;
-      baseline.value = JSON.stringify(draft.value);
+      baseline.value = serializedDraft.value;
+      planLoaded.value = true;
       presets.value = presetResponse.data;
       await loadMeasuredRows();
     }
@@ -789,17 +791,29 @@ async function loadPlan(): Promise<void> {
   }
 }
 async function savePlan(): Promise<void> {
-  if (props.experimentId == null || !canAuthor.value) return;
+  if (props.experimentId == null || !planLoaded.value || loading.value || !canAuthor.value || saving.value) return;
+  if (planFormatError.value) {
+    saveError.value = planFormatError.value;
+    return;
+  }
+  const experimentId = props.experimentId;
+  const token = requestToken;
+  const submitted = serializedDraft.value;
   saving.value = true;
   saveError.value = null;
   try {
     const { data } = await api.put<AcquisitionPlan>(
-      `/experiments/${props.experimentId}/acquisition-plan`,
-      { plate_format_id: plateFormat.value.id, expected_revision: revision.value, ...draft.value },
+      `/experiments/${experimentId}/acquisition-plan`,
+      { ...JSON.parse(submitted), expected_revision: revision.value },
     );
-    draft.value = clonePlan(data);
+    if (token !== requestToken) return;
+    const savedDraft = clonePlan(data);
+    if (serializedDraft.value === submitted) {
+      preferredFormatId.value = data.plate_format_id;
+      draft.value = savedDraft;
+    }
     revision.value = data.revision;
-    baseline.value = JSON.stringify(draft.value);
+    baseline.value = JSON.stringify({ plate_format_id: data.plate_format_id, ...savedDraft });
     emit("saved", data);
     toast.add({
       severity: "success",
@@ -808,7 +822,7 @@ async function savePlan(): Promise<void> {
       life: 3000,
     });
   } catch (cause) {
-    saveError.value = getErrorMessage(cause);
+    if (token === requestToken) saveError.value = getErrorMessage(cause);
   } finally {
     saving.value = false;
   }
@@ -826,7 +840,6 @@ watch(() => props.syncRefreshRevision, loadMeasuredRows);
   gap: 1rem;
   min-width: 0;
 }
-.plan-header,
 .plan-controls,
 .actions,
 .title-row,
@@ -841,15 +854,9 @@ watch(() => props.syncRefreshRevision, loadMeasuredRows);
   display: flex;
   gap: 0.65rem;
 }
-.plan-header,
 .section-heading {
   justify-content: space-between;
 }
-.plan-header {
-  border-bottom: 1px solid var(--surface-border);
-  padding-bottom: 0.85rem;
-}
-.plan-header h3,
 .plan-section h4 {
   margin: 0;
 }
@@ -1000,10 +1007,12 @@ watch(() => props.syncRefreshRevision, loadMeasuredRows);
   .review-grid {
     grid-template-columns: 1fr;
   }
-  .plan-header,
   .section-heading {
     align-items: flex-start;
     flex-direction: column;
   }
+}
+.plan-save {
+  justify-self: end;
 }
 </style>

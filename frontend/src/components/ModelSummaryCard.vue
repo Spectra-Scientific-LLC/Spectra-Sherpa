@@ -1,5 +1,6 @@
 <template>
-  <section v-if="summary && (summary.model || hasStatistics)" class="model-summary" aria-label="Model summary">
+  <section v-if="summary && (summary.model || hasStatistics)" class="model-summary" :class="{ 'model-summary--details': display === 'details' }" aria-label="Model summary">
+    <template v-if="display !== 'details'">
     <header class="model-summary__header">
       <div>
         <h3>{{ summary.model?.method ?? "Model summary" }}</h3>
@@ -11,16 +12,15 @@
         <span v-for="item in populations" :key="item.role"><strong>{{ item.n }}</strong> {{ item.label.toLowerCase() }}</span>
       </p>
     </header>
-    <p class="model-summary__pretreatment">
-      <span class="model-summary__label">Pretreatment</span>
-      <template v-if="summary.preprocessing.length">{{ summary.preprocessing.join(" → ") }}</template>
-      <template v-else>None before the model</template>
+    <p v-if="summary.preprocessing.length" class="model-summary__pretreatment">
+      <span class="model-summary__label">Upstream pretreatment</span>
+      {{ summary.preprocessing.join(" → ") }}
     </p>
 
     <p v-if="calibrationOnly" class="model-summary__caution" role="note">
       Calibration fit only; no retained CV or test predictions.
     </p>
-    <p v-if="summary.componentSelection || summary.pcaComponentSelection || summary.plsdaComponentSelection"
+    <p v-if="summary.componentSelection || summary.plsdaComponentSelection || heldOutCount != null"
       class="model-summary__design" role="note">
       Held-out evaluation:
       <template v-if="heldOutCount != null">{{ heldOutCount }} held-out samples with retained evaluation.</template>
@@ -31,8 +31,9 @@
     <ul v-if="compact && compactWarnings.length" class="model-summary__caution" aria-label="Model limitations">
       <li v-for="warning in compactWarnings" :key="warning">{{ warning }}</li>
     </ul>
-    <details :open="!compact" class="model-summary__details">
-      <summary>Model and validation details</summary>
+    </template>
+    <component :is="display === 'details' ? 'div' : 'details'" v-if="display !== 'context'" :open="display !== 'details' && !compact ? true : undefined" class="model-summary__details">
+      <summary v-if="display !== 'details'">Model and validation details</summary>
     <section v-if="summary.componentSelection" class="model-summary__components" aria-label="PLS component selection">
       <h4>Latent variables <MethodHelp topic="componentSelection" label="Component selection" /></h4>
       <p>Selected: <strong>{{ summary.componentSelection.selectedComponents }} LV</strong> ·
@@ -190,7 +191,7 @@
         </table>
       </figure>
     </div>
-    </details>
+    </component>
   </section>
 </template>
 
@@ -200,7 +201,7 @@ import { computed } from "vue";
 import { evaluationRoleLabel, scientificScalar, scientificErrorMetricLabel, scientificProtocolLabel } from "@/utils/scientificDisplay";
 import { r2Name, rmseName, SUMMARY_ROLES, type ClassificationStatistics, type ComponentSelectionResponse, type ModelSummary, type RegressionStatistics, type SummaryRole } from "@/utils/modelSummary";
 
-const props = defineProps<{ summary: ModelSummary | null; canEditSelection?: boolean; evidenceSubset?: boolean; compact?: boolean }>();
+const props = withDefaults(defineProps<{ summary: ModelSummary | null; canEditSelection?: boolean; evidenceSubset?: boolean; compact?: boolean; display?: 'full' | 'context' | 'details' }>(), { display: 'full' });
 const emit = defineEmits<{ 'edit-selection': [] }>();
 
 const compactWarnings = computed(() => {
@@ -244,7 +245,7 @@ const populations = computed(() => {
     const selection = props.summary?.componentSelection ?? props.summary?.pcaComponentSelection ?? props.summary?.plsdaComponentSelection;
     const n = all.find((item) => item.role === role && item.n != null)?.n
       ?? (role === "calibration" ? selection?.nCalibration : null);
-    return n == null ? [] : [{ role, n, label: evaluationRoleLabel(role) }];
+    return n == null ? [] : [{ role, n, label: role === 'calibration' && props.summary?.model?.method === 'PCA' ? 'Fitted samples' : evaluationRoleLabel(role) }];
   });
 });
 const heldOutCount = computed(() => {
@@ -286,6 +287,7 @@ function classificationCvMessage(reason: string | null): string {
 
 <style scoped>
 .model-summary { margin: 0 0 1.25rem; padding: 1rem 1.25rem; border: 1px solid var(--surface-border); border-radius: 10px; background: var(--surface-card); }
+.model-summary--details { margin: 0; padding: 0; border: 0; background: none; }
 .model-summary__header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1.5rem; align-items: baseline; }
 .model-summary h3 { margin: 0; font-size: 1.1rem; }
 .model-summary__settings { display: flex; flex-wrap: wrap; gap: .35rem; margin: .4rem 0 0; }

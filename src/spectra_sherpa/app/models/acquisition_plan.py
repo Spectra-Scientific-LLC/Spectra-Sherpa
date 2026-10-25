@@ -6,6 +6,7 @@ from sqlalchemy import JSON, DateTime, ForeignKey, String, UniqueConstraint, fun
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from spectra_sherpa.app.db.base import Base
+from spectra_sherpa.core.plate_formats import DEFAULT_PLATE_FORMAT_ID
 
 
 class AcquisitionPlan(Base):
@@ -52,7 +53,7 @@ class UserWorkbenchPreferences(Base):
         ForeignKey("user.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
     )
     default_plate_format_id: Mapped[str] = mapped_column(
-        String(100), nullable=False, default="plate-96", server_default="plate-96"
+        String(100), nullable=False, default=DEFAULT_PLATE_FORMAT_ID, server_default=DEFAULT_PLATE_FORMAT_ID
     )
 
     user = relationship("User", back_populates="workbench_preferences")

@@ -1,43 +1,69 @@
 <template>
   <div class="plate-map-96">
-    <div class="plate-header">
-      <div class="row-label"></div>
-      <div v-for="col in 12" :key="col" class="col-label">
-        {{ col }}
-      </div>
-    </div>
-
-    <div v-for="row in rows" :key="row" class="plate-row">
-      <div class="row-label">{{ row }}</div>
-
+    <div
+      ref="viewport"
+      class="plate-viewport"
+      role="region"
+      :aria-label="`${plateFormat.label} map`"
+      tabindex="0"
+      @scroll="detailsCard?.viewportScrolled(viewport)"
+      @keydown="navigateWells"
+    >
       <div
-        v-for="col in 12"
-        :key="plateWellPosition(row, col)"
-        class="well"
-        :aria-label="getWellTitle(plateWellPosition(row, col))"
-        :tabindex="interactive || getWellDetails(plateWellPosition(row, col)) ? 0 : -1"
-        role="button"
-        :class="{
-          'well-assigned': getWellValue(plateWellPosition(row, col)),
-          'well-excluded': isWellExcluded(plateWellPosition(row, col)),
-          'well-collision': hasWellCollision(plateWellPosition(row, col)),
-          'well-selected': selectedWell === plateWellPosition(row, col),
+        class="plate-grid"
+        :style="{
+          gridTemplateColumns: `40px repeat(${plateFormat.columns}, 64px)`,
+          gridTemplateRows: `32px repeat(${plateFormat.rows.length}, 64px)`,
         }"
-        @mouseenter="showWellDetails(plateWellPosition(row, col), $event)"
-        @mouseleave="hideWellDetails"
-        @focus="showWellDetails(plateWellPosition(row, col), $event)"
-        @blur="hideWellDetails"
-        @click="onWellClick(plateWellPosition(row, col))"
-        @keydown.enter.prevent="onWellClick(plateWellPosition(row, col))"
-        @keydown.space.prevent="onWellClick(plateWellPosition(row, col))"
       >
-        <div class="well-position">{{ plateWellPosition(row, col) }}</div>
-        <div v-if="getWellValue(plateWellPosition(row, col))" class="well-content">
-          {{ getWellValue(plateWellPosition(row, col)) }}
+        <div class="plate-corner" aria-hidden="true"></div>
+        <div
+          v-for="col in plateFormat.columns"
+          :key="`column-${col}`"
+          class="col-label"
+          :style="{ gridRow: 1, gridColumn: col + 1 }"
+          aria-hidden="true"
+        >
+          {{ col }}
         </div>
+        <template v-for="row in plateRows" :key="row.label">
+          <div
+            class="row-label"
+            :style="{ gridRow: row.gridRow, gridColumn: 1 }"
+            aria-hidden="true"
+          >
+            {{ row.label }}
+          </div>
+          <div
+            v-for="cell in row.cells"
+            :key="cell.position"
+            class="well"
+            :style="{ gridRow: row.gridRow, gridColumn: cell.gridColumn }"
+            :aria-label="cell.title"
+            tabindex="-1"
+            :data-well-position="cell.position"
+            role="button"
+            :class="{
+              'well-assigned': cell.label,
+              'well-excluded': cell.excluded,
+              'well-collision': cell.collision,
+              'well-selected': selectedWell === cell.position,
+            }"
+            @mouseenter="detailsCard?.show(cell.details, $event)"
+            @mousemove="detailsCard?.show(cell.details, $event, true)"
+            @mouseleave="detailsCard?.hidePointer()"
+            @focus="focusWell($event); detailsCard?.show(cell.details, $event)"
+            @blur="detailsCard?.hide()"
+            @click="emit('well-click', cell.position)"
+            @keydown.enter.prevent="emit('well-click', cell.position)"
+            @keydown.space.prevent="emit('well-click', cell.position)"
+          >
+            <div class="well-position">{{ cell.position }}</div>
+            <div v-if="cell.label" class="well-content">{{ cell.label }}</div>
+          </div>
+        </template>
       </div>
     </div>
-
     <div v-if="showLegend" class="plate-legend">
       <div class="legend-item">
         <div class="legend-swatch well-empty"></div>
@@ -57,160 +83,151 @@
       </div>
     </div>
   </div>
-
-  <Teleport to="body">
-    <aside
-      v-if="hoveredWell"
-      ref="hoverCard"
-      class="plate-well-hover-card"
-      :style="hoverCardStyle"
-      role="tooltip"
-    >
-      <div class="hover-card-heading">
-        <span class="hover-card-well">{{ hoveredWell.well_position }}</span>
-        <strong>{{ hoveredWell.label || "Assigned sample" }}</strong>
-      </div>
-      <dl v-if="hoveredWell.details?.length" class="hover-card-details">
-        <template v-for="detail in hoveredWell.details" :key="detail.label">
-          <dt>{{ detail.label }}</dt>
-          <dd>{{ detail.value || "—" }}</dd>
-        </template>
-      </dl>
-      <p v-else class="hover-card-summary">
-        {{ hoveredWell.tooltip || hoveredWell.label || hoveredWell.well_position }}
-      </p>
-    </aside>
-  </Teleport>
+  <PlateWellHoverCard ref="detailsCard" />
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue";
-
-interface PlateWellDetail {
-  label: string;
-  value: string;
-}
-
-interface PlateWell {
-  well_position: string;
-  mixture_id?: number | null;
-  label?: string;
-  assigned?: boolean;
-  tooltip?: string;
-  excluded?: boolean;
-  details?: PlateWellDetail[];
-}
+import { computed, onMounted, onUpdated, ref, watch } from "vue";
+import { defaultPlateFormatId, formatWell, getPlateFormat } from "@/utils/plateFormats";
+import PlateWellHoverCard, { type PlateWell } from "./PlateWellHoverCard.vue";
 
 const props = defineProps<{
   wells: PlateWell[];
   selectedWell?: string | null;
   showLegend?: boolean;
   interactive?: boolean;
+  plateFormatId?: string;
 }>();
 
 const emit = defineEmits<{
   (e: "well-click", wellPosition: string): void;
 }>();
 
-const rows = ["A", "B", "C", "D", "E", "F", "G", "H"];
-const hoverCard = ref<HTMLElement | null>(null);
-const hoveredWell = ref<PlateWell | null>(null);
-const hoverCardStyle = ref<Record<string, string>>({ left: "12px", top: "12px" });
-
-const plateWellPosition = (row: string, column: number) =>
-  `${row}${String(column).padStart(2, "0")}`;
-
+const plateFormat = computed(() => getPlateFormat(props.plateFormatId ?? defaultPlateFormatId));
+const viewport = ref<HTMLElement | null>(null);
+const detailsCard = ref<InstanceType<typeof PlateWellHoverCard> | null>(null);
+watch(
+  () => props.wells,
+  () => detailsCard.value?.hide(),
+);
+watch(
+  () => props.plateFormatId,
+  () => {
+    detailsCard.value?.hide();
+    if (viewport.value) {
+      viewport.value.scrollTop = 0;
+      viewport.value.scrollLeft = 0;
+    }
+  },
+);
 const wellsByPosition = computed(() => {
   const map = new Map<string, PlateWell[]>();
-  props.wells.forEach((well) => {
+  for (const well of props.wells) {
     const position = well.well_position.toUpperCase();
     const entries = map.get(position) ?? [];
     entries.push(well);
     map.set(position, entries);
-  });
+  }
   return map;
 });
-
 const collisionCount = computed(
-  () => Array.from(wellsByPosition.value.values()).filter((entries) => entries.length > 1).length,
+  () => [...wellsByPosition.value.values()].filter((entries) => entries.length > 1).length,
 );
+// Hover state is owned by the child; descriptors rebuild only for plate data/geometry.
+const plateRows = computed(() =>
+  plateFormat.value.rows.map((row, rowIndex) => ({
+    label: row,
+    gridRow: rowIndex + 2,
+    cells: Array.from({ length: plateFormat.value.columns }, (_, colIndex) => {
+      const position = formatWell(plateFormat.value, rowIndex, colIndex);
+      const entries = wellsByPosition.value.get(position) ?? [];
+      const well = entries[0];
+      const collision = entries.length > 1;
+      const label = collision
+        ? `${entries.length} samples`
+        : well && (well.assigned || well.mixture_id || well.label)
+          ? well.label || `Mix ${well.mixture_id}`
+          : null;
+      const details: PlateWell | null = collision
+        ? {
+            well_position: position,
+            assigned: true,
+            label: `${entries.length} conflicting samples`,
+            tooltip: "Resolve the duplicate physical assignment before saving.",
+            details: entries.map((entry, index) => ({
+              label: `Sample ${index + 1}`,
+              value: entry.label || entry.tooltip || "Unnamed sample",
+            })),
+          }
+        : (well ?? null);
+      return {
+        position,
+        gridColumn: colIndex + 2,
+        label,
+        details,
+        collision,
+        excluded: entries.some((entry) => entry.excluded),
+        title: collision
+          ? `${position}: ${entries.length} conflicting sample assignments`
+          : well?.tooltip || label || position,
+      };
+    }),
+  })),
+);
+let focusedWellPosition: string | undefined;
+function syncTabStops(): void {
+  if (!viewport.value) return;
+  const cells = [...viewport.value.querySelectorAll<HTMLElement>(".well")];
+  const eligible = cells.filter(cell => props.interactive || wellsByPosition.value.has(cell.dataset.wellPosition!));
+  const current = eligible.find(cell => cell === document.activeElement)
+    ?? eligible.find(cell => cell.dataset.wellPosition === props.selectedWell)
+    ?? eligible.find(cell => cell.dataset.wellPosition === focusedWellPosition)
+    ?? eligible[0];
+  cells.forEach(cell => { cell.tabIndex = cell === current ? 0 : -1; });
+  viewport.value.tabIndex = current ? -1 : 0;
+  focusedWellPosition = current?.dataset.wellPosition;
+}
+onMounted(syncTabStops);
+onUpdated(syncTabStops);
 
-const getWellValue = (position: string) => {
-  const entries = wellsByPosition.value.get(position.toUpperCase()) ?? [];
-  if (entries.length > 1) return `${entries.length} samples`;
-  const well = entries[0];
-  if (!well || (!well.assigned && !well.mixture_id && !well.label)) return null;
-  return well.label || `Mix ${well.mixture_id}`;
-};
-
-const getWellTitle = (position: string) => {
-  const entries = wellsByPosition.value.get(position.toUpperCase()) ?? [];
-  if (entries.length > 1) return `${position}: ${entries.length} conflicting sample assignments`;
-  return entries[0]?.tooltip || getWellValue(position) || position;
-};
-
-const getWellDetails = (position: string): PlateWell | null => {
-  const entries = wellsByPosition.value.get(position.toUpperCase()) ?? [];
-  if (entries.length === 0) return null;
-  if (entries.length === 1) return entries[0];
-  return {
-    well_position: position,
-    assigned: true,
-    label: `${entries.length} conflicting samples`,
-    tooltip: "Resolve the duplicate physical assignment before saving.",
-    details: entries.map((entry, index) => ({
-      label: `Sample ${index + 1}`,
-      value: entry.label || entry.tooltip || "Unnamed sample",
-    })),
-  };
-};
-
-const isWellExcluded = (position: string) =>
-  (wellsByPosition.value.get(position.toUpperCase()) ?? []).some((well) => well.excluded);
-
-const hasWellCollision = (position: string) =>
-  (wellsByPosition.value.get(position.toUpperCase())?.length ?? 0) > 1;
-
-const positionHoverCard = (anchor: HTMLElement) => {
-  const card = hoverCard.value;
-  if (!card) return;
-  const anchorRect = anchor.getBoundingClientRect();
-  const gap = 10;
-  const viewportPadding = 12;
-  const cardWidth = card.offsetWidth || 300;
-  const cardHeight = card.offsetHeight || 240;
-
-  let left = anchorRect.right + gap;
-  if (left + cardWidth > window.innerWidth - viewportPadding) {
-    left = anchorRect.left - cardWidth - gap;
+// Rove DOM focus without rerendering the complete plate on every keypress.
+function focusWell(event: FocusEvent): void {
+  const target = event.currentTarget as HTMLElement;
+  if (!props.interactive && !wellsByPosition.value.has(target.dataset.wellPosition!)) {
+    syncTabStops();
+    return;
   }
-  left = Math.max(viewportPadding, Math.min(left, window.innerWidth - cardWidth - viewportPadding));
+  viewport.value?.querySelectorAll<HTMLElement>('.well[tabindex="0"]').forEach(cell => {
+    if (cell !== target) cell.tabIndex = -1;
+  });
+  target.tabIndex = 0;
+  focusedWellPosition = target.dataset.wellPosition;
+}
 
-  let top = anchorRect.top;
-  if (top + cardHeight > window.innerHeight - viewportPadding) {
-    top = anchorRect.bottom - cardHeight;
+function navigateWells(event: KeyboardEvent): void {
+  const target = event.target as HTMLElement;
+  if (!target.classList.contains("well") || !viewport.value) return;
+  const cells = [...viewport.value.querySelectorAll<HTMLElement>(".well")];
+  const index = cells.indexOf(target), columns = plateFormat.value.columns;
+  const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[event.key];
+  let next = index;
+  if (step !== undefined) next += step;
+  else if (event.key === "Home") next = event.ctrlKey ? 0 : Math.floor(index / columns) * columns;
+  else if (event.key === "End") next = event.ctrlKey ? cells.length - 1 : Math.floor(index / columns) * columns + columns - 1;
+  else return;
+  event.preventDefault();
+  // Read-only plates expose assigned wells only; empty cells remain available
+  // to mouse users, and interactive authors can navigate every coordinate.
+  const direction = event.key === "End" ? -1 : event.key === "Home" ? 1 : next >= index ? 1 : -1;
+  while (next >= 0 && next < cells.length) {
+    if (props.interactive || wellsByPosition.value.has(cells[next].dataset.wellPosition!)) {
+      cells[next].focus();
+      cells[next].scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      return;
+    }
+    next += step ?? direction;
   }
-  top = Math.max(viewportPadding, Math.min(top, window.innerHeight - cardHeight - viewportPadding));
-
-  hoverCardStyle.value = { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` };
-};
-
-const showWellDetails = async (position: string, event: MouseEvent | FocusEvent) => {
-  const details = getWellDetails(position);
-  const anchor = event.currentTarget as HTMLElement | null;
-  if (!details || !anchor) return;
-  hoveredWell.value = details;
-  await nextTick();
-  positionHoverCard(anchor);
-};
-
-const hideWellDetails = () => {
-  hoveredWell.value = null;
-};
-
-const onWellClick = (position: string) => {
-  emit("well-click", position);
-};
+}
 </script>
 
 <style scoped>
@@ -218,74 +235,48 @@ const onWellClick = (position: string) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.plate-well-hover-card {
-  position: fixed;
-  z-index: 12000;
-  width: min(20rem, calc(100vw - 24px));
-  max-height: calc(100vh - 24px);
-  overflow: hidden;
-  padding: 0.85rem;
-  border: 1px solid var(--ss-action-tint);
-  border-radius: 0.75rem;
-  background: color-mix(in srgb, var(--ss-surface) 98%, transparent);
-  box-shadow: 0 14px 34px color-mix(in srgb, var(--ss-shadow-color) 22%, transparent);
-  color: var(--ss-text-strong);
-  pointer-events: none;
-}
-
-.hover-card-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 0.55rem;
-  padding-bottom: 0.55rem;
-  border-bottom: 1px solid var(--ss-border);
-}
-
-.hover-card-well {
-  padding: 0.15rem 0.4rem;
-  border-radius: 0.35rem;
-  background: var(--ss-action-tint);
-  color: var(--ss-action);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.hover-card-details {
-  display: grid;
-  grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr);
-  gap: 0.35rem 0.75rem;
-  margin: 0.65rem 0 0;
-  font-size: 0.82rem;
-}
-
-.hover-card-details dt {
-  color: var(--ss-text-muted);
-}
-
-.hover-card-details dd {
   min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-weight: 600;
+  max-width: 100%;
 }
 
-.hover-card-summary {
-  margin: 0.65rem 0 0;
-  font-size: 0.82rem;
+.plate-viewport {
+  max-width: 100%;
+  max-height: clamp(12rem, calc(100vh - 12rem), 34rem);
+  overflow: auto;
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--ss-border);
+  border-radius: 6px;
+  scroll-padding: 36px 0 0 44px;
 }
 
-.plate-header {
+.plate-viewport:focus-visible {
+  outline: 2px solid var(--ss-action);
+  outline-offset: 2px;
+}
+
+.plate-grid {
   display: grid;
-  grid-template-columns: 40px repeat(12, 1fr);
+  width: max-content;
   gap: 4px;
-  margin-bottom: 4px;
+}
+
+.plate-corner {
+  grid-area: 1 / 1;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  background: var(--ss-surface);
 }
 
 .row-label {
   width: 40px;
-  height: 60px;
+  height: 64px;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--ss-surface);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -295,19 +286,17 @@ const onWellClick = (position: string) => {
 }
 
 .col-label {
-  height: 30px;
+  height: 32px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ss-surface);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--ss-text-secondary);
-}
-
-.plate-row {
-  display: grid;
-  grid-template-columns: 40px repeat(12, 1fr);
-  gap: 4px;
 }
 
 .well {
@@ -329,7 +318,6 @@ const onWellClick = (position: string) => {
 .well:hover {
   border-color: var(--ss-action);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--ss-action) 20%, transparent);
-  transform: scale(1.05);
 }
 
 .well-position {
@@ -375,6 +363,7 @@ const onWellClick = (position: string) => {
 
 .plate-legend {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   margin-top: 12px;
   padding: 12px;
@@ -412,19 +401,5 @@ const onWellClick = (position: string) => {
 .legend-swatch.well-collision {
   background: var(--ss-danger-surface);
   border-color: var(--ss-danger);
-}
-
-@media (max-width: 1200px) {
-  .well {
-    padding: 2px;
-  }
-
-  .well-position {
-    font-size: 0.6rem;
-  }
-
-  .well-content {
-    font-size: 0.65rem;
-  }
 }
 </style>

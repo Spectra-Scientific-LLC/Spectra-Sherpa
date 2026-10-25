@@ -696,6 +696,7 @@ describe("DataContent file inspection", () => {
   });
 
   it("explains a missing Pro project before requesting upload access", async () => {
+    mocks.route.query = { tab: "upload" };
     mocks.pro = true;
     mocks.projectStore.currentProjectId = null;
     const wrapper = mountDataContent();
@@ -704,7 +705,7 @@ describe("DataContent file inspection", () => {
     expect(
       wrapper
         .findAll("button")
-        .find((b) => b.text() === "Choose sources")!
+        .find((b) => b.text() === "Load")!
         .attributes("disabled"),
     ).toBeDefined();
     expect(
@@ -714,6 +715,7 @@ describe("DataContent file inspection", () => {
   });
 
   it("shows loading, explains a failed check, and enables Pro upload after Retry", async () => {
+    mocks.route.query = { tab: "upload" };
     mocks.pro = true;
     let rejectAccess!: (reason: Error) => void;
     const pending = new Promise<never>((_resolve, reject) => {
@@ -728,7 +730,7 @@ describe("DataContent file inspection", () => {
     expect(
       wrapper
         .findAll("button")
-        .find((b) => b.text() === "Choose sources")!
+        .find((b) => b.text() === "Load")!
         .attributes("disabled"),
     ).toBeDefined();
     rejectAccess(new Error("Network interrupted"));
@@ -747,7 +749,7 @@ describe("DataContent file inspection", () => {
     expect(
       wrapper
         .findAll("button")
-        .find((b) => b.text() === "Choose sources")!
+        .find((b) => b.text() === "Load")!
         .attributes("disabled"),
     ).toBeUndefined();
     expect(api.get).toHaveBeenLastCalledWith("/commercial/projects/3/availability");
@@ -1051,6 +1053,68 @@ describe("DataContent file inspection", () => {
     expect(mocks.dataStore.selectExperiment).not.toHaveBeenCalledWith(124);
     expect(mocks.dataStore.activeExperimentId).toBe(11);
     expect(wrapper.find('[data-testid="data-tabs"]').attributes("data-active-index")).toBe("5");
+  });
+
+  it.each(["import", "synthesis", "upload", "library", "multi-well"])(
+    "routes %s through My Dataset before Workflow",
+    async (tab) => {
+      mocks.route.query = { tab, experiment: "11" };
+      const wrapper = mountDataContent();
+      await flushPromises();
+      const header = wrapper.get(".workspace-header");
+      const labels = header.findAll("button").map((button) => button.text());
+      expect(labels).not.toContain("Workflow");
+      expect(labels.filter((label) => ["Guide", "Load", "My Dataset"].includes(label)))
+        .toEqual(["synthesis", "library"].includes(tab) ? ["Guide", "My Dataset"] : tab === "upload" ? ["Load", "My Dataset"] : ["My Dataset"]);
+      expect(wrapper.find(".synthesis-toolbar").exists()).toBe(false);
+      if (tab === "synthesis") {
+        await header.get('[data-action="synthesis_open_guide"]').trigger("click");
+        expect(mocks.routerPush).toHaveBeenCalledWith("/documentation");
+      }
+      await header.findAll("button").find((button) => button.text() === "My Dataset")!.trigger("click");
+      await flushPromises();
+      expect(wrapper.find('[data-testid="data-tabs"]').attributes("data-active-index")).toBe("5");
+      expect(wrapper.get(".workspace-header").text()).toContain("Workflow");
+      expect(mocks.dataStore.activeExperimentId).toBe(11);
+    },
+  );
+
+  it.each([
+    ["import", "importDatasetName"], ["upload", "uploadDatasetName"], ["library", "libraryDatasetName"],
+  ] as const)("shows the actual %s save name in the subtitle", async (tab, field) => {
+    mocks.route.query = { tab };
+    const wrapper = mountDataContent();
+    await flushPromises();
+    (wrapper.vm as unknown as DataContentVm)[field] = "  Chemometric qualification  ";
+    await flushPromises();
+    expect(wrapper.get('[aria-label="Data workspace context"]').text()).toContain("Chemometric qualification");
+    const resolved = (wrapper.vm as unknown as Record<string, string>)[
+      tab === "import" ? "resolvedImportDatasetName" : tab === "upload" ? "resolvedUploadDatasetName" : "resolvedLibraryDatasetName"
+    ];
+    expect(resolved).toBe("Chemometric qualification");
+  });
+
+  it("keeps Library help and filtered entry counts in the header context", async () => {
+    mocks.route.query = { tab: "library" };
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    try {
+      const wrapper = mountDataContent();
+      await flushPromises();
+      expect(wrapper.find(".library-header").exists()).toBe(false);
+      expect(wrapper.get(".library-database-field").element.firstElementChild?.textContent).toBe("Database");
+      expect(wrapper.get('[aria-label="Data workspace context"]').text()).toContain("2 entries");
+      (wrapper.vm as unknown as DataContentVm).librarySearch = "Acetone";
+      await flushPromises();
+      expect(wrapper.get('[aria-label="Data workspace context"]').text()).toContain("1 entry");
+      await wrapper.get(".workspace-header").findAll("button")
+        .find((button) => button.text() === "Guide")!.trigger("click");
+      expect(open).toHaveBeenCalledWith(
+        "https://docs.spectrascientific.ai/workflows/references-synthesis/#nist-library",
+        "_blank", "noopener,noreferrer",
+      );
+    } finally {
+      open.mockRestore();
+    }
   });
 
   it("opens a dataset-scoped multi-well acquisition deep link", async () => {
@@ -1559,13 +1623,16 @@ describe("DataContent file inspection", () => {
   });
 
   it("presents one progressive source chooser instead of separate file, folder, and ZIP buttons", async () => {
+    mocks.route.query = { tab: "upload" };
     const wrapper = mountDataContent();
     await flushPromises();
 
     const actions = wrapper.get(".upload-source-actions");
-    const buttons = actions.findAll("button");
+    const buttons = wrapper.get(".workspace-header").findAll('button[aria-controls="upload-source-menu"]');
     expect(buttons).toHaveLength(1);
-    expect(buttons[0].text()).toContain("Choose sources");
+    expect(buttons[0].text()).toContain("Load");
+    expect(actions.findAll("button")).toHaveLength(0);
+    expect(wrapper.text()).not.toContain("Files, folders or ZIPs.");
     expect(actions.findAll('input[type="file"]')).toHaveLength(2);
   });
 
@@ -3072,6 +3139,8 @@ describe("DataContent file inspection", () => {
     expect(vm.registeredCollapsed).toBe(false);
     const preview = wrapper.getComponent({ name: "DatasetSourcePreview" });
     expect(preview.props("title")).toBe("Eigenvector Corn M5");
+    expect(preview.props("hideHeading")).toBe(true);
+    expect(wrapper.get('[aria-label="Data workspace context"]').text()).toContain("Eigenvector Corn M5");
     expect(preview.props("sourceRef")).toBeNull();
     expect(preview.props("acquisitionRequired")).toBe(true);
   });

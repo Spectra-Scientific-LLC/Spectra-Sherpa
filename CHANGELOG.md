@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Staging GUI corrections
 
+- Data source subtabs lead to My Dataset before Workflow. Synthesis Guide and
+  Upload Load share the page header; reference previews align with the catalog
+  and show their selected dataset title once in the context strip.
+- Library keeps Guide in the header, Database beside the source selector and
+  the filtered entry count in the subtitle.
+- Source subtitles show the same dataset names used for saving. Multi-well
+  reports configured wells in the subtitle and offers Save only after edits.
+- Runs shares empty-state and action styling across its subtabs. Models separates
+  local history, saved evidence and imported models into consistent collapsible
+  sections without changing model actions or scientific evidence.
+- Inspect opens the exact produced model under Models, where promotion is
+  reviewed. Run navigation shares the Export header row; Summary, Results and
+  Validation expand independently. Compact PCA context uses fitted-sample
+  wording without empty pretreatment or held-out boilerplate; real limitations
+  and retained metrics remain available.
+- Storage recovery moves from Dashboard to Settings; existing Dashboard Storage
+  bookmarks redirect to the new subtab without reclaiming files automatically.
+- Multi-well planning and measured-sample previews support 6-, 12-, 24-, 48-,
+  96-, 384- and 1536-well formats from one registry. Plate maps pan in both
+  directions with fixed-size text and persistent row/column headers. Saved
+  plans retain their own format; legacy tables without a format remain 96-well.
+- Plate-format changes validate retained acquisition matches as well as planned
+  wells. Conflicts are separate from publishable measured-sample changes;
+  malformed coordinates remain repairable and stale preferences cannot prevent
+  opening a new plan or Settings.
+- Data Story counts labelled feature axes correctly and retains parsed
+  synthesis origin and recipe settings, distinct from laboratory acquisition.
+
 - Dependency security: require nbconvert7.17.2 or later in the HITRAN extra,
   including pip upgrades; update the paused desktop shell's Electron dependency
   to44.9.1. No notebook stack is added to base installs; packaging remains paused.

@@ -3,7 +3,7 @@
     <label for="private-prediction-files">Prediction files</label>
     <input id="private-prediction-files" ref="fileInput" type="file" multiple :disabled="busy" @change="selectFiles" />
     <span v-if="files.length">{{ files.length }} files</span>
-    <Button label="Predict Files" icon="pi pi-play" :loading="busy" :disabled="!files.length || busy" @click="predict" />
+    <Button label="Predict Files" class="p-button-sm" icon="pi pi-play" :loading="busy" :disabled="!files.length || busy" @click="predict" />
     <p v-if="error" role="alert">{{ error }}</p>
   </section>
 </template>

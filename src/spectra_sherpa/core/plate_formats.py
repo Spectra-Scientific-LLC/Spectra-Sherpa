@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from enum import StrEnum
 from importlib.resources import files
 from typing import Any
 
@@ -90,6 +91,9 @@ def _load_registry() -> tuple[str, dict[str, PlateFormat]]:
 
 
 DEFAULT_PLATE_FORMAT_ID, PLATE_FORMATS = _load_registry()
+# API enums and limits are projections of the same registry used by the GUI.
+PlateFormatId = StrEnum("PlateFormatId", {key.replace("-", "_").upper(): key for key in PLATE_FORMATS})
+MAX_PLATE_CAPACITY = max(plate.capacity for plate in PLATE_FORMATS.values())
 
 
 def get_plate_format(format_id: object) -> PlateFormat:
@@ -101,13 +105,17 @@ def get_plate_format(format_id: object) -> PlateFormat:
 
 
 def infer_legacy_plate_format(wells: list[str]) -> PlateFormat:
-    """Infer only when exactly one registered format admits every saved well."""
+    """Keep pre-format tables on their historical 96-well contract.
 
-    candidates = [
-        plate_format for plate_format in PLATE_FORMATS.values() if all(plate_format.admits_well(w) for w in wells)
-    ]
-    if len(candidates) != 1:
-        if len(PLATE_FORMATS) == 1:
-            return next(iter(PLATE_FORMATS.values()))
-        raise ValueError("Legacy sample table plate format is ambiguous")
-    return candidates[0]
+    Coordinates alone cannot distinguish overlapping formats. New formats must
+    be explicitly declared, never guessed from the occupied subset of wells.
+    """
+    plate = get_plate_format("plate-96")
+    for row_number, well in enumerate(wells, start=1):
+        if not str(well).strip():
+            continue
+        try:
+            plate.parse_well(well)
+        except ValueError as exc:
+            raise ValueError(f"Legacy table row {row_number}: {exc}") from exc
+    return plate

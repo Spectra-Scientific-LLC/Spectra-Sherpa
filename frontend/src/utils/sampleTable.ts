@@ -3,6 +3,7 @@ import {
   formatWell,
   getPlateFormat,
   parsePlateWell,
+  plateWellFormatAdmissions,
 } from "@/utils/plateFormats";
 import type { AcquisitionPlan } from "@/types";
 
@@ -56,6 +57,8 @@ export interface AcquisitionPlanDifference {
 export interface AcquisitionPlanProposal {
   rows: SampleTableRow[];
   differences: AcquisitionPlanDifference[];
+  plateFormatChanged: boolean;
+  refusal: string | null;
   status: AcquisitionPlanComparison;
 }
 
@@ -166,8 +169,9 @@ export function assignSequential96WellCoordinates(rows: SampleTableRow[]): void 
 export function compareAcquisitionPlan(
   rows: readonly SampleTableRow[],
   plannedWells: readonly string[],
+  plateFormatId = defaultPlateFormatId,
 ): AcquisitionPlanComparison {
-  const format = getPlateFormat();
+  const format = getPlateFormat(plateFormatId);
   const normalizeWell = (well: string): string => {
     const coordinate = parsePlateWell(well, format);
     return formatWell(format, coordinate.row, coordinate.column);
@@ -197,13 +201,14 @@ export function compareAcquisitionPlan(
 export function applyAcquisitionPlan(
   rows: SampleTableRow[],
   plannedWells: readonly string[],
+  plateFormatId = defaultPlateFormatId,
 ): void {
   if (plannedWells.length !== rows.length) {
     throw new Error(
       `Exact assignment requires one planned well for each measured row (${plannedWells.length} planned, ${rows.length} measured).`,
     );
   }
-  const format = getPlateFormat();
+  const format = getPlateFormat(plateFormatId);
   const normalized = plannedWells.map((well) => {
     const coordinate = parsePlateWell(well, format);
     return formatWell(format, coordinate.row, coordinate.column);
@@ -220,12 +225,22 @@ export function applyAcquisitionPlan(
 export function proposeMeasuredSamples(
   rows: readonly SampleTableRow[],
   plan: AcquisitionPlan,
+  measuredPlateFormatId = defaultPlateFormatId,
 ): AcquisitionPlanProposal {
   const proposed = rows.map((row) => ({
     ...row,
     targets: { ...row.targets },
     annotations: { ...row.annotations },
   }));
+  if (!plan.wells.length) {
+    return {
+      rows: proposed,
+      differences: [],
+      plateFormatChanged: false,
+      refusal: null,
+      status: compareAcquisitionPlan(proposed, [], measuredPlateFormatId),
+    };
+  }
   const orderedMatches = [...(plan.matching.matches ?? [])].sort(
     (left, right) => left.sequence_order - right.sequence_order,
   );
@@ -278,10 +293,34 @@ export function proposeMeasuredSamples(
   return {
     rows: proposed,
     differences,
+    plateFormatChanged: measuredPlateFormatId !== plan.plate_format_id,
+    refusal: plateAssignmentFormatError(proposed, plan.plate_format_id),
     status: compareAcquisitionPlan(
       proposed,
       plan.wells.map((well) => well.well_position),
+      plan.plate_format_id,
     ),
+  };
+}
+
+export function plateAssignmentFormatError(
+  rows: readonly SampleTableRow[],
+  formatId: string,
+): string | null {
+  return plateWellFormatAdmissions(rows.map(row => row.well), [getPlateFormat(formatId)])[0].error;
+}
+
+/** A refused proposal is not publishable work, nor proof of synchronization. */
+export function acquisitionProposalState(proposal: AcquisitionPlanProposal | null) {
+  const refusal = proposal?.refusal ?? null;
+  const changeCount = refusal || !proposal
+    ? 0 : proposal.differences.length + Number(proposal.plateFormatChanged);
+  return {
+    changeCount,
+    refusal,
+    label: refusal ? "Resolve plate conflict"
+      : changeCount ? "Publication needed" : "Plan and measured samples synchronized",
+    severity: refusal || changeCount ? "warning" as const : "success" as const,
   };
 }
 

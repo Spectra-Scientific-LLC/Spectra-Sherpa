@@ -3,7 +3,6 @@ import { createPinia, setActivePinia } from "pinia";
 import PrimeVue from "primevue/config";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useRunsStore } from "@/stores/runs";
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
 import type { ProjectDetail } from "@/types";
@@ -90,7 +89,7 @@ describe("SimplifiedDashboard analysis starters", () => {
   });
 
   it.each(["", "#archive", "#storage"])(
-    "keeps project and storage actions available from Dashboard (%s)",
+    "keeps project actions and redirects legacy Storage links (%s)",
     async (hash) => {
       mocks.route.hash = hash;
       const projectStore = useProjectStore();
@@ -143,13 +142,6 @@ describe("SimplifiedDashboard analysis starters", () => {
         matrix: [],
       };
 
-      const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {});
-      const reclaim = vi.spyOn(useRunsStore(), "reclaimStorage").mockResolvedValue({
-        removed_files: 1,
-        used_bytes: 10,
-        quota_bytes: 100,
-        grace_seconds: 86400,
-      });
       const wrapper = mount(SimplifiedDashboard, {
         global: {
           plugins: [PrimeVue],
@@ -182,7 +174,7 @@ describe("SimplifiedDashboard analysis starters", () => {
       });
       await flushPromises();
       const tabs = wrapper.findAll('[role="tab"]');
-      expect(tabs.map((tab) => tab.text())).toEqual(["Starter", "Your Project", "Archive", "Storage"]);
+      expect(tabs.map((tab) => tab.text())).toEqual(["Starter", "Your Project", "Archive"]);
       expect(wrapper.findAll('.workspace-header .responsive-header-actions__full button').map(button => button.text())).toEqual(["New Analysis", "Import Project", "Project"]);
       const archiveChooser = wrapper.get('input[accept=".sherpa,.spectrapy,.zip"]');
       const openArchiveChooser = vi.spyOn(archiveChooser.element as HTMLInputElement, "click").mockImplementation(() => {});
@@ -190,23 +182,15 @@ describe("SimplifiedDashboard analysis starters", () => {
       expect(openArchiveChooser).toHaveBeenCalledOnce();
       expect(wrapper.find('.current-strip__meta button').exists()).toBe(false);
       if (hash === "#storage") {
-        expect(scroll).toHaveBeenCalledWith({ block: "start" });
-        expect(scroll.mock.instances).toContain(wrapper.get("#storage").element);
-        expect(tabs[3].attributes("aria-selected")).toBe("true");
+        expect(mocks.routerReplace).toHaveBeenCalledWith({ path: "/settings", query: { tab: "storage" }, hash: "" });
       } else if (hash === "#archive") {
         expect(tabs[2].attributes("aria-selected")).toBe("true");
       } else {
         expect(tabs[1].attributes("aria-selected")).toBe("true");
         expect(wrapper.findAll('[role="tabpanel"]')[2].attributes("style")).toContain("display: none");
-        await tabs[3].trigger("click");
-        await flushPromises();
-        expect(mocks.routerReplace).toHaveBeenCalledWith({ hash: "#storage" });
       }
-      expect(reclaim).not.toHaveBeenCalled();
-      expect(wrapper.get("#storage").text()).toContain("across your projects");
-      await wrapper.get("#storage button").trigger("click");
-      await flushPromises();
-      expect(reclaim).toHaveBeenCalledExactlyOnceWith();
+      expect(wrapper.find("#storage").exists()).toBe(false);
+      expect(wrapper.text()).not.toContain("Reclaim Storage");
 
       await wrapper
         .findAll("button")
@@ -257,6 +241,7 @@ describe("SimplifiedDashboard analysis starters", () => {
       expect(window.sessionStorage.getItem("sherpa:data-entry-mode")).toBe("analysis-starter");
       expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/data", query: { tab: "import" } });
 
+      await tabs[2].trigger("click");
       await tabs[1].trigger("click");
       expect(mocks.routerReplace).toHaveBeenLastCalledWith({ hash: "" });
       projectStore.projects = [{ ...createdProject(), version_count: 0 }];

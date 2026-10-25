@@ -20,8 +20,65 @@ For the installed application, use the versioned user guides.
 - Use semantic theme tokens and the shared plot theme. Do not introduce
   component-local color authorities.
 - Preserve keyboard access, visible focus and readable layouts at narrow widths.
+- Storage recovery belongs to Settings, not the scientific project dashboard.
+  Legacy navigation must redirect without initiating reclamation.
+
+## Plate maps
+
+Hover updates belong to the details card, not the cell grid. Keyboard focus
+keeps its details through automatic scrolling while the focused well remains
+visible; a stationary pointer must not replace that context during the pan.
+
+The shared format registry (`src/spectra_sherpa/data/plate_formats_v1.json`)
+owns plate geometry and coordinates. API schemas, planning, sample tables and
+the shared plate renderer derive from it. Keep legacy tables without an explicit
+format on their historical 96-well interpretation; overlapping coordinates do
+not establish another plate's size.
+
+Use fixed-size wells and text inside a two-axis scroll viewport. Row labels stay
+at the left and column labels at the top, aligned with their wells while panning.
+Do not shrink text to fit high-density plates or leave a floating tooltip anchored
+to a well that has scrolled away. Format changes must not silently hide or discard
+existing assignments.
+
+Format admission covers planned wells and retained acquisition matches through
+the same coordinate authority used by measured-sample tables. Parse distinct
+well coordinates once when deriving format choices; unrelated field edits must
+not repeat that work. Keep a malformed current assignment repairable, but do not
+admit it for publication. A refused synchronization proposal is a conflict, not
+a publishable change or evidence that the populations are synchronized.
+
+Data source subtabs (Import, Synthesis, Upload, Library and Multi-well) end in
+the existing My Dataset action; My Dataset alone offers the Workflow handoff.
+Keep Synthesis/Library Guide and Upload Load beside that header action, not in
+separate toolbar rows. Library's filtered entry count belongs in the subtitle;
+Database precedes its source dropdown. Import's selected title belongs in the context strip;
+its preview sections align with the catalog rather than repeat the title.
+Show the actual save-destination name in each source subtab's context, derived
+from the same value as its save handler. Multi-well exposes its configured-well
+count and dirty state there; a clean plan needs no disabled Save/status row.
 
 ## Scientific context and copy
+
+Runs has one workspace header, context strip and subtab navigation. Reuse
+`WorkspaceState` for empty/loading/error surfaces; Inspect and Compare use the
+same page variant when no result is selected. Models groups Local Model History,
+Saved Models and Imported Models in the existing collapsible Panel component,
+without a second inner title or border. Use the same compact PrimeVue action
+buttons as History; panel grouping must not hide a selected model's detail or
+change scientific evidence, permission checks, pagination or export contents.
+Inspect links each produced artifact to its exact selection under Models;
+promotion review belongs to Models, not the run's inspection actions.
+Inspect navigation actions share the Runs header's Export row and responsive
+action menu. Summary, Results and Validation use independent collapsible Panels;
+section navigation does not change the identity or content of retained evidence.
+Keep compact fitted-population context and consequential limitations outside
+those sections. PCA uses "fitted samples", not a predictive calibration label;
+an empty upstream pretreatment chain says nothing about scaling inside the model.
+
+Descriptive source summaries can report finite coordinate bounds and recorded
+catalog bounds, with their origin and missing-coordinate counts. They do not
+authorize rendering or weaken the strict plot-axis alignment validator.
 
 Keep population, units, exclusions and consequential warnings visible.
 Put methodology behind contextual `?` help, and short explanations in hover.

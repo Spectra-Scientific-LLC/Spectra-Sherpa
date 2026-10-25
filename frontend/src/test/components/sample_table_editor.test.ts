@@ -81,6 +81,209 @@ describe("SampleTableEditor acquisition-plan synchronization", () => {
     );
   });
 
+  it("seeds a new measured table from Settings, not the registry or acquisition plan", async () => {
+    vi.mocked(api.get).mockImplementation((url: string) => Promise.resolve({ data:
+      url === "/acquisition-preferences" ? { default_plate_format_id: "plate-384" } : plan,
+    }));
+    const wrapper = shallowMount(SampleTableEditor, {
+      props: { sampleCount: 2, sampleLabels: [], sourceName: "New", sourceFileId: 41, experimentId: 12 },
+      global: { stubs: { Dialog: { template: '<div><slot /><slot name="footer" /></div>' }, DataTable: { template: "<div><slot /></div>" } } },
+    });
+    await wrapper.get('button-stub[label="Edit measured samples"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.get('dropdown-stub[id="plate-format"]').attributes("modelvalue")).toBe("plate-384");
+    expect(wrapper.get('dropdown-stub[id="plate-end"]').attributes("modelvalue")).toBe("P24");
+    expect(wrapper.text()).not.toContain("Unable to load");
+    wrapper.unmount();
+  });
+
+  it("rejects a delayed preference reply after the source changes", async () => {
+    let resolve!: (value: { data: { default_plate_format_id: string } }) => void;
+    vi.mocked(api.get).mockImplementation((url: string) => url === "/acquisition-preferences"
+      ? new Promise(done => { resolve = done; }) : Promise.resolve({ data: plan }));
+    const wrapper = shallowMount(SampleTableEditor, {
+      props: { sampleCount: 2, sampleLabels: [], sourceName: "New", sourceFileId: 41, experimentId: 12 },
+      global: { stubs: { Dialog: { template: '<div><slot /><slot name="footer" /></div>' }, DataTable: { template: "<div><slot /></div>" } } },
+    });
+    await wrapper.get('button-stub[label="Edit measured samples"]').trigger("click");
+    await wrapper.setProps({ sourceFileId: 42 });
+    resolve({ data: { default_plate_format_id: "plate-384" } });
+    await flushPromises();
+    expect(wrapper.get('dropdown-stub[id="plate-format"]').attributes("modelvalue")).toBe("plate-96");
+    wrapper.unmount();
+  });
+
+  it("does not let delayed preferences overwrite an explicit acquisition proposal", async () => {
+    let resolve!: (value: { data: { default_plate_format_id: string } }) => void;
+    vi.mocked(api.get).mockImplementation((url: string) => url === "/acquisition-preferences"
+      ? new Promise(done => { resolve = done; }) : Promise.resolve({ data: { ...plan,
+          plate_format_id: "plate-1536", plate_format_label: "1536-well plate", capacity: 1536,
+          wells: [{ ...plan.wells[0], well_position: "AF48" }],
+        } }));
+    const wrapper = shallowMount(SampleTableEditor, {
+      props: { sampleCount: 1, sampleLabels: [], sourceName: "New", sourceFileId: 41, experimentId: 12 },
+      global: { stubs: { Dialog: { template: '<div><slot /><slot name="footer" /></div>' }, DataTable: { template: "<div><slot /></div>" } } },
+    });
+    await wrapper.get('button-stub[label="Edit measured samples"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('button-stub[label="Use acquisition plan"]').trigger("click");
+    await wrapper.get('button-stub[label="Preview differences"]').trigger("click");
+    await wrapper.get('button-stub[label="Apply proposal"]').trigger("click");
+    resolve({ data: { default_plate_format_id: "plate-384" } });
+    await flushPromises();
+    expect(wrapper.getComponent({ name: "PlateMap96Well" }).props("plateFormatId")).toBe("plate-1536");
+    expect(wrapper.getComponent({ name: "PlateMap96Well" }).props("wells")[0].well_position).toBe("AF48");
+    wrapper.unmount();
+  });
+
+  it("previews and applies format-only synchronization", async () => {
+    const sameWells = measured.rows.map((row, i) => ({
+      ...row,
+      plate_id: "plate-1",
+      well: plan.wells[i].well_position,
+    }));
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes("acquisition-plan")
+          ? { ...plan, plate_format_id: "plate-6", plate_format_label: "6-well plate", capacity: 6 }
+          : { ...measured, rows: sameWells },
+      }),
+    );
+    const wrapper = shallowMount(SampleTableEditor, {
+      props: {
+        sampleCount: 2,
+        sampleLabels: [],
+        sourceName: "Measured",
+        sourceFileId: 41,
+        experimentId: 12,
+        analysisBinding: {
+          revision: measured.revision,
+          sample_table_file_id: 73,
+          selected_target: "class",
+          target_type: "categorical",
+        },
+      },
+      global: {
+        stubs: {
+          Dialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          DataTable: { template: "<div><slot /></div>" },
+        },
+      },
+    });
+    await wrapper.get('button-stub[label="Edit measured samples"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('tag-stub[value="Publication needed"]').exists()).toBe(true);
+    await wrapper.get('button-stub[label="Use acquisition plan"]').trigger("click");
+    await wrapper.get('button-stub[label="Preview differences"]').trigger("click");
+    expect(wrapper.text()).toContain("96-well plate → 6-well plate");
+    await wrapper.get('button-stub[label="Apply proposal"]').trigger("click");
+    expect(wrapper.getComponent({ name: "PlateMap96Well" }).props("plateFormatId")).toBe("plate-6");
+    await wrapper.get('button-stub[label="Review publication"]').trigger("click");
+    expect(wrapper.text()).toContain("Plate format: 96-well plate → 6-well plate");
+    await wrapper.get('button-stub[label="Publish new immutable version"]').trigger("click");
+    expect(
+      (wrapper.emitted("save")?.[0]?.[0] as SampleTableSavePayload).summary.plateFormatId,
+    ).toBe("plate-6");
+  });
+
+  it.each(["AF48", "A1"])("keeps current measured format repairable with well %s", async (well) => {
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes("acquisition-plan")
+          ? plan
+          : {
+              ...measured,
+              plate_format_id: "plate-1536",
+              rows: [{ ...measured.rows[0], plate_id: "plate-1", well }],
+            },
+      }),
+    );
+    const wrapper = shallowMount(SampleTableEditor, {
+      props: {
+        sampleCount: 1,
+        sampleLabels: [],
+        sourceName: "Measured",
+        sourceFileId: 41,
+        experimentId: 12,
+        analysisBinding: {
+          revision: measured.revision,
+          sample_table_file_id: 73,
+          selected_target: "class",
+          target_type: "categorical",
+        },
+      },
+      global: {
+        stubs: {
+          Dialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          DataTable: { template: "<div><slot /></div>" },
+        },
+      },
+    });
+    await wrapper.get('button-stub[label="Edit measured samples"]').trigger("click");
+    await flushPromises();
+    const options = (
+      wrapper.vm as unknown as { plateFormatOptions: { value: string; disabled: boolean }[] }
+    ).plateFormatOptions;
+    expect(options.find((option) => option.value === "plate-6")?.disabled).toBe(true);
+    expect(options.find((option) => option.value === "plate-1536")?.disabled).toBe(false);
+  });
+
+  it("refuses a plan proposal that would hide an unmatched measured well", async () => {
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      Promise.resolve({
+        data: url.includes("acquisition-plan")
+          ? {
+              ...plan,
+              plate_format_id: "plate-6",
+              plate_format_label: "6-well plate",
+              capacity: 6,
+              wells: [plan.wells[0]],
+            }
+          : {
+              ...measured,
+              plate_format_id: "plate-1536",
+              rows: measured.rows.map((row, i) => ({
+                ...row,
+                plate_id: "plate-1",
+                well: i === 0 ? "A01" : "AF48",
+              })),
+            },
+      }),
+    );
+    const wrapper = shallowMount(SampleTableEditor, {
+      props: {
+        sampleCount: 2,
+        sampleLabels: [],
+        sourceName: "Measured",
+        sourceFileId: 41,
+        experimentId: 12,
+        analysisBinding: {
+          revision: measured.revision,
+          sample_table_file_id: 73,
+          selected_target: "class",
+          target_type: "categorical",
+        },
+      },
+      global: {
+        stubs: {
+          Dialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          DataTable: { template: "<div><slot /></div>" },
+        },
+      },
+    });
+    await wrapper.get('button-stub[label="Edit measured samples"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('tag-stub[value="Resolve plate conflict"]').exists()).toBe(true);
+    expect(wrapper.find('tag-stub[value="Publication needed"]').exists()).toBe(false);
+    await wrapper.get('button-stub[label="Use acquisition plan"]').trigger("click");
+    await wrapper.get('button-stub[label="Preview differences"]').trigger("click");
+    expect(wrapper.text()).toContain("Well AF48 is outside 6-well plate");
+    expect(wrapper.find('button-stub[label="Apply proposal"]').exists()).toBe(false);
+    const map = wrapper.getComponent({ name: "PlateMap96Well" });
+    expect(map.props("plateFormatId")).toBe("plate-1536");
+    expect(map.props("wells").at(-1).well_position).toBe("AF48");
+  });
+
   it("previews differences before applying the acquisition matching proposal", async () => {
     const wrapper = shallowMount(SampleTableEditor, {
       props: {
@@ -107,7 +310,7 @@ describe("SampleTableEditor acquisition-plan synchronization", () => {
     await wrapper.find('button-stub[label="Edit measured samples"]').trigger("click");
     await flushPromises();
 
-    expect(api.get).toHaveBeenCalledWith("/builder/analysis-binding/41");
+    expect(api.get).toHaveBeenCalledWith("/builder/analysis-binding/41", { signal: expect.any(AbortSignal) });
     expect(api.get).toHaveBeenCalledWith("/experiments/12/acquisition-plan");
     expect(wrapper.find('tag-stub[value="2 planned"]').exists()).toBe(true);
     expect(wrapper.find('tag-stub[value="Publication needed"]').exists()).toBe(true);
@@ -222,19 +425,35 @@ describe("SampleTableEditor acquisition-plan synchronization", () => {
   });
 });
 
-
-it.each([false, true])("initializes native categorical responses without overwriting them with blanks (%s)", async column => {
-  vi.mocked(api.get).mockResolvedValue({ data: plan });
-  const wrapper = shallowMount(SampleTableEditor, {
-    props: { sampleCount: 3, sampleLabels: ["A", "B", "C"], sourceFileId: 41, sourceName: "Classes", experimentId: 12,
-      sourceTarget: column ? [["one"], ["two"], ["three"]] : ["one", "two", "three"],
-      sourceTargetContext: { target_type: "categorical", target_name: "Group" } },
-    global: { stubs: { Dialog: { template: "<div><slot /><slot name='footer' /></div>" }, DataTable: { template: "<div><slot /></div>" } } },
-  });
-  await wrapper.find('button-stub[label="Edit measured samples"]').trigger("click");
-  await flushPromises();
-  const state = wrapper.vm as unknown as { rows: Array<{ targets: Record<string, string> }>; targets: Array<{ name: string; type: string }> };
-  expect(state.targets).toEqual([{ name: "group", type: "categorical" }]);
-  expect(state.rows.map(row => row.targets.group)).toEqual(["one", "two", "three"]);
-  expect(api.get).not.toHaveBeenCalledWith("/builder/analysis-binding/41");
-});
+it.each([false, true])(
+  "initializes native categorical responses without overwriting them with blanks (%s)",
+  async (column) => {
+    vi.mocked(api.get).mockResolvedValue({ data: plan });
+    const wrapper = shallowMount(SampleTableEditor, {
+      props: {
+        sampleCount: 3,
+        sampleLabels: ["A", "B", "C"],
+        sourceFileId: 41,
+        sourceName: "Classes",
+        experimentId: 12,
+        sourceTarget: column ? [["one"], ["two"], ["three"]] : ["one", "two", "three"],
+        sourceTargetContext: { target_type: "categorical", target_name: "Group" },
+      },
+      global: {
+        stubs: {
+          Dialog: { template: "<div><slot /><slot name='footer' /></div>" },
+          DataTable: { template: "<div><slot /></div>" },
+        },
+      },
+    });
+    await wrapper.find('button-stub[label="Edit measured samples"]').trigger("click");
+    await flushPromises();
+    const state = wrapper.vm as unknown as {
+      rows: Array<{ targets: Record<string, string> }>;
+      targets: Array<{ name: string; type: string }>;
+    };
+    expect(state.targets).toEqual([{ name: "group", type: "categorical" }]);
+    expect(state.rows.map((row) => row.targets.group)).toEqual(["one", "two", "three"]);
+    expect(api.get).not.toHaveBeenCalledWith("/builder/analysis-binding/41");
+  },
+);

@@ -97,6 +97,29 @@ describe("Runs workspace", () => {
     expect(view.findComponent({ name: "RunDetailContent" }).exists()).toBe(false);
     view.unmount();
   });
+  it("uses the same canonical empty-state presentation for Inspect and Compare", async () => {
+    for (const tab of ["inspect", "compare"]) {
+      m.query = { tab };
+      const view = mountView(); await flushPromises();
+      const message = tab === "inspect" ? "Choose a run in History." : "Select 2–10 runs in History to compare.";
+      const state = view.findAllComponents({ name: "WorkspaceState" })
+        .find(component => component.props("message") === message)!;
+      expect(state.props("kind")).toBe("empty");
+      expect(state.props("variant")).toBe("page");
+      expect(state.classes()).toContain("workspace-state--page");
+      view.unmount();
+    }
+  });
+  it("groups model history, saved evidence and imports without duplicate inner titles", async () => {
+    m.query = { tab: "models" };
+    const view = mountView(); await flushPromises();
+    const panels = view.findAllComponents({ name: "Panel" });
+    expect(panels.map(panel => panel.props("header"))).toEqual(["Local Model History", "Saved Models"]);
+    expect(panels.every(panel => panel.props("toggleable"))).toBe(true);
+    expect(panels.map(panel => panel.props("collapsed"))).toEqual([false, true]);
+    expect(view.getComponent({ name: "QualificationApplications" }).exists()).toBe(true);
+    view.unmount();
+  });
   it("reopens exact source-run component evidence for a saved model", async () => {
     m.query.tab = "artifacts";
     const model = { artifact_uid: "model-1", name: "PLS moisture", display_name: "PLS moisture",
@@ -124,6 +147,25 @@ describe("Runs workspace", () => {
       view.unmount();
     }
   });
+  it.each([true, false])("opens the exact artifact deep link, including beyond the current page: listed=%s", async listed => {
+    m.query = { tab: "models", project: "1", artifact: "requested-model" };
+    const requested = { project_id: 1, artifact_uid: "requested-model", name: "Requested PCA", model_type: "pca" };
+    m.get.mockImplementation(async (path: string) => {
+      if (path === "/models") return { data: listed ? [requested] : [] };
+      if (path === "/models/requested-model") return { data: requested };
+      return { data: {} };
+    });
+    const view = mountView(); await flushPromises();
+    (view.vm as any).localModelsCollapsed = true;
+    await (view.vm as any).applyArtifactDeepLink(); await flushPromises();
+    expect(view.findAll('[role="tab"]')[3].attributes('aria-selected')).toBe('true');
+    expect(view.findAllComponents({ name: "Panel" })[0].props('collapsed')).toBe(false);
+    expect((view.vm as any).selectedModel.artifact_uid).toBe('requested-model');
+    expect(view.get('#selected-model-detail').isVisible()).toBe(true);
+    expect((view.vm as any).selectedArtifactUids.size).toBe(0);
+    if (!listed) expect(m.get).toHaveBeenCalledWith('/models/requested-model');
+    view.unmount();
+  });
   it("keeps the latest saved-model overview selection when an earlier lookup resolves late", async () => {
     m.query.tab = "artifacts";
     let resolveFirst!: (value: {data: unknown}) => void;
@@ -145,6 +187,30 @@ describe("Runs workspace", () => {
     resolveFirst({data: {project_id: 1, artifact_uid: "model-a", name: "First model", model_type: "pca"}});
     await flushPromises();
     expect((view.vm as any).selectedModel?.artifact_uid).toBe("model-b");
+    view.unmount();
+  });
+  it('rejects a delayed artifact deep link after a manual selection and clears unrelated details on failure', async () => {
+    let finish!: (value: { data: unknown }) => void;
+    const delayed = new Promise<{ data: unknown }>(resolve => { finish = resolve; });
+    const chosen = { project_id: 1, artifact_uid: 'chosen', name: 'Chosen PCA', model_type: 'pca' };
+    m.query = { tab: 'models' };
+    m.get.mockImplementation(async (path: string) => {
+      if (path === '/models') return { data: [chosen] };
+      if (path === '/models/slow') return delayed;
+      if (path === '/models/missing') throw new Error('Model not found');
+      return { data: {} };
+    });
+    const view = mountView(); await flushPromises();
+    m.query.artifact = 'slow';
+    const pending = (view.vm as any).applyArtifactDeepLink();
+    await view.get('.object-row').trigger('click'); await flushPromises();
+    finish({ data: { project_id: 1, artifact_uid: 'slow', name: 'Old PCA', model_type: 'pca' } });
+    await pending; await flushPromises();
+    expect((view.vm as any).selectedModel.artifact_uid).toBe('chosen');
+    m.query.artifact = 'missing';
+    await (view.vm as any).applyArtifactDeepLink(); await flushPromises();
+    expect((view.vm as any).selectedModel).toBeNull();
+    expect(view.find('#selected-model-detail').exists()).toBe(false);
     view.unmount();
   });
   it("shows History loading, empty and failure through the shared state, and Retry reloads", async () => {

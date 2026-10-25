@@ -2,7 +2,40 @@
   <section class="data-content">
     <WorkspaceHeader title="Data" :actions="headerActionItems">
       <Button
-        v-if="!workflowSelectionContextRequested"
+        v-if="activeTab === TAB_UPLOAD"
+        label="Load"
+        icon="pi pi-folder-open"
+        class="p-button-sm"
+        :disabled="dataUploadDisabled"
+        aria-haspopup="true"
+        aria-controls="upload-source-menu"
+        @click="toggleUploadSourceMenu"
+      />
+      <Menu
+        v-if="activeTab === TAB_UPLOAD"
+        id="upload-source-menu"
+        ref="uploadSourceMenuRef"
+        :model="uploadSourceMenuItems"
+        :popup="true"
+      />
+      <Button
+        v-if="activeTab === TAB_SYNTHESIS || activeTab === TAB_LIBRARY"
+        label="Guide"
+        icon="pi pi-book"
+        class="p-button-sm p-button-outlined"
+        :data-action="activeTab === TAB_SYNTHESIS ? 'synthesis_open_guide' : undefined"
+        @click="openSourceGuide"
+      />
+      <Button
+        v-if="activeTab !== TAB_MY_DATASET"
+        label="My Dataset"
+        icon="pi pi-arrow-right"
+        iconPos="right"
+        class="p-button-sm"
+        @click="openMyDataset"
+      />
+      <Button
+        v-else-if="!workflowSelectionContextRequested"
         label="Workflow"
         data-action="open_workflow"
         icon="pi pi-arrow-right"
@@ -22,6 +55,18 @@
       >
         {{ activeSubtabDetail }}
       </WorkspaceContextItem>
+      <WorkspaceContextItem
+        v-if="activeTab === TAB_IMPORT && previewRefDataset && previewRefTitle !== sourceSaveName"
+        label="Reference"
+        :value="previewRefTitle"
+        wrap
+      />
+      <WorkspaceContextItem
+        v-if="activeTab !== TAB_MY_DATASET"
+        label="Dataset"
+        :value="sourceSaveName"
+        wrap
+      />
       <WorkspaceContextItem
         v-if="activeTab === TAB_MY_DATASET"
         label="Dataset"
@@ -411,7 +456,7 @@
                 <InputText
                   id="import-dataset-name"
                   v-model="importDatasetName"
-                  :placeholder="defaultImportDatasetName()"
+                :placeholder="resolvedImportDatasetName"
                 />
               </div>
               <Button
@@ -431,6 +476,7 @@
               class="source-preview-pane"
               :sourceRef="previewRefSource"
               :title="previewRefTitle"
+              hide-heading
               :files="previewRefFiles"
               :overrides="previewRefOverrides"
               :acquisition-required="previewRefDataset?.source === 'registered'"
@@ -487,20 +533,6 @@
                 />
               </div>
               <div class="upload-source-actions" aria-label="Choose scientific sources">
-                <Button
-                  label="Choose sources"
-                  icon="pi pi-folder-open"
-                  :disabled="dataUploadDisabled"
-                  aria-haspopup="true"
-                  aria-controls="upload-source-menu"
-                  @click="toggleUploadSourceMenu"
-                />
-                <Menu
-                  id="upload-source-menu"
-                  ref="uploadSourceMenuRef"
-                  :model="uploadSourceMenuItems"
-                  :popup="true"
-                />
                 <input
                   ref="uploadFilesInputRef"
                   class="visually-hidden-file-input"
@@ -523,9 +555,6 @@
                   @change="onNativeFileSelection"
                 />
               </div>
-              <small class="field-hint"
-                >Files, folders or ZIPs.</small
-              >
               <div v-if="stagedUploadMembers.length" class="selected-member-rows upload-members">
                 <div
                   v-for="member in stagedUploadMembers"
@@ -717,12 +746,8 @@
           <span class="p-tabview-title" data-action="open_library">Library</span>
         </template>
         <section v-if="!qualified" class="library-panel">
-          <div class="library-header">
-            <MethodHelp topic="referenceLibrary" label="Reference library and dataset import" />
-            <span class="library-count">{{ filteredLibrary.length }} entries</span>
-          </div>
           <div class="library-toolbar">
-            <div class="field compact-field">
+            <div class="field compact-field library-database-field">
               <label for="library-source">Database</label>
               <Dropdown
                 inputId="library-source"
@@ -969,7 +994,7 @@
               <InputText
                 id="library-dataset-name"
                 v-model="libraryDatasetName"
-                :placeholder="defaultLibraryDatasetName()"
+                :placeholder="resolvedLibraryDatasetName"
               />
             </div>
             <div v-if="activeLibraryImportJob" class="library-import-progress" aria-live="polite">
@@ -1002,6 +1027,7 @@
       <!-- ======================== MULTI-WELL TAB ======================== -->
       <TabPanel header="Multi-well">
         <MultiWellAcquisitionPanel
+          ref="multiWellPanelRef"
           :experiment-id="dataStore.activeExperimentId"
           :experiment-name="selectedExperimentName"
           :experiment-options="dataStore.experiments"
@@ -1620,7 +1646,7 @@ import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
-import MethodHelp from "@/components/MethodHelp.vue";
+import { resolveMethodHelpUrl } from "@/utils/documentation";
 import PlotSelectionCheckbox from "@/components/data/PlotSelectionCheckbox.vue";
 import DataContentsPanel from "./DataContentsPanel.vue";
 import DataStoryCard from "./DataStoryCard.vue";
@@ -1755,6 +1781,7 @@ const workflowSelectionContextError = ref<string | null>(null);
 const workflowSelectionApplying = ref(false);
 const workflowSelectionReason = ref("");
 const synthesisPanelRef = ref<InstanceType<typeof SynthesisPanel> | null>(null);
+const multiWellPanelRef = ref<InstanceType<typeof MultiWellAcquisitionPanel> | null>(null);
 const uploadSourceMenuRef = ref<InstanceType<typeof Menu> | null>(null);
 const uploadFilesInputRef = ref<HTMLInputElement | null>(null);
 const uploadFolderInputRef = ref<HTMLInputElement | null>(null);
@@ -2259,17 +2286,41 @@ const activeTabId = computed({
 });
 const measuredSamplesRevision = ref(0);
 const isGuidedExampleSession = ref(false);
+function openMyDataset() {
+  activeTabId.value = "my-dataset";
+}
+function openSourceGuide() {
+  if (activeTab.value === TAB_LIBRARY) {
+    const url = resolveMethodHelpUrl("referenceLibrary");
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  } else {
+    router.push("/documentation");
+  }
+}
 const headerActionItems = computed(() => [
-  ...(workflowSelectionContextRequested.value
-    ? []
-    : [
-        {
-          label: "Workflow",
-          icon: "pi pi-arrow-right",
-          disabled: workflowHandoffBusy.value,
-          command: () => goToWorkflow(),
-        },
-      ]),
+  ...(activeTab.value === TAB_UPLOAD
+    ? [{
+        label: "Load",
+        icon: "pi pi-folder-open",
+        disabled: dataUploadDisabled.value,
+        items: uploadSourceMenuItems,
+      }]
+    : []),
+  ...([TAB_SYNTHESIS, TAB_LIBRARY].includes(activeTab.value)
+    ? [{ label: "Guide", icon: "pi pi-book", command: openSourceGuide }]
+    : []),
+  ...(activeTab.value !== TAB_MY_DATASET
+    ? [{ label: "My Dataset", icon: "pi pi-arrow-right", command: openMyDataset }]
+    : workflowSelectionContextRequested.value
+      ? []
+      : [
+          {
+            label: "Workflow",
+            icon: "pi pi-arrow-right",
+            disabled: workflowHandoffBusy.value,
+            command: () => goToWorkflow(),
+          },
+        ]),
 ]);
 const uploadSourceMenuItems = [
   {
@@ -2706,6 +2757,18 @@ watch(
 const importDatasetName = ref("");
 const libraryDatasetName = ref("");
 const uploadDatasetName = ref("");
+const resolvedImportDatasetName = computed(() => importDatasetName.value.trim() || defaultImportDatasetName());
+const resolvedUploadDatasetName = computed(() => uploadDatasetName.value.trim() || defaultUploadDatasetName());
+const resolvedLibraryDatasetName = computed(() => libraryDatasetName.value.trim() || defaultLibraryDatasetName());
+const sourceSaveName = computed(() => {
+  switch (activeTab.value) {
+    case TAB_IMPORT: return resolvedImportDatasetName.value;
+    case TAB_UPLOAD: return resolvedUploadDatasetName.value;
+    case TAB_LIBRARY: return resolvedLibraryDatasetName.value;
+    case TAB_SYNTHESIS: return synthesisPanelRef.value?.datasetName || "";
+    default: return selectedExperimentName.value;
+  }
+});
 
 function clearUploadFileSelection() {
   selectedFile.value = null;
@@ -3442,15 +3505,13 @@ const activeSubtabValue = computed(() => {
     case TAB_SYNTHESIS:
       return synthesisStateLabel.value;
     case TAB_UPLOAD:
-      return dataStore.activeExperimentId
-        ? `Add to ${selectedExperimentName.value}`
-        : "Pick a dataset first";
+      return "Scientific files";
     case TAB_LIBRARY:
       return selectedLibraryKeys.size
         ? `${selectedLibraryKeys.size} in basket`
         : "Pure compound library";
     case TAB_MULTI_WELL:
-      return dataStore.activeExperimentId ? selectedExperimentName.value : "Pick a dataset first";
+      return "Acquisition plan";
     case TAB_MY_DATASET:
       return selectedExperimentName.value;
     default:
@@ -3473,9 +3534,9 @@ const activeSubtabDetail = computed(() => {
           ? `${stagedUploadMembers.value.length} staged file${stagedUploadMembers.value.length === 1 ? "" : "s"}`
           : "";
     case TAB_LIBRARY:
-      return "";
+      return `${filteredLibrary.value.length} ${filteredLibrary.value.length === 1 ? "entry" : "entries"}`;
     case TAB_MULTI_WELL:
-      return "";
+      return multiWellPanelRef.value?.summary ?? "";
     case TAB_MY_DATASET:
       return (
         inspectedDatasetShape.value ||
@@ -4210,7 +4271,7 @@ async function onImportSelectedDatasets(): Promise<boolean> {
     // typed name (or a sensible default if blank), then ingests the
     // selected references into it. The user no longer has to pre-create a
     // dataset via the dialog.
-    const name = importDatasetName.value.trim() || defaultImportDatasetName();
+    const name = resolvedImportDatasetName.value;
     const created = await dataStore.createExperiment(
       name,
       undefined,
@@ -4473,7 +4534,7 @@ async function importLibraryRows(selectedRows: LibraryRow[]) {
   if (hitranLibraryImportActive.value) return;
   importingLibrary.value = true;
   try {
-    const name = libraryDatasetName.value.trim() || defaultLibraryDatasetName();
+    const name = resolvedLibraryDatasetName.value;
     const libraryDraft = dataDraftSnapshot().library;
     const created = await dataStore.createExperiment(
       name,
@@ -6469,7 +6530,7 @@ async function onUploadFile() {
     // Synthesis-style flow: each click creates a new My Dataset with the
     // typed name (or the file name as default), then uploads the file into
     // it. The user no longer has to pre-create a dataset via the dialog.
-    const name = uploadDatasetName.value.trim() || defaultUploadDatasetName();
+    const name = resolvedUploadDatasetName.value;
     const created = await dataStore.createExperiment(
       name,
       undefined,
@@ -7225,14 +7286,6 @@ function formatDate(dateStr: string): string {
   padding: 0;
 }
 
-.library-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
 .library-title {
   display: flex;
   align-items: center;
@@ -7245,27 +7298,6 @@ function formatDate(dateStr: string): string {
 
 .library-title i {
   color: var(--ss-text-muted);
-}
-
-.library-header p {
-  margin: 0;
-  color: var(--ss-text-muted);
-  font-size: 0.9rem;
-  line-height: 1.45;
-}
-
-/* Outline pill — same vocabulary as the Active tag on Project. */
-.library-count {
-  flex: 0 0 auto;
-  border: 1px solid var(--surface-border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-color-secondary);
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: lowercase;
-  padding: 0.05rem 0.45rem;
 }
 
 .library-toolbar {
@@ -7287,6 +7319,17 @@ function formatDate(dateStr: string): string {
   color: var(--ss-text-muted);
   font-size: 0.75rem;
   font-weight: 600;
+}
+
+.field.library-database-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.library-database-field label {
+  margin: 0;
 }
 
 .hitran-settings-row {

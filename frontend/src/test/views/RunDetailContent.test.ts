@@ -255,16 +255,27 @@ describe("Persistent run inspection", () => {
     wrapper.unmount();
   });
 
-  it('requires selection of the exact produced artifact before opening shared promotion review', async () => {
+  it.each([{ uids: ['first'] }, { uids: ['first', 'second'] }])('opens the exact produced model under Models: $uids', async ({ uids }) => {
     const original = get.getMockImplementation()!;
     get.mockImplementation(async (url: string) => {
-      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture), run: { ...fixture.run, produced_artifact_uids: ['first', 'second'] } } };
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture), run: { ...fixture.run, id: 42, project_id: 1, produced_artifact_uids: uids } } };
       return original(url);
     });
-    const { wrapper } = await open('?project=1&view=Summary');
-    await wrapper.get('[aria-label="Fitted model for review"]').setValue('second');
-    await wrapper.findAll('button').find(b => b.text() === 'Review for promotion')!.trigger('click');
-    expect(wrapper.get('.promotion-dialog').text()).toBe('second');
+    const { wrapper, router } = await open('?project=1&view=Summary&node=pca');
+    const button = wrapper.findAll('button').find(b => b.text() === 'Open model')!;
+    if (uids.length > 1) {
+      expect(button.attributes('disabled')).toBeDefined();
+      await wrapper.get('[aria-label="Fitted model to open"]').setValue('second');
+      const menu = (wrapper.vm as any).headerActions.find((item: {label: string}) => item.label === 'Open model');
+      expect(menu.command).toBeUndefined();
+      expect(menu.items.map((item: {label: string}) => item.label)).toEqual(uids);
+    }
+    await button.trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/runs');
+    expect(router.currentRoute.value.query).toEqual({ tab: 'models', project: '1', artifact: uids.at(-1) });
+    expect(wrapper.text()).not.toContain('Review for promotion');
+    expect(patch).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
@@ -456,10 +467,28 @@ describe("Persistent run inspection", () => {
     expect(card.text()).toContain('3 latent variables');
     expect(card.text()).not.toContain('7 latent');
     expect(card.text()).toContain('SNV');
-    expect(card.text()).toContain('RMSEC (units not declared) 0.2894');
-    expect(card.text()).toContain('RMSEP (units not declared) 0.3975');
-    expect(card.text()).toContain('Protocol: Calibration fit');
-    expect(card.text()).toContain('Protocol: Held-out test');
+    const statistics = wrapper.get('.summary [aria-label="Model summary"]');
+    expect(statistics.text()).toContain('RMSEC (units not declared) 0.2894');
+    expect(statistics.text()).toContain('RMSEP (units not declared) 0.3975');
+    expect(statistics.text()).toContain('Protocol: Calibration fit');
+    expect(statistics.text()).toContain('Protocol: Held-out test');
+    wrapper.unmount();
+  });
+  it('uses independent canonical Summary, Results and Validation panels without discarding retained evidence', async () => {
+    const { wrapper, router } = await open();
+    const panels = wrapper.findAllComponents({ name: 'Panel' });
+    expect(panels.map(panel => panel.props('header'))).toEqual(['Summary', 'Results', 'Validation']);
+    expect(panels.map(panel => panel.props('collapsed'))).toEqual([true, false, true]);
+    const before = get.mock.calls.filter(([url]) => url.endsWith('/pca/scores')).length;
+    panels[2].vm.$emit('update:collapsed', false); await flushPromises();
+    expect(router.currentRoute.value.query.view).toBe('Validation');
+    expect(panels.map(panel => panel.props('collapsed'))).toEqual([true, false, false]);
+    panels[0].vm.$emit('update:collapsed', false); await flushPromises();
+    expect(panels.map(panel => panel.props('collapsed'))).toEqual([false, false, false]);
+    expect(get.mock.calls.filter(([url]) => url.endsWith('/pca/scores')).length).toBe(before);
+    expect(wrapper.find('.saved-plot').exists()).toBe(true);
+    panels[0].vm.$emit('update:collapsed', true); await flushPromises();
+    expect(panels[0].props('collapsed')).toBe(true);
     wrapper.unmount();
   });
   it('explains partial retention on the default Results view', async () => {

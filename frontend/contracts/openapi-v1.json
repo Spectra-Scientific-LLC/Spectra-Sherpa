@@ -383,10 +383,8 @@
             "type": "array"
           },
           "plate_format_id": {
-            "const": "plate-96",
-            "default": "plate-96",
-            "title": "Plate Format Id",
-            "type": "string"
+            "$ref": "#/components/schemas/PlateFormatId",
+            "default": "plate-96"
           },
           "plate_format_label": {
             "title": "Plate Format Label",
@@ -414,7 +412,7 @@
             "items": {
               "$ref": "#/components/schemas/AcquisitionPlanWell"
             },
-            "maxItems": 96,
+            "maxItems": 1536,
             "title": "Wells",
             "type": "array"
           }
@@ -539,14 +537,12 @@
           "plate_format_id": {
             "anyOf": [
               {
-                "const": "plate-96",
-                "type": "string"
+                "$ref": "#/components/schemas/PlateFormatId"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Plate Format Id"
+            ]
           },
           "samples": {
             "anyOf": [
@@ -569,7 +565,7 @@
                 "items": {
                   "$ref": "#/components/schemas/AcquisitionPlanWell"
                 },
-                "maxItems": 96,
+                "maxItems": 1536,
                 "type": "array"
               },
               {
@@ -8450,6 +8446,19 @@
         "title": "PlannedSample",
         "type": "object"
       },
+      "PlateFormatId": {
+        "enum": [
+          "plate-6",
+          "plate-12",
+          "plate-24",
+          "plate-48",
+          "plate-96",
+          "plate-384",
+          "plate-1536"
+        ],
+        "title": "PlateFormatId",
+        "type": "string"
+      },
       "PopulationSummary": {
         "properties": {
           "admitted_count": {
@@ -13398,9 +13407,7 @@
         "additionalProperties": false,
         "properties": {
           "default_plate_format_id": {
-            "const": "plate-96",
-            "title": "Default Plate Format Id",
-            "type": "string"
+            "$ref": "#/components/schemas/PlateFormatId"
           }
         },
         "required": [
@@ -13413,9 +13420,7 @@
         "additionalProperties": false,
         "properties": {
           "default_plate_format_id": {
-            "const": "plate-96",
-            "title": "Default Plate Format Id",
-            "type": "string"
+            "$ref": "#/components/schemas/PlateFormatId"
           }
         },
         "required": [

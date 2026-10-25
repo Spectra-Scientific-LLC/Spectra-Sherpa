@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping
 
@@ -11,13 +12,29 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.db.session import begin_serialized_sqlite_write
-from spectra_sherpa.app.models.acquisition_plan import AcquisitionPlan
+from spectra_sherpa.app.models.acquisition_plan import AcquisitionPlan, UserWorkbenchPreferences
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_specimen import ExperimentSpecimen
 from spectra_sherpa.app.schemas.acquisition_plans import AcquisitionPlanDocument
 from spectra_sherpa.core.plate_formats import DEFAULT_PLATE_FORMAT_ID, get_plate_format
 
 ACQUISITION_PLAN_SCHEMA = "spectrasherpa-acquisition-plan/3"
+logger = logging.getLogger(__name__)
+
+
+def preferred_plate_format_id(value: object) -> str:
+    """A stale preference cannot invalidate an unsaved plan or Settings.
+
+    This is only a default-selection policy. Stored plans remain strict and
+    legacy tables keep their explicit historical format.
+    """
+    if value is None:
+        return DEFAULT_PLATE_FORMAT_ID
+    try:
+        return get_plate_format(value).id
+    except ValueError:
+        logger.warning("Unsupported plate-format preference; using registry default")
+        return DEFAULT_PLATE_FORMAT_ID
 
 
 class AcquisitionPlanRevisionConflict(ValueError):
@@ -152,17 +169,30 @@ async def _validate_source_specimens(session: AsyncSession, experiment_id: int, 
 
 
 async def read_acquisition_plan(session: AsyncSession, experiment_id: int) -> dict[str, object]:
-    plate_format = get_plate_format(DEFAULT_PLATE_FORMAT_ID)
     stored = await _stored_plan(session, experiment_id)
-    document = canonicalize_acquisition_plan(
-        stored.document if stored is not None else empty_acquisition_plan(format_id=plate_format.id)
-    )
+    if stored is not None:
+        document = canonicalize_acquisition_plan(stored.document)
+    else:
+        # Preferences initialize only an unsaved plan; retained plans own their
+        # format and must not change when the user's default changes later.
+        experiment = await session.get(Experiment, experiment_id)
+        format_id = DEFAULT_PLATE_FORMAT_ID
+        if experiment is not None:
+            preferred = await session.scalar(
+                select(UserWorkbenchPreferences.default_plate_format_id).where(
+                    UserWorkbenchPreferences.user_id == experiment.user_id
+                )
+            )
+            format_id = preferred_plate_format_id(preferred)
+        document = canonicalize_acquisition_plan(empty_acquisition_plan(format_id=format_id))
+    plate_format = get_plate_format(document["plate_format_id"])
     return {
         **document,
         "experiment_id": experiment_id,
         "plate_format_label": plate_format.label,
         "capacity": plate_format.capacity,
-        "revision": _plan_revision(document),
+        # An absent plan is one stable CAS state, independent of mutable defaults.
+        "revision": _plan_revision(document if stored is not None else {"state": "absent"}),
     }
 
 
