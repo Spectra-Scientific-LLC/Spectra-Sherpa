@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { test, expect, type Locator } from "@playwright/test";
-import { closeDialog, plotData, settledSurfaceLayout } from "./assertions";
+import { assertIdentity, closeDialog, plotData, settledSurfaceLayout } from "./assertions";
 import { createDataset, instantiate, runWorkflow } from "./journeys";
 
 async function expectUnclippedFigure(surface: Locator) {
@@ -16,9 +17,28 @@ async function expectUnclippedFigure(surface: Locator) {
 
 test("paired preprocessing plots retain their full height in Quick Plot and Detailed View @smoke", async ({ page, request }) => {
   const dataset = await createDataset(request, "mixture-ir");
-  const workflow = await instantiate(request, dataset, "pca");
-  await runWorkflow(page, workflow, dataset.project);
-  await page.locator(".workflow-node").filter({ hasText: "Mean Center" }).first().click();
+  // Exercise the actual preprocessing starter independently of model/CV topology.
+  const workflow = await instantiate(request, dataset, "preprocessing");
+  // This deliberately small fixture has 13 variables, so explicitly choose
+  // a valid five-point smoothing window instead of weakening node admission.
+  let configuredWindows = 0;
+  const configured = await request.put(`/api/v1/workflows/${workflow.id}`, { data: {
+    nodes: workflow.nodes.map((node: { node_id: string; parameters: Record<string, unknown> }) => {
+      if (node.node_id !== 'preprocess_2') return node;
+      configuredWindows++;
+      return { ...node, parameters: { ...node.parameters, size: 5 } };
+    }),
+    edges: workflow.edges,
+  } });
+  expect(configuredWindows).toBe(1);
+  expect(configured.ok(), await configured.text()).toBeTruthy();
+  const result = await runWorkflow(page, workflow, dataset.project);
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/mixture-ir.json', import.meta.url), 'utf8'));
+  const active = fixture.labels.filter((_: string, index: number) => fixture.included[index]);
+  assertIdentity(result.results.inclusion_1.default.y_axis.labels, active);
+  assertIdentity(result.results.preprocess_3.default.y_axis.labels, active);
+  expect(result.results.preprocess_3.default.data).toHaveLength(22);
+  await page.locator(".workflow-node").filter({ hasText: "SNV Normalize" }).click();
   await page.getByRole("button", { name: "Quick Plot", exact: true }).click();
   const quick = page.getByRole("dialog");
   const expected = await plotData(quick);

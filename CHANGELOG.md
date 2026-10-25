@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New PCA starters perform role-appropriate scaling inside PCA, including each
   component-validation fold. Existing workflows are not rewritten; unsafe
   upstream fitted preprocessing still refuses automatic reconstruction CV.
+- The preprocessing starter materializes source sample inclusion through the
+  canonical Filter before baseline correction, smoothing and normalization.
+  Empty active populations and unresolved variable exclusions still refuse.
 - Intentional private-output omissions no longer appear as missing durable
   scientific evidence. Preview figures summarize population counts without
   printing row-identity arrays; full evidence and actionable warnings remain.
