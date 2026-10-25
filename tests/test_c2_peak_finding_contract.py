@@ -57,6 +57,12 @@ def test_peak_tables_declare_each_coordinate_and_signal_unit() -> None:
     units = result.outputs["peaks"]["metadata"]["column_units"]
     assert units["median_pos"] == "cm-1"
     assert units["median_height"] == "absorbance"
+    assert units["q1_height"] == units["q3_height"] == units["median_height"]
+    assert (
+        units["q1_absolute_window_integral"]
+        == units["q3_absolute_window_integral"]
+        == units["median_absolute_window_integral"]
+    )
     assert units["median_absolute_window_integral"] == "absorbance · cm-1"
     matrix_units = result.outputs["per_spectrum"].meta["column_units"]
     assert matrix_units["peak_position_1"] == "cm-1"

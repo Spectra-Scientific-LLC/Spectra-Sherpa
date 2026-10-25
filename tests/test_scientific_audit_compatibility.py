@@ -2,7 +2,9 @@
 
 import pytest
 
-from spectra_sherpa.app.services.dag import node_registry
+from spectra_sherpa.app.services.dag import historical_contracts, node_registry
+from spectra_sherpa.app.services.dag.managed_optimization_profile import managed_optimization_profile
+from spectra_sherpa.app.services.dag.validation_graph import ValidationGraphError
 from spectra_sherpa.core import contract_compatibility as authority
 from spectra_sherpa.sdk.fitted_state_custody import (
     DATA_FREE_APPLICATION_STATE,
@@ -36,6 +38,70 @@ _REVIEWED = {
         "bcf69d89f62cb9e9ad1cfb46fc1f32b258c130dd571eb457df73fb535f685f0f",
     ),
 }
+
+_READ_ONLY_CONSUMERS = {
+    **{operation: current for operation, (_, current) in _REVIEWED.items() if operation != "model.pca"},
+    "model.apply_fitted_linear_regression": "d78b114e9232c089d62045df8389531f24d24a20a8d94daf201063007c819665",
+    "model.apply_fitted_pcr": "f83e7ed65a6ab4f2efe14346e515fa57aa618fe268f68be0044bb538cc660428",
+    "model.apply_fitted_svr": "755d8867e11d93d20d752af591cc995b180f559a10ecdbdd31c145ed1e92b320",
+}
+_PROFILE_DIGESTS = (None, "9f37d08a914c3e276859c0ba10b5d2187d5d5ba4ff85f6d00b35cba23e7369f4")
+
+
+@pytest.mark.parametrize("profile_digest", _PROFILE_DIGESTS)
+@pytest.mark.parametrize("operation", _READ_ONLY_CONSUMERS)
+def test_exact_historical_inspection_consumers_preserve_both_packaged_profiles(operation, profile_digest, monkeypatch):
+    context = historical_contracts.HistoricalReconstructionContext(profile_digest)
+    catalog = authority.inspection_predecessor_catalog(profile_digest)
+    current = node_registry.get_metadata(operation).resolved_execution_contract()
+    assert current.digest == _READ_ONLY_CONSUMERS[operation]
+    archived = catalog["contracts"].get(operation) or catalog.get("profile_contracts", {}).get(operation)
+    if archived is None:
+        assert operation not in catalog["profile"]["operations"]
+        original = authority.inspection_predecessor_catalog()["contracts"][operation]
+        with pytest.raises(ValidationGraphError, match="unknown historical operation"):
+            context.contract(operation, original["digest"])
+        return
+    restored = context.contract(operation, archived["digest"])
+    assert restored.as_dict() == archived["payload"]
+    assert restored.digest == archived["digest"] != current.digest
+    assert context.profile().digest == catalog["profile"]["profile_digest"]
+    # A future consumer cannot inherit this review just by matching declarations.
+    before, _ = historical_contracts._INSPECTION_CONSUMERS[operation]
+    monkeypatch.setitem(historical_contracts._INSPECTION_CONSUMERS, operation, (before, "f" * 64))
+    with pytest.raises(ValidationGraphError, match="not qualified"):
+        context.contract(operation, archived["digest"])
+
+
+_OUTSIDE_PROFILE = {
+    "model.apply_fitted_pls": "de28cf5fbdc56e73ce478886ec7792ef34a6f3e965c7276da2a45014b4adadc2",
+    "model.pca_transform": "19245b23ef3c6a4292e13b99cd29f5022adec8569137d474639fc2431586bd4e",
+    "model.predict_regression": "c3946bcaf9f36178efaba8bd14c8e5b07cf3de77311eb6e7514268880a4069b1",
+    "diagnostics.labeled_regression_evaluator": "49e49cd7dfb6a737ae3e6c87038547a294ec495ff0e1d9e1f46e62a68b4d48da",
+    "diagnostics.plsda_permutation": "536b366411346eb3bd59489e9efcb98cd9edd660e929157047c33f81e98bb9e3",
+    "analysis.peak_finding": "1314d8d00cba0525f74044f31d7a6d93269ac079c986342514fd49ca6221e129",
+}
+
+
+@pytest.mark.parametrize("profile_digest", _PROFILE_DIGESTS)
+@pytest.mark.parametrize("operation", _OUTSIDE_PROFILE)
+def test_other_changed_consumers_have_no_archived_profile_or_application_alias(operation, profile_digest):
+    catalog = authority.inspection_predecessor_catalog(profile_digest)
+    assert operation not in catalog["profile"]["operations"]
+    assert operation not in catalog["contracts"]
+    assert operation not in catalog.get("profile_contracts", {})
+    assert operation not in managed_optimization_profile().operation_ids
+    current = node_registry.get_metadata(operation).resolved_execution_contract()
+    assert current.digest != _OUTSIDE_PROFILE[operation]
+    assert not authority.saved_state_predecessor_is_compatible(
+        _OUTSIDE_PROFILE[operation],
+        current.digest,
+        operation_id=operation,
+    )
+    with pytest.raises(ValidationGraphError, match="unknown historical operation"):
+        historical_contracts.HistoricalReconstructionContext(profile_digest).contract(
+            operation, _OUTSIDE_PROFILE[operation]
+        )
 
 
 @pytest.mark.parametrize("operation", _REVIEWED)
@@ -76,3 +142,8 @@ def test_scientific_audit_preserves_exact_prior_application_not_execution(operat
     assert capability.custody_class == (
         RETAINS_TRAINING_ROWS if operation == "model.fitted_svr" else DATA_FREE_APPLICATION_STATE
     )
+
+
+def test_scientific_audit_application_registry_has_only_the_reviewed_operations():
+    assert {entry.operation_id for entry in authority._SCIENTIFIC_AUDIT_PREDECESSORS} == set(_REVIEWED)
+    assert len(authority._SCIENTIFIC_AUDIT_PREDECESSORS) == 46

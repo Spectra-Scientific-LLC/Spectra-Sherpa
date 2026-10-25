@@ -760,8 +760,15 @@ class PeakFindingNode(Node):
                     "n_total_variables": n_features,
                     "selection_context": {"n_samples": n_samples, "technique": technique},
                     "column_units": {
-                        "median_height": y_units or "",
-                        "median_absolute_window_integral": f"{y_units} · {x_units}" if y_units and x_units else "",
+                        **{key: y_units or "" for key in ("median_height", "q1_height", "q3_height")},
+                        **{
+                            key: f"{y_units} · {x_units}" if y_units and x_units else ""
+                            for key in (
+                                "median_absolute_window_integral",
+                                "q1_absolute_window_integral",
+                                "q3_absolute_window_integral",
+                            )
+                        },
                         **{
                             key: x_units
                             for key in (

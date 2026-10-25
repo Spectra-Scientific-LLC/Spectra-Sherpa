@@ -1167,6 +1167,7 @@ async def test_preprocessing_project_executes_the_declared_chain_and_exports_exa
 
     assert run.node_types == {
         "data_1": "data.file_load",
+        "inclusion_1": "data.filter_samples",
         "preprocess_1": "baseline.penalized_ls",
         "preprocess_2": "preprocess.smooth",
         "preprocess_3": "preprocess.normalize",
