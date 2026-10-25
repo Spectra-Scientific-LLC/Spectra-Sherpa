@@ -7,7 +7,9 @@ test("new measured tables use Settings format and large plates have one keyboard
   expect(preferences.ok(), await preferences.text()).toBeTruthy();
   await page.goto(`/data?project=${dataset.project.id}&experimentId=${dataset.experiment.id}&fileId=${dataset.files[0].id}&tab=my-dataset`);
   await page.getByRole("checkbox", { name: "Preview sklearn_iris.csv", exact: true }).check();
-  await page.getByRole("button", { name: "sklearn_iris.csv", exact: true }).click();
+  // Parsed sample-label context is added asynchronously to this file's
+  // accessible name. Match the exact basename with its optional description.
+  await page.getByRole("button", { name: /^sklearn_iris\.csv(?:\.|$)/ }).click();
   const focused = page.locator(".focused-dataset-details");
   if (await focused.getAttribute("open") === null) await focused.locator(":scope > summary").click();
   await page.getByRole("button", { name: "Edit measured samples", exact: true }).click();
