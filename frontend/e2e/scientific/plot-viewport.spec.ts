@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { test, expect, type Locator } from "@playwright/test";
 import { assertIdentity, closeDialog, plotData, settledSurfaceLayout } from "./assertions";
 import { createDataset, instantiate, runWorkflow } from "./journeys";
+import { reportMarkdownText } from "../../src/utils/reportValues";
 
 async function expectUnclippedFigure(surface: Locator) {
   await expect(surface.locator(".plotly-canvas .main-svg").first()).toBeVisible();
@@ -61,6 +63,39 @@ test("paired preprocessing plots retain their full height in Quick Plot and Deta
   expect(await plotData(plot)).toEqual(expected);
   await test.info().attach("detailed-paired-figure.png", { body: await plot.screenshot(), contentType: "image/png" });
   await detail.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  // Real retained preprocessing results must keep their scientific qualifiers
+  // in the preview and offline export, not only in live plot help.
+  await page.goto(`/report?workflow=${workflow.id}&run=${result.run_id}&project=${dataset.project.id}`);
+  // A linked run first generates its initial preview. Let that navigation
+  // finish before changing Setup, rather than competing with its completion.
+  await expect(page.locator('iframe[title="Report preview"]')).toBeVisible();
+  await page.getByRole("button", { name: "Setup", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Include figures and individual reference/prediction values" }).check();
+  await page.getByRole("button", { name: "Generate Report", exact: true }).click();
+  const body = page.frameLocator('iframe[title="Report preview"]').locator("body");
+  const snv = body.locator(".report-node-plots").filter({ has: page.getByRole("heading", { name: /SNV Normalize/ }) });
+  const heatmap = snv.locator("figure").filter({ has: page.getByRole("heading", { name: /Heatmap/ }) });
+  await expect(heatmap.locator("img")).toBeVisible();
+  const caption = heatmap.locator("figcaption");
+  await expect(caption).toContainText("Both panels: 22 of 22 active rows.");
+  await expect(caption).toContainText("Physical baseline unspecified.");
+  await expect(caption).toContainText("independent axes and color scales");
+  const text = await caption.innerText();
+  // Original and SNV matrices may have different sequential/signed scales.
+  // Keep each complete qualifier; only equal complete notices are deduplicated.
+  expect(text).toMatch(/(?:Both panels|Original): .*Physical baseline unspecified\./);
+  expect(text).not.toMatch(/sample_labels|source_row_indices/);
+  await test.info().attach("preprocessing-report-caption.png", { body: await heatmap.screenshot(), contentType: "image/png" });
+  const preview = await page.locator('iframe[title="Report preview"]').getAttribute("srcdoc");
+  for (const format of ["HTML Report", "Markdown"]) {
+    const downloaded = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await page.getByRole("menuitem", { name: format, exact: true }).click();
+    const content = await readFile((await (await downloaded).path())!, "utf8");
+    expect(content).toContain(format === "Markdown" ? reportMarkdownText(text) : text);
+    if (format === "HTML Report") expect(content).toBe(preview);
+  }
 });
 
 test("figure geometry waits for ancestor transitions without accepting short or clipped plots @smoke", async ({ page }) => {

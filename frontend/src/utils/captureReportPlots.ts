@@ -5,6 +5,7 @@ import { buildNodeOutput } from "./nodeOutput";
 import { availableScientificPresentations, projectScientificPresentation } from "./scientificPresentation";
 import { scientificPlotRefusal } from "./scientificPlotState";
 import { displayPlot } from "./displayPlot";
+import { plotContext } from "./plotContext";
 import { themedPlotLayout } from "@/theme/plotTheme";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
 import { useQuickPlotProjection } from "@/composables/useScientificPlotProjection";
@@ -21,17 +22,27 @@ export function reportPopulationCaption(value: unknown): string {
   const shown = count("shown");
   const total = count("total");
   const excluded = count("excluded");
+  const excludedFeatures = count("excluded_features");
   if (shown === null || total === null || shown > total) return "Display population unavailable.";
-  return `${shown < total ? "Subset: " : ""}${shown} of ${total} active rows${excluded ? `; ${excluded} excluded` : ""}.`;
+  const exclusions = [
+    excluded ? `${excluded} row${excluded === 1 ? "" : "s"}` : "",
+    excludedFeatures ? `${excludedFeatures} feature${excludedFeatures === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+  return `${shown < total ? "Subset: " : ""}${shown} of ${total} active rows${exclusions.length ? `; ${exclusions.join(", ")} excluded` : ""}.`;
 }
 export function reportComparisonCaptions(metadata: Record<string, unknown>): string[] {
   const populations = metadata.comparison_populations;
+  const panels = populations && typeof populations === "object" && !Array.isArray(populations)
+    ? Object.entries(populations).map(([panel, population]) => ({ panel, caption: reportPopulationCaption(population) })).filter(item => item.caption)
+    : [];
+  const samePopulationCaption = panels.length === 2 && panels.some(item => item.panel === "original") && panels.some(item => item.panel === "preprocessed")
+    && panels[0].caption === panels[1].caption;
+  // Use the same structured color/baseline disclosure as the live plot.
+  // Do not parse comparison_notices or copy row-identity arrays into exports.
+  const colors = plotContext({ meta: { comparison_color_notices: metadata.comparison_color_notices } });
   return [
-    ...(populations && typeof populations === "object" && !Array.isArray(populations)
-      ? Object.entries(populations).flatMap(([panel, population]) => {
-        const caption = reportPopulationCaption(population);
-        return caption ? [`${panel}: ${caption}`] : [];
-      }) : []),
+    ...(samePopulationCaption ? [`Both panels: ${panels[0].caption}`] : panels.map(({ panel, caption }) => `${panel}: ${caption}`)),
+    ...(colors ? [colors] : []),
     ...(Array.isArray(metadata.comparison_refusals) ? metadata.comparison_refusals.filter((value): value is string => typeof value === "string") : []),
   ];
 }
@@ -146,6 +157,7 @@ export async function captureReportPlots(run: RunReportData, projectId: number, 
               displayed.omitted ? `${displayed.omissionDescription} omitted from this report plot by the visual display limit (not a count of unique samples); retained data are unchanged.` : "",
               groupKey,
               ...(meta.comparison_populations ? reportComparisonCaptions(meta) : [reportPopulationCaption(meta.display_population)]),
+              ...(!meta.comparison_populations ? [plotContext({ meta: { color_encoding_notice: meta.color_encoding_notice } })] : []),
               meta.comparison_scale_notice ?? ""].filter(Boolean).join(" ");
             // Report figures are static and already have a descriptive heading;
             // long per-sample legends overflow the page without adding evidence.
