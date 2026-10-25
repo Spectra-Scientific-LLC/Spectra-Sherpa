@@ -351,10 +351,10 @@ No input ports (source node).
 
 | Direction | Port | Type URI | Required | Variadic | Accepted data roles |
 | --- | --- | --- | --- | --- | --- |
-| output | <code>exclusions</code> | <code>spectrasherpa://types/WorkflowPopulation/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
 | output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
 | output | <code>target</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
 | output | <code>sample_table</code> | <code>spectrasherpa://types/SampleTable/2.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>exclusions</code> | <code>spectrasherpa://types/WorkflowPopulation/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
 
 #### Parameters
 

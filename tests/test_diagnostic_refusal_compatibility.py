@@ -56,6 +56,7 @@ def test_source_only_registrations_preserve_all_previously_supported_producers()
         if name.endswith("_PREDECESSORS") and name not in {
             "_DIAGNOSTIC_REFUSAL_PREDECESSORS",
             "_SCIENTIFIC_AUDIT_PREDECESSORS",
+            "_WORKFLOW_POPULATION_PREDECESSORS",
         }:
             previous.extend(entries)
     for operation, (old, current) in _REVIEWED.items():

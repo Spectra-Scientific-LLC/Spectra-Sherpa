@@ -37,13 +37,13 @@ def test_file_load_has_one_complete_local_sherpa_native_contract() -> None:
     assert contract.payload["managed_optimization_eligibility"] == (ManagedOptimizationEligibility.LOCAL.value,)
     assert contract.payload["semantic_inputs"] == ()
     assert [port["name"] for port in contract.payload["semantic_outputs"]] == [
-        "exclusions",
         "default",
         "target",
         "sample_table",
+        "exclusions",
     ]
-    assert contract.payload["semantic_outputs"][0]["type_ref"] == "spectrasherpa://types/WorkflowPopulation/1.0"
-    assert contract.payload["semantic_outputs"][1]["type_ref"] == ("spectrasherpa://types/SpectralDataset/1.0")
+    assert contract.payload["semantic_outputs"][0]["type_ref"] == ("spectrasherpa://types/SpectralDataset/1.0")
+    assert contract.payload["semantic_outputs"][-1]["type_ref"] == "spectrasherpa://types/WorkflowPopulation/1.0"
     assert contract.payload["required_worker_capabilities"] == (WorkerCapability.READ_DATASET.value,)
     assert contract.payload["runtime_requirements"] == (
         {"distribution": "h5py", "version": "3.16.0"},

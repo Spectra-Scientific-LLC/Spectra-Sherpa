@@ -157,6 +157,14 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/fitted_pls_node.py": (
         ("apply_fitted_state", 723, 22),
     ),
+    # Display-only population companions apply this run's retained state.
+    # These exact calls neither refit nor enter computational graph ports.
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/pca_nodes.py": (
+        ("apply_fitted_state", 1292, 12),
+    ),
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/population_display.py": (
+        ("apply_fitted_state", 163, 20),
+    ),
     (
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/"
         "apply_fitted_preprocessing_nodes.py"
@@ -167,20 +175,20 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
         ("apply_fitted_state", 114, 17),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/emsc_node.py": (
-        ("fit_fitted_state", 526, 16),
-        ("apply_fitted_state", 527, 17),
+        ("fit_fitted_state", 527, 16),
+        ("apply_fitted_state", 528, 17),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/msc_node.py": (
-        ("fit_fitted_state", 422, 16),
-        ("apply_fitted_state", 423, 17),
+        ("fit_fitted_state", 423, 16),
+        ("apply_fitted_state", 424, 17),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/osc_node.py": (
-        ("fit_fitted_state", 589, 16),
-        ("apply_fitted_state", 590, 17),
+        ("fit_fitted_state", 590, 16),
+        ("apply_fitted_state", 591, 17),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/scale_node.py": (
-        ("fit_fitted_state", 288, 16),
-        ("apply_fitted_state", 289, 17),
+        ("fit_fitted_state", 289, 16),
+        ("apply_fitted_state", 290, 17),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/selection/cars_node.py": (
         ("fit_fitted_state", 617, 12),
@@ -244,7 +252,7 @@ _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
         ("SherpaPLSDAArtifact.from_fitted_state", 91, 19),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/model_application.py": (
-        ("extract_cls.from_artifact", 372, 18),
+        ("extract_cls.from_artifact", 383, 18),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/saved_model_diagnostics.py": (
         ("SherpaPLSDAArtifact.from_fitted_state", 47, 15),

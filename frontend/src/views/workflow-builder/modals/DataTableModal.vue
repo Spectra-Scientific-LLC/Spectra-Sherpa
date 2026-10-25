@@ -917,6 +917,7 @@ const displayMetadata = computed(() => {
     "St_labels", // MCR spectra labels
     "sample_labels", // Sample labels array
     "pc_labels", // When shown elsewhere
+    "workflow_population", // Private plot companions; inspect membership via Exclusion State
   ];
 
   for (const [key, value] of Object.entries(metadata)) {

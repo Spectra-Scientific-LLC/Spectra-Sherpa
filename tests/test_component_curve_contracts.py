@@ -109,7 +109,21 @@ from spectra_sherpa.sdk.fitted_state_custody import (
     ],
 )
 def test_exact_application_predecessor_only(operation: str, serializer: str, previous: str, current: str) -> None:
-    assert node_registry.get_metadata(operation).resolved_execution_contract().digest == current
+    workflow_consumers = {
+        "model.pca": "869a320a282d9484457f4e3237a0a098c26403c65ed1e699482403231630b608",
+        "classification.plsda": "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+        "model.fitted_pls": "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
+    }
+    consumer = workflow_consumers.get(operation, current)
+    assert node_registry.get_metadata(operation).resolved_execution_contract().digest == consumer
+    assert saved_state_predecessor_is_compatible(previous, consumer, operation_id=operation, serializer=serializer)
+    assert not saved_state_predecessor_is_compatible(consumer, previous, operation_id=operation, serializer=serializer)
+    assert not saved_state_predecessor_is_compatible(
+        previous, consumer, operation_id="model.other", serializer=serializer
+    )
+    assert not saved_state_predecessor_is_compatible(previous, consumer, operation_id=operation, serializer="wrong/1")
+    # Preserve the historical component-phase pair as a separate assertion;
+    # newer current readers do not rewrite its frozen consumer identity.
     assert saved_state_predecessor_is_compatible(previous, current, operation_id=operation, serializer=serializer)
     assert not saved_state_predecessor_is_compatible(current, previous, operation_id=operation, serializer=serializer)
     assert not saved_state_predecessor_is_compatible(

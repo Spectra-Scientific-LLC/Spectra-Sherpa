@@ -275,6 +275,16 @@ def _loaded_files_to_sherpa(
         if definition is not None and project_definition
         else definition
     )
+    from spectra_sherpa.app.services.registered_reference_supervision import (
+        capture_registered_supervision,
+        restore_registered_supervision,
+    )
+
+    supervision = (
+        capture_registered_supervision(loaded[0].dataset, selected_asset_id=loaded[0].selected_asset_id)
+        if effective_definition is None and len(loaded) == 1
+        else None
+    )
     spectra = (
         apply_collection_definition(members, effective_definition)
         if effective_definition is not None
@@ -307,6 +317,7 @@ def _loaded_files_to_sherpa(
         if registered_identity is not None:
             identity = registered_identity
     spectra.meta["source_collection"].update(identity)
+    spectra = restore_registered_supervision(spectra, supervision)
     reject_spectrochempy_transport(spectra, boundary="model dataset-loader handoff")
     return spectra
 

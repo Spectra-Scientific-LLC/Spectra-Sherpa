@@ -625,8 +625,12 @@ it("labels both axes of a retained confusion matrix", () => {
 });
 
 it("keeps execution internals out of the scientific metadata and counts integral", () => {
-  const wrapper = factory({ nodeOutput: { data: [1, 2], metadata: { worker_pid: 123, execution_id: "private", n_samples: 2 } } });
+  const wrapper = factory({ nodeOutput: { data: [1, 2], metadata: {
+    worker_pid: 123, execution_id: "private", n_samples: 2,
+    workflow_population: { outputs: { default: { data: [[999]], labels: ["excluded-private-row"] } } },
+  } } });
   expect((wrapper.vm as any).displayMetadata).toEqual({ n_samples: 2 });
+  expect(wrapper.text()).not.toContain("excluded-private-row");
   expect((wrapper.vm as any).formatValue(2, true)).toBe("2");
 });
 

@@ -131,13 +131,6 @@ class FileLoadNode(Node):
         output_type="dict",
         output_ports=[
             PortMetadata(
-                "exclusions",
-                "spectrasherpa://types/WorkflowPopulation/1.0",
-                False,
-                "Exclusion State",
-                description="Exact original and result row mapping for this workflow",
-            ),
-            PortMetadata(
                 name="default",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
@@ -160,6 +153,13 @@ class FileLoadNode(Node):
                     "Exact source-row identities, inclusion decisions, target values, and annotations "
                     "when the selected file is a portable Sherpa sample table"
                 ),
+            ),
+            PortMetadata(
+                "exclusions",
+                "spectrasherpa://types/WorkflowPopulation/1.0",
+                False,
+                "Exclusion State",
+                description="Exact original and result row mapping for this workflow",
             ),
         ],
         policy=NodePolicy(

@@ -45,9 +45,14 @@ from spectra_sherpa.app.lib.registered_reference_collection_identity import (
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
 from spectra_sherpa.app.lib.target_authority import verify_target_authority
 from spectra_sherpa.app.lib.workflow_population import canonical_exclusions, source_population_outputs
+from spectra_sherpa.app.services import registered_reference_supervision as registered_supervision_contract
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.app.services.registered_reference_supervision import (
+    capture_registered_supervision,
+    restore_registered_supervision,
+)
 from spectra_sherpa.core import spectra_meta as spectra_meta_contract
 from spectra_sherpa.core.execution_runtime import DatasetSourceResolver
 from spectra_sherpa.core.prepared_data import (
@@ -411,6 +416,11 @@ class ExperimentDatasetReader:
         )
         if definition is not None and selected_file_ids:
             definition = project_collection_definition(definition, members)
+        supervision = (
+            capture_registered_supervision(loaded[0].dataset, selected_asset_id=loaded[0].selected_asset_id)
+            if definition is None and len(loaded) == 1
+            else None
+        )
         result = (
             apply_collection_definition(members, definition)
             if definition is not None
@@ -460,6 +470,7 @@ class ExperimentDatasetReader:
                 "parsed data or scientific metadata changed after binding, so re-import the dataset "
                 "or rebind the workflow"
             )
+        result = restore_registered_supervision(result, supervision)
         result = await self._apply_saved_selection(result, collection)
         set_spectra_meta(
             result,
@@ -1484,6 +1495,7 @@ bind_stable_execution_contract(
     implementation_modules=(
         workflow_population_contract,
         dataset_views_contract,
+        registered_supervision_contract,
         sample_preparation_contract,
         source_contracts,
         collection_assembly_contract,
@@ -1523,6 +1535,7 @@ bind_stable_execution_contract(
     implementation_modules=(
         workflow_population_contract,
         source_contracts,
+        registered_supervision_contract,
         collection_assembly_contract,
         collection_definition_contract,
         spectra_meta_contract,
