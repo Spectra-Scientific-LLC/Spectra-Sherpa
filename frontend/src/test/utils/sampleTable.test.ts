@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assignPlateCoordinates,
+  acquisitionProposalState,
   applyAcquisitionPlan,
   assignSequential96WellCoordinates,
   compareAcquisitionPlan,
@@ -21,6 +22,19 @@ const targets: SampleTargetDefinition[] = [
 ];
 
 describe("portable sample table", () => {
+  it("counts publishable changes separately from a blocking refusal", () => {
+    const proposal = {
+      rows: [], differences: [{ rowIndex: 0, field: "well" as const, before: "", after: "A01" }],
+      plateFormatChanged: true, refusal: null,
+      status: { planned: 1, assigned: 0, matched: 0, unmeasured: 1, outsidePlan: 0 },
+    };
+    expect(acquisitionProposalState(proposal)).toMatchObject({ changeCount: 2, label: "Publication needed" });
+    expect(acquisitionProposalState({ ...proposal, refusal: "Well I05 is outside 96-well plate" }))
+      .toMatchObject({ changeCount: 0, label: "Resolve plate conflict", severity: "warning" });
+    expect(proposal.differences).toHaveLength(1);
+    expect(acquisitionProposalState({ ...proposal, differences: [], plateFormatChanged: false }))
+      .toMatchObject({ changeCount: 0, label: "Plan and measured samples synchronized", severity: "success" });
+  });
   it.each([
     [6, "B03"],
     [12, "C04"],

@@ -94,6 +94,7 @@ from spectra_sherpa.app.services.prepared_data import (
     save_prepared_data_overrides,
 )
 from spectra_sherpa.app.services.version_storage import ContentAddressableStorage
+from spectra_sherpa.core.plate_formats import DEFAULT_PLATE_FORMAT_ID
 
 logger = logging.getLogger(__name__)
 
@@ -515,7 +516,7 @@ async def replace_acquisition_plan_endpoint(
             session,
             experiment_id,
             payload.model_dump(exclude={"expected_revision"}, exclude_unset=True, mode="json"),
-            format_id=payload.plate_format_id or "plate-96",
+            format_id=payload.plate_format_id or DEFAULT_PLATE_FORMAT_ID,
             expected_revision=payload.expected_revision,
         )
     except AcquisitionPlanRevisionConflict as exc:

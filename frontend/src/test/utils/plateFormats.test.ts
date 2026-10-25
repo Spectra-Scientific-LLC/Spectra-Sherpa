@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   defaultPlateFormatId,
@@ -6,9 +6,27 @@ import {
   getPlateFormat,
   parsePlateWell,
   plateFormats,
+  plateWellFormatAdmissions,
 } from "@/utils/plateFormats";
 
 describe("plate format registry", () => {
+  it("shares strict coordinate admission without parsing every row for every format", () => {
+    const format = getPlateFormat("plate-1536");
+    const wells = Array.from({ length: 10_000 }, (_, i) => formatWell(format,
+      Math.floor((i % format.capacity) / format.columns), i % format.columns));
+    const trim = vi.spyOn(String.prototype, "trim");
+    const admissions = plateWellFormatAdmissions(wells);
+    const calls = trim.mock.calls.length;
+    trim.mockRestore();
+    expect(calls).toBeLessThanOrEqual(2 * format.capacity);
+    expect(admissions.find(item => item.format.id === "plate-1536")?.error).toBeNull();
+    expect(admissions.find(item => item.format.id === "plate-96")?.error).toContain("outside 96-well");
+    for (const malformed of ["A1", "A00", "A001", "A01x"]) {
+      expect(plateWellFormatAdmissions([malformed]).every(item => item.error)).toBe(true);
+      expect(() => parsePlateWell(malformed, format)).toThrow();
+    }
+    expect(plateWellFormatAdmissions(["", "  ", " a01 "]).every(item => !item.error)).toBe(true);
+  });
   it("publishes one explicit 96-well authoring contract", () => {
     const format = getPlateFormat();
     expect(defaultPlateFormatId).toBe("plate-96");

@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   96-, 384- and 1536-well formats from one registry. Plate maps pan in both
   directions with fixed-size text and persistent row/column headers. Saved
   plans retain their own format; legacy tables without a format remain 96-well.
+- Plate-format changes validate retained acquisition matches as well as planned
+  wells. Conflicts are separate from publishable measured-sample changes;
+  malformed coordinates remain repairable and stale preferences cannot prevent
+  opening a new plan or Settings.
 - Data Story counts labelled feature axes correctly and retains parsed
   synthesis origin and recipe settings, distinct from laboratory acquisition.
 

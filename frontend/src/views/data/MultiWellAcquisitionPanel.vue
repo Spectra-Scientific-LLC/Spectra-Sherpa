@@ -19,7 +19,7 @@
           icon="pi pi-check"
           class="p-button-sm"
           :loading="saving"
-          :disabled="!planLoaded || loading || !dirty"
+          :disabled="!planLoaded || loading || !dirty || Boolean(planFormatError)"
           @click="savePlan"
         />
       </div>
@@ -424,10 +424,9 @@ import {
   defaultPlateFormatId,
   formatWell,
   getPlateFormat,
-  parsePlateWell,
-  plateFormats,
+  plateWellFormatAdmissions,
 } from "@/utils/plateFormats";
-import { proposeMeasuredSamples, type SampleTableRow } from "@/utils/sampleTable";
+import { acquisitionProposalState, proposeMeasuredSamples, type SampleTableRow } from "@/utils/sampleTable";
 import { getErrorMessage } from "@/utils/errors";
 import type {
   AcquisitionOrderStep,
@@ -465,12 +464,16 @@ const toast = useToast();
 const { isCapabilityDisabled } = useAppConfig();
 const preferredFormatId = ref(defaultPlateFormatId);
 const plateFormat = computed(() => getPlateFormat(preferredFormatId.value));
-const formatOptions = computed(() => plateFormats.map((format) => ({
+const formatAdmissions = computed(() => plateWellFormatAdmissions([
+  ...draft.value.wells.map(well => well.well_position),
+  ...(draft.value.matching.matches ?? []).map(match => match.well_position ?? ""),
+ ]));
+const formatOptions = computed(() => formatAdmissions.value.map(({ format, error }) => ({
   label: format.label, value: format.id,
-  disabled: draft.value.wells.some(well => {
-    try { parsePlateWell(well.well_position, format); return false; } catch { return true; }
-  }),
+  disabled: format.id !== preferredFormatId.value && Boolean(error),
 })));
+const planFormatError = computed(() => formatAdmissions.value.find(
+  item => item.format.id === preferredFormatId.value)?.error ?? null);
 const loading = ref(false);
 const saving = ref(false);
 const loadError = ref<string | null>(null);
@@ -558,8 +561,9 @@ const planForProposal = computed<AcquisitionPlan>(() => ({
 const measuredProposal = computed(() =>
   proposeMeasuredSamples(measuredRows.value, planForProposal.value, measuredFormatId.value),
 );
-const measuredDifferenceCount = computed(() => !measuredAvailable.value || !draft.value.wells.length ? 0
-  : measuredProposal.value.differences.length + Number(measuredProposal.value.plateFormatChanged) + Number(Boolean(measuredProposal.value.refusal)));
+const measuredSync = computed(() => acquisitionProposalState(
+  measuredAvailable.value && draft.value.wells.length ? measuredProposal.value : null));
+const measuredDifferenceCount = computed(() => measuredSync.value.changeCount);
 const syncLabel = computed(() =>
   measuredLoading.value
     ? "Checking measured samples"
@@ -569,12 +573,10 @@ const syncLabel = computed(() =>
         ? "No published measured-sample version"
         : !draft.value.wells.length
           ? "No planned wells"
-        : measuredDifferenceCount.value
-          ? "Publication needed"
-          : "Plan and measured samples synchronized",
+        : measuredSync.value.label,
 );
 const syncSeverity = computed(() =>
-  !draft.value.wells.length ? "secondary" : measuredDifferenceCount.value || (props.sourceFileId && !measuredAvailable.value)
+  !draft.value.wells.length ? "secondary" : measuredSync.value.refusal || measuredDifferenceCount.value || (props.sourceFileId && !measuredAvailable.value)
     ? "warning"
     : props.sourceFileId
       ? "success"
@@ -587,6 +589,8 @@ const syncDetail = computed(() =>
       ? "Open Measured samples in My Dataset to review and publish the first immutable version."
       : !draft.value.wells.length
         ? ""
+      : measuredSync.value.refusal
+        ? measuredSync.value.refusal
       : measuredDifferenceCount.value
         ? `${measuredDifferenceCount.value} proposed field changes are waiting for review in My Dataset.`
         : `${measuredProposal.value.status.matched}/${measuredProposal.value.status.planned} planned wells match the published measured-sample version.`,
@@ -809,6 +813,10 @@ async function loadPlan(): Promise<void> {
 }
 async function savePlan(): Promise<void> {
   if (props.experimentId == null || !planLoaded.value || loading.value || !canAuthor.value || saving.value) return;
+  if (planFormatError.value) {
+    saveError.value = planFormatError.value;
+    return;
+  }
   const experimentId = props.experimentId;
   const token = requestToken;
   const submitted = serializedDraft.value;

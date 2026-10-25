@@ -55,6 +55,50 @@ describe("MultiWellAcquisitionPanel", () => {
     vi.mocked(api.put).mockResolvedValue({ data: plan });
   });
 
+  it("preserves retained match wells when clearing a plate and refuses an incompatible shrink", async () => {
+    const match = { sequence_order: 0, well_position: "I01", factor_values: {} };
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({
+      data: url.includes("presets") ? [] : {
+        ...plan, plate_format_id: "plate-384", plate_format_label: "384-well plate", capacity: 384,
+        wells: [{ ...plan.wells[0], well_position: "I01" }], matching: { rules: {}, matches: [match] },
+      },
+    }));
+    const wrapper = shallowMount(MultiWellAcquisitionPanel, { props: { experimentId: 12, experimentOptions: [] } });
+    await flushPromises();
+    await wrapper.get('button-stub[label="Clear"]').trigger("click");
+    const options = (wrapper.vm as unknown as { formatOptions: { value: string; disabled: boolean }[] }).formatOptions;
+    expect(options.find(option => option.value === "plate-96")?.disabled).toBe(true);
+    expect(options.find(option => option.value === "plate-384")?.disabled).toBe(false);
+    wrapper.getComponent("#acquisition-format").vm.$emit("update:modelValue", "plate-96");
+    await wrapper.get('button-stub[label="Save acquisition plan"]').trigger("click");
+    expect(api.put).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("Well I01 is outside 96-well plate");
+    wrapper.getComponent("#acquisition-format").vm.$emit("update:modelValue", "plate-384");
+    await wrapper.get('button-stub[label="Save acquisition plan"]').trigger("click");
+    expect(api.put).toHaveBeenCalledWith("/experiments/12/acquisition-plan",
+      expect.objectContaining({ wells: [], matching: { rules: {}, matches: [match] } }));
+  });
+
+  it("reports a measured-format conflict without calling it a publication", async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({
+      data: url.includes("presets") ? [] : url.includes("analysis-binding") ? {
+        plate_format_id: "plate-384", rows: ["A01", "I05"].map((well, index) => ({
+          row_index: index, source_file_id: 41, sample_id: `sample-${index}`, include: true,
+          targets: {}, annotations: {}, plate_id: "plate-1", well,
+        })),
+      } : plan,
+    }));
+    const wrapper = shallowMount(MultiWellAcquisitionPanel, {
+      props: { experimentId: 12, sourceFileId: 41, experimentOptions: [] },
+    });
+    await flushPromises();
+    expect(wrapper.find('tag-stub[value="Resolve plate conflict"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("Well I05 is outside 96-well plate");
+    expect(wrapper.text()).not.toContain("Publication needed");
+    expect(wrapper.text()).not.toContain("waiting for review");
+    expect((wrapper.vm as unknown as { measuredDifferenceCount: number }).measuredDifferenceCount).toBe(0);
+  });
+
   it("saves format-only changes and fills the selected capacity", async () => {
     vi.mocked(api.put).mockImplementation(async (_url, payload) => ({
       data: {

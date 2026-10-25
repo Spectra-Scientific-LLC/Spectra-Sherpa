@@ -12,6 +12,7 @@ from spectra_sherpa.app.schemas.acquisition_plans import (
     WorkbenchPreferencesOut,
     WorkbenchPreferencesUpdate,
 )
+from spectra_sherpa.app.services.acquisition_plans import preferred_plate_format_id
 
 router = APIRouter(prefix="/acquisition-preferences", dependencies=[Depends(get_current_user)])
 
@@ -26,7 +27,7 @@ async def get_acquisition_preferences(
     )
     preferences = result.scalar_one_or_none()
     return WorkbenchPreferencesOut(
-        default_plate_format_id=preferences.default_plate_format_id if preferences else "plate-96"
+        default_plate_format_id=preferred_plate_format_id(preferences.default_plate_format_id if preferences else None)
     )
 
 

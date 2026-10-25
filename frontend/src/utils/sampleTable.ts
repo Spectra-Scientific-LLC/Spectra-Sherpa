@@ -3,6 +3,7 @@ import {
   formatWell,
   getPlateFormat,
   parsePlateWell,
+  plateWellFormatAdmissions,
 } from "@/utils/plateFormats";
 import type { AcquisitionPlan } from "@/types";
 
@@ -306,16 +307,21 @@ export function plateAssignmentFormatError(
   rows: readonly SampleTableRow[],
   formatId: string,
 ): string | null {
-  const format = getPlateFormat(formatId);
-  for (const row of rows) {
-    if (!row.well.trim()) continue;
-    try {
-      parsePlateWell(row.well, format);
-    } catch {
-      return `Well ${row.well} is outside ${format.label}. Reassign or clear it before changing format.`;
-    }
-  }
-  return null;
+  return plateWellFormatAdmissions(rows.map(row => row.well), [getPlateFormat(formatId)])[0].error;
+}
+
+/** A refused proposal is not publishable work, nor proof of synchronization. */
+export function acquisitionProposalState(proposal: AcquisitionPlanProposal | null) {
+  const refusal = proposal?.refusal ?? null;
+  const changeCount = refusal || !proposal
+    ? 0 : proposal.differences.length + Number(proposal.plateFormatChanged);
+  return {
+    changeCount,
+    refusal,
+    label: refusal ? "Resolve plate conflict"
+      : changeCount ? "Publication needed" : "Plan and measured samples synchronized",
+    severity: refusal || changeCount ? "warning" as const : "success" as const,
+  };
 }
 
 function normalizedTargets(targets: readonly SampleTargetDefinition[]): SampleTargetDefinition[] {

@@ -131,7 +131,7 @@ describe("SampleTableEditor acquisition-plan synchronization", () => {
     ).toBe("plate-6");
   });
 
-  it("disables measured formats that would hide assigned wells", async () => {
+  it.each(["AF48", "A1"])("keeps current measured format repairable with well %s", async (well) => {
     vi.mocked(api.get).mockImplementation((url: string) =>
       Promise.resolve({
         data: url.includes("acquisition-plan")
@@ -139,7 +139,7 @@ describe("SampleTableEditor acquisition-plan synchronization", () => {
           : {
               ...measured,
               plate_format_id: "plate-1536",
-              rows: [{ ...measured.rows[0], plate_id: "plate-1", well: "AF48" }],
+              rows: [{ ...measured.rows[0], plate_id: "plate-1", well }],
             },
       }),
     );
@@ -218,6 +218,8 @@ describe("SampleTableEditor acquisition-plan synchronization", () => {
     });
     await wrapper.get('button-stub[label="Edit measured samples"]').trigger("click");
     await flushPromises();
+    expect(wrapper.find('tag-stub[value="Resolve plate conflict"]').exists()).toBe(true);
+    expect(wrapper.find('tag-stub[value="Publication needed"]').exists()).toBe(false);
     await wrapper.get('button-stub[label="Use acquisition plan"]').trigger("click");
     await wrapper.get('button-stub[label="Preview differences"]').trigger("click");
     expect(wrapper.text()).toContain("Well AF48 is outside 6-well plate");

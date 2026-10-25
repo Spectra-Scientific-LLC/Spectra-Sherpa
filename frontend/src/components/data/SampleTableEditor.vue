@@ -312,13 +312,14 @@
               :value="`${planComparison.unmeasured} not measured`"
               severity="warning"
             />
-            <Tag :value="planSyncLabel" :severity="planDifferenceCount ? 'warning' : 'success'" />
+            <Tag :value="planSync.label" :severity="planSync.severity" />
             <Tag
               v-if="planComparison.outsidePlan"
               :value="`${planComparison.outsidePlan} outside plan`"
               severity="warning"
             />
           </div>
+          <small v-if="planSync.refusal" class="inline-error" role="alert">{{ planSync.refusal }}</small>
           <Button
             v-if="!confirmPlanAssignment"
             label="Use acquisition plan"
@@ -565,10 +566,11 @@ import {
   defaultPlateFormatId,
   formatWell,
   getPlateFormat,
-  plateFormats,
+  plateWellFormatAdmissions,
 } from "@/utils/plateFormats";
 import {
   assignPlateCoordinates,
+  acquisitionProposalState,
   compareAcquisitionPlan,
   createSampleTableRows,
   isReservedSampleTableColumn,
@@ -709,10 +711,11 @@ const plateDirectionOptions = [
   { label: "Across rows", value: "rows" },
   { label: "Down columns", value: "columns" },
 ];
-const plateFormatOptions = computed(() => plateFormats.map((format) => ({
+const plateAdmissions = computed(() => plateWellFormatAdmissions(rows.value.map(row => row.well)));
+const plateFormatOptions = computed(() => plateAdmissions.value.map(({ format, error }) => ({
   label: format.label,
   value: format.id,
-  disabled: Boolean(plateAssignmentFormatError(rows.value, format.id)),
+  disabled: format.id !== plateFormatId.value && Boolean(error),
 })));
 const selectedPlateFormat = computed(() => getPlateFormat(plateFormatId.value));
 const wellOptions = computed(() =>
@@ -998,19 +1001,14 @@ const planAssignmentHint = computed(() =>
 );
 const planComparison = computed(() => compareAcquisitionPlan(rows.value, plannedWells.value,
   loadedPlan.value?.plate_format_id ?? plateFormatId.value));
-const planDifferenceCount = computed(() =>
-  loadedPlan.value ? (() => {
-    const proposal = proposeMeasuredSamples(rows.value, loadedPlan.value, plateFormatId.value);
-    return proposal.differences.length + Number(proposal.plateFormatChanged) + Number(Boolean(proposal.refusal));
-  })() : 0,
-);
-const planSyncLabel = computed(() =>
-  planDifferenceCount.value ? "Publication needed" : "Plan and measured samples synchronized",
-);
+const planProposal = computed(() => loadedPlan.value
+  ? proposeMeasuredSamples(rows.value, loadedPlan.value, plateFormatId.value) : null);
+const planSync = computed(() => acquisitionProposalState(planProposal.value));
 
 function previewAcquisitionPlan(): void {
   if (!loadedPlan.value) return;
-  const proposal = proposeMeasuredSamples(rows.value, loadedPlan.value, plateFormatId.value);
+  const proposal = planProposal.value;
+  if (!proposal) return;
   if (proposal.refusal) {
     plateError.value = proposal.refusal;
     confirmPlanAssignment.value = false;

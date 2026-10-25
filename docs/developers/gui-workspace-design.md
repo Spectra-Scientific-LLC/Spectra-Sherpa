@@ -41,6 +41,13 @@ Do not shrink text to fit high-density plates or leave a floating tooltip anchor
 to a well that has scrolled away. Format changes must not silently hide or discard
 existing assignments.
 
+Format admission covers planned wells and retained acquisition matches through
+the same coordinate authority used by measured-sample tables. Parse distinct
+well coordinates once when deriving format choices; unrelated field edits must
+not repeat that work. Keep a malformed current assignment repairable, but do not
+admit it for publication. A refused synchronization proposal is a conflict, not
+a publishable change or evidence that the populations are synchronized.
+
 ## Scientific context and copy
 
 Descriptive source summaries can report finite coordinate bounds and recorded

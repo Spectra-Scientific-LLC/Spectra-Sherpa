@@ -4,9 +4,11 @@ import asyncio
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from spectra_sherpa.app.db.base import Base
+from spectra_sherpa.app.models.acquisition_plan import AcquisitionPlan, UserWorkbenchPreferences
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_specimen import ExperimentSpecimen
 from spectra_sherpa.app.models.user import User
@@ -21,6 +23,98 @@ async def _create_experiment(client: AsyncClient, name: str = "Plate study") -> 
     response = await client.post("/api/v1/experiments", json={"name": name, "metadata": {}})
     assert response.status_code == 201
     return response.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_stale_preference_falls_back_without_rewriting_saved_plan_or_preference(client, test_session):
+    from spectra_sherpa.core.plate_formats import DEFAULT_PLATE_FORMAT_ID
+
+    await client.put("/api/v1/acquisition-preferences", json={"default_plate_format_id": "plate-384"})
+    experiment_id = await _create_experiment(client)
+    url = f"/api/v1/experiments/{experiment_id}/acquisition-plan"
+    initial = (await client.get(url)).json()
+    saved = await client.put(url, json={"expected_revision": initial["revision"], "wells": [{"well_position": "I01"}]})
+    assert saved.status_code == 200, saved.text
+    other_id = await _create_experiment(client, "Unsaved stale default")
+    owner_id = (await test_session.get(Experiment, experiment_id)).user_id
+    preference = await test_session.scalar(
+        select(UserWorkbenchPreferences).where(UserWorkbenchPreferences.user_id == owner_id)
+    )
+    preference.default_plate_format_id = "plate-retired"
+    await test_session.commit()
+    assert (await client.get("/api/v1/acquisition-preferences")).json() == {
+        "default_plate_format_id": DEFAULT_PLATE_FORMAT_ID
+    }
+    preview = await client.get(f"/api/v1/experiments/{other_id}/acquisition-plan")
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["plate_format_id"] == DEFAULT_PLATE_FORMAT_ID
+    assert preview.json()["revision"] == initial["revision"]
+    assert (await client.get(url)).json() == saved.json()
+    await test_session.refresh(preference)
+    assert preference.default_plate_format_id == "plate-retired"
+    # An unknown format in a retained plan must never be reinterpreted as a default.
+    stored = await test_session.scalar(select(AcquisitionPlan).where(AcquisitionPlan.experiment_id == experiment_id))
+    stored.document = {**stored.document, "plate_format_id": "plate-retired"}
+    await test_session.commit()
+    with pytest.raises(ValueError, match="plate_format_id|plate-retired"):
+        await read_acquisition_plan(test_session, experiment_id)
+
+
+@pytest.mark.asyncio
+async def test_registry_default_for_new_preferences_and_plan_route_preserves_legacy_96(client, monkeypatch):
+    from spectra_sherpa.app.api.v1.routes import experiments as routes
+    from spectra_sherpa.app.services import acquisition_plans as plans
+    from spectra_sherpa.core.plate_formats import infer_legacy_plate_format
+
+    monkeypatch.setattr(plans, "DEFAULT_PLATE_FORMAT_ID", "plate-384")
+    monkeypatch.setattr(routes, "DEFAULT_PLATE_FORMAT_ID", "plate-384")
+    assert (await client.get("/api/v1/acquisition-preferences")).json() == {"default_plate_format_id": "plate-384"}
+    experiment_id = await _create_experiment(client)
+    url = f"/api/v1/experiments/{experiment_id}/acquisition-plan"
+    initial = (await client.get(url)).json()
+    assert initial["plate_format_id"] == "plate-384"
+    actual_replace = routes.replace_acquisition_plan
+    supplied_defaults = []
+
+    async def record_default(*args, **kwargs):
+        supplied_defaults.append(kwargs["format_id"])
+        return await actual_replace(*args, **kwargs)
+
+    monkeypatch.setattr(routes, "replace_acquisition_plan", record_default)
+    response = await client.put(
+        url, json={"expected_revision": initial["revision"], "wells": [{"well_position": "I01"}]}
+    )
+    assert response.status_code == 200, response.text
+    assert supplied_defaults == ["plate-384"]
+    assert infer_legacy_plate_format(["A01", "H12"]).id == "plate-96"
+    with pytest.raises(ValueError, match="row 1"):
+        infer_legacy_plate_format(["I01"])
+
+
+@pytest.mark.asyncio
+async def test_clear_wells_preserves_matches_and_refuses_incompatible_format(client):
+    experiment_id = await _create_experiment(client)
+    url = f"/api/v1/experiments/{experiment_id}/acquisition-plan"
+    initial = (await client.get(url)).json()
+    match = {"sequence_order": 0, "well_position": "I01"}
+    saved = await client.put(
+        url,
+        json={
+            "expected_revision": initial["revision"],
+            "plate_format_id": "plate-384",
+            "wells": [{"well_position": "I01"}],
+            "matching": {"matches": [match]},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    cleared = await client.put(url, json={"expected_revision": saved.json()["revision"], "wells": []})
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["matching"]["matches"][0]["well_position"] == "I01"
+    refused = await client.put(
+        url, json={"expected_revision": cleared.json()["revision"], "plate_format_id": "plate-96"}
+    )
+    assert refused.status_code == 400
+    assert (await client.get(url)).json() == cleared.json()
 
 
 @pytest.mark.asyncio
