@@ -20,6 +20,23 @@ A dataset is a named selection of data, views, target, and optional groups that
 workflows consume. For spectra, the core shape is usually samples by spectral
 variables. Metadata records the source, file list, units, and other context when available.
 
+### Portfolio
+
+A portfolio is a saved, named analysis selection within a source dataset. It
+retains file/result selection, target and grouping choices, and reviewed sample
+corrections where applicable, without replacing the source measurements. Use
+**Save portfolio** in My Dataset and **Show** to restore one. Several portfolios
+can support different studies of the same source; workflow sheets bind an exact
+selection rather than whatever happens to be plotted now. See
+[Build a portfolio](data-import.md#build-a-portfolio-in-my-dataset).
+
+### Acquisition plan
+
+[Multi-well](multi-well.md) records intended samples, mixtures, factors, wells,
+acquisition order and matching rules for a dataset. A plan is not measured data:
+review and publish a proposed measured-sample table separately before using
+its metadata in analysis.
+
 ## Workflow
 
 A workflow is a directed graph of nodes. Data nodes feed preprocessing nodes, model nodes, validation nodes, plots, tables, reports, and exports.

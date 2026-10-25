@@ -28,6 +28,7 @@ nav:
       - 3.6. Reports and Exports: workflows/reports-exports.md
       - 3.7. Compare Calibration Workflows: workflows/optimize-saved-result.md
       - 3.8. Reference Libraries and Synthesis: workflows/references-synthesis.md
+      - 3.9. Multi-well Experiments: workflows/multi-well.md
   - 4. Chemometrics Guide:
       - Overview: chemometrics/index.md
       - 4.1. Quick Reference: chemometrics/quick-reference.md
@@ -60,10 +61,11 @@ nav:
   - 7. Concepts:
       - 7.1. Glossary: concepts/glossary.md
   - 8. Releases:
-      - 8.1. SpectraSherpa 0.6.3: releases/0.6.3.md
-      - 8.2. SpectraSherpa 0.6.2: releases/0.6.2.md
-      - 8.3. SpectraSherpa 0.6.1: releases/0.6.1.md
-      - 8.4. SpectraSherpa 0.6.0: releases/0.6.0.md
+      - 8.1. SpectraSherpa 0.6.4 (unreleased): releases/0.6.4.md
+      - 8.2. SpectraSherpa 0.6.3: releases/0.6.3.md
+      - 8.3. SpectraSherpa 0.6.2: releases/0.6.2.md
+      - 8.4. SpectraSherpa 0.6.1: releases/0.6.1.md
+      - 8.5. SpectraSherpa 0.6.0: releases/0.6.0.md
   - 9. Support:
       - 9.1. Desktop Downloads and Installation: support/local_install.md
       - 9.2. Privacy Statement: support/privacy.md

@@ -7,7 +7,9 @@ These terms describe contracts a scientist can observe in SpectraSherpa. Each
 definition links to the next practical place to use it.
 
 For new product copy, use **Run workflow**, **Dataset**, and **Short summary**;
-avoid **Execute workflow**, **Data Portfolio**, and **Short scientific summary**.
+avoid **Execute workflow** and **Short scientific summary**. Do not use
+**Data Portfolio** as a replacement name for Dataset. **Portfolio** describes
+the saved-selection concept exposed by **Save portfolio** in My Dataset.
 The [bounded copy gate](../developers/repository-governance.md#copy-policy)
 ratchets existing wording without rewriting identifiers or scientific terms.
 
@@ -27,6 +29,8 @@ ratchets existing wording without rewriting identifiers or scientific terms.
 | **Custody** | Who or what is permitted to hold data or fitted state, and for how long. Example: a trial workspace has temporary custody of an admitted reference. |
 | **Dataset** | A named selection of data, views, target, and optional groups in the workspace. Its scientific payload is an n-dimensional array with axes, labels, masks, metadata, and provenance. See [SherpaDataset](../architecture/sherpa-dataset.md). |
 | **Digest-bound** | Linked to exact bytes or a normalized record by a cryptographic digest. Example: a registered reference grant is bound to the selected file's SHA-256. |
+| **Portfolio** | A named, saved analysis selection within a source dataset, including file/result, target, grouping and reviewed inclusion choices where applicable. It does not replace the measurements. See [Build a portfolio](../workflows/data-import.md#build-a-portfolio-in-my-dataset). |
+| **Multi-well acquisition plan** | Intended samples, mixtures, factors, plate layout, acquisition order and matching rules. Distinct from the reviewed, published measured-sample table. See [Multi-well](../workflows/multi-well.md). |
 | **Evidence** | A reviewable record showing that a claim was checked. Example: a split plan records which groups were held out. |
 | **Fitted state** | Learned model parameters needed for later application. Example: PCA loadings and centering values form fitted state. See [Model Artifacts](../architecture/model-artifacts.md). |
 | **Group** | A set of rows that must stay together during validation. Example: all technical replicates from one specimen form a group. |
