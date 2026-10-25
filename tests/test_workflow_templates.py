@@ -934,6 +934,26 @@ class TestTemplateLoaderValidation:
         assert scale["parameters"] == {"method": expected_method, "center": True}
         assert scale["label"] == expected_label
 
+    @pytest.mark.parametrize("primary_role", ["X_features", "X_spectra"])
+    def test_new_pca_starter_owns_fold_local_scaling(self, primary_role: str) -> None:
+        template = WorkflowTemplate(slug="pca", name="PCA", category="exploratory", template_data={}, is_active=True)
+        nodes = [
+            {"node_id": "data", "node_type": "data.file_load", "parameters": {}},
+            {"node_id": "model", "node_type": "model.pca", "parameters": {"n_components": "3"}},
+        ]
+        _adapt_starter_scaling_to_bound_role(
+            template=template,
+            source_node_id="data",
+            analysis_profile={"primary_role": primary_role},
+            nodes=nodes,
+            edges=[{"from_node_id": "data", "to_node_id": "model"}],
+        )
+        assert nodes[1]["parameters"] == {
+            "n_components": "3",
+            "standardized": primary_role == "X_features",
+            "scaled": False,
+        }
+
 
 @pytest.mark.parametrize(
     "slug,node_type",

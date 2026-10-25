@@ -240,6 +240,7 @@ v-model:scale-value="selectedFeatureScale"
         <span v-if="usePlottedTable && isProjectedScientificKind(nodeOutput, 'visualization')" class="data-summary">Plot coordinates <MethodHelp topic="displayExports" label="Plot coordinates and sample rows" /></span>
         <span v-if="!tableOnly && availablePlots.length === 0" class="data-summary" title="No shared quantitative axis">Table-only result</span>
         <span v-if="dataPreviewSummary" class="data-summary">{{ dataPreviewSummary }}</span>
+        <span v-if="responseUnit" class="data-summary">Response unit: {{ responseUnit }}</span>
         <div v-if="totalFeatureColumns > 10" class="feature-paging">
           <Button icon="pi pi-angle-double-left" aria-label="First feature columns" :disabled="featureOffset === 0" @click="featureOffset = 0" />
           <Button icon="pi pi-angle-left" aria-label="Previous feature columns" :disabled="featureOffset === 0" @click="featureOffset = Math.max(0, featureOffset - 10)" />
@@ -289,6 +290,8 @@ v-model:scale-value="selectedFeatureScale"
 import { SCIENTIFIC_COLORS, PLOT_SURFACE } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
+import { scientificMatrixColumns } from "@/utils/scientificMatrixColumns";
+import { scientificColumnLabel, scientificResponseUnit } from "@/utils/scientificDisplay";
 import DisplaySubsetIndicator from "@/components/DisplaySubsetIndicator.vue";
 import AxisSetControls from "@/components/data/AxisSetControls.vue";
 import { plotMatrixSlices } from "@/utils/plotMatrixSlices";
@@ -949,6 +952,7 @@ const dataPreviewSummary = computed(() => {
   return summary;
 });
 
+const responseUnit = computed(() => scientificResponseUnit(props.nodeOutput?.presentation_value ?? props.nodeOutput?.metadata));
 const dataPreviewColumns = computed(() => {
   if (!dataPreview.value.length) return [];
   if (usePlottedTable.value) {
@@ -973,28 +977,13 @@ const dataPreviewColumns = computed(() => {
   const first = dataPreview.value[0] as Record<string, any>;
   const metadata = props.nodeOutput?.metadata || {};
   const pcLabels = metadata.pc_labels || [];
-  const presentationValue = props.nodeOutput?.presentation_value;
-  const presentationDataset =
-    presentationValue && typeof presentationValue === "object" && !Array.isArray(presentationValue)
-      ? presentationValue as Record<string, any>
-      : {};
-  const featureAxis = presentationDataset.x_axis || presentationDataset.feature_axis || {};
-  const featureNames = [featureAxis.labels, featureAxis.data, featureAxis.values, metadata.feature_names]
-    .find((candidate) => Array.isArray(candidate) && candidate.length > 0) || [];
-  const xTitle = metadata.x_title || "";
-  const isPCA = metadata.type === "PCA" || metadata.isPCA;
-  const isMCR = metadata.type === "MCR_ALS";
+  const featureNames = scientificMatrixColumns(props.nodeOutput, Array.isArray(props.nodeOutput?.data?.[0]) ? props.nodeOutput.data[0].length : 1);
   const isPlsVariance = isProjectedScientificKind(props.nodeOutput, "pls_explained_variance");
-  const isLoadingMatrix = ["pca_loadings", "pca_variable_correlations", "pls_loadings", "plsda_loadings"]
-    .some((kind) => isProjectedScientificKind(props.nodeOutput, kind));
-  const mcrLabels = Array.isArray(metadata.labels)
-    ? metadata.labels.map((item: any) => normalizeSampleLabel(item)).filter((s: string) => s.length > 0)
-    : [];
 
   return Object.keys(first)
     .filter((key) => key !== "_label_full")
     .map((key) => {
-      let header = key;
+      let header = scientificColumnLabel(key, metadata);
       if (key === "_index") {
         header = "#";
       } else if (correlationCircleSelected.value && key === "variable") {
@@ -1012,17 +1001,9 @@ const dataPreviewColumns = computed(() => {
         const colIdx = parseInt(key.replace("col_", ""));
         if (isPlsVariance) {
           header = colIdx === 0 ? "X variance" : colIdx === 1 ? "Y variance" : `Domain ${colIdx + 1}`;
-        } else if (isLoadingMatrix && featureNames[colIdx]) {
-          header = normalizeSampleLabel(featureNames[colIdx]);
-        } else if (isPCA && pcLabels[colIdx]) {
-          header = pcLabels[colIdx];
-        } else if (isMCR && mcrLabels[colIdx]) {
-          header = mcrLabels[colIdx];
         } else if (featureNames.length > colIdx) {
           header = typeof featureNames[colIdx] === "number"
             ? previewCell(featureNames[colIdx]) : normalizeSampleLabel(featureNames[colIdx]);
-        } else if (xTitle && xTitle !== "Feature") {
-          header = `${xTitle} ${colIdx + 1}`;
         } else {
           header = `Col ${colIdx + 1}`;
         }

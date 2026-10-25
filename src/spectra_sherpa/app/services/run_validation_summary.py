@@ -395,7 +395,7 @@ def _validation_output_values(run, evidence):
             yield node, port, value
 
 
-def _component_curve_report_rows(node, value, context=lambda label, value: (label, value)):
+def _component_curve_report_rows(node, value, context=lambda label, value, **kwargs: (label, value)):
     rows = [
         (f"Selected components ({node})", value.get("selected_components", "Not recorded")),
         (f"Requested components ({node})", value.get("requested_components", "Not recorded")),
@@ -419,6 +419,11 @@ def _component_curve_report_rows(node, value, context=lambda label, value: (labe
                     "notice": "Component selection CV is not an independent test.",
                 },
                 sort_keys=True,
+            ),
+            short=(
+                f"{cv.get('n_folds')} folds; {cv.get('method')}; "
+                + (f"{cv.get('n_groups')} groups; " if cv.get("n_groups") is not None else "row folds; ")
+                + "development tuning, not an independent test."
             ),
         )
     )
@@ -477,9 +482,9 @@ def _permutation_report_rows(node, value):
     ]
 
 
-def _summary_context(summary_rows, label, value):
+def _summary_context(summary_rows, label, value, *, short=None):
     if summary_rows is not None:
-        summary_rows.append({"label": label, "value": str(value)})
+        summary_rows.append({"label": label, "value": str(value if short is None else short)})
     return label, value
 
 

@@ -100,6 +100,7 @@
       </div>
 
       <p v-if="cohort.population" role="status">Active cohort: {{ cohort.population.total }} of {{ cohort.population.available }} retained rows; {{ cohort.population.excluded }} excluded. {{ cohort.population.shown_features }} of {{ cohort.population.available_features }} features; {{ cohort.population.excluded_features }} excluded.</p>
+      <p v-if="responseUnit">Response unit: {{ responseUnit }}</p>
       <p v-if="exportError" role="alert">{{ exportError }}</p>
       <p v-if="tableProjectionError" role="alert">{{ tableProjectionError }}</p>
       <!-- Data Table -->
@@ -182,10 +183,11 @@ import InputText from "primevue/inputtext";
 import Button from "primevue/button";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
-import { isAuditField, scientificMetadata } from "@/utils/scientificDisplay";
+import { isAuditField, scientificMetadata, scientificColumnLabel, scientificResponseUnit } from "@/utils/scientificDisplay";
 import { isProjectedScientificKind } from "@/utils/scientificPresentation";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";
 import { classificationMetricRows } from "@/utils/scientificMetricRows";
+import { scientificMatrixColumns } from "@/utils/scientificMatrixColumns";
 import {
   compactSampleLabel,
   detectLabelDelimiter,
@@ -203,6 +205,7 @@ interface Props {
 const props = defineProps<Props>();
 const cohort = computed(() => projectActiveSpectralCohort(props.nodeOutput));
 const inspectedOutput = computed(() => cohort.value.output);
+const responseUnit = computed(() => scientificResponseUnit(inspectedOutput.value?.presentation_value ?? inspectedOutput.value?.metadata));
 const emit = defineEmits<{
   (e: "update:modelValue", value: boolean): void;
 }>();
@@ -424,7 +427,6 @@ const displayedData = computed(() => {
 const isPlsExplainedVariance = computed(() =>
   isProjectedScientificKind(inspectedOutput.value, "pls_explained_variance"),
 );
-const isTargetMatrix = computed(() => isProjectedScientificKind(inspectedOutput.value, "target_matrix"));
 
 // Compute data shape
 /** True when ``data`` is a list of row dicts (e.g. HoldoutEvaluation
@@ -554,46 +556,7 @@ const matrixColumnLabels = computed(() => {
   const output = inspectedOutput.value;
   const data = displayedData.value;
   const width = Array.isArray(data?.[0]) ? data[0].length : 1;
-  const metadata = output?.metadata ?? {};
-  const dimensions = output?.descriptor?.dimensions ?? [];
-  const column = dimensions[dimensions.length - 1] ?? {};
-  const response =
-    isTargetMatrix.value || metadata.type === "ClassificationTest" || output?.type === "confusion_matrix" ||
-    ["class_probabilities", "class_response_scores_not_probabilities", "class_distances",
-      "normalized_inverse_distance_affinity_not_probability"].includes(
-      metadata.numeric_output_semantics ?? metadata.diagnostics?.numeric_output_semantics,
-    ) ||
-    ["target", "class", "response_class", "actual_class", "predicted_class", "actual_predicted_value"].includes(column.role);
-  const axis = output?.presentation_value?.feature_axis ?? output?.presentation_value?.x_axis;
-  const responseNames = [
-    column.labels,
-    metadata.target_names,
-    metadata.type === "ClassificationTest" || output?.type === "confusion_matrix" ? metadata.labels : undefined,
-    metadata.classes,
-    metadata.label_categories,
-    metadata.diagnostics?.target_names,
-    metadata.diagnostics?.classes,
-    metadata.diagnostics?.label_categories,
-    metadata.column_names,
-  ];
-  const featureNames = [column.labels, metadata.feature_names, metadata.column_names, axis?.labels];
-  const coords = [
-    metadata.wavenumbers,
-    Array.isArray(metadata.x_axis) ? metadata.x_axis : metadata.x_axis?.data,
-    axis?.data,
-  ];
-  const candidates = response
-    ? responseNames
-    : metadata.data_role === "X_features"
-      ? [...featureNames, axis?.data]
-      : [...featureNames, ...coords];
-  const declared = candidates.find((value) => Array.isArray(value) && value.length === width);
-  if (declared) return declared.map(String);
-  if (isPlsExplainedVariance.value)
-    return Array.from({ length: width }, (_, i) =>
-      i === 0 ? "X variance" : i === 1 ? "Y variance" : `Domain ${i + 1}`,
-    );
-  return Array.from({ length: width }, (_, i) => (width === 1 ? "Value" : `Col_${i + 1}`));
+  return scientificMatrixColumns(output, width);
 });
 
 function peakColumnLabel(key: string, metadata: Record<string, any>): string {
@@ -619,8 +582,6 @@ const tableColumns = computed(() => {
   // Check for decomposition output types (MCR, PCA)
   const isMCR = metadata.type === "MCR_ALS";
   const isPCA = metadata.type === "PCA" || metadata.isPCA;
-  const pcLabels = metadata.pc_labels || [];
-  const mcrLabels = metadata.labels || [];
   const labelInfo = isPlsExplainedVariance.value
     ? {
         labels: data.map((_: unknown, index: number) => `LV ${index + 1}`),
@@ -669,7 +630,7 @@ const tableColumns = computed(() => {
       }
       columns.push({
         field: key,
-        header: metadata.type === "PeakFinding" ? peakColumnLabel(key, metadata) : key,
+        header: scientificColumnLabel(key, metadata, metadata.type === "PeakFinding" ? peakColumnLabel(key, metadata) : key),
         width: isNumeric ? "120px" : "160px",
         isNumeric,
       });
@@ -731,12 +692,6 @@ const tableColumns = computed(() => {
       let header: string;
       if (isPlsExplainedVariance.value) {
         header = i === 0 ? "X variance" : i === 1 ? "Y variance" : `Domain ${i + 1}`;
-      } else if (isPCA) {
-        // PCA: use PC labels like "PC1 (45.2%)"
-        header = pcLabels[i] || `PC${i + 1}`;
-      } else if (isMCR) {
-        // MCR: use component labels
-        header = mcrLabels[i] || `Component ${i + 1}`;
       } else {
         header = matrixColumnLabels.value[i];
       }
@@ -1069,10 +1024,12 @@ function exportCSV() {
     const keys = [
       ...new Set<string>(data.flatMap((row: Record<string, unknown>) => Object.keys(row))),
     ];
-    headers = ["Index", ...keys];
+    const includeUnits = responseUnit.value && keys.includes("reference") && keys.includes("predicted");
+    headers = ["Index", ...keys.map(key => scientificColumnLabel(key, output?.metadata)), ...(includeUnits ? ["units"] : [])];
     rows = data.map((row: Record<string, unknown>, i: number) => [
       (cohort.value.population?.source_row_indices?.[i] ?? i) + 1,
       ...keys.map((key) => row[key]),
+      ...(includeUnits ? [responseUnit.value] : []),
     ]);
   } else {
     const width = Array.isArray(data[0]) ? data[0].length : 1;

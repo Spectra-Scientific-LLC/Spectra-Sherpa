@@ -24,6 +24,15 @@ function setScope(userId: number, projectId: number) {
 }
 
 describe("data store state retention", () => {
+  it("inspects a project file through the canonical one-member collection loader", async () => {
+    setActivePinia(createPinia());
+    setScope(7, 12);
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { n_samples: 150, n_features: 4 } });
+    await useDataStore().inspectFile(103, "raw/iris.csv", 44, "table");
+    expect(api.post).toHaveBeenCalledWith("/builder/file-info", {
+      experiment_id: 44, file_ids: [103], asset_id: "table",
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
   it("invalidates source receipts on logout while Data is unmounted, including same-account login", () => {
     setActivePinia(createPinia());
     setScope(7, 12);

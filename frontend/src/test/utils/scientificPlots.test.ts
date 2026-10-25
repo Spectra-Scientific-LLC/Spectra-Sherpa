@@ -22,6 +22,15 @@ import {
 } from "@/utils/scientificPlots";
 
 describe("standard scientific plot builders", () => {
+  it("labels regression axes with the declared response unit, not the X signal unit", () => {
+    const record = { metadata: { target_names: ["Methane"], target_units: ["ppm"], value_units: "absorbance" },
+      data: [{ target: "Methane", sample: "A", reference: 10, predicted: 9, residual: 1, role: "held_out_test" }] };
+    const plot = buildRegressionComparisonPlot(record);
+    expect(JSON.stringify(plot.layout.xaxis)).toContain("Methane (ppm)");
+    expect(JSON.stringify(plot.layout.yaxis)).toContain("Methane (ppm)");
+    expect(JSON.stringify(plot.layout)).not.toContain("absorbance");
+    expect(plot.data[0]).toMatchObject({ x: [10], y: [9] });
+  });
   it("shares exact feature labels and component heatmaps across plot surfaces", () => {
     const metadata = scientificPortMetadata({
       metadata: { diagnostics: { feature_names: ["1650 cm-1", "1600 cm-1"] } },

@@ -11,7 +11,8 @@ built-in examples, provider-hosted references, and synthetic data, see
 
 ## The Data Tab at a Glance
 
-The Data tab has five areas. Four of them bring data in; the fifth is where everything lands.
+The Data tab has six areas. Four bring data in, Multi-well records acquisition
+plans, and My Dataset is where you inspect and prepare data for analysis.
 
 | Area | What it does |
 | --- | --- |
@@ -19,6 +20,7 @@ The Data tab has five areas. Four of them bring data in; the fifth is where ever
 | **Import** | Add reference and example datasets from curated catalogs. |
 | **Synthesis** | Generate synthetic spectra, including Beer-Lambert mixtures derived from NIST or HITRAN references. |
 | **Library** | Search and import NIST and HITRAN reference spectra. |
+| **Multi-well** | Plan samples, mixtures, plate layouts and acquisition matching. |
 | **My Dataset** | The reusable store of everything you have brought into the current project. |
 
 ## Everything Packages into My Dataset
@@ -33,7 +35,8 @@ Duplicate a workflow and keep the same dataset, or swap in a different My Datase
 
 ## Upload Your Own Files
 
-Open **Data > Upload**, choose a file, set how it should be read, then add it to My Dataset. Stage one or more files before committing them in a batch.
+Open **Data > Upload**, click **Load**, set how the files should be read, then
+add them to My Dataset. Stage one or more files before committing them in a batch.
 
 **Formats.** The native registry reads `.csv`, JCAMP-DX (`.jdx`, `.dx`, `.jcamp`), NumPy (`.npy`, `.npz`), MATLAB v4/v5 and v7.3/HDF5 `.mat` workspaces, the qualified Eigenvector PLS_Toolbox DSO contract in either MATLAB storage family, qualified Galactic SPC (`.spc`), one-dimensional Bruker OPUS (`.opus` or a numeric suffix), qualified Thermo OMNIC SPA/SPG/SRS (`.spa`, `.spg`, `.srs`), and qualified Renishaw WiRE WDF (`.wdf`). OPUS, multi-object MATLAB workspaces, and independent-XYXY SPC files may contain several typed results, so choose the exact scientific result when binding the file to a workflow. DSO and WDF map data remain n-dimensional with their exact axes and topology. Installing `spectra-sherpa[scp]` does not add ingestion formats. See [Supported File Types](../introduction/file-types.md) for the current matrix and export guidance.
 
@@ -113,6 +116,38 @@ Because datasets live in the project, not inside a single workflow:
 - one dataset can feed **multiple workflows (sheets)** in the same project;
 - you can **duplicate a workflow** and keep the same dataset, or, when its source is a **Collection Load** node, choose a different saved selection in its Inspector **Dataset** list;
 - your data stays scoped to you (and your project) — it is not shared implicitly.
+
+### Build a portfolio in My Dataset
+
+A **portfolio** is a named, reusable analysis selection within a source dataset.
+It records selected files and data stage, the chosen scientific result when a
+file contains several, and any selected target and validation-group column.
+Saved sample corrections also retain their inclusion choices and reason.
+Saving a portfolio does not copy or rewrite the original measurements.
+
+For example, keep an uncurated selection for review and save a second selection
+with a documented exclusion. Reuse either selection in PCA and PLS workflows
+without importing the source again.
+
+1. In **My Dataset**, focus the source dataset and inspect its files and metadata.
+   Check the files to include; the shared overlay is a preview, not a merge.
+2. Confirm the data stage, target type and units, and any validation group.
+   Review sample inclusion separately from plot sampling.
+3. Under **Save dataset**, enter a **Portfolio name** and click **Save portfolio**.
+   If correcting samples, supply the requested reason. Keep distinct corrections
+   separate when the interface requires it.
+4. Use **Show** beside a saved entry to restore its selection. **Show Default**
+   returns to the source's default selection.
+5. Click **Workflow** from My Dataset. Analysis Starter uses the active selection;
+   an existing Collection Load node can choose a saved selection in its Inspector.
+
+The interface uses both “dataset” and “portfolio”: the source holds the data;
+the portfolio records which selection an analysis should use. Different saved
+selections can feed different workflow sheets. Changing the current preview does
+not rewrite earlier runs or silently rebind an existing workflow.
+
+For plate-based work, [Multi-well](multi-well.md) supplies the acquisition plan;
+its matches become measured metadata only after a separate review and publication.
 
 ## Inspect Before You Model
 

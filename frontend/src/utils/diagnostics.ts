@@ -16,6 +16,11 @@ const STRUCTURED_CONTAINER_KEYS = new Set([
   "worker_pid",
   "execution_id",
   "fitted_state_serializer",
+  // Exact implementation details live once in PeakExecutionDetails.
+  "scipy_version", "scipy_find_peaks_call", "scipy_find_peaks_kwargs",
+  "scipy_find_peaks_call_count", "scipy_peak_widths_call", "scipy_peak_widths_call_count",
+  "scipy_find_peaks_arguments", "scipy_peak_widths_sample_indices",
+  "consensus_binning", "parameter_interpretation",
 ]);
 
 const EMPTY_STRINGS = new Set(["", "nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity", "none", "null"]);

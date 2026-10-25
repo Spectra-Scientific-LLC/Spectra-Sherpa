@@ -222,6 +222,7 @@ interface TemplateOut {
 
 interface ActiveProjectDataset {
   id: number;
+  dataset_view_id: number | null;
   name: string;
   digest: string;
   definition: {
@@ -421,8 +422,8 @@ const currentPrimaryDataBinding = (): TemplateDataBinding | null => {
       source: "experiment",
       experimentId: definition.experiment_id,
       displayName: selected.name,
-      datasetViewId: selected.id,
-      datasetViewSha256: selected.digest,
+      datasetViewId: selected.dataset_view_id ?? undefined,
+      datasetViewSha256: selected.dataset_view_id != null ? selected.digest : undefined,
       fileIds: definition.selected_file_ids,
       allFiles: definition.selected_file_ids === null,
       assetId: definition.asset_id,
@@ -802,7 +803,7 @@ const loadTemplates = async () => {
         const admitted = activeReadinessResponse?.data?.binding;
         if (!admitted) {
           projectDatasetChoiceError.value =
-            "Saved target could not be verified. Open My Dataset, check the target and grouping, then reopen Analysis Starters.";
+            "Saved dataset could not be verified. Open My Dataset and review the selection.";
           activeBindingReadiness.value = null;
         } else {
           activeProjectDataset.value = {

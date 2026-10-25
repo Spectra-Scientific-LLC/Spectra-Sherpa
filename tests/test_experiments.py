@@ -1246,7 +1246,7 @@ async def test_bound_sample_table_csv_recomputes_and_persists_dataset_readiness(
     )
     second = await auth_client.post(
         "/api/v1/builder/file-info",
-        json={"experiment_id": experiment["id"], "file_path": source["file_path"]},
+        json={"experiment_id": experiment["id"], "file_ids": [source["id"]]},
     )
     assert first.status_code == second.status_code == 200
     for response in (first, second):

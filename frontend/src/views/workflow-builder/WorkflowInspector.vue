@@ -1569,7 +1569,7 @@ import { resolveNodeHelpUrl } from "@/utils/nodeHelp";
 import { componentInputHint } from "@/utils/componentInputHint";
 import MethodHelp from "@/components/MethodHelp.vue";
 import { buildDiagnosticEntries } from "@/utils/diagnostics";
-import { scientificMetricNotes } from "@/utils/scientificDisplay";
+import { scientificMetricNotes, scientificErrorMetricLabel } from "@/utils/scientificDisplay";
 import { primaryClassificationMetricSummary } from "@/utils/classificationMetrics";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";
 import { downloadExportArtifact, extractExportArtifact, exportDownloadReason, exportFilenameForFormat, EXPORT_FORMAT_LABELS } from "@/utils/exportArtifact";
@@ -1895,7 +1895,9 @@ const diagnosticMetricNotes = computed(() => [...new Set([
 
 const diagnosticEntries = computed(() => {
   const diagnostics = asObject(outputMetadata.value.diagnostics);
-  return buildDiagnosticEntries(diagnostics);
+  return buildDiagnosticEntries(diagnostics).map(entry => ({ ...entry,
+    label: scientificErrorMetricLabel(entry.key, outputMetadata.value, entry.label),
+  }));
 });
 
 const selectedResultEntries = computed(() => {

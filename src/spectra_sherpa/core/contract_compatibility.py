@@ -633,6 +633,105 @@ _DIAGNOSTIC_REFUSAL_PREDECESSORS = tuple(
 )
 
 
+# Exact application-only continuity after scientific display/CV dependency
+# binding. Fitted arrays, serializers and custody are unchanged; no fit or
+# historical execution is admitted, and no transitive inference is performed.
+_SCIENTIFIC_AUDIT_PREDECESSORS = tuple(
+    SavedStateCompatibility(operation, predecessor, consumer, serializer)
+    for operation, serializer, consumer, predecessors in (
+        (
+            "classification.plsda",
+            "spectrasherpa.sherpa-plsda-state/5",
+            "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
+            (
+                "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
+                "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+                "526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
+                "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+                "7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
+                "85b2a1fd3938dee8a3a12f61397a07052883cd3f0bfa4d977151b600fe4992b6",
+                "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+                "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+                "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+                "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
+            ),
+        ),
+        (
+            "model.fitted_linear_regression",
+            "spectrasherpa.model.fitted_linear_regression/1",
+            "0ba997bbc87209703db011f38850ee82d93027bb72ab28db27aa108a8f9cca9a",
+            (
+                "04d5ea448432137158df7b412286a17a5fe3498f5589ce53b33414fad2388b2b",
+                "10b125ffb88229b92cfe1eac67e5717117cfdf57d485b3e370abb2ef8910f6a7",
+                "19380f7cbefd4bd7196649760982a8d473d4062d86bfe6f8fdbef24dea042f53",
+                "29ba32c09e04d094afdc28724b86615a0d77e3946c3990f5f181a539ca8eff6c",
+                "63501135129058b92cd8b6d0db33d5d61d3407c0be4f25a53f984d4a0101e27a",
+                "a0a31850e5ec62ce5d3d45050af62f715306d1da9d84442d76d70b1b738303f8",
+                "a9c2343c3eb8cec79c5e25f14bf57a7793b7bbc7449eba0bc8249ad839c4463b",
+                "d4be993d68d26c1c38e6c09115713fe8111bf5f4ba559f75e9e8dc7d03c86e0e",
+            ),
+        ),
+        (
+            "model.fitted_pcr",
+            "spectrasherpa.model.fitted_pcr/1",
+            "99359a3588dfe55e29fd32428ce896d1ca503e3472e8b17a5982ed24d72a0d0d",
+            (
+                "18c724b705c6c1331a82a45e7c4f7c2c8a6c4b91fb375385e3e146f3f39b9b11",
+                "577777179c36fedf0338c84a003e9080aa8879043e2ad0e19e7dccc5f618c201",
+                "7a58390a7bfb79ed0e7920dae41c2de5a3d8c6d8ca323754c3000fb9cd6cf4a4",
+                "7f6040c174cae2889250e6a4bc22620af172207109a1d6ff0fe66ad35937f9de",
+                "905cef6cd41f355e0f9a8e6847a03377f4de3c62c262aa8ce718055124b44cb6",
+                "a207b7fc520763105b633ca6d99eb267872c38ed54dc6854082b7be1bd1756b8",
+                "b0b7e0e32445d63b864b27cc16a6831b9561a35a3614efd19220343902c45b3f",
+                "e76876f01548800f4b3ee2bdf0382359e046793a1e02e61e424e17b552256bf3",
+            ),
+        ),
+        (
+            "model.fitted_pls",
+            "spectra.sherpa-simpls-regression-json/9",
+            "ba02705c9868ae460e80af30207f8fa1c60f5ff20e8e6588be267292811472da",
+            (
+                "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
+                "3939dc715653c735c11d3993942bd8e8baf5343fd42e21341d5cde130dafdde3",
+                "473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
+                "5ae3215d3c522a75b16baecdf35e736537052f411fbf9833509a535320ee27d5",
+                "9db6a10ca3c53faf7b0a69cee4aba35ebef148019ca21bf09ed226d578456997",
+            ),
+        ),
+        (
+            "model.fitted_svr",
+            "spectrasherpa.model.fitted_svr/1",
+            "b8ba060d1154848d0f96e25a0178c0c5eeff6658a4fc36de6ae3f7c82cb3f7ed",
+            (
+                "0daa0a05e555974ab7810bc97ddecc09abb00c24f7b5f6014be8a99aaee1b97b",
+                "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
+                "321d4a0411f164d20a3904dc438d886b1fb807c19200a2bb640ceaeb6169fc24",
+                "6015b47482335d0931239f6a52fea6825979c43c055e319c69deb3129b344c67",
+                "a6be415b3b1ed88d25ef0a220d1059031ada900f4c470d2a7cb762c250edf8af",
+                "cde922310dc4713ab5349720f865595fee13c8c2a53b60f68708ceed9882bae0",
+                "d3c36c524644edab0a1076190155baad4340ab549e34fc7a0e67b38f2d4f0a83",
+                "f69be607b175147534980ea0afe932a6af4a846b2734d121dc76c9dceed65843",
+            ),
+        ),
+        (
+            "model.pca",
+            "spectrasherpa.model-artifact.pca/3",
+            "bcf69d89f62cb9e9ad1cfb46fc1f32b258c130dd571eb457df73fb535f685f0f",
+            (
+                "2d4457cd7ca9ce699326aad70e1b4a77deb74d6cea88afd08066f106f45df161",
+                "5e809716a8266c4ddd5fb3902b8a68c264019fd05237bdb1397f664ae31dea10",
+                "85b458d4b762f028fd9e825c47642460faf9f4682122def13416c88082a879f6",
+                "ad9ee0dc72e2a6e9984134d8cfd7da6176ae725641c240f488f31713b57fcf94",
+                "c8f6c57e2e5ffe3f7ff3a6f5528cfef28ceea6eabfdac4d2c4572481d391ca75",
+                "def76c765075b59a536e8c6bd72be0418c20d0ea4611f11ce5ec7f1a17ca891b",
+                "eeca5bea6642ec33c4a51c825acd58217d1a8c17784cfa318e4840e4c4ba73a9",
+            ),
+        ),
+    )
+    for predecessor in predecessors
+)
+
+
 @lru_cache(maxsize=1)
 def saved_state_compatibilities() -> tuple[SavedStateCompatibility, ...]:
     """Reviewed inference producers only; no application or cohort-only nodes."""
@@ -691,6 +790,7 @@ def saved_state_predecessor_is_compatible(
             *_SCIENTIFIC_AUTHORITY_PREDECESSORS,
             *_FEATURE_PRESENTATION_PREDECESSORS,
             *_DIAGNOSTIC_REFUSAL_PREDECESSORS,
+            *_SCIENTIFIC_AUDIT_PREDECESSORS,
         )
         if entry.predecessor_digest == predecessor
         and entry.consumer_digest == consumer

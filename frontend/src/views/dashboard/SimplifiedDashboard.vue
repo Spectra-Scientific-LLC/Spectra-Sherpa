@@ -303,6 +303,7 @@ import type { StarterOverview, StarterStartRequest } from "@/lib/starterAdapter"
 import type { ReferenceDatasetOption } from "@/stores/workflow-types";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { legacyStorageRedirect } from "@/router/storageRedirect";
+import { formatTimestamp, parseTimestamp } from "@/utils/format";
 
 const DATA_ENTRY_MODE_KEY = "sherpa:data-entry-mode";
 const DATA_ENTRY_PROJECT_KEY = "sherpa:data-entry-project-id";
@@ -398,8 +399,8 @@ const deleteNameDraft = ref("");
 // recency field on ProjectSummary, falling back to created_at if missing.
 const sortedProjects = computed<ProjectSummary[]>(() => {
   return [...projectStore.projects].sort((a, b) => {
-    const ta = new Date(a.updated_at || a.created_at).getTime();
-    const tb = new Date(b.updated_at || b.created_at).getTime();
+    const ta = parseTimestamp(a.updated_at || a.created_at)?.getTime() ?? 0;
+    const tb = parseTimestamp(b.updated_at || b.created_at)?.getTime() ?? 0;
     return tb - ta;
   });
 });
@@ -739,12 +740,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 function absoluteTimestamp(dateStr: string): string {
-  if (!dateStr) return "";
-  try {
-    return new Date(dateStr).toLocaleString();
-  } catch {
-    return dateStr;
-  }
+  return dateStr ? formatTimestamp(dateStr) : "";
 }
 </script>
 

@@ -36,6 +36,9 @@ class HistoricalValidationGraph(ValidationGraph):
 # Exact inspected consumers after the component-evidence implementation added
 # shared module digests. The catalog pins the preceding consumer. A later code
 # change must be reviewed again rather than inheriting historical authority.
+# PR154 binds the existing component-CV dependencies and presentation source
+# changes to exact new consumers below. Archived declarations/digests are not
+# rewritten; contract() still verifies declarations and never admits execution.
 _INSPECTION_CONSUMERS = {
     "preprocess.osc": (
         "02a4281542fe5fe2a349dbc5e61a42e82fa4a9f346ddb21fd5bf2d64b96c7b1b",
@@ -73,7 +76,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "classification.plsda": (
         "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-        "85b2a1fd3938dee8a3a12f61397a07052883cd3f0bfa4d977151b600fe4992b6",
+        "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
@@ -83,31 +86,31 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",
-        "dd74469839faad7d699e1426c9b1d52708789759bdbd9a34e547278c668ba007",
+        "d78b114e9232c089d62045df8389531f24d24a20a8d94daf201063007c819665",
     ),
     "model.apply_fitted_pcr": (
         "1aecb57326c2c3a8f71823a035cbcb2f21be34d72a3049daedcc5e67a399f2e9",
-        "a26782875d287ce1b28fc0db96485362667bd67039ebd25f546f69a75f98bdf0",
+        "f83e7ed65a6ab4f2efe14346e515fa57aa618fe268f68be0044bb538cc660428",
     ),
     "model.apply_fitted_svr": (
         "244fe3defede23aefb869e74d97034600b1a73c9abb63694fb6101ed2fea9c34",
-        "7a4e54b71e344ce4a3b2fee943a92c947bfa3b3316f8e8a522984dc18cddf13f",
+        "755d8867e11d93d20d752af591cc995b180f559a10ecdbdd31c145ed1e92b320",
     ),
     "model.fitted_linear_regression": (
         "04d5ea448432137158df7b412286a17a5fe3498f5589ce53b33414fad2388b2b",
-        "a0a31850e5ec62ce5d3d45050af62f715306d1da9d84442d76d70b1b738303f8",
+        "0ba997bbc87209703db011f38850ee82d93027bb72ab28db27aa108a8f9cca9a",
     ),
     "model.fitted_pcr": (
         "a207b7fc520763105b633ca6d99eb267872c38ed54dc6854082b7be1bd1756b8",
-        "e76876f01548800f4b3ee2bdf0382359e046793a1e02e61e424e17b552256bf3",
+        "99359a3588dfe55e29fd32428ce896d1ca503e3472e8b17a5982ed24d72a0d0d",
     ),
     "model.fitted_pls": (
         "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
-        "473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
+        "ba02705c9868ae460e80af30207f8fa1c60f5ff20e8e6588be267292811472da",
     ),
     "model.fitted_svr": (
         "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
-        "a6be415b3b1ed88d25ef0a220d1059031ada900f4c470d2a7cb762c250edf8af",
+        "b8ba060d1154848d0f96e25a0178c0c5eeff6658a4fc36de6ae3f7c82cb3f7ed",
     ),
 }
 

@@ -9,7 +9,7 @@ import { scientificNumber } from "@/utils/scientificEncoding";
 
 import { refusedScientificPlot, scientificPlotRefusal } from "@/utils/scientificPlotState";
 import { normalizeSampleLabel } from "@/utils/sampleLabels";
-import { evaluationRoleLabel } from "@/utils/scientificDisplay";
+import { evaluationRoleLabel, scientificResponseUnit } from "@/utils/scientificDisplay";
 
 // Plotly accepts a broad, renderer-defined payload. Keep scientific inputs
 // validated above this boundary while allowing the renderer record itself to
@@ -383,7 +383,8 @@ export function buildRegressionComparisonPlot(value: unknown): ScientificPlot {
   const role = roles.length === 1 ? evaluationRoleLabel(roles[0]).toLowerCase() : "multiple populations";
   const targetContext = targets.length === 1 ? `${targets[0]} · ${role}` : role;
   const axisRange = [min - pad, max + pad];
-  const responseLabel = targets.length === 1 ? targets[0] : "Response";
+  const unit = scientificResponseUnit(value);
+  const responseLabel = `${targets.length === 1 ? targets[0] : "Response"}${unit ? ` (${unit})` : ""}`;
   return {
     data: traces,
     layout: presentationReadyLayout({

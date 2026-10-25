@@ -14,6 +14,13 @@ template_data:
     parameters: {}
     position_x: 175
     position_y: 50
+  - node_id: inclusion_1
+    node_type: data.filter_samples
+    label: Filter
+    parameters:
+      field: source_inclusion
+    position_x: 175
+    position_y: 300
   - node_id: preprocess_1
     node_type: baseline.penalized_ls
     label: ASLS Baseline
@@ -22,7 +29,7 @@ template_data:
       lam: 100000
       p: 0.001
     position_x: 425
-    position_y: 300
+    position_y: 550
   - node_id: preprocess_2
     node_type: preprocess.smooth
     label: Savitzky-Golay
@@ -31,14 +38,14 @@ template_data:
       size: 15
       order: 2
     position_x: 175
-    position_y: 550
+    position_y: 800
   - node_id: preprocess_3
     node_type: preprocess.normalize
     label: SNV Normalize
     parameters:
       method: snv
     position_x: 425
-    position_y: 800
+    position_y: 1050
   - node_id: export_1
     node_type: output.export
     label: Export Preprocessed
@@ -46,9 +53,12 @@ template_data:
       filename: preprocessed.csv
       format: csv
     position_x: 175
-    position_y: 1050
+    position_y: 1300
   edges:
   - from_node_id: data_1
+    to_node_id: inclusion_1
+    to_input: X
+  - from_node_id: inclusion_1
     to_node_id: preprocess_1
   - from_node_id: preprocess_1
     to_node_id: preprocess_2

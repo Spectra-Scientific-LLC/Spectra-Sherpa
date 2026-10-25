@@ -1470,12 +1470,23 @@ def _adapt_starter_scaling_to_bound_role(
 
     method = "autoscale" if primary_role == "X_features" else "mean_center"
     label = "Autoscale Features" if primary_role == "X_features" else "Mean Center Spectra"
+    has_external_scaler = any(
+        node.get("node_type") == "preprocess.scale" and str(node.get("node_id") or "") in reachable for node in nodes
+    )
     for node in nodes:
         if str(node.get("node_id") or "") not in reachable:
             continue
         if node.get("node_type") == "preprocess.scale":
             node["parameters"] = {**dict(node.get("parameters") or {}), "method": method, "center": True}
             node["label"] = label
+        elif node.get("node_type") == "model.pca" and not has_external_scaler:
+            # New PCA starters own scaling inside each fold. Legacy templates
+            # with a separate scaler remain unchanged and cannot claim replay.
+            node["parameters"] = {
+                **dict(node.get("parameters") or {}),
+                "standardized": primary_role == "X_features",
+                "scaled": False,
+            }
         elif node.get("node_type") in {"model.fitted_pls", "classification.plsda", "classification.knn"}:
             node["parameters"] = {
                 **dict(node.get("parameters") or {}),

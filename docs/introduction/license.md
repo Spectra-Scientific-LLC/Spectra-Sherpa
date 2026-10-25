@@ -59,7 +59,9 @@ NIST reference data also carries scientific citation expectations. See [Attribut
 
 ## LLM Providers and BYOK
 
-Bring-your-own-key access means you are using an account with an external LLM supplier. That supplier controls API key issuance, model availability, pricing, rate limits, usage policies, data-handling terms, and outages.
+Spectra Sherpa OSS lets you bring your own API key from an external LLM provider to use its basic AI services: Starter, Data Story, and BYOK chat.
+
+The external provider controls API key issuance, model availability, pricing, rate limits, usage policies, data-handling terms, and outages.
 
 For example:
 

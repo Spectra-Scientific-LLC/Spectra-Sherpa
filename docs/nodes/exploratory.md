@@ -7,6 +7,14 @@ Exploratory nodes reveal structure before supervised modeling.
 
 ## PCA, Decomposition, and Curve Resolution
 
+New PCA starters apply scaling inside PCA: mean-centering for spectra and
+unit-variance scaling for feature tables. Component reconstruction CV fits those
+statistics separately in each training fold. Source-inclusion curation defines
+the analysis population; it is not a learned transform. Existing workflows with
+upstream fitted scalers remain unchanged and cannot claim automatic fold-local
+replay. Reconstruction CV is a development diagnostic, not independent test
+performance or response-prediction error.
+
 - [`model.pca`](exploratory.md#registry-reference): Explore variance, scores, loadings, outliers, and compressed features. Uses Sherpa's native exact full-SVD authority. `n_components="mle"` uses Minka's automatic dimensionality method and requires `n_samples >= n_features`. Keep scaling choices consistent with your spectroscopy convention.
 - [`model.pca_transform`](exploratory.md#registry-reference): Project new spectra into an already fitted PCA model. Use the same preprocessing as the fitted PCA model.
 - [`model.nmf`](exploratory.md#registry-reference): Resolve non-negative concentration-like and spectrum-like factors. Input must be non-negative; use Clip Floor or baseline correction first if needed.

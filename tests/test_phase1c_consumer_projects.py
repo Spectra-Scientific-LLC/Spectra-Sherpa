@@ -949,7 +949,6 @@ async def test_pca_project_executes_one_closed_fit_application_and_diagnostic_au
     assert run.node_types == {
         "data_1": "data.file_load",
         "inclusion_1": "data.filter_samples",
-        "preprocess_1": "preprocess.scale",
         "model_1": "model.pca",
         "viz_1": "output.plot",
         "viz_2": "output.plot",
@@ -962,6 +961,7 @@ async def test_pca_project_executes_one_closed_fit_application_and_diagnostic_au
     assert inclusion.data_role == "X_spectra"
     assert inclusion.provenance[-1].op_id == "data.filter_samples"
     assert inclusion.provenance[-1].parameters["no_filter"] is True
+    assert run.results["model_1"]["component_curve"]["cross_validation"]["status"] == "available"
     state = run.results["model_1"]["fitted_state"]
     assert state["schema_version"] == "spectrasherpa.model.pca-state/5"
     assert state["metadata"]["n_components"] == 3
@@ -1167,6 +1167,7 @@ async def test_preprocessing_project_executes_the_declared_chain_and_exports_exa
 
     assert run.node_types == {
         "data_1": "data.file_load",
+        "inclusion_1": "data.filter_samples",
         "preprocess_1": "baseline.penalized_ls",
         "preprocess_2": "preprocess.smooth",
         "preprocess_3": "preprocess.normalize",

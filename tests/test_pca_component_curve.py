@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 from sklearn.decomposition import PCA
 
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.services.dag.nodes.modeling.component_validation import cv_unavailable_reason
 from spectra_sherpa.app.services.dag.nodes.modeling.pca_component_curve import build_pca_component_curve
 from spectra_sherpa.sdk.validate import make_split_plan
 
@@ -59,3 +61,15 @@ def test_pca_curve_reports_unavailable_grouped_cv_without_failing_calibration() 
     assert curve["calibration"][1]["explained_x_cumulative"] > 0
     assert curve["cross_validation"]["status"] == "unavailable"
     assert "independent groups" in curve["cross_validation"]["reason"]
+
+
+def test_only_explicit_source_inclusion_admits_automatic_component_cv() -> None:
+    dataset = SherpaDataset(X=np.arange(36, dtype=float).reshape(12, 3))
+    dataset.provenance.append(op_id="data.filter_samples", parameters={"field": "source_inclusion", "invert": False})
+    assert cv_unavailable_reason(dataset) is None
+    dataset.provenance.append(op_id="preprocess.scale", parameters={"method": "autoscale"})
+    assert "preprocess.scale" in cv_unavailable_reason(dataset)
+    for parameters in ({"field": "target"}, {"field": "source_inclusion", "invert": True}, {}):
+        other = SherpaDataset(X=dataset.X.copy())
+        other.provenance.append(op_id="data.filter_samples", parameters=parameters)
+        assert "not verified as explicit source inclusion" in cv_unavailable_reason(other)

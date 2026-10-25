@@ -760,17 +760,28 @@ class PeakFindingNode(Node):
                     "n_total_variables": n_features,
                     "selection_context": {"n_samples": n_samples, "technique": technique},
                     "column_units": {
-                        key: x_units
-                        for key in (
-                            "median_pos",
-                            "mean_pos",
-                            "std_pos",
-                            "min_pos",
-                            "max_pos",
-                            "median_half_prominence_width",
-                            "q1_half_prominence_width",
-                            "q3_half_prominence_width",
-                        )
+                        **{key: y_units or "" for key in ("median_height", "q1_height", "q3_height")},
+                        **{
+                            key: f"{y_units} · {x_units}" if y_units and x_units else ""
+                            for key in (
+                                "median_absolute_window_integral",
+                                "q1_absolute_window_integral",
+                                "q3_absolute_window_integral",
+                            )
+                        },
+                        **{
+                            key: x_units
+                            for key in (
+                                "median_pos",
+                                "mean_pos",
+                                "std_pos",
+                                "min_pos",
+                                "max_pos",
+                                "median_half_prominence_width",
+                                "q1_half_prominence_width",
+                                "q3_half_prominence_width",
+                            )
+                        },
                     },
                     "output_type": "analysis",
                     "n_consensus_peaks": len(consensus_rows),

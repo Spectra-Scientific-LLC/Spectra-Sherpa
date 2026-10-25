@@ -36,13 +36,10 @@
             class="param-field"
             :class="{ 'has-error': getParamError(param.name) }"
           >
-            <label :for="param.name">
+            <ParameterHelpLabel :input-id="param.name" :label="param.label" :description="param.description">
               {{ param.label }}
               <span v-if="param.required" class="required-mark">*</span>
-            </label>
-            <small v-if="param.description" class="param-description">
-              {{ param.description }}
-            </small>
+            </ParameterHelpLabel>
 
             <ScientificNumberInput
               v-if="param.type === 'number'"
@@ -137,6 +134,7 @@
 </template>
 
 <script setup lang="ts">
+import ParameterHelpLabel from "@/components/ParameterHelpLabel.vue";
 import { computed, ref, watch } from "vue";
 import Button from "primevue/button";
 import ScientificNumberInput from "@/components/common/ScientificNumberInput.vue";

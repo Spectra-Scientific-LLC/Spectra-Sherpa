@@ -404,7 +404,7 @@
 
 <script setup lang="ts">
 import RelativeTime from "@/components/RelativeTime.vue";
-import { formatMetricValue } from "@/utils/format";
+import { formatMetricValue, formatTimestamp } from "@/utils/format";
 import { regressionMetricPresentation, regressionMetricQualification } from "@/utils/regressionMetricPresentation";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -949,12 +949,7 @@ async function onExportProject(project: ProjectSummary): Promise<void> {
 // Date helpers --------------------------------------------------------
 
 function absoluteTimestamp(dateStr: string): string {
-  if (!dateStr) return "";
-  try {
-    return new Date(dateStr).toLocaleString();
-  } catch {
-    return dateStr;
-  }
+  return dateStr ? formatTimestamp(dateStr) : "";
 }
 </script>
 

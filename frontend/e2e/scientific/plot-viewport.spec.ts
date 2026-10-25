@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { test, expect, type Locator } from "@playwright/test";
-import { closeDialog, plotData, settledSurfaceLayout } from "./assertions";
+import { assertIdentity, closeDialog, plotData, settledSurfaceLayout } from "./assertions";
 import { createDataset, instantiate, runWorkflow } from "./journeys";
+import { reportMarkdownText } from "../../src/utils/reportValues";
 
 async function expectUnclippedFigure(surface: Locator) {
   await expect(surface.locator(".plotly-canvas .main-svg").first()).toBeVisible();
@@ -16,9 +19,28 @@ async function expectUnclippedFigure(surface: Locator) {
 
 test("paired preprocessing plots retain their full height in Quick Plot and Detailed View @smoke", async ({ page, request }) => {
   const dataset = await createDataset(request, "mixture-ir");
-  const workflow = await instantiate(request, dataset, "pca");
-  await runWorkflow(page, workflow, dataset.project);
-  await page.locator(".workflow-node").filter({ hasText: "Mean Center" }).first().click();
+  // Exercise the actual preprocessing starter independently of model/CV topology.
+  const workflow = await instantiate(request, dataset, "preprocessing");
+  // This deliberately small fixture has 13 variables, so explicitly choose
+  // a valid five-point smoothing window instead of weakening node admission.
+  let configuredWindows = 0;
+  const configured = await request.put(`/api/v1/workflows/${workflow.id}`, { data: {
+    nodes: workflow.nodes.map((node: { node_id: string; parameters: Record<string, unknown> }) => {
+      if (node.node_id !== 'preprocess_2') return node;
+      configuredWindows++;
+      return { ...node, parameters: { ...node.parameters, size: 5 } };
+    }),
+    edges: workflow.edges,
+  } });
+  expect(configuredWindows).toBe(1);
+  expect(configured.ok(), await configured.text()).toBeTruthy();
+  const result = await runWorkflow(page, workflow, dataset.project);
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/mixture-ir.json', import.meta.url), 'utf8'));
+  const active = fixture.labels.filter((_: string, index: number) => fixture.included[index]);
+  assertIdentity(result.results.inclusion_1.default.y_axis.labels, active);
+  assertIdentity(result.results.preprocess_3.default.y_axis.labels, active);
+  expect(result.results.preprocess_3.default.data).toHaveLength(22);
+  await page.locator(".workflow-node").filter({ hasText: "SNV Normalize" }).click();
   await page.getByRole("button", { name: "Quick Plot", exact: true }).click();
   const quick = page.getByRole("dialog");
   const expected = await plotData(quick);
@@ -41,6 +63,39 @@ test("paired preprocessing plots retain their full height in Quick Plot and Deta
   expect(await plotData(plot)).toEqual(expected);
   await test.info().attach("detailed-paired-figure.png", { body: await plot.screenshot(), contentType: "image/png" });
   await detail.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  // Real retained preprocessing results must keep their scientific qualifiers
+  // in the preview and offline export, not only in live plot help.
+  await page.goto(`/report?workflow=${workflow.id}&run=${result.run_id}&project=${dataset.project.id}`);
+  // A linked run first generates its initial preview. Let that navigation
+  // finish before changing Setup, rather than competing with its completion.
+  await expect(page.locator('iframe[title="Report preview"]')).toBeVisible();
+  await page.getByRole("button", { name: "Setup", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Include figures and individual reference/prediction values" }).check();
+  await page.getByRole("button", { name: "Generate Report", exact: true }).click();
+  const body = page.frameLocator('iframe[title="Report preview"]').locator("body");
+  const snv = body.locator(".report-node-plots").filter({ has: page.getByRole("heading", { name: /SNV Normalize/ }) });
+  const heatmap = snv.locator("figure").filter({ has: page.getByRole("heading", { name: /Heatmap/ }) });
+  await expect(heatmap.locator("img")).toBeVisible();
+  const caption = heatmap.locator("figcaption");
+  await expect(caption).toContainText("Both panels: 22 of 22 active rows.");
+  await expect(caption).toContainText("Physical baseline unspecified.");
+  await expect(caption).toContainText("independent axes and color scales");
+  const text = await caption.innerText();
+  // Original and SNV matrices may have different sequential/signed scales.
+  // Keep each complete qualifier; only equal complete notices are deduplicated.
+  expect(text).toMatch(/(?:Both panels|Original): .*Physical baseline unspecified\./);
+  expect(text).not.toMatch(/sample_labels|source_row_indices/);
+  await test.info().attach("preprocessing-report-caption.png", { body: await heatmap.screenshot(), contentType: "image/png" });
+  const preview = await page.locator('iframe[title="Report preview"]').getAttribute("srcdoc");
+  for (const format of ["HTML Report", "Markdown"]) {
+    const downloaded = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await page.getByRole("menuitem", { name: format, exact: true }).click();
+    const content = await readFile((await (await downloaded).path())!, "utf8");
+    expect(content).toContain(format === "Markdown" ? reportMarkdownText(text) : text);
+    if (format === "HTML Report") expect(content).toBe(preview);
+  }
 });
 
 test("figure geometry waits for ancestor transitions without accepting short or clipped plots @smoke", async ({ page }) => {

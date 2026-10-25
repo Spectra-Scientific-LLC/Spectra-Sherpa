@@ -629,6 +629,7 @@ describe("TemplatePickerDialog", () => {
     }];
     const projectDataset = {
       id: 42,
+      dataset_view_id: 7,
       name: "Corn MP6 · Moisture",
       digest: "a".repeat(64),
       definition: {
@@ -668,7 +669,7 @@ describe("TemplatePickerDialog", () => {
     expect(wrapper.text()).toContain("Project dataset: Corn MP6 · Moisture");
     expect(mocks.apiPost).toHaveBeenCalledWith(
       "/workflow-templates/binding-compatibility-preview",
-      expect.objectContaining({ use_saved_analysis_selection: true, binding: expect.objectContaining({ file_ids: [11] }) }),
+      expect.objectContaining({ use_saved_analysis_selection: true, binding: expect.objectContaining({ file_ids: [11], dataset_view_id: 7 }) }),
     );
     const button = wrapper.findAll("button").find((candidate) => candidate.text() === "Use Project Dataset");
     expect(button).toBeDefined();

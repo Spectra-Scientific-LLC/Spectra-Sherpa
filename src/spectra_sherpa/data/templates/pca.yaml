@@ -18,13 +18,6 @@ template_data:
     parameters: {}
     position_x: 175
     position_y: 50
-  - node_id: preprocess_1
-    node_type: preprocess.scale
-    label: Mean Center
-    parameters:
-      method: mean_center
-    position_x: 425
-    position_y: 300
   - node_id: inclusion_1
     node_type: data.filter_samples
     label: Filter
@@ -48,6 +41,8 @@ template_data:
     label: Fit PCA Transform
     parameters:
       n_components: "3"
+      standardized: false
+      scaled: false
     position_x: 175
     position_y: 550
   - node_id: viz_1
@@ -89,9 +84,6 @@ template_data:
     to_node_id: inclusion_1
     to_input: X
   - from_node_id: inclusion_1
-    to_node_id: preprocess_1
-    to_input: default
-  - from_node_id: preprocess_1
     to_node_id: model_1
   - from_node_id: model_1
     to_node_id: viz_1

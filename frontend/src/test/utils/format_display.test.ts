@@ -2,7 +2,7 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 
 import RelativeTime from "@/components/RelativeTime.vue";
-import { formatMetricValue, formatRelativeTime, formatTimestamp } from "@/utils/format";
+import { formatMetricValue, formatRelativeTime, formatTimestamp, parseTimestamp } from "@/utils/format";
 
 const now = Date.parse("2026-10-08T12:00:00Z");
 const ago = (ms: number) => new Date(now - ms).toISOString();
@@ -31,6 +31,11 @@ describe("formatRelativeTime", () => {
 });
 
 describe("formatTimestamp", () => {
+  it("interprets legacy offset-free API instants as UTC and preserves explicit offsets", () => {
+    expect(parseTimestamp("2026-10-24T21:20:59.123456")?.toISOString()).toBe("2026-10-24T21:20:59.123Z");
+    expect(parseTimestamp("2026-10-24T14:20:59-07:00")?.toISOString()).toBe("2026-10-24T21:20:59.000Z");
+    expect(formatRelativeTime("2026-10-08T18:00:00Z", now)).not.toBe("just now");
+  });
   it("always names the time zone and keeps seconds on request", () => {
     const text = formatTimestamp("2026-10-08T12:34:56Z", { seconds: true });
     expect(text).toMatch(/56/);

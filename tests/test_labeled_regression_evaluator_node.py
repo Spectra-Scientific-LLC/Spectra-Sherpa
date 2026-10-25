@@ -38,6 +38,39 @@ def test_local_evaluator_preserves_context_labels_and_generated_python():
     assert scope["results"]["evaluate"] == actual
 
 
+@pytest.mark.parametrize("unit", ["ppm", None])
+def test_comparison_and_diagnostics_preserve_response_units(unit):
+    context = _sample_context()
+    context.target_context.target_units = unit
+    result = evaluate_labeled_regression(context.target, context.target, sample_context=context)
+    assert result.outputs["comparison"]["metadata"]["response_identity"] == {"names": ["response"], "units": [unit]}
+    assert result.outputs["comparison"]["metadata"]["target_units"] == [unit]
+    assert result.diagnostics["unit_context"]["response"]["state"] == ("recorded" if unit else "missing")
+
+
+def test_selected_response_unit_does_not_qualify_other_targets():
+    from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+    from spectra_sherpa.core.target_authority import TargetAuthority
+
+    context = _sample_context()
+    context.target = np.column_stack([context.target, context.target * 2])
+    context.target_context = TargetContext(
+        target_names=["Moisture", "Protein"],
+        target_type="continuous",
+        target_units="wt %",
+        selected_target="Moisture",
+        selected_authority=TargetAuthority(
+            column="Moisture",
+            target_type="continuous",
+            units="wt %",
+            source_digest="a" * 64,
+        ),
+    )
+    result = evaluate_labeled_regression(context.target, context.target, sample_context=context)
+    assert result.diagnostics["response_identity"] == {"names": ["Moisture", "Protein"], "units": ["wt %", None]}
+    assert result.diagnostics["unit_context"]["Protein"]["state"] == "missing"
+
+
 @pytest.mark.parametrize("bad", ["rows", "reordered_target", "names", "missing_target", "missing_labels"])
 def test_local_evaluator_refuses_misbound_sample_context(bad):
     context = _sample_context()

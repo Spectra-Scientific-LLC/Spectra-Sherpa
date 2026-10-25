@@ -24,7 +24,11 @@ const EMPTY = "—";
 /** Parse an ISO string, epoch milliseconds or Date; null when absent or invalid. */
 export function parseTimestamp(value: TimestampInput): Date | null {
   if (value === null || value === undefined || value === "") return null;
-  const date = value instanceof Date ? value : new Date(value);
+  // Legacy API timestamps without an offset are UTC database values. Date-only
+  // strings retain their calendar-date behavior; explicit offsets stay intact.
+  const normalized = typeof value === "string" && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
+    ? `${value.replace(" ", "T")}Z` : value;
+  const date = normalized instanceof Date ? normalized : new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -67,6 +71,7 @@ export function formatRelativeTime(value: TimestampInput, now: number = Date.now
   const date = parseTimestamp(value);
   if (!date) return typeof value === "string" && value ? value : EMPTY;
   const elapsed = now - date.getTime();
+  if (elapsed < -MINUTE_MS) return formatTimestamp(date);
   if (elapsed < MINUTE_MS) return "just now";
   if (elapsed < HOUR_MS) return `${Math.floor(elapsed / MINUTE_MS)} min ago`;
   if (elapsed < DAY_MS) return `${Math.floor(elapsed / HOUR_MS)} hr ago`;

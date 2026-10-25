@@ -23,6 +23,31 @@ def text(summary):
     return "\n".join(row["label"] + ": " + row["value"] for row in summary["rows"])
 
 
+def test_component_cv_short_context_does_not_dump_identity_but_detail_keeps_it():
+    from functools import partial
+
+    from spectra_sherpa.app.services.run_validation_summary import _component_curve_report_rows, _summary_context
+
+    short = []
+    value = {
+        "cross_validation": {
+            "status": "available",
+            "method": "kfold",
+            "n_folds": 5,
+            "n_groups": None,
+            "split_digest": "a" * 64,
+        }
+    }
+    detailed = _component_curve_report_rows("pca", value, partial(_summary_context, short))
+    assert short == [
+        {
+            "label": "Component CV design (pca)",
+            "value": "5 folds; kfold; row folds; development tuning, not an independent test.",
+        }
+    ]
+    assert "a" * 64 in dict(detailed)["Component CV design (pca)"]
+
+
 def test_preparation_report_omits_irrelevant_cv_boilerplate_only_from_short_context():
     run = SimpleNamespace(
         id=1,
