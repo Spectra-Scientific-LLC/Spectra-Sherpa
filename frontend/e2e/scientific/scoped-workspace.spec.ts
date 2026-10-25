@@ -114,7 +114,7 @@ test("choosing Synthesis during Data bootstrap preserves My Dataset restoration 
     await page.getByRole("button", { name: "Synthesis", exact: true }).click();
     release();
     await expect(page.getByRole("button", { name: "Synthesis", exact: true })).toHaveAttribute("aria-current", "true");
-    await page.getByRole("button", { name: "My Dataset", exact: true }).click();
+    await page.locator(".workspace-header").getByRole("button", { name: "My Dataset", exact: true }).click();
     const heading = page.locator(".focused-dataset-details > summary");
     await expect(heading).toContainText(dataset.experiment.name);
     await heading.click();
