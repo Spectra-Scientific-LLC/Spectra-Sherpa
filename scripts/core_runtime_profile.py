@@ -88,7 +88,7 @@ CORE_ROOT_DISTRIBUTIONS = (
 
 # Current-release runtime qualification authority. Historical R1 evidence
 # remains frozen at the node count recorded by its originating commit.
-EXPECTED_NODE_COUNT = 103
+EXPECTED_NODE_COUNT = 109
 # These keys are executable smoke cases, not a second capability registry. The
 # probe requires exact equality with the live ``requires_scp`` projection.
 OPTIONAL_OPERATION_CASES: dict[str, dict[str, object]] = {
@@ -976,7 +976,7 @@ def _compare_profile_reports(r1: Mapping[str, Any], r2: Mapping[str, Any]) -> di
         r1_registry.get("ready_count") != EXPECTED_BASE_OPERATION_COUNT
         or r1_registry.get("unavailable_count") != EXPECTED_OPTIONAL_OPERATION_COUNT
     ):
-        raise RuntimeError("R1 readiness is not the exact 86-ready/3-unavailable profile")
+        raise RuntimeError("R1 readiness differs from the current base/optional operation counts")
     if r2_registry.get("ready_count") != EXPECTED_NODE_COUNT or r2_registry.get("unavailable_count") != 0:
         raise RuntimeError("R2 readiness is not the exact all-ready profile")
     r1_isolation = _stage_by_name(r1, "profile_isolation")

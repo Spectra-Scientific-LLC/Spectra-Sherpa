@@ -157,3 +157,50 @@ class VersionInfo(BaseModel):
     file_count: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BoschStepIntervalOut(BaseModel):
+    first_acquisition: int
+    last_acquisition: int
+    start_time: float
+    end_time: float
+    acquisition_count: int
+
+
+class BoschStepOut(BaseModel):
+    step_id: str
+    label: str
+    acquisition_count: int
+    intervals: list[BoschStepIntervalOut]
+
+
+class BoschWaferStepsOut(BaseModel):
+    asset_id: str
+    steps: list[BoschStepOut]
+    alignment: dict[str, Any] | None
+    refusal: str | None
+
+
+class BoschStepsOut(BaseModel):
+    process_file_id: int | None = None
+    source_sha256: str
+    process_sha256: str
+    date: str
+    lot: dict[str, Any] | None
+    wafers: list[BoschWaferStepsOut]
+    unrecorded_protocol_steps: list[str]
+    warnings: list[str]
+
+
+class BoschStepPreviewRequest(BaseModel):
+    process_file_id: int
+    asset_id: str = Field(min_length=1, max_length=80)
+    step_id: str = Field(min_length=1, max_length=40)
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    process_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    max_rows: int = Field(default=4, ge=1, le=16)
+
+
+class BoschStepPreviewOut(BaseModel):
+    dataset: dict[str, Any]
+    selected_acquisition_count: int

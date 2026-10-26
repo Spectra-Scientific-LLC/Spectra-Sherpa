@@ -611,6 +611,47 @@
                   </div>
                 </div>
               </div>
+              <div class="upload-action">
+                <div class="field upload-name">
+                  <label for="upload-dataset-name">Dataset name</label>
+                  <InputText
+                    id="upload-dataset-name"
+                    v-model="uploadDatasetName"
+                    :placeholder="defaultUploadDatasetName()"
+                    :disabled="dataUploadDisabled"
+                  />
+                </div>
+                <Button
+                  label="Add to My Dataset"
+                  icon="pi pi-plus"
+                  data-action="import_data"
+                  :disabled="dataUploadDisabled || stagedUploadMembers.length === 0"
+                  :loading="uploading"
+                  @click="onUploadFile"
+                />
+              </div>
+                <div
+                  v-if="selectedUploadMember && selectedUploadMember.assets.length > 1"
+                  class="field"
+                >
+                  <label for="upload-scientific-asset">Wafer / scientific result to preview</label>
+                  <Dropdown
+                    inputId="upload-scientific-asset"
+                    v-model="uploadAssetIds[selectedUploadMember.staging_id]"
+                    :options="selectedUploadMember.assets"
+                    optionLabel="title"
+                    optionValue="asset_id"
+                    placeholder="Select a wafer or result to preview"
+                    class="w-full"
+                  >
+                    <template #option="{ option }">
+                      <span
+                        >{{ option.title || option.asset_id }} ·
+                        {{ option.shape.join(" × ") }}</span
+                      >
+                    </template>
+                  </Dropdown>
+                </div>
               <Panel
                 :toggleable="true"
                 :collapsed="uploadOptionsCollapsed"
@@ -679,52 +720,19 @@
                     <small class="field-help">{{ selectedUploadCsvPlan.assignment.training_label }} rows train; {{ selectedUploadCsvPlan.assignment.validation_label }} rows are held out.</small>
                   </div>
                 </div>
-                <div
-                  v-if="selectedUploadMember && selectedUploadMember.assets.length > 1"
-                  class="field"
-                >
-                  <label for="upload-scientific-asset">Scientific result to preview</label>
-                  <Dropdown
-                    inputId="upload-scientific-asset"
-                    v-model="uploadAssetIds[selectedUploadMember.staging_id]"
-                    :options="selectedUploadMember.assets"
-                    optionLabel="title"
-                    optionValue="asset_id"
-                    placeholder="Select the exact result"
-                    class="w-full"
-                  >
-                    <template #option="{ option }">
-                      <span
-                        >{{ option.title || option.asset_id }} ·
-                        {{ option.shape.join(" × ") }}</span
-                      >
-                    </template>
-                  </Dropdown>
-                </div>
                 <small class="field-hint">{{ uploadFormatHint }}</small>
               </Panel>
-              <div class="upload-action">
-                <div class="field upload-name">
-                  <label for="upload-dataset-name">Dataset name</label>
-                  <InputText
-                    id="upload-dataset-name"
-                    v-model="uploadDatasetName"
-                    :placeholder="defaultUploadDatasetName()"
-                    :disabled="dataUploadDisabled"
-                  />
-                </div>
-                <Button
-                  label="Add to My Dataset"
-                  icon="pi pi-plus"
-                  data-action="import_data"
-                  :disabled="dataUploadDisabled || stagedUploadMembers.length === 0"
-                  :loading="uploading"
-                  @click="onUploadFile"
-                />
-              </div>
             </div>
           </div>
-          <KeepAlive>
+          <BoschStepComparison v-if="uploadHasBoschDays" class="source-preview-pane"
+            :staged-files="stagedUploadMembers" @prepared="uploadBoschProcessId = $event" />
+          <div v-else-if="selectedUploadMember && selectedUploadMember.assets.length > 1 && !previewUploadSource"
+            class="source-preview-pane upload-preview-choice" role="status">
+            <i class="pi pi-chart-line" aria-hidden="true" />
+            <p>Select a wafer or scientific result in the selector to preview its spectra.</p>
+            <small>Your files are staged. You can add the entire files to My Dataset without choosing a preview.</small>
+          </div>
+          <KeepAlive v-else>
             <DatasetSourcePreview
               :scope-key="JSON.stringify(dataScopeIdentity())"
               v-if="activeTab === TAB_UPLOAD"
@@ -1165,7 +1173,7 @@
                   <span>{{ selectedExperimentName }}</span>
                 </div>
                 <PlotSelectionCheckbox
-                  v-if="selectedExperiment"
+                  v-if="selectedExperiment && !boschComparisonMode"
                   :checked="isExperimentFullyPlotted(selectedExperiment.id)"
                   :partial="isExperimentPartlyPlotted(selectedExperiment.id)"
                   :disabled="dataStore.experimentFiles.length === 0"
@@ -1202,6 +1210,9 @@
                 <small>Use Import, Synthesis, Upload, or Library to add data to this record.</small>
               </div>
 
+              <div v-else-if="boschComparisonMode" class="empty-state">
+                Select wafers and steps below. Expand a file to review its acquisition ranges.
+              </div>
               <div v-else class="file-groups">
                 <div v-for="stage in fileStages" :key="stage.key" class="file-stage">
                   <div v-if="filesForStage(stage.key).length > 0" class="stage-section">
@@ -1288,7 +1299,39 @@
               </aside>
             </div>
           </div>
-          <div class="dataset-preview-shell">
+          <div v-if="boschComparisonMode && dataStore.activeExperimentId" class="dataset-preview-shell">
+            <BoschStepComparison compact
+              :experiment-id="dataStore.activeExperimentId" :files="dataStore.experimentFiles"
+              @inspect="inspectBoschAcquisitions" />
+          </div>
+          <div v-else class="dataset-preview-shell">
+            <div
+              v-if="pendingInspection && inspectionAssets.length > 1"
+              class="inspection-asset-selector"
+            >
+              <label for="inspection-scientific-asset">Scientific result</label>
+              <Dropdown
+                inputId="inspection-scientific-asset"
+                v-model="inspectionAssetId"
+                :options="inspectionAssets"
+                optionLabel="title"
+                optionValue="asset_id"
+                placeholder="Select the exact result to inspect"
+                class="w-full"
+                @change="onInspectionAssetChange"
+              >
+                <template #option="{ option }">
+                  <span
+                    >{{ option.title || option.asset_id }} · {{ option.asset_id }} ·
+                    {{ option.shape.join(" × ") }}</span
+                  >
+                </template>
+              </Dropdown>
+              <small
+                >The same exact result identity is used by preview, workflows, and model
+                application.</small
+              >
+            </div>
             <SelectedSpectraPlotPanel
               :plot-datasets="plotDatasetSources"
               :plot-dataset-count="plottedExperimentIds.length"
@@ -1310,7 +1353,7 @@
             :active-dataset-name="selectedExperimentName"
             :selected-file-count="activeSelectedFileCount"
             :selected-file-names="activeSelectedFileNames"
-            :sample-inclusion-enabled="Boolean(datasetCurationSource)"
+            :sample-inclusion-enabled="Boolean(datasetCurationSource) && (displaySampleInclusion.loading || displaySampleInclusion.rows.length > 0)"
             :sample-inclusion="displaySampleInclusion"
             :matrix-asset-id="inspectionAssetId"
             :initial-analysis-target="requestedAnalysisSelection.target"
@@ -1444,33 +1487,6 @@
               class="p-button-sm p-button-outlined"
               @click="reopenSelectedLibraryBasket"
             />
-          </div>
-          <div
-            v-if="pendingInspection && inspectionAssets.length > 1"
-            class="inspection-asset-selector"
-          >
-            <label for="inspection-scientific-asset">Scientific result</label>
-            <Dropdown
-              inputId="inspection-scientific-asset"
-              v-model="inspectionAssetId"
-              :options="inspectionAssets"
-              optionLabel="title"
-              optionValue="asset_id"
-              placeholder="Select the exact result to inspect"
-              class="w-full"
-              @change="onInspectionAssetChange"
-            >
-              <template #option="{ option }">
-                <span
-                  >{{ option.title || option.asset_id }} · {{ option.asset_id }} ·
-                  {{ option.shape.join(" × ") }}</span
-                >
-              </template>
-            </Dropdown>
-            <small
-              >The same exact result identity is used by preview, workflows, and model
-              application.</small
-            >
           </div>
           <div
             v-if="inspectionWarnings.length"
@@ -1650,6 +1666,7 @@ import { resolveMethodHelpUrl } from "@/utils/documentation";
 import PlotSelectionCheckbox from "@/components/data/PlotSelectionCheckbox.vue";
 import DataContentsPanel from "./DataContentsPanel.vue";
 import DataStoryCard from "./DataStoryCard.vue";
+import BoschStepComparison from "./BoschStepComparison.vue";
 import SelectedSpectraPlotPanel from "./SelectedSpectraPlotPanel.vue";
 import DatasetCurationPanel from "@/components/DatasetCurationPanel.vue";
 import { savedPortfolioInclusion, type CurationSource, type SampleInclusionState } from "@/utils/datasetCuration";
@@ -2251,6 +2268,9 @@ const plottedExperimentIds = computed(() =>
     .map((experiment) => experiment.id),
 );
 const plotDatasetSources = ref<DatasetPlotSource[]>([]);
+const boschComparisonMode = computed(() => dataStore.experimentFiles.some(
+  file => /day_\d{4}_\d{2}_\d{2}.*\.nc$/i.test(file.file_path),
+));
 const plotDatasetsLoading = ref(false);
 const plotDatasetsError = ref<string | null>(null);
 const fileSampleLabelsByExperiment = ref<Record<number, Record<string, string[]>>>({});
@@ -2712,7 +2732,7 @@ const uploadFormatHint = computed(() => {
   const supported = availableUploadFormats.value.join(", ");
   const disabled = disabledUploadFormats.value;
   const resourceHint =
-    "50 MB upload limit. Dense CSV/JCAMP text has a decoded-data safety limit; use NPY/NPZ for large numeric matrices";
+    "Source upload limits apply. Dense CSV/JCAMP text has a decoded-data safety limit; use NPY/NPZ for large numeric matrices";
   if (!disabled.length) return `Supported: ${supported} (${resourceHint})`;
   const hints: string[] = [];
   if (disabled.some((format) => format.unsupportedReason && !format.requiresExport)) {
@@ -2731,6 +2751,9 @@ const uploadAssignmentColumn = ref("");
 const uploadOptionsCollapsed = ref(true);
 const selectedFile = ref<File | null>(null);
 const stagedUploadMembers = ref<StagedUpload[]>([]);
+const uploadBoschProcessId = ref<string | null>(null);
+const uploadHasBoschDays = computed(() => stagedUploadMembers.value.some(member =>
+  member.format_id === "bosch-netcdf" && /^Day_\d{4}_\d{2}_\d{2}/i.test(member.filename)));
 const stagedUploadErrors = reactive<Record<string, string>>({});
 const uploadRefusals = ref<StagedUploadRefusal[]>([]);
 const selectionHasCsv = computed(() =>
@@ -3040,6 +3063,7 @@ const selectedUploadAssetWarnings = computed(() => {
   return uniqueAssetWarnings(member.assets);
 });
 const previewUploadSource = computed<DataMatrixRef | null>(() => {
+  if (uploading.value) return null;
   const member = selectedUploadMember.value;
   if (!member) return null;
   const assetId = uploadAssetIds[member.staging_id] ?? null;
@@ -3121,6 +3145,9 @@ watch(
   () => {
     const member = selectedUploadMember.value;
     syncUploadControlsFromOverrides(member ? uploadOverrides[member.staging_id] : undefined);
+    if (member && member.assets.length > 1 && !uploadAssetIds[member.staging_id]) {
+      uploadOptionsCollapsed.value = false;
+    }
   },
 );
 
@@ -3301,6 +3328,9 @@ watch(
 const originalSourceSampleCount = computed(() => {
   const id = dataStore.activeExperimentId;
   if (id == null || !originalSourceFilesKey.value) return null;
+  const selectedAsset = inspectionAssets.value.find((asset) => asset.asset_id === inspectionAssetId.value);
+  const sampleDimension = selectedAsset?.dimension_roles?.indexOf("sample") ?? -1;
+  if (selectedAsset && sampleDimension >= 0) return selectedAsset.shape[sampleDimension] ?? null;
   const receipt = sourceSampleCounts.value[id];
   return receipt?.filesKey === originalSourceFilesKey.value ? receipt.count :
     dataStoryInspectedSource.value?.n_samples ?? null;
@@ -5814,6 +5844,7 @@ async function loadPlottedDatasets(
     return;
   }
   const selected = plottedExperimentIds.value
+    .filter((id) => !(boschComparisonMode.value && id === dataStore.activeExperimentId))
     .map((id) => dataStore.experiments.find((experiment) => experiment.id === id))
     .filter((experiment): experiment is ExperimentSummary => Boolean(experiment));
   if (selected.length !== plottedExperimentIds.value.length) {
@@ -5827,6 +5858,14 @@ async function loadPlottedDatasets(
     const resident = residentDatasets.get(experiment.id);
     const selection = plotFileSelections.value[experiment.id];
     const assetId = experiment.id === dataStore.activeExperimentId ? inspectionAssetId.value : null;
+    if (
+      experiment.id === dataStore.activeExperimentId &&
+      pendingInspection.value &&
+      inspectionAssets.value.length > 1 &&
+      !assetId
+    ) {
+      return Promise.reject(new Error("Choose a scientific result (wafer) above to preview this file."));
+    }
     if (
       !assetId &&
       resident &&
@@ -6061,7 +6100,7 @@ async function onPlotFileToggle(file: ExperimentFile, checked: boolean): Promise
     }
     await loadPlottedDatasets();
   } else {
-    await showExperimentContents(experimentId);
+    await showExperimentContents(experimentId, null, inspectionAssetId.value);
   }
   if (activeFocus && selected.some((candidate) => candidate.id === activeFocus.id)) {
     dataStore.activateFile(activeFocus.id, activeFocus.file_path);
@@ -6116,6 +6155,11 @@ async function showExperimentContents(
   preferredAssetId: string | null = null,
   exactSelection = false,
 ) {
+  if (boschComparisonMode.value && experimentId === dataStore.activeExperimentId) {
+    inspection.contents.invalidate();
+    dataStore.clearInspection();
+    return;
+  }
   exactInspectionSelection.value = exactSelection;
   const ticket = inspection.contents.begin();
   dataStore.clearCatalogExploration();
@@ -6168,7 +6212,9 @@ async function showExperimentContents(
       inspectionAssets.value = (inventories[0]?.assets ?? []).filter((asset) =>
         commonIds.has(asset.asset_id),
       );
-      inspectionAssetId.value = preferredAssetId;
+      inspectionAssetId.value = inspectionAssets.value.some(
+        (asset) => asset.asset_id === preferredAssetId,
+      ) ? preferredAssetId : null;
       pendingInspection.value = { kind: "experiment", experimentId };
       dataStore.clearInspection();
       if (!inspectionAssets.value.length) {
@@ -6176,11 +6222,10 @@ async function showExperimentContents(
           "Files in this dataset do not share a selectable scientific result identity.",
         );
       }
-      if (preferredAssetId) {
+      if (inspectionAssetId.value) {
         await onInspectionAssetChange();
-        if (!ticket.isCurrent()) return;
-        if (dataStore.fileInfo)
-          await loadPlottedDatasets(new Map([[experimentId, dataStore.fileInfo]]));
+      } else {
+        await loadPlottedDatasets();
       }
       return;
     }
@@ -6469,7 +6514,20 @@ async function onFileSelect(event: { files?: File[] }) {
   selectedFile.value = files[0] ?? null;
   if (!files.length) return;
   try {
-    const staged = await dataStore.stageUploadBatch(files);
+    // Each native NetCDF may be close to 1 GiB. Stage those sequentially;
+    // ordinary multi-file/ZIP collections retain their aggregate limits.
+    const batches = files.some(file => /\.nc$/i.test(file.name)) ? files.map(file => [file]) : [files];
+    const stagingTicket = projectAdmission.capture();
+    const receipts = [];
+    for (const batch of batches) {
+      if (!stagingTicket.isCurrent()) return;
+      receipts.push(await dataStore.stageUploadBatch(batch));
+      if (!stagingTicket.isCurrent()) return;
+    }
+    const staged = { ...receipts[0], files: receipts.flatMap(receipt => receipt.files),
+      refusals: receipts.flatMap(receipt => receipt.refusals),
+      file_count: receipts.reduce((sum, receipt) => sum + receipt.file_count, 0),
+      refused_count: receipts.reduce((sum, receipt) => sum + receipt.refused_count, 0) };
     uploadRefusals.value.push(...staged.refusals);
     for (const member of staged.files) {
       stagedUploadMembers.value.push(member);
@@ -6545,12 +6603,19 @@ async function onUploadFile() {
     return;
   }
   if (!stagedUploadMembers.value.length) return;
+  if (uploadHasBoschDays.value && !uploadBoschProcessId.value) {
+    toast.add({ severity: "warn", summary: "Prepare processing steps", detail: "Load Process_data.nc and review the processing-step preview before saving.", life: 5000 });
+    return;
+  }
   uploading.value = true;
   try {
     // Synthesis-style flow: each click creates a new My Dataset with the
     // typed name (or the file name as default), then uploads the file into
     // it. The user no longer has to pre-create a dataset via the dialog.
     const name = resolvedUploadDatasetName.value;
+    const selectedAssetId = stagedUploadMembers.value.length === 1
+      ? uploadAssetIds[stagedUploadMembers.value[0].staging_id] ?? null
+      : null;
     const created = await dataStore.createExperiment(
       name,
       undefined,
@@ -6564,6 +6629,7 @@ async function onUploadFile() {
         staging_id: member.staging_id,
         overrides: uploadOverrides[member.staging_id] ?? null,
       })),
+      uploadBoschProcessId.value,
     );
     await fetchQuota();
     toast.add({
@@ -6588,7 +6654,8 @@ async function onUploadFile() {
     await Promise.all([dataStore.fetchExperiments(), refreshProjectContext()]);
     activeTab.value = TAB_MY_DATASET;
     persistActiveDataTab();
-    await showExperimentContents(created.id);
+    if (selectedAssetId) setExperimentPlotSelection(created.id, null);
+    await showExperimentContents(created.id, null, selectedAssetId);
   } catch (err) {
     console.error("Upload failed:", err);
     toast.add({
@@ -6698,6 +6765,22 @@ async function onDeleteExperiment() {
   }
 }
 
+async function inspectBoschAcquisitions(file: ExperimentFile, assetId: string) {
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null) return;
+  inspectionAssetId.value = assetId;
+  const ticket = inspection.selection.begin();
+  try {
+    await dataStore.inspectFile(file.id, file.file_path, experimentId, assetId);
+    if (!ticket.isCurrent()) return;
+    cacheFileSampleLabels(experimentId, dataStore.fileInfo, extractFileName(file.file_path));
+  } catch (reason) {
+    if (!ticket.isCurrent()) return;
+    toast.add({ severity: "error", summary: "Acquisitions unavailable",
+      detail: getErrorMessage(reason, "Could not inspect the selected wafer"), life: 5000 });
+  }
+}
+
 async function onInspectFile(file: ExperimentFile, options: { updateRoute?: boolean; tabChoiceCurrent?: () => boolean } = {}) {
   const ticket = inspection.focus.begin();
   const tabChoiceCurrent = options.tabChoiceCurrent ?? navigation.captureTabChoice();
@@ -6781,6 +6864,8 @@ async function onInspectionAssetChange() {
       }
       cacheFileSampleLabels(selection.experimentId, dataStore.fileInfo);
     }
+    if (!ticket.isCurrent()) return;
+    await loadPlottedDatasets();
   } catch {
     // The store exposes the exact preview error in the Contents panel.
   }
@@ -8153,6 +8238,11 @@ function formatDate(dateStr: string): string {
 
 .upload-shape-control {
   width: 100%;
+}
+
+.upload-preview-choice {
+  padding: 2rem;
+  color: var(--text-color-secondary);
 }
 
 .upload-action {

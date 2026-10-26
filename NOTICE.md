@@ -81,3 +81,17 @@ Original data is courtesy of the respective contributors (including Cargill, Sou
 ## Reporting attribution issues
 
 If you believe an asset bundled here is missing required attribution or has been redistributed in violation of its upstream licence, please open an issue at <https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/issues> with the path and the upstream licence text, and we will remediate promptly.
+
+## BOSCH NetCDF dictionaries
+
+`data/bosch_netcdf/Dictionary_OES.nc`, `Dictionary_process.nc` and `Lot_status.xlsx` are unmodified
+files from Mudassir Ali Sayyed, Tom Seifert, Stephan Zieger, Simeon Schwarzenberg,
+Aditya Deshmukh, Micha Haase and Jan Langer, *A Multi-Model Dataset for BOSCH
+Plasma-Etching: Optical Emission Spectra, Process Parameters, and Wafer
+Measurements for Data-Driven Plasma Modeling* (2025),
+https://doi.org/10.5281/zenodo.17122442. Licensed under Creative Commons
+Attribution 4.0 International: https://creativecommons.org/licenses/by/4.0/.
+The data license applies to these dictionaries separately from the software.
+No endorsement by the dataset authors is implied.
+
+`data/bosch_netcdf/experiment_context.json` transcribes the published README protocol and lot-status table from the same source, with dates and units normalized. It retains the source file checksums and cell references.

@@ -847,6 +847,7 @@ export const useDataStore = defineStore("data", () => {
     experimentId: number,
     stage: string,
     files: Array<{ staging_id: string; overrides?: PreparedDataOverrides | null }>,
+    boschProcessStagingId: string | null = null,
   ) => {
     const request = captureMutationScope();
     const account = accountMutation.capture();
@@ -854,6 +855,7 @@ export const useDataStore = defineStore("data", () => {
       experiment_id: experimentId,
       stage,
       files,
+      ...(boschProcessStagingId ? { bosch_process_staging_id: boschProcessStagingId } : {}),
     });
     await refreshWrittenInventories(account);
     if (request.isCurrent()) await selectExperiment(experimentId);

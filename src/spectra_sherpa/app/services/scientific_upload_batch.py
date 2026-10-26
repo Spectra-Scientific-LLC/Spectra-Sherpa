@@ -69,7 +69,16 @@ async def admit_scientific_upload_batch(
     if not selected:
         raise FileValidationError("Select at least one scientific file or ZIP archive")
 
+    from spectra_sherpa.io import builtin_registry
+
     outer_limit = max_size_bytes(max_file_size_mb)
+    # Large native NetCDF sources are staged separately. Ordinary multi-file
+    # and ZIP transport retains the existing aggregate collection ceiling.
+    batch_limit = (
+        builtin_registry.source_limit_bytes(selected[0].filename or "", MAX_COLLECTION_SOURCE_BYTES)
+        if len(selected) == 1
+        else MAX_COLLECTION_SOURCE_BYTES
+    )
     members: list[ScientificUploadMember] = []
     refusals: list[ScientificUploadRefusal] = []
     seen_names: set[str] = set()
@@ -88,7 +97,7 @@ async def admit_scientific_upload_batch(
         if identity in seen_names:
             refuse(member.source_name, f"Duplicate scientific filename: {member.filename}")
             return
-        if admitted_bytes + len(member.payload) > MAX_COLLECTION_SOURCE_BYTES:
+        if admitted_bytes + len(member.payload) > batch_limit:
             refuse(member.source_name, "Selection exceeds the 512 MiB scientific-source limit")
             return
         seen_names.add(identity)
@@ -107,8 +116,10 @@ async def admit_scientific_upload_batch(
             source_name = upload.filename or "unnamed source"
             try:
                 filename = sanitize_filename(source_name)
-                payload = await _read_upload(upload, max_bytes=outer_limit)
-                if transport_bytes + len(payload) > MAX_COLLECTION_SOURCE_BYTES:
+                payload = await _read_upload(
+                    upload, max_bytes=builtin_registry.source_limit_bytes(filename, outer_limit)
+                )
+                if transport_bytes + len(payload) > batch_limit:
                     refuse(source_name, "Selection exceeds the 512 MiB transport limit")
                     if index + 1 < len(selected):
                         refuse(

@@ -205,7 +205,7 @@ def test_model_feature_coordinates_are_bound_to_exact_output_authority() -> None
 
 def test_every_builtin_has_one_closed_presentation_authority() -> None:
     metadata_rows = node_registry.list_nodes()
-    assert len(metadata_rows) == 103
+    assert len(metadata_rows) == 109
     for metadata in metadata_rows:
         contract = metadata.resolved_presentation_contract()
         assert contract.presentations, metadata.node_type

@@ -239,4 +239,12 @@ class DatasetRegistry:
             return self._retained_bytes
 
 
-dataset_registry = DatasetRegistry()
+# The application must retain any one admitted native asset for paginated
+# sample tables and plots. Keep the aggregate cache bounded to the same
+# parser allocation ceiling; LRU eviction releases the previous wafer.
+from spectra_sherpa.io.types import ParserLimits
+
+_application_handle_bytes = ParserLimits().max_decoded_bytes
+dataset_registry = DatasetRegistry(
+    max_dataset_bytes=_application_handle_bytes, max_retained_bytes=_application_handle_bytes
+)

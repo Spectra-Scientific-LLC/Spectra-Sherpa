@@ -129,6 +129,46 @@
         "title": "APIKeyInfo",
         "type": "object"
       },
+      "AcquisitionInterval": {
+        "additionalProperties": false,
+        "description": "Inclusive, one-based original acquisition numbers; never plot indices.",
+        "properties": {
+          "cycle": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cycle"
+          },
+          "first": {
+            "exclusiveMinimum": 0.0,
+            "title": "First",
+            "type": "integer"
+          },
+          "last": {
+            "exclusiveMinimum": 0.0,
+            "title": "Last",
+            "type": "integer"
+          },
+          "phase": {
+            "minLength": 1,
+            "title": "Phase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first",
+          "last",
+          "phase"
+        ],
+        "title": "AcquisitionInterval",
+        "type": "object"
+      },
       "AcquisitionMatch": {
         "additionalProperties": false,
         "properties": {
@@ -1785,6 +1825,325 @@
           "file"
         ],
         "title": "Body_validate_sherpa_object_api_v1_projects_objects_validate_post",
+        "type": "object"
+      },
+      "BoschStagedPreviewRequest": {
+        "properties": {
+          "asset_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "daily_staging_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Daily Staging Id",
+            "type": "string"
+          },
+          "max_rows": {
+            "default": 4,
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "process_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Process Sha256",
+            "type": "string"
+          },
+          "process_staging_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Process Staging Id",
+            "type": "string"
+          },
+          "source_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "step_id": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "daily_staging_id",
+          "process_staging_id",
+          "asset_id",
+          "step_id",
+          "source_sha256",
+          "process_sha256"
+        ],
+        "title": "BoschStagedPreviewRequest",
+        "type": "object"
+      },
+      "BoschStagedSourcesRequest": {
+        "properties": {
+          "daily_staging_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Daily Staging Id",
+            "type": "string"
+          },
+          "process_staging_id": {
+            "pattern": "^[a-f0-9]{32}$",
+            "title": "Process Staging Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "daily_staging_id",
+          "process_staging_id"
+        ],
+        "title": "BoschStagedSourcesRequest",
+        "type": "object"
+      },
+      "BoschStepIntervalOut": {
+        "properties": {
+          "acquisition_count": {
+            "title": "Acquisition Count",
+            "type": "integer"
+          },
+          "end_time": {
+            "title": "End Time",
+            "type": "number"
+          },
+          "first_acquisition": {
+            "title": "First Acquisition",
+            "type": "integer"
+          },
+          "last_acquisition": {
+            "title": "Last Acquisition",
+            "type": "integer"
+          },
+          "start_time": {
+            "title": "Start Time",
+            "type": "number"
+          }
+        },
+        "required": [
+          "first_acquisition",
+          "last_acquisition",
+          "start_time",
+          "end_time",
+          "acquisition_count"
+        ],
+        "title": "BoschStepIntervalOut",
+        "type": "object"
+      },
+      "BoschStepOut": {
+        "properties": {
+          "acquisition_count": {
+            "title": "Acquisition Count",
+            "type": "integer"
+          },
+          "intervals": {
+            "items": {
+              "$ref": "#/components/schemas/BoschStepIntervalOut"
+            },
+            "title": "Intervals",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "step_id": {
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "label",
+          "acquisition_count",
+          "intervals"
+        ],
+        "title": "BoschStepOut",
+        "type": "object"
+      },
+      "BoschStepPreviewOut": {
+        "properties": {
+          "dataset": {
+            "additionalProperties": true,
+            "title": "Dataset",
+            "type": "object"
+          },
+          "selected_acquisition_count": {
+            "title": "Selected Acquisition Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dataset",
+          "selected_acquisition_count"
+        ],
+        "title": "BoschStepPreviewOut",
+        "type": "object"
+      },
+      "BoschStepPreviewRequest": {
+        "properties": {
+          "asset_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "max_rows": {
+            "default": 4,
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "process_file_id": {
+            "title": "Process File Id",
+            "type": "integer"
+          },
+          "process_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Process Sha256",
+            "type": "string"
+          },
+          "source_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "step_id": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "process_file_id",
+          "asset_id",
+          "step_id",
+          "source_sha256",
+          "process_sha256"
+        ],
+        "title": "BoschStepPreviewRequest",
+        "type": "object"
+      },
+      "BoschStepsOut": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "lot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lot"
+          },
+          "process_file_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process File Id"
+          },
+          "process_sha256": {
+            "title": "Process Sha256",
+            "type": "string"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "unrecorded_protocol_steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unrecorded Protocol Steps",
+            "type": "array"
+          },
+          "wafers": {
+            "items": {
+              "$ref": "#/components/schemas/BoschWaferStepsOut"
+            },
+            "title": "Wafers",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_sha256",
+          "process_sha256",
+          "date",
+          "lot",
+          "wafers",
+          "unrecorded_protocol_steps",
+          "warnings"
+        ],
+        "title": "BoschStepsOut",
+        "type": "object"
+      },
+      "BoschWaferStepsOut": {
+        "properties": {
+          "alignment": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alignment"
+          },
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refusal"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/BoschStepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "asset_id",
+          "steps",
+          "alignment",
+          "refusal"
+        ],
+        "title": "BoschWaferStepsOut",
         "type": "object"
       },
       "BranchRequest": {
@@ -8633,6 +8992,70 @@
         "title": "PopulationSummary",
         "type": "object"
       },
+      "PortfolioCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "selections": {
+            "items": {
+              "$ref": "#/components/schemas/StepSelection"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "title": "Selections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "selections"
+        ],
+        "title": "PortfolioCreate",
+        "type": "object"
+      },
+      "PortfolioOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/TimeSeriesPortfolio"
+          },
+          "selection_sha256": {
+            "title": "Selection Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "name",
+          "selection",
+          "selection_sha256",
+          "created_at"
+        ],
+        "title": "PortfolioOut",
+        "type": "object"
+      },
       "Position": {
         "properties": {
           "x": {
@@ -11265,6 +11688,18 @@
       },
       "StagedUploadCommitRequest": {
         "properties": {
+          "bosch_process_staging_id": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bosch Process Staging Id"
+          },
           "experiment_id": {
             "title": "Experiment Id",
             "type": "integer"
@@ -11789,6 +12224,146 @@
           "title"
         ],
         "title": "StarterStep",
+        "type": "object"
+      },
+      "StepPartition": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_id": {
+            "minLength": 1,
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "experiment_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Experiment Id",
+            "type": "integer"
+          },
+          "file_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "File Id",
+            "type": "integer"
+          },
+          "intervals": {
+            "items": {
+              "$ref": "#/components/schemas/AcquisitionInterval"
+            },
+            "minItems": 1,
+            "title": "Intervals",
+            "type": "array"
+          },
+          "oes_dictionary_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Oes Dictionary Sha256",
+            "type": "string"
+          },
+          "process_dictionary_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Process Dictionary Sha256",
+            "type": "string"
+          },
+          "process_file_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Process File Id",
+            "type": "integer"
+          },
+          "process_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Process Sha256",
+            "type": "string"
+          },
+          "recipe": {
+            "minLength": 1,
+            "title": "Recipe",
+            "type": "string"
+          },
+          "segmentation_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Segmentation Sha256",
+            "type": "string"
+          },
+          "source_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "step_id": {
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          },
+          "wafer": {
+            "minLength": 1,
+            "title": "Wafer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "file_id",
+          "process_file_id",
+          "source_sha256",
+          "process_sha256",
+          "oes_dictionary_sha256",
+          "process_dictionary_sha256",
+          "segmentation_sha256",
+          "day",
+          "wafer",
+          "asset_id",
+          "step_id",
+          "recipe",
+          "intervals"
+        ],
+        "title": "StepPartition",
+        "type": "object"
+      },
+      "StepSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "experiment_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Experiment Id",
+            "type": "integer"
+          },
+          "file_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "File Id",
+            "type": "integer"
+          },
+          "process_file_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Process File Id",
+            "type": "integer"
+          },
+          "step_id": {
+            "enum": [
+              "production",
+              "gas1",
+              "mixed"
+            ],
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "file_id",
+          "process_file_id",
+          "asset_id",
+          "step_id"
+        ],
+        "title": "StepSelection",
         "type": "object"
       },
       "SynthesisComponentInput": {
@@ -12717,6 +13292,36 @@
           "source_digest"
         ],
         "title": "TargetAuthority",
+        "type": "object"
+      },
+      "TimeSeriesPortfolio": {
+        "additionalProperties": false,
+        "properties": {
+          "partitions": {
+            "items": {
+              "$ref": "#/components/schemas/StepPartition"
+            },
+            "minItems": 1,
+            "title": "Partitions",
+            "type": "array"
+          },
+          "project_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": "spectrasherpa-time-series-portfolio/1",
+            "default": "spectrasherpa-time-series-portfolio/1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "partitions"
+        ],
+        "title": "TimeSeriesPortfolio",
         "type": "object"
       },
       "TrialEdgeDefinition": {
@@ -17516,6 +18121,104 @@
         ]
       }
     },
+    "/api/v1/builder/upload/bosch-step-preview": {
+      "post": {
+        "operationId": "staged_bosch_step_preview_api_v1_builder_upload_bosch_step_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoschStagedPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoschStepPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Staged Bosch Step Preview",
+        "tags": [
+          "builder"
+        ]
+      }
+    },
+    "/api/v1/builder/upload/bosch-steps": {
+      "post": {
+        "operationId": "staged_bosch_steps_api_v1_builder_upload_bosch_steps_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoschStagedSourcesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoschStepsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Staged Bosch Steps",
+        "tags": [
+          "builder"
+        ]
+      }
+    },
     "/api/v1/builder/upload/commit": {
       "post": {
         "operationId": "commit_staged_uploads_api_v1_builder_upload_commit_post",
@@ -22043,6 +22746,150 @@
         ]
       }
     },
+    "/api/v1/experiments/{experiment_id}/files/{file_id}/bosch-step-preview": {
+      "post": {
+        "operationId": "bosch_step_preview_endpoint_api_v1_experiments__experiment_id__files__file_id__bosch_step_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoschStepPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoschStepPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Bosch Step Preview Endpoint",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/api/v1/experiments/{experiment_id}/files/{file_id}/bosch-steps": {
+      "get": {
+        "operationId": "bosch_steps_endpoint_api_v1_experiments__experiment_id__files__file_id__bosch_steps_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "process_file_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Process File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoschStepsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Bosch Steps Endpoint",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
     "/api/v1/experiments/{experiment_id}/files/{file_id}/scientific-assets": {
       "get": {
         "description": "Inspect every typed asset without silently selecting one of them.",
@@ -26227,6 +27074,118 @@
         "summary": "Update Script",
         "tags": [
           "project-scripts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/time-series-portfolios": {
+      "get": {
+        "operationId": "list_portfolios_api_v1_projects__project_id__time_series_portfolios_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PortfolioOut"
+                  },
+                  "title": "Response List Portfolios Api V1 Projects  Project Id  Time Series Portfolios Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "List Portfolios",
+        "tags": [
+          "time-series-portfolios"
+        ]
+      },
+      "post": {
+        "operationId": "save_portfolio_api_v1_projects__project_id__time_series_portfolios_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Save Portfolio",
+        "tags": [
+          "time-series-portfolios"
         ]
       }
     },

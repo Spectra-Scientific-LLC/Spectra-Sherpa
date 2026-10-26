@@ -435,11 +435,12 @@ export function buildMultiDatasetOverlay(
     const dash = LINE_DASHES[Math.max(0, sourceIndex) % LINE_DASHES.length];
     for (const [rowIndex, row] of admittedSource.rows.entries()) {
       if (rowIndex >= rowBudgets[admittedIndex]) break;
-      const label = admittedSource.labels[rowIndex];
+      const groupLabel = admittedSource.member.curveGroupLabel;
+      const label = groupLabel ? `${groupLabel} · ${admittedSource.labels[rowIndex]}` : admittedSource.labels[rowIndex];
       const fileName = admittedSource.fileNames[rowIndex];
       const colorIdentity = admittedSource.colorIdentities[rowIndex];
       // Only declared specimen IDs establish cross-dataset color identity.
-      const colorKey = admittedSource.colorIdentityAuthority === "specimen_id"
+      const colorKey = groupLabel ? `group:${admittedSource.source.experimentId}:${groupLabel}` : admittedSource.colorIdentityAuthority === "specimen_id"
         ? `specimen:${colorIdentity}`
         : `dataset:${admittedSource.source.experimentId}:sample:${colorIdentity}`;
       const active =
@@ -453,9 +454,9 @@ export function buildMultiDatasetOverlay(
         mode: "lines",
         x: admittedSource.x,
         y: row,
-        name: label,
-        showlegend: false,
-        legendgroup: `dataset-${admittedSource.source.experimentId}`,
+        name: groupLabel ?? label,
+        showlegend: Boolean(groupLabel) && rowIndex === 0,
+        legendgroup: groupLabel ?? `dataset-${admittedSource.source.experimentId}`,
         customdata: admittedSource.x.map(() => [
           label,
           admittedSource.source.name,

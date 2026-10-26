@@ -48,9 +48,10 @@ def test_source_preview_file_loader_delegates_instrument_formats_to_native_regis
     )
     calls: list[str] = []
 
-    def fake_ingest(source_path: Path, *, parser_options: object | None = None):
+    def fake_ingest(source_path: Path, *, parser_options: object | None = None, asset_id: str | None = None):
         calls.append(str(source_path))
         assert parser_options is None
+        assert asset_id is None
         return SimpleNamespace(assets=(SimpleNamespace(dataset=expected),))
 
     monkeypatch.setattr(builder, "ensure_reader_available", lambda _path: None)

@@ -118,6 +118,10 @@ class ResolvedNistLibraryEntry:
 class DatasetSourceResolver(Protocol):
     """Resolve application-owned source identities without doing science."""
 
+    async def resolve_time_series_portfolio(
+        self, *, project_id: int, portfolio_id: int, selection_sha256: str
+    ) -> dict: ...
+
     async def resolve_experiment_file(
         self,
         *,

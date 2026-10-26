@@ -12,6 +12,7 @@ import { legacyStorageRedirect } from "./storageRedirect";
 // allowing the unauthenticated application shell to render.
 
 const routes = [
+  ...(import.meta.env.DEV ? [{ path: "/preview/oes-v065", component: () => import("@/views/data/BoschMatrixPrototype.vue"), meta: { nav: "data" } }] : []),
   { path: "/", redirect: "/dashboard" },
 
   // --- Main pages (chemometrician workflow) ---

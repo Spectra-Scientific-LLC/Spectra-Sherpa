@@ -58,8 +58,10 @@ def _experiment_path(experiment_id: int, relative: str) -> Path:
 def _resolved_experiment_file(record: ExperimentFile) -> ResolvedExperimentFile:
     path = _experiment_path(int(record.experiment_id), str(record.file_path))
     source_size = int(path.stat().st_size)
-    if source_size > _MAX_SOURCE_FILE_BYTES:
-        raise ValueError("experiment file exceeds the 256 MiB ingestion limit")
+    from spectra_sherpa.io import builtin_registry
+
+    if source_size > builtin_registry.source_limit_bytes(path, _MAX_SOURCE_FILE_BYTES):
+        raise ValueError("experiment file exceeds its native ingestion source limit")
     overrides = load_prepared_data_overrides(file_path=str(path)).to_sidecar_dict()
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -87,6 +89,23 @@ class ApplicationDatasetSourceResolver:
         self._preloaded_datasets = tuple(
             getattr(value, "loaded_dataset", value) for value in (preloaded_datasets or {}).values()
         )
+
+    async def resolve_time_series_portfolio(self, *, project_id: int, portfolio_id: int, selection_sha256: str) -> dict:
+        from spectra_sherpa.app.models.time_series_portfolio import TimeSeriesPortfolioRecord
+        from spectra_sherpa.core.time_series_portfolio import TimeSeriesPortfolio
+
+        async with async_session() as session:
+            record = await session.get(TimeSeriesPortfolioRecord, portfolio_id)
+            if record is None or record.project_id != project_id:
+                raise ValueError("Portfolio is not in the admitted project")
+            receipt = TimeSeriesPortfolio.model_validate(record.selection)
+            if (
+                receipt.project_id != project_id
+                or receipt.sha256() != selection_sha256
+                or record.selection_sha256 != selection_sha256
+            ):
+                raise ValueError("Portfolio selection changed")
+            return receipt.model_dump(mode="json")
 
     async def resolve_dataset_view(self, *, experiment_id: int, view_id: int, selection_sha256: str) -> dict:
         """Return one immutable definition; execution admission owns access control.

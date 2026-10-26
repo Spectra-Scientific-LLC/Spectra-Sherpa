@@ -37,6 +37,7 @@ from spectra_sherpa.app.lib.registered_reference_storage import (
     RegisteredReferenceStorageError,
     read_registered_reference_sidecar,
 )
+from spectra_sherpa.app.lib.sample_identity import sample_ids
 from spectra_sherpa.app.lib.sherpa_dataset import axis_to_wire
 from spectra_sherpa.app.lib.target_summary import target_summary
 from spectra_sherpa.app.models.api_key import APIKey
@@ -153,7 +154,7 @@ router = APIRouter(prefix="/datasets")
 _HITRAN_LIBRARY_SOURCES = {"hitran", "hitran_xsec"}
 _COLLECTION_SAMPLE_TABLE_SCHEMA = "spectrasherpa-collection-sample-table/1"
 _SOURCE_COLLECTION_SCHEMA = "spectrasherpa-source-collection/1"
-_COLLECTION_SAMPLE_TABLE_MAX_ROWS = 10_000
+_COLLECTION_SAMPLE_TABLE_MAX_ROWS = 20_000
 _COLLECTION_SAMPLE_TABLE_MAX_COLUMNS = 64
 _COLLECTION_SAMPLE_TABLE_MAX_CELL_CHARS = 4_096
 _COLLECTION_SAMPLE_TABLE_MAX_JSON_BYTES = 4 * 1024 * 1024
@@ -367,12 +368,11 @@ def _complete_collection_sample_table(dataset) -> dict[str, object]:
         or len(set(labels)) != row_count
     ):
         raise ValueError("collection sample labels must be unique non-empty strings")
+    sample_ids(dataset)  # Validate typed identity independently of display labels.
     retained_table = dict(axis.sample_table or {})
-    # The typed sample-axis labels are already the row-identity authority.  A
-    # generic native collection need not duplicate those labels in a
-    # scientific sample table merely so the Workbench can display them.
-    # Project a synthetic sample_id column at this bounded API boundary while
-    # leaving the retained dataset—and therefore its scientific digest—exact.
+    # Preserve declared observation IDs separately from display labels. Legacy
+    # collections without IDs retain the label fallback at this wire boundary;
+    # the retained dataset and its scientific digest remain unchanged.
     table = {
         "sample_id": retained_table.get("sample_id", labels),
         **{key: values for key, values in retained_table.items() if key != "sample_id"},
@@ -403,8 +403,6 @@ def _complete_collection_sample_table(dataset) -> dict[str, object]:
         projected_values: list[str | int | float | bool | None] = []
         for index, value in enumerate(values):
             scalar = _sample_table_scalar(value)
-            if column == "sample_id" and (not isinstance(scalar, str) or scalar != labels[index]):
-                raise ValueError(f"collection sample identity at row {index + 1} does not match its label")
             # Grouping columns are optional for a generic scientific
             # collection.  When present they must still be complete: an
             # apparently grouped table with missing group identities is more

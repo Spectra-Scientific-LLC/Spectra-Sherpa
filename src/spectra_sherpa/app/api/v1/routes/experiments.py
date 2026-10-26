@@ -25,7 +25,6 @@ from spectra_sherpa.app.api.deps import (
     release_demo_upload_quota_reservation_if_needed,
     reserve_demo_upload_quota_or_429,
 )
-from spectra_sherpa.app.api.v1.routes._http_utils import scientific_asset_warnings
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access, scientific_project_ids
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.lib.collection_definition import (
@@ -41,6 +40,9 @@ from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.acquisition_plans import AcquisitionPlanOut, AcquisitionPlanUpdate
 from spectra_sherpa.app.schemas.experiments import (
+    BoschStepPreviewOut,
+    BoschStepPreviewRequest,
+    BoschStepsOut,
     CollectionDefinitionReceipt,
     ExperimentAnalysisSelection,
     ExperimentAnalysisSelectionUpdate,
@@ -86,7 +88,7 @@ from spectra_sherpa.app.services.experiments import (
     resolve_data_path,
     update_experiment,
 )
-from spectra_sherpa.app.services.file_storage import FileValidationError, save_upload_file
+from spectra_sherpa.app.services.file_storage import FileValidationError, sanitize_filename, save_upload_file
 from spectra_sherpa.app.services.model_application import LoadedProjectDataset, load_project_dataset
 from spectra_sherpa.app.services.prepared_data import (
     PreparedDataOverrides,
@@ -761,6 +763,26 @@ async def upload_experiment_file(
         ensure_reader_available(file.filename or "")
     except (ImportError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        upload_name = sanitize_filename(file.filename or "")
+    except FileValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    retained_path = f"{stage}/{upload_name}"
+    existing = await session.scalar(
+        select(ExperimentFile.id).where(
+            ExperimentFile.experiment_id == experiment_id, ExperimentFile.file_path == retained_path
+        )
+    )
+    if existing is not None:
+        await file.close()
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A file with this name already exists in this dataset. "
+                "Select the existing file or rename the new upload."
+            ),
+        )
 
     upload_reserved = reserve_demo_upload_quota_or_429(user_id)
     exp_dir = experiment_dir(experiment_id)
@@ -1471,7 +1493,7 @@ async def inspect_experiment_file_assets_endpoint(
 
     from spectra_sherpa.app.lib.reference_materialization import materialize_reference_member
     from spectra_sherpa.app.lib.registered_reference_storage import read_registered_reference_sidecar
-    from spectra_sherpa.io import ingest
+    from spectra_sherpa.io import inspect_assets
 
     source_path = experiment_dir(experiment_id) / experiment_file.file_path
     registered_reference = read_registered_reference_sidecar(source_path)
@@ -1517,7 +1539,7 @@ async def inspect_experiment_file_assets_endpoint(
         )
 
     try:
-        result = await asyncio.to_thread(ingest, source_path)
+        result = await asyncio.to_thread(inspect_assets, source_path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Could not inspect scientific assets: {exc}") from exc
 
@@ -1528,21 +1550,7 @@ async def inspect_experiment_file_assets_endpoint(
         parser_id=result.parser_id,
         parser_version=result.parser_version,
         source_sha256=member.sha256,
-        assets=[
-            ScientificAssetOut(
-                asset_id=asset.asset_id,
-                title=asset.dataset.title,
-                shape=list(asset.dataset.shape),
-                dimension_roles=list(asset.dimension_roles),
-                data_role=asset.dataset.data_role,
-                x_title=_optional_text(asset.dataset.feature_axis.title),
-                x_units=_optional_text(asset.dataset.feature_axis.units),
-                data_quantity=_optional_text(asset.dataset.domain.data_quantity),
-                value_units=_optional_text(asset.dataset.units),
-                warnings=scientific_asset_warnings(result.warnings, asset.warnings),
-            )
-            for asset in result.assets
-        ],
+        assets=[ScientificAssetOut.model_validate(asset) for asset in result.assets],
     )
 
 
@@ -1742,3 +1750,82 @@ async def restore_version_endpoint(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return {"restored_files": restored_count}
+
+
+async def _bosch_comparison_paths(session, experiment_id, daily_id, process_id, user_id):
+    experiment = await _require_experiment(session, experiment_id, user_id, "read")
+    root = experiment_dir(experiment_id).resolve()
+    paths = []
+    for file_id in (daily_id, process_id):
+        record = await get_experiment_file(session, experiment_id, file_id)
+        if record is None:
+            raise HTTPException(
+                status_code=404, detail="Daily or required process companion file not found in this dataset"
+            )
+        path = (root / record.file_path).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            raise HTTPException(status_code=404, detail="Scientific source is unavailable")
+        paths.append(path)
+    if daily_id == process_id:
+        raise HTTPException(status_code=400, detail="A distinct Process_data.nc companion is required")
+    return experiment, paths
+
+
+@router.get(
+    "/{experiment_id}/files/{file_id}/bosch-steps",
+    response_model=BoschStepsOut,
+    dependencies=[Depends(demo_guard("raw_data_export"))],
+)
+async def bosch_steps_endpoint(
+    experiment_id: int,
+    file_id: int,
+    process_file_id: int | None = None,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    from spectra_sherpa.app.services.bosch_step_comparison import load_phase_catalog
+
+    await _require_experiment(session, experiment_id, current_user.id, "read")
+    if process_file_id is not None:
+        await _bosch_comparison_paths(session, experiment_id, file_id, process_file_id, current_user.id)
+    try:
+        result = load_phase_catalog(experiment_dir(experiment_id), file_id)
+        if process_file_id is not None and process_file_id != result["process_file_id"]:
+            raise ValueError("Saved processing steps use a different process companion")
+        await _bosch_comparison_paths(session, experiment_id, file_id, result["process_file_id"], current_user.id)
+        return BoschStepsOut.model_validate(result)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=409, detail=f"Processing steps unavailable: {exc}") from exc
+
+
+@router.post(
+    "/{experiment_id}/files/{file_id}/bosch-step-preview",
+    response_model=BoschStepPreviewOut,
+    dependencies=[Depends(demo_guard("raw_data_export"))],
+)
+async def bosch_step_preview_endpoint(
+    experiment_id: int,
+    file_id: int,
+    payload: BoschStepPreviewRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    from spectra_sherpa.app.services.bosch_step_comparison import load_phase_catalog, step_preview
+    from spectra_sherpa.app.services.serialization import serialize_result
+
+    experiment, paths = await _bosch_comparison_paths(
+        session, experiment_id, file_id, payload.process_file_id, current_user.id
+    )
+    try:
+        retained = load_phase_catalog(experiment_dir(experiment_id), file_id)
+        if retained["process_file_id"] != payload.process_file_id:
+            raise ValueError("Saved processing steps use a different process companion")
+        dataset, count = await asyncio.to_thread(
+            step_preview, *paths, retained_catalog=retained, **payload.model_dump(exclude={"process_file_id"})
+        )
+        return BoschStepPreviewOut(
+            dataset=serialize_result(dataset, owner_user_id=current_user.id, project_id=experiment.project_id),
+            selected_acquisition_count=count,
+        )
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=f"Processing-step preview unavailable: {exc}") from exc

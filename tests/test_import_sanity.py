@@ -313,7 +313,7 @@ from spectra_sherpa.app.main import app
 from spectra_sherpa.app.services.dag.node_base import node_registry
 
 assert app is not None
-assert len(node_registry.list_nodes()) == 103
+assert len(node_registry.list_nodes()) == 109
 assert not any(name == 'spectrochempy' or name.startswith('spectrochempy.') for name in sys.modules)
 """
     completed = subprocess.run(

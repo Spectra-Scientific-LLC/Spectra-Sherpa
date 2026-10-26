@@ -30,6 +30,7 @@ def test_client_data_formats_disclose_native_pending_boundary():
         ".jdx",
         ".json",
         ".mat",
+        ".nc",
         ".npy",
         ".npz",
         ".opus",
@@ -245,8 +246,8 @@ def test_current_plan_capability_block_matches_live_registry_and_contracts() -> 
 
     nodes = node_registry.list_nodes()
     optional = sorted(item.node_type for item in nodes if item.requires_scp)
-    assert payload["registered_operations"] == len(nodes) == 103
-    assert payload["base_ready_operations"] == len(nodes) - len(optional) == 100
+    assert payload["registered_operations"] == len(nodes) == 104
+    assert payload["base_ready_operations"] == len(nodes) - len(optional) == 101
     assert (
         payload["optional_scp_operations"]
         == optional

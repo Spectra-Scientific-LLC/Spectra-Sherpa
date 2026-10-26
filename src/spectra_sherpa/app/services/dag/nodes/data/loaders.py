@@ -652,7 +652,9 @@ def _load_registry_asset(
             asset_id=asset_id,
             prepared_overrides=prepared_overrides,
         )
-    result = ingest(path, parser_options=parser_options_for_prepared_data(path.name, prepared_overrides))
+    result = ingest(
+        path, parser_options=parser_options_for_prepared_data(path.name, prepared_overrides), asset_id=asset_id
+    )
     selected_asset = select_asset(result, asset_id=asset_id)
     dataset = selected_asset.dataset
     dataset = apply_dataset_prepared_data_overrides(dataset, prepared_overrides or {})

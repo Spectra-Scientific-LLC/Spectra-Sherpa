@@ -231,6 +231,8 @@ export interface DatasetAnalysisReadiness {
 
 /** One selected file or aggregate package admitted to a display-only plot. */
 export interface DatasetPlotMember {
+  /** Optional presentation grouping; never replaces sample or source identity. */
+  curveGroupLabel?: string;
   fileId: number | null;
   fileName: string;
   dataset: SherpaDatasetDict;

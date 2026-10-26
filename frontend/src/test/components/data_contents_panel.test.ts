@@ -4,6 +4,7 @@ import { defineComponent, h, nextTick, reactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import DataContentsPanel from "@/views/data/DataContentsPanel.vue";
+import boschCatalog from "../../../../src/spectra_sherpa/data/bosch_netcdf/experiment_context.json";
 import DatasetCurationPanel from "@/components/DatasetCurationPanel.vue";
 import api from "@/api/client";
 
@@ -1855,7 +1856,7 @@ describe("DataContentsPanel", () => {
     expect(wrapper.get("[aria-label='Collection sample table']").text()).toContain("ESL");
   });
 
-  it("refuses reordered collection identity instead of coloring the wrong spectrum", () => {
+  it("keeps immutable collection IDs separate from acquisition display labels", () => {
     mocks.dataStore.fileInfo = {
       title: "Misaligned collection",
       data_role: "X_spectra",
@@ -1879,9 +1880,9 @@ describe("DataContentsPanel", () => {
 
     const wrapper = mount(DataContentsPanel);
 
-    expect(wrapper.text()).toContain(
-      "Sample-table identity at row 1 does not match its retained spectrum label",
-    );
+    expect(wrapper.text()).not.toContain("does not match its retained spectrum label");
+    expect(wrapper.get("[aria-label='Collection sample table']").text()).toContain("Sample label");
+    expect(wrapper.get("[aria-label='Collection sample table']").text()).toContain("A__B1");
   });
 
   it("keeps typed sample-table identities distinct", () => {
@@ -2319,4 +2320,18 @@ describe("DataContentsPanel", () => {
     expect(wrapper.text()).toContain("batch");
     expect(wrapper.text()).toContain("Existing workflows remain bound to their previous file IDs");
   });
+  it("shows BOSCH protocol from the admitted extras of a bounded dataset preview", () => {
+    mocks.dataStore.fileInfo = {
+      title: "BOSCH wafer", n_samples: 14920, n_features: 3648,
+      data: [[1, 2]], x_axis: {data:[250, 400]},
+      metadata: {api_serialization: {mode:"bounded_preview"}, preview_shape:[1, 2]},
+      extra: {"bosch.experiment_context": {...boschCatalog,
+        schema_version:"spectrasherpa.bosch-experiment-context/1", selected_lot:null}},
+    };
+    const wrapper = mount(DataContentsPanel);
+    const context = wrapper.get("[aria-label='BOSCH experiment context']");
+    expect(context.text()).toContain("Initial chamber preparation");
+    expect(context.text()).toContain("EPD clean after the last wafer: Unconfirmed");
+  });
+
 });

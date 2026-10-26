@@ -29,7 +29,6 @@ from spectra_sherpa.app.api.deps import (
     release_demo_upload_quota_reservation_if_needed,
     reserve_demo_upload_quota_or_429,
 )
-from spectra_sherpa.app.api.v1.routes._http_utils import scientific_asset_warnings
 from spectra_sherpa.app.contracts.hot_storage import get_hot_storage_checker
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
@@ -59,6 +58,7 @@ from spectra_sherpa.app.models.dataset_view import DatasetView
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.schemas.experiments import BoschStepPreviewOut, BoschStepsOut
 from spectra_sherpa.app.services.builder import BuilderService
 from spectra_sherpa.app.services.dataset_analysis_readiness import (
     apply_saved_analysis_binding,
@@ -283,6 +283,7 @@ class StagedUploadCommitItem(BaseModel):
 
 
 class StagedUploadCommitRequest(BaseModel):
+    bosch_process_staging_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     experiment_id: int
     stage: str = "raw"
     files: list[StagedUploadCommitItem] = Field(..., min_length=1)
@@ -345,11 +346,11 @@ async def _staged_upload_response(
         if isinstance(assignment, dict) and isinstance(assignment.get("column"), str):
             suggested_overrides["assignment_column"] = assignment["column"]
 
-    from spectra_sherpa.io import ingest
+    from spectra_sherpa.io import inspect_assets
 
     try:
         ingested = await asyncio.to_thread(
-            ingest,
+            inspect_assets,
             saved_path,
             parser_options=parser_options_for_prepared_data(saved_path.name, suggested_overrides),
         )
@@ -365,21 +366,7 @@ async def _staged_upload_response(
         "suggested_overrides": suggested_overrides,
         "format_id": ingested.format_id,
         "variant": ingested.variant,
-        "assets": [
-            {
-                "asset_id": asset.asset_id,
-                "title": asset.dataset.title,
-                "shape": list(asset.dataset.shape),
-                "dimension_roles": list(asset.dimension_roles),
-                "data_role": asset.dataset.data_role,
-                "x_title": _optional_text(asset.dataset.feature_axis.title),
-                "x_units": _optional_text(asset.dataset.feature_axis.units),
-                "data_quantity": _optional_text(asset.dataset.domain.data_quantity),
-                "value_units": _optional_text(asset.dataset.units),
-                "warnings": scientific_asset_warnings(ingested.warnings, asset.warnings),
-            }
-            for asset in ingested.assets
-        ],
+        "assets": list(ingested.assets),
     }
 
 
@@ -1069,7 +1056,9 @@ def _file_as_sherpa(
     registered = _registered_reference_projection(path, asset_id=asset_id)
     if registered is not None:
         return apply_dataset_prepared_data_overrides(registered[0], prepared_overrides or {})
-    result = ingest(path, parser_options=parser_options_for_prepared_data(path.name, prepared_overrides))
+    result = ingest(
+        path, parser_options=parser_options_for_prepared_data(path.name, prepared_overrides), asset_id=asset_id
+    )
     dataset = select_asset(result, asset_id=asset_id).dataset
     return apply_dataset_prepared_data_overrides(dataset, prepared_overrides or {})
 
@@ -1097,7 +1086,9 @@ def _file_as_collection_member(
             prepared_data_sha256=prepared_data_digest(prepared_overrides),
             asset_id=projection_id,
         )
-    result = ingest(path, parser_options=parser_options_for_prepared_data(path.name, prepared_overrides))
+    result = ingest(
+        path, parser_options=parser_options_for_prepared_data(path.name, prepared_overrides), asset_id=asset_id
+    )
     if len(result.source_members) != 1:
         raise ValueError(f"Collection member {file_name!r} must consume exactly one source")
     selected_asset = select_asset(result, asset_id=asset_id)
@@ -1442,10 +1433,10 @@ async def commit_staged_uploads(
         raise HTTPException(status_code=404, detail="Experiment not found")
     if payload.stage not in ALLOWED_STAGES:
         raise HTTPException(status_code=400, detail="Invalid stage")
+    if len({item.staging_id for item in payload.files}) != len(payload.files):
+        raise HTTPException(400, "Duplicate staged upload")
     if uses_managed_project_access():
         await require_scientific_access(session, user_id, experiment.project_id, "write")
-        if len({item.staging_id for item in payload.files}) != len(payload.files):
-            raise HTTPException(400, "Duplicate staged upload")
         incoming = 0
         for item in payload.files:
             source = _resolve_staged_upload(item.staging_id, current_user)
@@ -1462,10 +1453,29 @@ async def commit_staged_uploads(
             raise HTTPException(503, "Storage accounting is unavailable")
         await checker(session, user_id=user_id, project_id=experiment.project_id, incoming_bytes=0)
 
+    # Prepare before moving any source, and retain labels alongside the saved files.
+    from spectra_sherpa.app.services.bosch_step_comparison import phase_catalog, save_phase_catalog
+
+    staged_paths = {item.staging_id: _resolve_staged_upload(item.staging_id, current_user) for item in payload.files}
+    daily_ids = [sid for sid, path in staged_paths.items() if re.match(r"(?i)^Day_\d{4}_\d{2}_\d{2}.*\.nc$", path.name)]
+    prepared_phases = {}
+    if daily_ids:
+        process_id = payload.bosch_process_staging_id
+        if process_id not in staged_paths or process_id in daily_ids:
+            raise HTTPException(400, "Add and select Process_data.nc in Upload before saving daily BOSCH files")
+        try:
+            for sid in daily_ids:
+                prepared_phases[sid] = await asyncio.to_thread(
+                    phase_catalog, staged_paths[sid], staged_paths[process_id]
+                )
+        except (ValueError, OSError) as exc:
+            raise HTTPException(400, f"Processing steps unavailable: {exc}") from exc
+
     exp_dir = experiment_dir(payload.experiment_id)
     destination_dir = exp_dir / payload.stage
     destination_dir.mkdir(parents=True, exist_ok=True)
-    moved: list[Path] = []
+    moved: list[tuple[Path, Path]] = []
+    receipts: list[Path] = []
     created: list[ExperimentFile] = []
 
     try:
@@ -1476,7 +1486,7 @@ async def commit_staged_uploads(
             if not destination.is_relative_to(destination_dir.resolve()):
                 raise HTTPException(status_code=400, detail="Invalid destination path")
             shutil.move(str(source_path), str(destination))
-            moved.append(destination)
+            moved.append((source_path, destination))
 
             prepared = PreparedDataOverrides.from_mapping(item.overrides)
             if not prepared.is_empty():
@@ -1494,17 +1504,27 @@ async def commit_staged_uploads(
                     flush_only=True,
                 )
             )
-            shutil.rmtree(source_path.parent, ignore_errors=True)
-            (_staging_root(current_user) / f"{item.staging_id}.scope.json").unlink(missing_ok=True)
 
+        if prepared_phases:
+            by_stage = {item.staging_id: record.id for item, record in zip(payload.files, created)}
+            for sid, catalog in prepared_phases.items():
+                receipt_path = save_phase_catalog(
+                    exp_dir, by_stage[sid], by_stage[payload.bosch_process_staging_id], catalog
+                )
+                receipts.append(receipt_path)
         await session.commit()
     except BaseException:
         await session.rollback()
-        for path in moved:
-            if path.exists():
-                path.unlink()
+        for path in receipts:
+            path.unlink(missing_ok=True)
+        for source, destination in reversed(moved):
+            if destination.exists():
+                shutil.move(str(destination), str(source))
         raise
 
+    for item in payload.files:
+        shutil.rmtree(staged_paths[item.staging_id].parent, ignore_errors=True)
+        (_staging_root(current_user) / f"{item.staging_id}.scope.json").unlink(missing_ok=True)
     for file_record in created:
         await session.refresh(file_record)
 
@@ -2431,3 +2451,80 @@ async def get_reference_dataset_info(source: str, name: str) -> dict[str, Any]:
             info.setdefault("metadata", {})["selected_target"] = overrides.selected_target
 
     return info
+
+
+class BoschStagedSourcesRequest(BaseModel):
+    daily_staging_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    process_staging_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+
+
+class BoschStagedPreviewRequest(BoschStagedSourcesRequest):
+    asset_id: str = Field(min_length=1, max_length=80)
+    step_id: str = Field(min_length=1, max_length=40)
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    process_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    max_rows: int = Field(default=4, ge=1, le=16)
+
+
+async def _bosch_staged_paths(payload, session, current_user):
+    if payload.daily_staging_id == payload.process_staging_id:
+        raise HTTPException(400, "Select a distinct Process_data.nc companion")
+    paths = [
+        _resolve_staged_upload(sid, current_user) for sid in (payload.daily_staging_id, payload.process_staging_id)
+    ]
+    project_id = None
+    if uses_managed_project_access():
+        projects = []
+        for sid in (payload.daily_staging_id, payload.process_staging_id):
+            try:
+                projects.append(
+                    json.loads((_staging_root(current_user) / f"{sid}.scope.json").read_text())["project_id"]
+                )
+            except (OSError, ValueError, KeyError):
+                raise HTTPException(409, "Staged upload must be admitted again") from None
+        if projects[0] != projects[1]:
+            raise HTTPException(404, "Process companion is not staged in this project")
+        project_id = projects[0]
+        await require_scientific_access(session, current_user.id, project_id, "read")
+    return paths, project_id
+
+
+@router.post("/upload/bosch-steps", response_model=BoschStepsOut, dependencies=[Depends(demo_guard("data_upload"))])
+async def staged_bosch_steps(
+    payload: BoschStagedSourcesRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    from spectra_sherpa.app.services.bosch_step_comparison import phase_catalog
+
+    paths, _ = await _bosch_staged_paths(payload, session, current_user)
+    try:
+        return BoschStepsOut.model_validate(await asyncio.to_thread(phase_catalog, *paths))
+    except (ValueError, OSError) as exc:
+        raise HTTPException(400, f"Processing steps unavailable: {exc}") from exc
+
+
+@router.post(
+    "/upload/bosch-step-preview",
+    response_model=BoschStepPreviewOut,
+    dependencies=[Depends(demo_guard("raw_data_export"))],
+)
+async def staged_bosch_step_preview(
+    payload: BoschStagedPreviewRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    from spectra_sherpa.app.services.bosch_step_comparison import step_preview
+    from spectra_sherpa.app.services.serialization import serialize_result
+
+    paths, project_id = await _bosch_staged_paths(payload, session, current_user)
+    try:
+        dataset, count = await asyncio.to_thread(
+            step_preview, *paths, **payload.model_dump(exclude={"daily_staging_id", "process_staging_id"})
+        )
+        return BoschStepPreviewOut(
+            dataset=serialize_result(dataset, owner_user_id=current_user.id, project_id=project_id),
+            selected_acquisition_count=count,
+        )
+    except (ValueError, OSError) as exc:
+        raise HTTPException(400, f"Processing-step preview unavailable: {exc}") from exc

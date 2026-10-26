@@ -212,6 +212,7 @@
           <p v-else class="dataset-step-empty">
             No acquisition settings were retained for these files.
           </p>
+          <BoschExperimentContext :context="boschExperimentContext" />
           <section
             v-if="requiresDimensionProjection"
             class="dimension-projection-notice"
@@ -367,6 +368,7 @@
                 <thead>
                   <tr>
                     <th v-if="sampleInclusionEnabled">Include</th>
+                    <th v-if="sampleTableState.displayLabels">Sample label</th>
                     <th v-for="column in sampleTableState.visibleColumns" :key="column">
                       {{ formatSampleColumn(column) }}
                     </th>
@@ -394,6 +396,7 @@
                         @change="row.sampleId && emit('toggleSample', row.sampleId)"
                       />
                     </td>
+                    <td v-if="sampleTableState.displayLabels">{{ sampleTableState.displayLabels[row.index] }}</td>
                     <td v-for="column in sampleTableState.visibleColumns" :key="column">
                       {{ formatSampleValue(row.values[column]) }}
                     </td>
@@ -668,6 +671,7 @@ import DisplayPreferencesSection from "@/views/settings/DisplayPreferencesSectio
 import { useDataStore, type CatalogDatasetInfo, type DataStoryPropertyStat } from "@/stores/data";
 import { useSherpaStore } from "@/stores/sherpa";
 import DataQualityPanel from "./DataQualityPanel.vue";
+import BoschExperimentContext from "./BoschExperimentContext.vue";
 import DatasetAnalysisReadinessCard from "./DatasetAnalysisReadinessCard.vue";
 import type { SampleInclusionState } from "@/utils/datasetCuration";
 import type { DataMatrixResponse } from "@/stores/data";
@@ -1033,6 +1037,7 @@ watch(
 );
 
 type ValidSampleTable = {
+  displayLabels: string[] | null;
   kind: "valid";
   complete: boolean;
   totalRowCount: number;
@@ -1373,6 +1378,15 @@ const scientificContextRows = computed(() => {
   return rows;
 });
 
+const boschExperimentContext = computed(() => {
+  // Bounded wire previews keep admitted extras separate from display metadata.
+  const value = dataStore.fileInfo as unknown as Record<string, unknown> | null;
+  const metadata = value?.metadata;
+  const extra = value?.extra;
+  return (isRecord(metadata) ? metadata["bosch.experiment_context"] : null) ??
+    (isRecord(extra) ? extra["bosch.experiment_context"] : null);
+});
+
 const scientificDescription = computed(() => {
   const value = dataStore.fileInfo?.descriptive?.description;
   return typeof value === "string" && value ? value : null;
@@ -1406,7 +1420,7 @@ watch(
     } catch {
       if (ticket.isCurrent()) {
         completeSampleTableError.value =
-          "Only an aligned API preview is shown. The complete owner-scoped table could not be retrieved within its 10,000-row and 4 MiB limits.";
+          "Only an aligned API preview is shown. The complete owner-scoped table could not be retrieved within its declared row and response-size limits.";
       }
     } finally {
       if (ticket.isCurrent()) completeSampleTableLoading.value = false;
@@ -1459,23 +1473,11 @@ function buildSampleTableState(
     }
     values[column] = columnValues;
   }
-  if (collectionState.value.kind === "valid") {
-    // Axis labels are the collection row-identity authority. A native
-    // collection does not need to duplicate them in a sample_id column.
-    // When sample_id is supplied, it must still agree exactly.
-    if (values.sample_id) {
-      for (let index = 0; index < rowCount; index += 1) {
-        if (
-          typeof values.sample_id[index] !== "string" ||
-          values.sample_id[index] !== labelValues[index]
-        ) {
-          return {
-            kind: "invalid",
-            message: `Sample-table identity at row ${index + 1} does not match its retained spectrum label.`,
-          };
-        }
-      }
-    }
+  // Typed observation IDs remain distinct from editable display labels.
+  const ids = values.sample_id;
+  if (ids && (ids.some((id) => typeof id !== "string" || !id || id !== id.trim()) ||
+    new Set(ids).size !== rowCount)) {
+    return { kind: "invalid", message: "Sample-table IDs must be exact unique non-empty strings." };
   }
   const visibleColumns = columns.slice(0, MAX_SAMPLE_TABLE_COLUMNS);
   const visibleRowCount = Math.min(rowCount, MAX_SAMPLE_TABLE_ROWS.value);
@@ -1496,7 +1498,8 @@ function buildSampleTableState(
     rowCount,
     columnCount: columns.length,
     values,
-    sampleIds: Array.from({ length: rowCount }, (_, index) => labelValues[index] ?? null),
+    sampleIds: Array.from({ length: rowCount }, (_, index) => (ids?.[index] as string | undefined) ?? labelValues[index] ?? null),
+    displayLabels: ids && exactLabels && ids.some((id, index) => id !== labelValues[index]) ? labelValues : null,
     visibleColumns,
     visibleRows,
     omissionNote: omitted.length ? `Preview omits ${omitted.join(" and ")}.` : null,
