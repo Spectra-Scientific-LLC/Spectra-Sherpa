@@ -162,3 +162,20 @@ it("keeps one color across phases and stable colors after another group is remov
   await state.compare();
   expect(state.preview.value[0].members.map(m => m.curveGroupColor)).toEqual(first);
 });
+
+it("previews only the chosen production phase while preserving its color", async () => {
+  const {state} = setup();
+  await state.load([4], files, 4);
+  state.selections.value = [selection];
+  await nextTick();
+  await state.compare();
+  const color = state.preview.value[0].members[0].curveGroupColor;
+  for (const phase of ['etch','passivation'] as const) {
+    api.post.mockClear();
+    state.selections.value = [{...selection,step_id:phase}];
+    await nextTick();
+    await state.compare();
+    expect(api.post.mock.calls.map(c=>c[1].step_id)).toEqual([phase]);
+    expect(state.preview.value[0].members[0].curveGroupColor).toBe(color);
+  }
+});

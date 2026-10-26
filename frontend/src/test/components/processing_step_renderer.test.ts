@@ -42,3 +42,23 @@ it("renders selections without its own workflow, upload, save or preview control
   await wrapper.get("button").trigger("click");
   expect(wrapper.emitted("update:modelValue")![1][0]).toEqual([]);
 });
+
+it("changes one wafer's phase without selecting other wafers and defaults to Both", async () => {
+  const full = structuredClone(entry);
+  full.catalog.wafers[0].steps.push({step_id:'passivation',intervals:[],acquisition_count:3} as never);
+  full.catalog.wafers.push({...full.catalog.wafers[0],asset_id:'Wafer_02'});
+  const wrapper = mount(Matrix,{props:{entries:[full],modelValue:[]}});
+  expect(wrapper.text()).toContain('BOSCH production');
+  expect(wrapper.findAll('select').map(s => (s.element as HTMLSelectElement).value)).toEqual(['production','production']);
+  await wrapper.findAll('button')[0].trigger('click');
+  await wrapper.setProps({modelValue:wrapper.emitted('update:modelValue')!.at(-1)![0] as never});
+  await wrapper.findAll('select')[0].setValue('etch');
+  const chosen = wrapper.emitted('update:modelValue')!.at(-1)![0] as any[];
+  expect(chosen).toHaveLength(1);
+  expect(chosen[0].step_id).toBe('etch');
+  await wrapper.setProps({modelValue:chosen as never});
+  expect((wrapper.findAll('select')[1].element as HTMLSelectElement).value).toBe('production');
+  expect(wrapper.findAll('button')[0].attributes('aria-pressed')).toBe('true');
+  await wrapper.findAll('button')[0].trigger('click');
+  expect(wrapper.emitted('update:modelValue')!.at(-1)![0]).toEqual([]);
+});

@@ -8780,7 +8780,7 @@ export interface components {
              * Step Id
              * @enum {string}
              */
-            step_id: "production" | "gas1" | "mixed";
+            step_id: "production" | "etch" | "passivation" | "gas1" | "mixed";
         };
         /** SynthesisComponentInput */
         SynthesisComponentInput: {

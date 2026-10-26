@@ -79,9 +79,13 @@ async def build_portfolio(session, user_id, project_id, selections):
         )
         cycles = np.asarray(alignment["cycle_indices"])
         production_membership = np.asarray(alignment["production_membership"])
-        selected_phases = {"production": ["etch", "passivation"], "gas1": ["gas1_plasma"], "mixed": ["mixed_plasma"]}[
-            selection.step_id
-        ]
+        selected_phases = {
+            "production": ["etch", "passivation"],
+            "etch": ["etch"],
+            "passivation": ["passivation"],
+            "gas1": ["gas1_plasma"],
+            "mixed": ["mixed_plasma"],
+        }[selection.step_id]
         intervals = []
         # Split on process phase/cycle as well as recording gaps. Gaps do not increment cycles.
         cuts = (
@@ -128,6 +132,8 @@ async def build_portfolio(session, user_id, project_id, selections):
                 step_id=selection.step_id,
                 recipe={
                     "production": "BOSCH",
+                    "etch": "BOSCH · Etch",
+                    "passivation": "BOSCH · Passivation",
                     "gas1": "Gas1-only plasma, identity unconfirmed",
                     "mixed": "Mixed plasma, unassigned",
                 }[selection.step_id],

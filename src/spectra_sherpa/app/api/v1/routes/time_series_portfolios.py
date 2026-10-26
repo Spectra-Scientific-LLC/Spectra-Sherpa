@@ -24,7 +24,7 @@ class StepSelection(BaseModel):
     file_id: int = Field(gt=0)
     process_file_id: int = Field(gt=0)
     asset_id: str = Field(min_length=1, max_length=80)
-    step_id: Literal["production", "gas1", "mixed"]
+    step_id: Literal["production", "etch", "passivation", "gas1", "mixed"]
 
 
 class PortfolioCreate(BaseModel):

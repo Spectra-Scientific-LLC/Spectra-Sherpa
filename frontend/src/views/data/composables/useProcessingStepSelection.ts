@@ -15,7 +15,8 @@ export type StepEntry = {
 };
 
 export function stepSelectionKey(s: Pick<StepSelection, "experiment_id" | "file_id" | "asset_id" | "step_id">): string {
-  return `${s.experiment_id}:${s.file_id}:${s.asset_id}:${s.step_id}`;
+  const step = ["etch", "passivation"].includes(s.step_id) ? "production" : s.step_id;
+  return `${s.experiment_id}:${s.file_id}:${s.asset_id}:${step}`;
 }
 
 /** Application adapter for retained segmentation. Never uploads, segments or averages. */
@@ -204,6 +205,8 @@ export function useProcessingStepSelection(
         const phases =
           selection.step_id === "production"
             ? ["etch", "passivation"]
+            : ["etch", "passivation"].includes(selection.step_id)
+              ? [selection.step_id]
             : selection.step_id === "gas1"
               ? ["gas1_plasma"]
               : ["mixed_plasma"];

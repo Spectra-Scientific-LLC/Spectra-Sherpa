@@ -17,6 +17,21 @@ bounded preview sampling disclosure live in the panel's question-mark help.
 
 The old whole-container inspection path is not invoked for daily OES filtering:
 Process_data.nc and daily wafer groups cannot share one observation matrix.
+The BOSCH production column offers Both (default), Etch and Passivation for
+each wafer. A phase change affects only that wafer and keeps its color. The
+canonical portfolio request also accepts phase-specific selections, so they
+cannot silently broaden back into the whole production step when saved.
+
+Mixed flow denotes concurrent active gas channels, not a verified cleaning or
+conditioning recipe. The August 7 Wafer 08 audit found 13 acquisitions
+(365–377) over 0.550 s, mapped to process times 144.017–144.567 s. All map to
+Gas1≈150, Gas4≈300, Gas5=0 with RF on, inside a 143.8–144.8 s startup overlap.
+The retained clock fit has correlation 0.912 and a 0.2 s boundary exclusion.
+The strong recorded 515.14 nm peak is present in the decoded source spectra;
+there is no observed row-index mismatch. This validates channel-state membership
+under the estimated clock fit, not chemical identity or independently synchronized
+clocks. Hover metadata states the short duration and unassigned interpretation.
+
 No OES-specific portfolio/Workflow controls or recipe panels are inserted into
 Active dataset. Those placements remain pending user review. The separate
 prototype and canonical backend operations remain available for v0.6.5 review.

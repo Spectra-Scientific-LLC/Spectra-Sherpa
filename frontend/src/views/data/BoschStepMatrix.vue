@@ -40,9 +40,8 @@
                 <strong>{{ column.recipe }}</strong
                 ><small>{{ column.note }}</small>
                 <div class="wafers">
+                  <div v-for="wafer in available(entry, column)" :key="wafer.asset_id" class="wafer-cell">
                   <button
-                    v-for="wafer in available(entry, column)"
-                    :key="wafer.asset_id"
                     :aria-label="`${entry.catalog.date}, ${column.label}, ${wafer.asset_id}`"
                     :aria-pressed="isChosen(entry, wafer, column)"
                     :class="{ picked: isChosen(entry, wafer, column) }"
@@ -56,6 +55,14 @@
                   >
                     {{ wafer.asset_id.replace("Wafer_", "") }}
                   </button>
+                  <select v-if="column.id === 'production'" class="phase-choice"
+                    :aria-label="`${entry.catalog.date}, ${wafer.asset_id}, BOSCH phase`"
+                    :value="phaseChoice(entry, wafer)" @change="choosePhase(entry, wafer, $event)">
+                    <option value="production">Both</option>
+                    <option value="etch" :disabled="!wafer.steps.some(s => s.step_id === 'etch')">Etch</option>
+                    <option value="passivation" :disabled="!wafer.steps.some(s => s.step_id === 'passivation')">Passivation</option>
+                  </select>
+                  </div>
                 </div>
               </section>
               <span v-else>Not recorded</span>
@@ -82,12 +89,12 @@ const columns = [
     id: "mixed",
     label: "Mixed-gas plasma",
     recipe: "Mixed flow",
-    note: "Brief interval · unassigned protocol step",
+    note: "Brief gas overlap · not a validated recipe",
     phases: ["mixed_plasma"],
   },
   {
     id: "production",
-    label: "Production etch",
+    label: "BOSCH production",
     recipe: "BOSCH",
     note: "SF₆ ⇄ C₄F₈ · repeated phases",
     phases: ["etch", "passivation"],
@@ -112,15 +119,32 @@ const isChosen = (entry: Entry, wafer: Wafer, column: Column) =>
       s.experiment_id === entry.experimentId &&
       s.file_id === entry.file.id &&
       s.asset_id === wafer.asset_id &&
-      s.step_id === column.id,
+      (column.id === "production" ? ["production", "etch", "passivation"].includes(s.step_id) : s.step_id === column.id),
   );
+type ProductionPhase = "production" | "etch" | "passivation";
+const phasePreferences = ref<Record<string, ProductionPhase>>({});
+const productionKey = (entry: Entry, wafer: Wafer) => stepSelectionKey({experiment_id:entry.experimentId, file_id:entry.file.id, asset_id:wafer.asset_id, step_id:"production"});
+function phaseChoice(entry: Entry, wafer: Wafer): ProductionPhase {
+  const selected = props.modelValue.find(s => stepSelectionKey(s) === productionKey(entry, wafer));
+  return (selected?.step_id as ProductionPhase | undefined) ?? phasePreferences.value[productionKey(entry, wafer)] ?? "production";
+}
+function choosePhase(entry: Entry, wafer: Wafer, event: Event) {
+  const phase = (event.target as HTMLSelectElement).value as ProductionPhase;
+  phasePreferences.value[productionKey(entry, wafer)] = phase;
+  if (props.modelValue.some(s => stepSelectionKey(s) === productionKey(entry, wafer)))
+    emit("update:modelValue", props.modelValue.map(s => stepSelectionKey(s) === productionKey(entry, wafer) ? {...s, step_id:phase} : s));
+}
+function displayedSteps(entry: Entry, wafer: Wafer, column: Column) {
+  const phase = phaseChoice(entry, wafer);
+  return steps(wafer, column).filter(s => column.id !== "production" || phase === "production" || s.step_id === phase);
+}
 function toggle(entry: Entry, wafer: Wafer, column: Column) {
   const selection: StepSelection = {
     experiment_id: entry.experimentId,
     file_id: entry.file.id,
     process_file_id: entry.catalog.process_file_id!,
     asset_id: wafer.asset_id,
-    step_id: column.id as StepSelection["step_id"],
+    step_id: column.id === "production" ? phaseChoice(entry, wafer) : column.id as StepSelection["step_id"],
   };
   emit(
     "update:modelValue",
@@ -131,7 +155,7 @@ function toggle(entry: Entry, wafer: Wafer, column: Column) {
               s.experiment_id === selection.experiment_id &&
               s.file_id === selection.file_id &&
               s.asset_id === selection.asset_id &&
-              s.step_id === selection.step_id
+              (column.id === "production" ? ["production", "etch", "passivation"].includes(s.step_id) : s.step_id === selection.step_id)
             ),
         )
       : [...props.modelValue, selection],
@@ -144,7 +168,7 @@ function show(
   event: MouseEvent | FocusEvent,
   moved = false,
 ) {
-  const intervals = steps(wafer, column)
+  const intervals = displayedSteps(entry, wafer, column)
     .flatMap((s) => s.intervals)
     .sort((a, b) => a.first_acquisition - b.first_acquisition);
   hover.value?.show(
@@ -153,6 +177,9 @@ function show(
       label: `${wafer.asset_id} · ${column.label}`,
       details: [
         { label: "Recipe / assignment", value: column.note },
+        ...(column.id === "mixed" ? [{label:"Interpretation", value:"Concurrent gas-channel activity. May be a startup overlap; not a verified preparation or conditioning step."}] : []),
+        {label:"Recorded interval duration", value:`${intervals.reduce((total, i) => total + i.end_time - i.start_time, 0).toFixed(3)} s across ${intervals.length} interval(s)`},
+        ...(column.id === "production" ? [{label:"Selected phases", value:phaseChoice(entry, wafer) === "production" ? "Etch and passivation" : phaseChoice(entry, wafer)}] : []),
         {
           label: "UTC start / end",
           value: `${new Date(intervals[0].start_time * 1000).toISOString()} / ${new Date(intervals[intervals.length - 1].end_time * 1000).toISOString()}`,
@@ -168,7 +195,7 @@ function show(
         },
         {
           label: "Observation count",
-          value: String(steps(wafer, column).reduce((n, s) => n + s.acquisition_count, 0)),
+          value: String(displayedSteps(entry, wafer, column).reduce((n, s) => n + s.acquisition_count, 0)),
         },
         {
           label: "Cycle identity",
@@ -273,4 +300,11 @@ button:focus-visible {
   outline: 2px solid var(--ss-action);
   outline-offset: 2px;
 }
+</style>
+
+<style scoped>
+.bosch .wafers { grid-template-columns: repeat(3, 5.2rem); }
+.wafer-cell { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
+.wafer-cell button { width: 2rem; }
+.phase-choice { width: 5.2rem; font-size: 0.68rem; border: 1px solid var(--recipe-color); border-radius: 4px; background: var(--ss-surface); color: var(--ss-text); }
 </style>

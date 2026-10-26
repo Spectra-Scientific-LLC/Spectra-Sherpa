@@ -12356,6 +12356,8 @@
           "step_id": {
             "enum": [
               "production",
+              "etch",
+              "passivation",
               "gas1",
               "mixed"
             ],
