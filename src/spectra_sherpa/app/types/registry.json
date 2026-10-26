@@ -2,6 +2,18 @@
   "version": "1.1",
   "description": "SpectraSherpa type registry — canonical data types for graph node ports",
   "types": {
+    "PartitionedSource": {
+      "uri": "spectrasherpa://types/PartitionedSource/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Immutable portfolio reference for bounded acquisition loading"
+    },
+    "PartitionedPeakMeasurements": {
+      "uri": "spectrasherpa://types/PartitionedPeakMeasurements/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Bounded batches of independent per-spectrum peak measurements"
+    },
     "Scalar": {
       "uri": "spectrasherpa://types/Scalar/1.0",
       "category": "number",
@@ -267,6 +279,22 @@
     }
   },
   "scientific_semantics": {
+    "PartitionedSource": {
+      "scientific_kind": "structured_record",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record"],
+      "content_categories": ["sample_membership", "provenance_and_evidence"]
+    },
+    "PartitionedPeakMeasurements": {
+      "scientific_kind": "structured_record",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record"],
+      "content_categories": ["sample_membership", "provenance_and_evidence"]
+    },
     "Scalar": {
       "scientific_kind": "scalar",
       "view_kind": "scalar",

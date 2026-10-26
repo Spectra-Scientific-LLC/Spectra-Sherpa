@@ -200,6 +200,8 @@ def test_matrix_covers_every_preprocessing_implementation():
         "preprocess.apply_fitted_scale",
         # BOSCH requires paired native clocks; its preservation case is in test_bosch_steps.py.
         "preprocess.bosch_phase_labels",
+        # Partitioned-source aggregation and independent sample identity: test_oes_portfolio_nodes.py.
+        "preprocess.portfolio_average",
         "preprocess.shared_reference_scale",
         "preprocess.apply_fitted_msc",
         "preprocess.apply_fitted_emsc",

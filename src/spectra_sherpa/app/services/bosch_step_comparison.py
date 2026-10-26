@@ -133,14 +133,14 @@ def step_preview(
     return dataset, len(rows)
 
 
-def save_phase_catalog(root: Path, file_id: int, process_file_id: int, catalog: dict) -> Path:
+def save_phase_catalog(experiment_root: Path, file_id: int, process_file_id: int, catalog: dict) -> Path:
     """Retain the upload-time labels; My Dataset never estimates new boundaries."""
     import hashlib
     import json
 
     from spectra_sherpa.app.services.dag.nodes import bosch_phases
 
-    directory = root / ".bosch-phases"
+    directory = experiment_root / ".bosch-phases"
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / f"{file_id}.json"
     retained = {key: value for key, value in catalog.items() if key != "_private"}
@@ -168,10 +168,10 @@ def save_phase_catalog(root: Path, file_id: int, process_file_id: int, catalog: 
     return destination
 
 
-def load_phase_catalog(root: Path, file_id: int) -> dict:
+def load_phase_catalog(experiment_root: Path, file_id: int) -> dict:
     import json
 
-    path = root / ".bosch-phases" / f"{file_id}.json"
+    path = experiment_root / ".bosch-phases" / f"{file_id}.json"
     if not path.is_file():
         raise ValueError("No saved processing steps. Prepare this daily file with Process_data.nc in Upload first.")
     receipt = json.loads(path.read_text(encoding="utf-8"))

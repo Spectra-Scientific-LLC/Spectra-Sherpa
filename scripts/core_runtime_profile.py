@@ -88,7 +88,7 @@ CORE_ROOT_DISTRIBUTIONS = (
 
 # Current-release runtime qualification authority. Historical R1 evidence
 # remains frozen at the node count recorded by its originating commit.
-EXPECTED_NODE_COUNT = 104
+EXPECTED_NODE_COUNT = 109
 # These keys are executable smoke cases, not a second capability registry. The
 # probe requires exact equality with the live ``requires_scp`` projection.
 OPTIONAL_OPERATION_CASES: dict[str, dict[str, object]] = {

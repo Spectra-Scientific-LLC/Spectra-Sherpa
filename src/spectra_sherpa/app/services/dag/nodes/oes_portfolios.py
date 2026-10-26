@@ -72,7 +72,11 @@ class PortfolioLoadNode(Node):
         input_types=[],
         output_type="Any",
         input_ports=[],
-        output_ports=[PortMetadata(name="default", type_ref=ANY, label="Partitioned time series")],
+        output_ports=[
+            PortMetadata(
+                name="default", type_ref="spectrasherpa://types/PartitionedSource/1.0", label="Partitioned time series"
+            )
+        ],
         policy=NodePolicy(offload_to_pool=False),
     )
 
@@ -464,7 +468,7 @@ class PartitionedPeaksNode(Node):
 
     metadata = NodeMetadata(
         node_type="analysis.partitioned_peaks",
-        category="analysis",
+        category="exploratory",
         label="Find peaks · Partitioned",
         description=(
             "Run canonical peak detection in bounded batches; " "combine observations with explicit reference peaks."
@@ -477,7 +481,9 @@ class PartitionedPeaksNode(Node):
         input_types=["SpectralDataset"],
         output_type="Any",
         input_ports=[PortMetadata(name="default", type_ref=SPECTRA, required=True)],
-        output_ports=[PortMetadata(name="per_spectrum", type_ref=ANY)],
+        output_ports=[
+            PortMetadata(name="per_spectrum", type_ref="spectrasherpa://types/PartitionedPeakMeasurements/1.0")
+        ],
         presentation_contract=NodePresentationContract(
             default_presentation="per_spectrum",
             presentations=(

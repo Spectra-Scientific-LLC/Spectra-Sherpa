@@ -163,7 +163,7 @@ Conditional visibility describes the editor; execution admission remains node-ow
 | Direction | Port | Type URI | Required | Variadic | Accepted data roles |
 | --- | --- | --- | --- | --- | --- |
 | input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
-| output | <code>per_spectrum</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>per_spectrum</code> | <code>spectrasherpa://types/PartitionedPeakMeasurements/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
 
 #### Parameters
 
@@ -467,7 +467,7 @@ No input ports (source node).
 
 | Direction | Port | Type URI | Required | Variadic | Accepted data roles |
 | --- | --- | --- | --- | --- | --- |
-| output | <code>default</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/PartitionedSource/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
 
 #### Parameters
 
