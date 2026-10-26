@@ -252,7 +252,7 @@ async def test_incompatible_incoming_file_is_visible_failure(
         )
         materialize_export_artifact(
             build_export_artifact(
-                data, filename="bad.csv", format="csv" if bad_input == "plain_csv" else "portable_csv"
+                data, filename="bad.csv", format="plain_csv" if bad_input == "plain_csv" else "portable_csv"
             ),
             incoming,
         )

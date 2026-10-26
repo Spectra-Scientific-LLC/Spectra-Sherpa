@@ -1172,8 +1172,10 @@ async def _load_batch_dataset(session, user_id, payload):
         raise HTTPException(409, "Saved dataset definition is incomplete") from exc
     except ValueError as exc:
         logger.warning("Batch dataset admission failed: %s", exc)
-        detail = "Dataset could not be loaded with the selected stage and scientific result. Check its source files."
-        raise HTTPException(400, detail) from exc
+        raise HTTPException(
+            400,
+            "Dataset could not be loaded with the selected stage and scientific result. Check its source files.",
+        ) from exc
 
 
 @router.post("/batch", response_model=ArtifactBatchRunResponse, status_code=201)
