@@ -129,7 +129,7 @@ rejected.
 
 <!-- BEGIN GENERATED NODE REFERENCE -->
 
-<!-- NODE HELP REFERENCES {"help_reference": "docs/nodes/preprocessing.md", "node_types": ["baseline.penalized_ls", "baseline.rubberband", "preprocess.apply_fitted_emsc", "preprocess.apply_fitted_msc", "preprocess.apply_fitted_osc", "preprocess.apply_fitted_scale", "preprocess.clip_floor", "preprocess.clip_range", "preprocess.cosmic_ray", "preprocess.derivative", "preprocess.emsc", "preprocess.msc", "preprocess.normalize", "preprocess.osc", "preprocess.scale", "preprocess.shared_reference_scale", "preprocess.smooth", "preprocess.wavenumber_align", "time_series.moving_window", "time_series.trend_removal", "transfer.apply_fitted", "transfer.ds", "transfer.pds", "transfer.sws"]} -->
+<!-- NODE HELP REFERENCES {"help_reference": "docs/nodes/preprocessing.md", "node_types": ["baseline.penalized_ls", "baseline.rubberband", "preprocess.apply_fitted_emsc", "preprocess.apply_fitted_msc", "preprocess.apply_fitted_osc", "preprocess.apply_fitted_scale", "preprocess.bosch_phase_labels", "preprocess.clip_floor", "preprocess.clip_range", "preprocess.cosmic_ray", "preprocess.derivative", "preprocess.emsc", "preprocess.msc", "preprocess.normalize", "preprocess.osc", "preprocess.scale", "preprocess.shared_reference_scale", "preprocess.smooth", "preprocess.wavenumber_align", "time_series.moving_window", "time_series.trend_removal", "transfer.apply_fitted", "transfer.ds", "transfer.pds", "transfer.sws"]} -->
 
 ## Registry reference
 
@@ -146,6 +146,7 @@ Conditional visibility describes the editor; execution admission remains node-ow
 | Apply Reference MSC (Imported) | <code>preprocess.apply_fitted_msc</code> |
 | Apply Reference OSC (Imported) | <code>preprocess.apply_fitted_osc</code> |
 | Apply Reference Scale (Imported) | <code>preprocess.apply_fitted_scale</code> |
+| BOSCH Gas Phase Labels | <code>preprocess.bosch_phase_labels</code> |
 | Clip Floor | <code>preprocess.clip_floor</code> |
 | Clip Feature Range | <code>preprocess.clip_range</code> |
 | Cosmic Ray Removal | <code>preprocess.cosmic_ray</code> |
@@ -276,6 +277,20 @@ No parameters.
 | <code>state_content_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
 | <code>state_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
 | <code>state_node_id</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### BOSCH Gas Phase Labels (`preprocess.bosch_phase_labels`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>process</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_features&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+No parameters.
 
 ### Clip Floor (`preprocess.clip_floor`)
 

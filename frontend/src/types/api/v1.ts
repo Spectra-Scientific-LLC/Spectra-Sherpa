@@ -1695,6 +1695,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/experiments/{experiment_id}/files/{file_id}/bosch-step-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bosch Step Preview Endpoint */
+        post: operations["bosch_step_preview_endpoint_api_v1_experiments__experiment_id__files__file_id__bosch_step_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/experiments/{experiment_id}/files/{file_id}/bosch-steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bosch Steps Endpoint */
+        get: operations["bosch_steps_endpoint_api_v1_experiments__experiment_id__files__file_id__bosch_steps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/experiments/{experiment_id}/files/{file_id}/scientific-assets": {
         parameters: {
             query?: never;
@@ -4994,6 +5028,89 @@ export interface components {
         Body_validate_sherpa_object_api_v1_projects_objects_validate_post: {
             /** File */
             file: string;
+        };
+        /** BoschStepIntervalOut */
+        BoschStepIntervalOut: {
+            /** Acquisition Count */
+            acquisition_count: number;
+            /** End Time */
+            end_time: number;
+            /** First Acquisition */
+            first_acquisition: number;
+            /** Last Acquisition */
+            last_acquisition: number;
+            /** Start Time */
+            start_time: number;
+        };
+        /** BoschStepOut */
+        BoschStepOut: {
+            /** Acquisition Count */
+            acquisition_count: number;
+            /** Intervals */
+            intervals: components["schemas"]["BoschStepIntervalOut"][];
+            /** Label */
+            label: string;
+            /** Step Id */
+            step_id: string;
+        };
+        /** BoschStepPreviewOut */
+        BoschStepPreviewOut: {
+            /** Dataset */
+            dataset: {
+                [key: string]: unknown;
+            };
+            /** Selected Acquisition Count */
+            selected_acquisition_count: number;
+        };
+        /** BoschStepPreviewRequest */
+        BoschStepPreviewRequest: {
+            /** Asset Id */
+            asset_id: string;
+            /**
+             * Max Rows
+             * @default 4
+             */
+            max_rows?: number;
+            /** Process File Id */
+            process_file_id: number;
+            /** Process Sha256 */
+            process_sha256: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Step Id */
+            step_id: string;
+        };
+        /** BoschStepsOut */
+        BoschStepsOut: {
+            /** Date */
+            date: string;
+            /** Lot */
+            lot: {
+                [key: string]: unknown;
+            } | null;
+            /** Process Sha256 */
+            process_sha256: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Unrecorded Protocol Steps */
+            unrecorded_protocol_steps: string[];
+            /** Wafers */
+            wafers: components["schemas"]["BoschWaferStepsOut"][];
+            /** Warnings */
+            warnings: string[];
+        };
+        /** BoschWaferStepsOut */
+        BoschWaferStepsOut: {
+            /** Alignment */
+            alignment: {
+                [key: string]: unknown;
+            } | null;
+            /** Asset Id */
+            asset_id: string;
+            /** Refusal */
+            refusal: string | null;
+            /** Steps */
+            steps: components["schemas"]["BoschStepOut"][];
         };
         /** BranchRequest */
         BranchRequest: {
@@ -13846,6 +13963,76 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bosch_step_preview_endpoint_api_v1_experiments__experiment_id__files__file_id__bosch_step_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoschStepPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoschStepPreviewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bosch_steps_endpoint_api_v1_experiments__experiment_id__files__file_id__bosch_steps_get: {
+        parameters: {
+            query: {
+                process_file_id: number;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoschStepsOut"];
                 };
             };
             /** @description Validation Error */

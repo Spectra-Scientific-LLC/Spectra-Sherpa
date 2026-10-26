@@ -198,6 +198,8 @@ def test_held_out_fitted_application_preserves_its_own_supervision(kind):
 def test_matrix_covers_every_preprocessing_implementation():
     covered = {kind for kind, _ in CASES} | {
         "preprocess.apply_fitted_scale",
+        # BOSCH requires paired native clocks; its preservation case is in test_bosch_steps.py.
+        "preprocess.bosch_phase_labels",
         "preprocess.shared_reference_scale",
         "preprocess.apply_fitted_msc",
         "preprocess.apply_fitted_emsc",

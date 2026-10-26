@@ -53,7 +53,7 @@ def test_builtin_catalog_uses_coherent_scientist_families() -> None:
         "deploy": 3,
         "exploratory": 10,
         "output": 4,
-        "preprocessing": 19,
+        "preprocessing": 20,
         "regression": 12,
         "selection": 11,
         "synthesis": 14,

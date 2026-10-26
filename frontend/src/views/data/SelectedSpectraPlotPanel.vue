@@ -171,6 +171,7 @@ const props = withDefaults(
     plotDatasetsError?: string | null;
     activeExperimentId?: number | null;
     activeFileName?: string | null;
+    minimumTraceCount?: number;
   }>(),
   {
     plotDatasets: () => [],
@@ -180,6 +181,7 @@ const props = withDefaults(
     plotDatasetsError: null,
     activeExperimentId: null,
     activeFileName: null,
+    minimumTraceCount: 0,
   },
 );
 const emit = defineEmits<{ harmonize: [] }>();
@@ -190,7 +192,7 @@ const activeCurve = computed(() =>
     : null,
 );
 const displayPreferences = useDisplayPreferences();
-const overlay = computed(() => buildMultiDatasetOverlay(props.plotDatasets, displayPreferences.maxRows, activeCurve.value));
+const overlay = computed(() => buildMultiDatasetOverlay(props.plotDatasets, Math.max(displayPreferences.maxRows, Math.min(50, props.minimumTraceCount)), activeCurve.value));
 const singleSource = computed(() =>
   props.plotDatasets.length === 1 ? props.plotDatasets[0] : null,
 );
@@ -601,7 +603,7 @@ const plotLayout = computed(() => ({
   autosize: true,
   height: 480,
   margin: { t: 20, r: 20, b: 58, l: 66 },
-  showlegend: false,
+  showlegend: props.plotDatasets.some(source => source.members.some(member => member.curveGroupLabel)),
   plot_bgcolor: SCIENTIFIC_COLORS.plotPaper,
   paper_bgcolor: SCIENTIFIC_COLORS.paper,
 }));

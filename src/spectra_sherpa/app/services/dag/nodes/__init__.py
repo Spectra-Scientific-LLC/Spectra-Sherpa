@@ -10,6 +10,7 @@ import os
 if os.environ.get("SPECTRA_DAG_SKIP_BUILTIN_REGISTRATION") != "1":
     from . import (
         blend,
+        bosch_phases,
         classification,
         classification_evaluator_node,
         custom,  # Atomic blending & synthetic data nodes
@@ -33,6 +34,7 @@ __all__ = [
     "output",
     "preprocessing",
     "blend",
+    "bosch_phases",
     "classification",
     "classification_evaluator_node",
     "diagnostics",

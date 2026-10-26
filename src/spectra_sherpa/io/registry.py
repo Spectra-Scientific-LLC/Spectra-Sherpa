@@ -197,13 +197,20 @@ class FormatRegistry:
         limits: ParserLimits | None = None,
         parser_options: Mapping[str, str] | None = None,
         asset_id: str | None = None,
+        rows: tuple[int, ...] | None = None,
     ) -> IngestionResult:
         active_limits = self._limits(path, limits)
         with BoundedSource(path, limits=active_limits) as source:
             plugin, probe = self.select(source)
+            if rows is not None and plugin.format_id != "bosch-netcdf":
+                raise ValueError("Explicit acquisition selection is supported only for BOSCH NetCDF")
             if hasattr(plugin, "read_asset"):
                 result = plugin.read_asset(
-                    source, limits=active_limits, parser_options=parser_options, asset_id=asset_id
+                    source,
+                    limits=active_limits,
+                    parser_options=parser_options,
+                    asset_id=asset_id,
+                    **({"rows": rows} if rows is not None else {}),
                 )
             elif parser_options is None:
                 result = plugin.read(source, limits=active_limits)

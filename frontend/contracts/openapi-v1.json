@@ -1787,6 +1787,241 @@
         "title": "Body_validate_sherpa_object_api_v1_projects_objects_validate_post",
         "type": "object"
       },
+      "BoschStepIntervalOut": {
+        "properties": {
+          "acquisition_count": {
+            "title": "Acquisition Count",
+            "type": "integer"
+          },
+          "end_time": {
+            "title": "End Time",
+            "type": "number"
+          },
+          "first_acquisition": {
+            "title": "First Acquisition",
+            "type": "integer"
+          },
+          "last_acquisition": {
+            "title": "Last Acquisition",
+            "type": "integer"
+          },
+          "start_time": {
+            "title": "Start Time",
+            "type": "number"
+          }
+        },
+        "required": [
+          "first_acquisition",
+          "last_acquisition",
+          "start_time",
+          "end_time",
+          "acquisition_count"
+        ],
+        "title": "BoschStepIntervalOut",
+        "type": "object"
+      },
+      "BoschStepOut": {
+        "properties": {
+          "acquisition_count": {
+            "title": "Acquisition Count",
+            "type": "integer"
+          },
+          "intervals": {
+            "items": {
+              "$ref": "#/components/schemas/BoschStepIntervalOut"
+            },
+            "title": "Intervals",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "step_id": {
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "label",
+          "acquisition_count",
+          "intervals"
+        ],
+        "title": "BoschStepOut",
+        "type": "object"
+      },
+      "BoschStepPreviewOut": {
+        "properties": {
+          "dataset": {
+            "additionalProperties": true,
+            "title": "Dataset",
+            "type": "object"
+          },
+          "selected_acquisition_count": {
+            "title": "Selected Acquisition Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dataset",
+          "selected_acquisition_count"
+        ],
+        "title": "BoschStepPreviewOut",
+        "type": "object"
+      },
+      "BoschStepPreviewRequest": {
+        "properties": {
+          "asset_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "max_rows": {
+            "default": 4,
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Max Rows",
+            "type": "integer"
+          },
+          "process_file_id": {
+            "title": "Process File Id",
+            "type": "integer"
+          },
+          "process_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Process Sha256",
+            "type": "string"
+          },
+          "source_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "step_id": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "process_file_id",
+          "asset_id",
+          "step_id",
+          "source_sha256",
+          "process_sha256"
+        ],
+        "title": "BoschStepPreviewRequest",
+        "type": "object"
+      },
+      "BoschStepsOut": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "lot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lot"
+          },
+          "process_sha256": {
+            "title": "Process Sha256",
+            "type": "string"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "unrecorded_protocol_steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unrecorded Protocol Steps",
+            "type": "array"
+          },
+          "wafers": {
+            "items": {
+              "$ref": "#/components/schemas/BoschWaferStepsOut"
+            },
+            "title": "Wafers",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_sha256",
+          "process_sha256",
+          "date",
+          "lot",
+          "wafers",
+          "unrecorded_protocol_steps",
+          "warnings"
+        ],
+        "title": "BoschStepsOut",
+        "type": "object"
+      },
+      "BoschWaferStepsOut": {
+        "properties": {
+          "alignment": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alignment"
+          },
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refusal"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/BoschStepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "asset_id",
+          "steps",
+          "alignment",
+          "refusal"
+        ],
+        "title": "BoschWaferStepsOut",
+        "type": "object"
+      },
       "BranchRequest": {
         "properties": {
           "label": {
@@ -22038,6 +22273,143 @@
           }
         ],
         "summary": "Delete Experiment File Endpoint",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/api/v1/experiments/{experiment_id}/files/{file_id}/bosch-step-preview": {
+      "post": {
+        "operationId": "bosch_step_preview_endpoint_api_v1_experiments__experiment_id__files__file_id__bosch_step_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoschStepPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoschStepPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Bosch Step Preview Endpoint",
+        "tags": [
+          "experiments"
+        ]
+      }
+    },
+    "/api/v1/experiments/{experiment_id}/files/{file_id}/bosch-steps": {
+      "get": {
+        "operationId": "bosch_steps_endpoint_api_v1_experiments__experiment_id__files__file_id__bosch_steps_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true,
+            "schema": {
+              "title": "Experiment Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "title": "File Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "process_file_id",
+            "required": true,
+            "schema": {
+              "title": "Process File Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoschStepsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Bosch Steps Endpoint",
         "tags": [
           "experiments"
         ]

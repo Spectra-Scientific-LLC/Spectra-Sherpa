@@ -140,7 +140,7 @@ def _experiment_context(source: BoundedSource, group: str) -> dict:
 class _BoschPlugin:
     dictionary_path: Path
     group: str
-    rows: slice
+    rows: slice | tuple[int, ...]
     format_id = _FORMAT
     parser_id = "spectrasherpa.bosch_netcdf"
     parser_version = "1.0.0"
@@ -228,8 +228,19 @@ class _BoschPlugin:
             raise _fail("Unsupported timestamp origin/units; timestamps cannot be silently reinterpreted")
         if _text(times.attrs.get("calendar", "standard")) not in {"standard", "gregorian"}:
             raise _fail("Unsupported timestamp calendar")
-        start, stop, step = self.rows.indices(encoded.shape[0])
-        indices = range(start, stop, step)
+        if isinstance(self.rows, tuple):
+            if (
+                not self.rows
+                or len(self.rows) > 100_000
+                or any(type(row) is not int or not 0 <= row < encoded.shape[0] for row in self.rows)
+                or any(b <= a for a, b in zip(self.rows, self.rows[1:]))
+            ):
+                raise _fail("Selected acquisitions must be non-empty, increasing source indices")
+            indices = self.rows
+            start, stop, step = indices[0], indices[-1] + 1, 1
+        else:
+            start, stop, step = self.rows.indices(encoded.shape[0])
+            indices = range(start, stop, step)
         count, features = len(indices), encoded.shape[1]
         source.require_blocks(features + 8, format_id=_FORMAT)
         if not count:
@@ -272,13 +283,19 @@ class _BoschPlugin:
         X = np.empty((count, features), dtype=np.float64)
         for offset in range(0, count, chunk_rows):
             end = min(offset + chunk_rows, count)
-            codes = np.asarray(
-                nc_group.variables["data"][start + offset * step : min(start + end * step, stop) : step, :]
+            selected_rows = (
+                list(indices[offset:end])
+                if isinstance(self.rows, tuple)
+                else slice(start + offset * step, min(start + end * step, stop), step)
             )
+            codes = np.asarray(nc_group.variables["data"][selected_rows, :])
             if codes.size and int(codes.max()) >= decoder.size:
                 raise _fail("Encoded value exceeds the supplied dictionary; no clipping or wrapping is permitted")
             X[offset:end] = decoder[codes]
-        timestamps = np.asarray(nc_group.variables["times"][start:stop:step], dtype=np.float64)
+        timestamps = np.asarray(
+            nc_group.variables["times"][list(indices) if isinstance(self.rows, tuple) else slice(start, stop, step)],
+            dtype=np.float64,
+        )
         if not np.isfinite(timestamps).all():
             raise _fail("Acquisition timestamps must be finite")
         time_warnings = []
@@ -326,7 +343,8 @@ class _BoschPlugin:
                 "bosch.time_warnings": time_warnings,
                 "bosch.timestamp_calendar": "standard",
                 "bosch.original_shape": list(encoded.shape),
-                "bosch.source_row_slice": [start, stop, step],
+                "bosch.source_row_slice": None if isinstance(self.rows, tuple) else [start, stop, step],
+                "bosch.source_row_indices": list(indices) if isinstance(self.rows, tuple) else None,
             },
         )
 
@@ -373,7 +391,7 @@ class _BuiltinBoschPlugin:
     extensions = (".nc",)
     display_name = "BOSCH NetCDF4"
     description = "Dictionary-decoded OES/process wafers with acquisition times (Zenodo 17122442)"
-    max_source_bytes = 512 * 1024**2
+    max_source_bytes = 1024 * 1024**2
     selective_assets = True
 
     def probe(self, source: BoundedSource) -> ProbeResult:
@@ -445,6 +463,7 @@ class _BuiltinBoschPlugin:
         limits: ParserLimits,
         parser_options: Mapping[str, str] | None = None,
         asset_id: str | None = None,
+        rows: tuple[int, ...] | None = None,
     ) -> IngestionResult:
         import hashlib
         from importlib.resources import files
@@ -468,7 +487,9 @@ class _BuiltinBoschPlugin:
         from importlib.resources import as_file
 
         with as_file(dictionary) as dictionary_path:
-            result = _BoschPlugin(dictionary_path, asset_id, slice(None)).read(source, limits=limits)
+            result = _BoschPlugin(dictionary_path, asset_id, rows if rows is not None else slice(None)).read(
+                source, limits=limits
+            )
         for asset in result.assets:
             asset.dataset.set_extra("bosch.dictionary_sha256", expected)
         return replace(
@@ -477,3 +498,75 @@ class _BuiltinBoschPlugin:
 
 
 PLUGIN = _BuiltinBoschPlugin()
+
+
+def bosch_phase_observations(path: str | Path) -> dict:
+    """Read bounded clock-alignment observations, never an entire OES matrix.
+
+    The strongest mean channel is selected on at most 256 evenly spaced raw
+    acquisitions. Its complete trace and the original irregular times are read
+    through netCDF4. This is an alignment probe, not a spectral average output.
+    """
+    limits = ParserLimits(max_source_bytes=PLUGIN.max_source_bytes)
+    with BoundedSource(path, limits=limits) as source:
+        inventory = PLUGIN.inspect(source, limits=limits)
+        context = _experiment_context(source, inventory.assets[0]["asset_id"])
+        lot = context.get("selected_lot")
+        date = lot["experiment_date"] if lot else None
+        if date is None:
+            match = re.search(r"Day_(\d{4})_(\d{2})_(\d{2})", source.path.name)
+            if match:
+                date = "-".join(match.groups())
+        if date is None:
+            raise _fail("Daily file needs a Day_YYYY_MM_DD name to match its process groups")
+        dictionary = files("spectra_sherpa").joinpath("data", "bosch_netcdf", "Dictionary_OES.nc")
+        if (
+            hashlib.sha256(dictionary.read_bytes()).hexdigest()
+            != "238b8a9a76f4c3ffd0355864e0415c94aca6ec8d36a7b84e13f1240d3784f2bd"
+        ):
+            raise _fail("Bundled BOSCH dictionary failed its source checksum")
+        from importlib.resources import as_file
+
+        groups = []
+        with as_file(dictionary) as dictionary_path, _NETCDF_LOCK:
+            with netCDF4.Dataset(dictionary_path) as lookup, netCDF4.Dataset(source.snapshot_path) as nc:
+                lookup.set_auto_maskandscale(False)
+                nc.set_auto_maskandscale(False)
+                decoder = np.asarray(lookup["data"][:])
+                for asset in inventory.assets:
+                    name = asset["asset_id"]
+                    if asset["data_role"] != "X_spectra" or not name.startswith("Wafer_"):
+                        raise _fail("Select a daily OES file, with Process_data.nc as its companion")
+                    rows, features = asset["shape"]
+                    if rows > 100_000 or features > 4096:
+                        raise _fail("Phase alignment supports up to 100000 acquisitions and 4096 channels per wafer")
+                    group = nc[name]
+                    if _text(group["times"].getncattr("units")) != _TIME_UNITS:
+                        raise _fail("Unsupported acquisition timestamp units")
+                    times = np.asarray(group["times"][:], dtype=np.float64)
+                    if not np.isfinite(times).all() or np.any(np.diff(times) <= 0):
+                        raise _fail("Phase alignment requires finite strictly increasing acquisition times")
+                    probes = np.unique(np.linspace(0, rows - 1, min(rows, 256)).astype(int))
+                    codes = np.asarray(group["data"][probes, :])
+                    if codes.max() >= decoder.size:
+                        raise _fail("Encoded value exceeds the bundled dictionary")
+                    channel = int(np.argmax(np.mean(decoder[codes], axis=0)))
+                    trace_codes = np.asarray(group["data"][:, channel])
+                    if trace_codes.max() >= decoder.size:
+                        raise _fail("Encoded value exceeds the bundled dictionary")
+                    groups.append(
+                        {
+                            "asset_id": name,
+                            "times": times,
+                            "signal": decoder[trace_codes],
+                            "alignment_wavelength_nm": float(group["wavelengths"][channel]),
+                        }
+                    )
+        source.verify_unchanged()
+        return {
+            "source_sha256": source.member().sha256,
+            "date": date,
+            "groups": groups,
+            "lot": lot,
+            "protocol": context,
+        }

@@ -41,6 +41,18 @@ function source(experimentId: number, name: string, value: SherpaDatasetDict): D
 }
 
 describe("multi-dataset spectral overlay", () => {
+  it("labels phase groups without rewriting source sample identities", () => {
+    const value = dataset(["acq-1", "acq-2"], [[1, 2, 3], [4, 5, 6]], ["s1", "s2"]);
+    const selected = source(6, "BOSCH", value);
+    selected.members[0].curveGroupLabel = "August 5 · Wafer 1 · etch";
+    const before = JSON.stringify(value);
+    const result = buildMultiDatasetOverlay([selected]);
+    expect(result.error).toBeNull();
+    expect(result.traces[0].name).toContain("August 5 · Wafer 1 · etch");
+    expect(result.traces.map(trace => trace.showlegend)).toEqual([true, false]);
+    expect(result.traces[0].line?.color).toBe(result.traces[1].line?.color);
+    expect(JSON.stringify(value)).toBe(before);
+  });
   it("filters retained rows, labels and values without changing the source dataset", () => {
     const value = dataset(
       ["A", "B"],

@@ -1165,7 +1165,7 @@
                   <span>{{ selectedExperimentName }}</span>
                 </div>
                 <PlotSelectionCheckbox
-                  v-if="selectedExperiment"
+                  v-if="selectedExperiment && !boschComparisonMode"
                   :checked="isExperimentFullyPlotted(selectedExperiment.id)"
                   :partial="isExperimentPartlyPlotted(selectedExperiment.id)"
                   :disabled="dataStore.experimentFiles.length === 0"
@@ -1202,6 +1202,9 @@
                 <small>Use Import, Synthesis, Upload, or Library to add data to this record.</small>
               </div>
 
+              <div v-else-if="boschComparisonMode" class="empty-state">
+                Select days, wafers and processing steps in the comparison below. Process_data.nc is required.
+              </div>
               <div v-else class="file-groups">
                 <div v-for="stage in fileStages" :key="stage.key" class="file-stage">
                   <div v-if="filesForStage(stage.key).length > 0" class="stage-section">
@@ -1288,7 +1291,10 @@
               </aside>
             </div>
           </div>
-          <div class="dataset-preview-shell">
+          <BoschStepComparison v-if="boschComparisonMode && dataStore.activeExperimentId"
+            :experiment-id="dataStore.activeExperimentId" :files="dataStore.experimentFiles"
+            @inspect="inspectBoschAcquisitions" />
+          <div v-else class="dataset-preview-shell">
             <div
               v-if="pendingInspection && inspectionAssets.length > 1"
               class="inspection-asset-selector"
@@ -1650,6 +1656,7 @@ import { resolveMethodHelpUrl } from "@/utils/documentation";
 import PlotSelectionCheckbox from "@/components/data/PlotSelectionCheckbox.vue";
 import DataContentsPanel from "./DataContentsPanel.vue";
 import DataStoryCard from "./DataStoryCard.vue";
+import BoschStepComparison from "./BoschStepComparison.vue";
 import SelectedSpectraPlotPanel from "./SelectedSpectraPlotPanel.vue";
 import DatasetCurationPanel from "@/components/DatasetCurationPanel.vue";
 import { savedPortfolioInclusion, type CurationSource, type SampleInclusionState } from "@/utils/datasetCuration";
@@ -2247,6 +2254,9 @@ const plottedExperimentIds = computed(() =>
     .map((experiment) => experiment.id),
 );
 const plotDatasetSources = ref<DatasetPlotSource[]>([]);
+const boschComparisonMode = computed(() => dataStore.experimentFiles.some(
+  file => /day_\d{4}_\d{2}_\d{2}.*\.nc$/i.test(file.file_path),
+));
 const plotDatasetsLoading = ref(false);
 const plotDatasetsError = ref<string | null>(null);
 const fileSampleLabelsByExperiment = ref<Record<number, Record<string, string[]>>>({});
@@ -5801,6 +5811,7 @@ async function loadPlottedDatasets(
     return;
   }
   const selected = plottedExperimentIds.value
+    .filter((id) => !(boschComparisonMode.value && id === dataStore.activeExperimentId))
     .map((id) => dataStore.experiments.find((experiment) => experiment.id === id))
     .filter((experiment): experiment is ExperimentSummary => Boolean(experiment));
   if (selected.length !== plottedExperimentIds.value.length) {
@@ -6111,6 +6122,11 @@ async function showExperimentContents(
   preferredAssetId: string | null = null,
   exactSelection = false,
 ) {
+  if (boschComparisonMode.value && experimentId === dataStore.activeExperimentId) {
+    inspection.contents.invalidate();
+    dataStore.clearInspection();
+    return;
+  }
   exactInspectionSelection.value = exactSelection;
   const ticket = inspection.contents.begin();
   dataStore.clearCatalogExploration();
@@ -6465,7 +6481,20 @@ async function onFileSelect(event: { files?: File[] }) {
   selectedFile.value = files[0] ?? null;
   if (!files.length) return;
   try {
-    const staged = await dataStore.stageUploadBatch(files);
+    // Each native NetCDF may be close to 1 GiB. Stage those sequentially;
+    // ordinary multi-file/ZIP collections retain their aggregate limits.
+    const batches = files.some(file => /\.nc$/i.test(file.name)) ? files.map(file => [file]) : [files];
+    const stagingTicket = projectAdmission.capture();
+    const receipts = [];
+    for (const batch of batches) {
+      if (!stagingTicket.isCurrent()) return;
+      receipts.push(await dataStore.stageUploadBatch(batch));
+      if (!stagingTicket.isCurrent()) return;
+    }
+    const staged = { ...receipts[0], files: receipts.flatMap(receipt => receipt.files),
+      refusals: receipts.flatMap(receipt => receipt.refusals),
+      file_count: receipts.reduce((sum, receipt) => sum + receipt.file_count, 0),
+      refused_count: receipts.reduce((sum, receipt) => sum + receipt.refused_count, 0) };
     uploadRefusals.value.push(...staged.refusals);
     for (const member of staged.files) {
       stagedUploadMembers.value.push(member);
@@ -6695,6 +6724,22 @@ async function onDeleteExperiment() {
     });
   } finally {
     deletingExp.value = false;
+  }
+}
+
+async function inspectBoschAcquisitions(file: ExperimentFile, assetId: string) {
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null) return;
+  inspectionAssetId.value = assetId;
+  const ticket = inspection.selection.begin();
+  try {
+    await dataStore.inspectFile(file.id, file.file_path, experimentId, assetId);
+    if (!ticket.isCurrent()) return;
+    cacheFileSampleLabels(experimentId, dataStore.fileInfo, extractFileName(file.file_path));
+  } catch (reason) {
+    if (!ticket.isCurrent()) return;
+    toast.add({ severity: "error", summary: "Acquisitions unavailable",
+      detail: getErrorMessage(reason, "Could not inspect the selected wafer"), life: 5000 });
   }
 }
 

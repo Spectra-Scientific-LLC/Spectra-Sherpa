@@ -40,6 +40,9 @@ from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.acquisition_plans import AcquisitionPlanOut, AcquisitionPlanUpdate
 from spectra_sherpa.app.schemas.experiments import (
+    BoschStepPreviewOut,
+    BoschStepPreviewRequest,
+    BoschStepsOut,
     CollectionDefinitionReceipt,
     ExperimentAnalysisSelection,
     ExperimentAnalysisSelectionUpdate,
@@ -1727,3 +1730,74 @@ async def restore_version_endpoint(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return {"restored_files": restored_count}
+
+
+async def _bosch_comparison_paths(session, experiment_id, daily_id, process_id, user_id):
+    experiment = await _require_experiment(session, experiment_id, user_id, "read")
+    root = experiment_dir(experiment_id).resolve()
+    paths = []
+    for file_id in (daily_id, process_id):
+        record = await get_experiment_file(session, experiment_id, file_id)
+        if record is None:
+            raise HTTPException(
+                status_code=404, detail="Daily or required process companion file not found in this dataset"
+            )
+        path = (root / record.file_path).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            raise HTTPException(status_code=404, detail="Scientific source is unavailable")
+        paths.append(path)
+    if daily_id == process_id:
+        raise HTTPException(status_code=400, detail="A distinct Process_data.nc companion is required")
+    return experiment, paths
+
+
+@router.get(
+    "/{experiment_id}/files/{file_id}/bosch-steps",
+    response_model=BoschStepsOut,
+    dependencies=[Depends(demo_guard("raw_data_export"))],
+)
+async def bosch_steps_endpoint(
+    experiment_id: int,
+    file_id: int,
+    process_file_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    from spectra_sherpa.app.services.bosch_step_comparison import phase_catalog
+
+    _, paths = await _bosch_comparison_paths(session, experiment_id, file_id, process_file_id, current_user.id)
+    try:
+        result = await asyncio.to_thread(phase_catalog, *paths)
+        return BoschStepsOut.model_validate(result)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=f"Processing steps unavailable: {exc}") from exc
+
+
+@router.post(
+    "/{experiment_id}/files/{file_id}/bosch-step-preview",
+    response_model=BoschStepPreviewOut,
+    dependencies=[Depends(demo_guard("raw_data_export"))],
+)
+async def bosch_step_preview_endpoint(
+    experiment_id: int,
+    file_id: int,
+    payload: BoschStepPreviewRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    from spectra_sherpa.app.services.bosch_step_comparison import step_preview
+    from spectra_sherpa.app.services.serialization import serialize_result
+
+    experiment, paths = await _bosch_comparison_paths(
+        session, experiment_id, file_id, payload.process_file_id, current_user.id
+    )
+    try:
+        dataset, count = await asyncio.to_thread(
+            step_preview, *paths, **payload.model_dump(exclude={"process_file_id"})
+        )
+        return BoschStepPreviewOut(
+            dataset=serialize_result(dataset, owner_user_id=current_user.id, project_id=experiment.project_id),
+            selected_acquisition_count=count,
+        )
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=f"Processing-step preview unavailable: {exc}") from exc
