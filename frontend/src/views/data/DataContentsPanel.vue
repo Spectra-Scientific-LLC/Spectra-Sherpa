@@ -144,7 +144,7 @@
       <DataStorySection v-if="showDataStory" />
     </div>
 
-    <div v-else-if="!dataStore.fileInfo" class="explore-empty">
+    <div v-else-if="!dataStore.fileInfo && !hasStructuredSelection" class="explore-empty">
       <i class="pi pi-table"></i>
       <h3>No contents selected</h3>
       <p>
@@ -153,7 +153,7 @@
     </div>
 
     <details
-      v-if="dataStore.fileInfo && !dataStore.catalogDatasetInfo"
+      v-if="(dataStore.fileInfo || hasStructuredSelection) && !dataStore.catalogDatasetInfo"
       class="focused-dataset-details"
     >
       <summary>
@@ -196,7 +196,8 @@
           <slot name="source-collection" />
         </section>
 
-        <section class="dataset-step" aria-label="Acquisition settings">
+        <slot name="source-selection" />
+        <section v-if="dataStore.fileInfo" class="dataset-step" aria-label="Acquisition settings">
           <div class="essential-card-heading">
             <span class="essential-card-number">2</span>
             <div>
@@ -233,7 +234,7 @@
           </section>
         </section>
 
-        <section class="dataset-step" aria-label="Sample details">
+        <section v-if="dataStore.fileInfo" class="dataset-step" aria-label="Sample details">
           <div class="essential-card-heading">
             <span class="essential-card-number">3</span>
             <div>
@@ -456,7 +457,7 @@
           </div>
         </section>
 
-        <section class="dataset-step" aria-label="Dataset metadata and quality">
+        <section v-if="dataStore.fileInfo" class="dataset-step" aria-label="Dataset metadata and quality">
           <div class="essential-card-heading">
             <span class="essential-card-number">4</span>
             <h4 class="panel-title">Dataset metadata and quality</h4>
@@ -518,7 +519,7 @@
           <slot name="portfolio-definitions" />
         </section>
 
-        <details class="technical-details">
+        <details v-if="dataStore.fileInfo" class="technical-details">
           <summary>
             <i class="pi pi-shield" aria-hidden="true"></i> Technical details and provenance
           </summary>
@@ -715,6 +716,7 @@ function clearSampleTableSaveError(): void {
 const props = withDefaults(
   defineProps<{
     scopeKey?: string;
+    hasStructuredSelection?: boolean;
     activeDatasetName?: string | null;
     selectedFileCount?: number | null;
     selectedFileNames?: string[];
@@ -730,6 +732,7 @@ const props = withDefaults(
   }>(),
   {
     scopeKey: "",
+    hasStructuredSelection: false,
     activeDatasetName: null,
     selectedFileCount: null,
     selectedFileNames: () => [],

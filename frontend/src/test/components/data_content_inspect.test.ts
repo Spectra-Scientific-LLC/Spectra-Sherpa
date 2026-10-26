@@ -4496,4 +4496,43 @@ describe("DataContent file inspection", () => {
     expect(buttons.some((button) => button.text() === "Refresh")).toBe(false);
     wrapper.unmount();
   });
+  it("uses the existing portfolio and Workflow handlers for immutable step selections", async () => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as {
+      stepSelection: ReturnType<typeof import('@/views/data/composables/useProcessingStepSelection').useProcessingStepSelection>;
+      newDatasetViewName: string; savePortfolio: () => Promise<void>; goToWorkflow: () => Promise<void>;
+    };
+    const selection = {experiment_id:11,file_id:22,process_file_id:23,asset_id:'Wafer_01',step_id:'production' as const};
+    vm.stepSelection.selections.value = [selection];
+    await flushPromises();
+    vm.newDatasetViewName = 'Production';
+    const saved = {id:9,project_id:3,name:'Production',selection_sha256:'a'.repeat(64),selection:{partitions:[]}};
+    vi.mocked(api.post).mockResolvedValueOnce({data:saved});
+    await vm.savePortfolio();
+    expect(api.post).toHaveBeenCalledWith('/projects/3/time-series-portfolios', {name:'Production',selections:[selection]}, expect.anything());
+    vi.mocked(api.post).mockResolvedValueOnce({data:{id:42}});
+    await vm.goToWorkflow();
+    const body = vi.mocked(api.post).mock.calls.find(c=>c[0]==='/workflows')![1] as {nodes:{node_type:string;parameters:Record<string,unknown>}[]};
+    expect(body.nodes.map(n=>n.node_type)).toEqual(['data.portfolio_load','preprocess.portfolio_average']);
+    expect(body.nodes[0].parameters.selection_sha256).toBe(saved.selection_sha256);
+    expect(mocks.routerPush).toHaveBeenCalledWith({path:'/workflow',query:{project_id:3,workflow_id:42}});
+  });
+
+  it("restores the explicit wafer picker for a daily-file deep link without whole-file decoding", async () => {
+    mocks.route.query = {project_id:'3', experiment:'11', fileId:'22', tab:'my-dataset'};
+    mocks.dataStore.experimentFiles[0].file_path = 'raw/Day_2024_08_05.nc';
+    mocks.dataStore.fileInfo = null;
+    mocks.dataStore.fetchFileAssets.mockResolvedValue({
+      format_id:'bosch-netcdf', variant:'daily', parser_id:'bosch', parser_version:'1', source_sha256:'a'.repeat(64),
+      assets:[{asset_id:'Wafer_01',title:'Wafer 1',shape:[10,3],warnings:[]},{asset_id:'Wafer_02',title:'Wafer 2',shape:[10,3],warnings:[]}],
+    });
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as {inspectionAssets:{asset_id:string}[]; pendingInspection:{kind:string}|null};
+    expect(vm.inspectionAssets.map(a=>a.asset_id)).toEqual(['Wafer_01','Wafer_02']);
+    expect(vm.pendingInspection?.kind).toBe('file');
+    expect(vi.mocked(api.post).mock.calls.some(c=>c[0]==='/builder/file-info')).toBe(false);
+  });
+
 });

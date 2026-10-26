@@ -1,18 +1,38 @@
 # Read BOSCH NetCDF4 acquisitions
 
-In **Data → Upload**, add one or more `Day_*.nc` files and their shared
-`Process_data.nc` companion to the same dataset. Native files upload sequentially.
-In **My Dataset**, select the companion, check days/wafers, select processing
-steps, and click **Compare selected steps**. Every plotted group is labeled by
-day, wafer and phase. The preview uses up to four evenly spaced original
-acquisitions per group, without averaging; it is not an exhaustive plot of all
-selected acquisitions. At most 50 wafer/step groups can be compared at once.
+The following integration targets **v0.6.5 only**.
 
-Expand a file and wafer to see UTC start/end times and 1-based acquisition ranges.
-Each repeating phase retains its separate intervals. **Inspect all acquisitions
-and experiment metadata** opens the original wafer's Data View; expand its
-**Active dataset** section to inspect the complete acquisition table and protocol
-context. Sample values, identities and irregular source times remain unchanged.
+In **Data → Upload**, add one or more `Day_*.nc` files and their shared
+`Process_data.nc` companion to the same named dataset. Prepare the alignment
+there before adding the dataset to My Dataset. Native files upload sequentially.
+
+In **My Dataset**, open the existing **Active dataset** disclosure. Its
+processing-step matrix renders retained Upload catalogs; the renderer has no
+network, upload, segmentation, portfolio-saving or workflow-creation behavior.
+Select wafer numbers explicitly by day and step. Hover or keyboard focus shows
+UTC start/end times, 1-based acquisition ranges and source/alignment evidence.
+Breaks are excluded; unavailable preparation and conditioning intervals are not
+invented. **Inspect selected wafer** uses the existing Data View to inspect the
+original acquisitions and protocol metadata independently of plot sampling.
+
+**Preview selection** uses the shared Comparison preview. Every plotted group
+is labeled by day, wafer and phase. Up to four original acquisitions per phase
+are shown without averaging; at most 50 wafer/step selections can be previewed.
+This bound does not redefine saved membership.
+
+Use the existing **Save dataset → Portfolio name → Save portfolio** controls.
+The shared saved list's **Show** restores a time-series selection and verifies
+that its source and process hashes match the prepared data. Immutable entries
+have no delete or overwrite action. The page's existing **Workflow** action
+opens the ordinary editor with canonical `data.portfolio_load` and
+`preprocess.portfolio_average` nodes bound to the saved receipt. The Average
+node exposes all three modes in its normal Inspector; subsequent smoothing,
+normalization, peak extraction and export are edited in Workflow.
+
+Ordinary dataset definitions, sample curation, comparison previews and analysis
+starter handoff keep their existing paths. A matrix selection must be saved
+before its Workflow handoff; changing it invalidates the displayed saved name.
+This extension does not refresh historical qualification evidence.
 
 The native reader uses `h5py` and reads dictionary indices without CF masking/scaling. Small, unmodified CC BY 4.0 dictionaries are
 bundled with attribution and checksum validation, so dictionary files need not be uploaded. Metadata inventory lists the wafers before allocating a matrix;
