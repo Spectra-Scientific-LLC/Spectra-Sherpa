@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Explicit browser fixture, not an application route or authenticated journey.
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import ValidationLedger from "@/components/ValidationLedger.vue";
 import QuickPlotModal from "@/views/workflow-builder/modals/QuickPlotModal.vue";
 import DataTableModal from "@/views/workflow-builder/modals/DataTableModal.vue";
@@ -15,13 +15,14 @@ const large = ref(false);
 const requestId = ref("");
 const showScores = ref(false);
 const showScoreTable = ref(false);
-const appliedScores = {
+const numericLabels = ref(false);
+const appliedScores = computed(() => ({
   data: [[0.1, 0.2], [0.3, 0.4]], metadata: {},
   presentation_value: {
-    y_axis: { labels: ["Specimen 135", "Specimen 142"] },
+    y_axis: { labels: numericLabels.value ? [101, 102] : ["Specimen 135", "Specimen 142"] },
     x_axis: { labels: ["PC1", "PC2"], units: "dimensionless" },
   },
-};
+}));
 const rows = Array.from({ length: 30000 }, (_, index) => ({
   sample: index === 0 ? "specimen\rA" : `specimen-${index}`,
   target: "synthetic response", reference: 100, predicted: 100.00001,
@@ -53,6 +54,7 @@ function insecureApi() {
       <p>Request ID: {{ requestId }}</p>
     </section>
     <section aria-label="Typed applied-score fixture">
+      <label><input v-model="numericLabels" type="checkbox" />Numeric display labels</label>
       <button @click="showScores = !showScores">Toggle named applied-score preview</button>
       <button @click="showScoreTable = true">Open named applied-score Data View</button>
       <QuickPlotModal v-if="showScores" :model-value="true" embedded table-only

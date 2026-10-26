@@ -763,6 +763,9 @@ async def reconcile_orphan_artifacts(
     from spectra_sherpa.app.models.model_artifact import ModelArtifact
 
     store = store or get_model_store()
+    from spectra_sherpa.app.services.storage_custody import reconcile_terminal_publications
+
+    await reconcile_terminal_publications(session, store=store)
     models_dir = store.models_dir
     if not models_dir.exists():
         return []

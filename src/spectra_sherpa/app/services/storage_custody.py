@@ -70,6 +70,7 @@ class OwnedModelWriter:
         self.store = store
         self.factory = factory
         self.user_id = user_id
+        self.claimed_uids: set[str] = set()
 
     def artifact_directory(self, artifact_uid: str) -> str:
         return self.store.artifact_directory(artifact_uid)
@@ -95,11 +96,93 @@ class OwnedModelWriter:
                     artifact_dir=directory,
                 )
             )
+            # A failed INSERT must not grant custody over an existing claim.
+            # After a successful flush, remember ownership before COMMIT so a
+            # lost acknowledgement remains conservatively recoverable.
+            await session.flush()
+            self.claimed_uids.add(artifact_uid)
             await session.commit()
             # Deletion can win between these transactions. Re-admit before any
             # byte is written. A lost claim-commit acknowledgement writes none.
             await lock_storage_owner(session, self.user_id)
             return await await_file_writer(self.store.save_new, artifact_uid, manifest, arrays)
+
+    async def discard_trial(self):
+        """Called only after execution/writers stop, never for uncertain durable runs.
+
+        Mark intent before deleting bytes. A crash during cleanup is recoverable;
+        unmarked claims remain protected, regardless of their age.
+        """
+        from spectra_sherpa.app.models.model_artifact import ModelArtifact
+        from spectra_sherpa.app.models.model_publication import ModelPublication
+
+        async with self.factory() as session:
+            await lock_storage_owner(session, self.user_id)
+            for uid in self.claimed_uids:
+                if await session.scalar(select(ModelArtifact.artifact_uid).where(ModelArtifact.artifact_uid == uid)):
+                    continue
+                await session.execute(
+                    update(ModelPublication)
+                    .where(
+                        ModelPublication.artifact_uid == uid,
+                        ModelPublication.user_id == self.user_id,
+                    )
+                    .values(cleanup_requested=True)
+                )
+            await session.commit()
+            await reconcile_terminal_publications(session, store=self.store, uids=self.claimed_uids)
+
+
+async def reconcile_terminal_publications(session, *, store, uids=None):
+    """Reclaim only explicit terminal claims, serializing with account erasure."""
+    from spectra_sherpa.app.models.model_artifact import ModelArtifact
+    from spectra_sherpa.app.models.model_publication import ModelPublication
+
+    query = select(ModelPublication.artifact_uid, ModelPublication.user_id).where(
+        ModelPublication.cleanup_requested.is_(True)
+    )
+    if uids is not None:
+        query = query.where(ModelPublication.artifact_uid.in_(uids))
+    candidates = list((await session.execute(query)).all())
+    for uid, user_id in candidates:
+        await session.rollback()
+        try:
+            await lock_storage_owner(session, user_id)
+        except ValueError:
+            await session.rollback()
+            continue  # Committed erasure owns its persisted plan.
+        claim = await session.scalar(
+            select(ModelPublication)
+            .where(
+                ModelPublication.artifact_uid == uid,
+                ModelPublication.cleanup_requested.is_(True),
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if claim is None:
+            continue
+        if await session.scalar(select(ModelArtifact.artifact_uid).where(ModelArtifact.artifact_uid == uid)):
+            continue  # Never delete a retained model, even after inconsistent recovery.
+        if claim.artifact_dir != store.artifact_directory(uid):
+            raise ValueError("Publication cleanup path disagrees with its owned artifact")
+        owned_path = Path(claim.artifact_dir).resolve()
+        live_paths = list(await session.scalars(select(ModelArtifact.artifact_dir)))
+        live_paths.extend(
+            await session.scalars(select(ModelPublication.artifact_dir).where(ModelPublication.artifact_uid != uid))
+        )
+        if any(
+            path == owned_path or path in owned_path.parents or owned_path in path.parents
+            for path in (
+                (Path(raw) if Path(raw).is_absolute() else store.models_dir.parent / raw).resolve()
+                for raw in live_paths
+            )
+        ):
+            logger.warning("Terminal publication cleanup blocked by overlapping retained custody: %s", uid)
+            continue
+        await await_file_writer(store.delete, uid)
+        await session.delete(claim)
+        await session.commit()
 
 
 class LoopBoundModelWriter:

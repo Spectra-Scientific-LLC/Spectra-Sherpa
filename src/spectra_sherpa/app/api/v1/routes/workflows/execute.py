@@ -369,6 +369,7 @@ async def execute_trial(
     """
     _enforce_demo_trial_execution_policy(payload, current_user.id)
     effective_nodes = _effective_trial_nodes(payload)
+    trial_writer = None
     preloaded_datasets = await validate_workflow_execution_access(
         effective_nodes,
         payload.initial_data,
@@ -380,14 +381,14 @@ async def execute_trial(
         # Build a fresh DAG executor for this trial (no caching)
         from spectra_sherpa.app.services.execution_runtime import build_application_execution_runtime
 
-        executor = DAGExecutor(
-            runtime=build_application_execution_runtime(
-                preloaded_datasets=preloaded_datasets,
-                allowed_model_artifact_uids=admitted_model_artifact_ids(effective_nodes, payload.initial_data),
-                model_owner_session=session,
-                model_owner_user_id=current_user.id,
-            )
+        runtime = build_application_execution_runtime(
+            preloaded_datasets=preloaded_datasets,
+            allowed_model_artifact_uids=admitted_model_artifact_ids(effective_nodes, payload.initial_data),
+            model_owner_session=session,
+            model_owner_user_id=current_user.id,
         )
+        trial_writer = runtime.model_artifact_writer
+        executor = DAGExecutor(runtime=runtime)
 
         logger.debug(
             "[Trial Execution] Target node: %s (type: %s)", payload.target_node_id, type(payload.target_node_id)
@@ -475,6 +476,14 @@ async def execute_trial(
             result_presentation=None,
             error=str(e),
         )
+    finally:
+        if trial_writer is not None:
+            try:
+                # Owned writer cancellation drains any publishing thread before
+                # execute_node exits; no time-based assumption permits cleanup.
+                await trial_writer.discard_trial()
+            except Exception:
+                logger.exception("Trial publication cleanup remains pending")
 
 
 @router.post("/{workflow_id}/preflight", response_model=WorkflowValidationResponse)

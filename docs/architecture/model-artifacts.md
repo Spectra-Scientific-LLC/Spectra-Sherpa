@@ -59,6 +59,15 @@ execution fails or times out, and transfers to the completed model record in the
 same database transaction that registers the artifact. Startup cleanup must not
 discard a claimed file merely because it is old.
 
+Detailed View's Run Trial results are temporary (the Inspector's Run Node can
+retain a run and model). After temporary execution and file writers
+have stopped, the owner records terminal cleanup intent, removes the temporary
+model directory, and releases its claim. If cleanup is interrupted, startup
+retries that explicit intent. A retained model or overlapping live storage
+reference prevents deletion. A failed claim does not grant cleanup authority.
+An unmarked claim from an uncertain run or hard process crash stays protected
+for reconciliation or account erasure; age alone cannot establish completion.
+
 Publication rechecks the live owner under a short database lock; fitting does
 not hold that lock. Cancellation waits for the actual file writer to stop before
 releasing custody. File publication uses separate bounded thread capacity from

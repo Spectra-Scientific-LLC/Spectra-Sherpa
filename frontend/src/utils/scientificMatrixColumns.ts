@@ -11,8 +11,9 @@ export function scientificMatrixRowLabels(output: NodeOutput | null | undefined,
   const candidate = output?.descriptor?.dimensions?.[0]?.labels ?? axis?.labels ??
     metadata.sample_labels ?? metadata.labels ?? diagnostics?.sample_labels;
   return Array.isArray(candidate) && candidate.length === rows &&
-    candidate.every(label => typeof label === "string" && label.trim().length > 0)
-    ? candidate : [];
+    candidate.every(label => (typeof label === "string" && label.trim().length > 0) ||
+      (typeof label === "number" && Number.isFinite(label)))
+    ? candidate.map(String) : [];
 }
 
 /** Column identity shared by full tables, Quick Plot and CSV. Shape validates

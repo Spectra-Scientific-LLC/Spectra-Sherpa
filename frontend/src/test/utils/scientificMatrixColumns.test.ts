@@ -3,6 +3,14 @@ import { scientificMatrixColumns, scientificMatrixRowLabels } from "@/utils/scie
 import type { NodeOutput } from "@/utils/nodeOutput";
 
 describe("declared scientific matrix columns", () => {
+  it("normalizes finite numeric display labels without inventing sample identity", () => {
+    expect(scientificMatrixRowLabels({ metadata: { sample_labels: [101, 102] } } as NodeOutput, 2))
+      .toEqual(["101", "102"]);
+    for (const labels of [[NaN, 102], [Infinity, 102], [null, 102], ["", 102]]) {
+      expect(scientificMatrixRowLabels({ descriptor: { dimensions: [{ labels }] },
+        metadata: { sample_labels: ["stale A", "stale B"] } } as unknown as NodeOutput, 2)).toEqual([]);
+    }
+  });
   it("reads exact row-axis labels without borrowing similarly sized metadata", () => {
     const output = { data: [[1], [2]], metadata: { sample_labels: ["stale A", "stale B"] },
       presentation_value: { y_axis: { labels: ["Specimen 135", "Specimen 142"] } } } as NodeOutput;
