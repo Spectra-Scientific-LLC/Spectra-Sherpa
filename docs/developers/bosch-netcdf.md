@@ -6,33 +6,12 @@ In **Data → Upload**, add one or more `Day_*.nc` files and their shared
 `Process_data.nc` companion to the same named dataset. Prepare the alignment
 there before adding the dataset to My Dataset. Native files upload sequentially.
 
-In **My Dataset**, open the existing **Active dataset** disclosure. Its
-processing-step matrix renders retained Upload catalogs; the renderer has no
-network, upload, segmentation, portfolio-saving or workflow-creation behavior.
-Select wafer numbers explicitly by day and step. Hover or keyboard focus shows
-UTC start/end times, 1-based acquisition ranges and source/alignment evidence.
-Breaks are excluded; unavailable preparation and conditioning intervals are not
-invented. **Inspect selected wafer** uses the existing Data View to inspect the
-original acquisitions and protocol metadata independently of plot sampling.
-
-**Preview selection** uses the shared Comparison preview. Every plotted group
-is labeled by day, wafer and phase. Up to four original acquisitions per phase
-are shown without averaging; at most 50 wafer/step selections can be previewed.
-This bound does not redefine saved membership.
-
-Use the existing **Save dataset → Portfolio name → Save portfolio** controls.
-The shared saved list's **Show** restores a time-series selection and verifies
-that its source and process hashes match the prepared data. Immutable entries
-have no delete or overwrite action. The page's existing **Workflow** action
-opens the ordinary editor with canonical `data.portfolio_load` and
-`preprocess.portfolio_average` nodes bound to the saved receipt. The Average
-node exposes all three modes in its normal Inspector; subsequent smoothing,
-normalization, peak extraction and export are edited in Workflow.
-
-Ordinary dataset definitions, sample curation, comparison previews and analysis
-starter handoff keep their existing paths. A matrix selection must be saved
-before its Workflow handoff; changing it invalidates the displayed saved name.
-This extension does not refresh historical qualification evidence.
+My Dataset has been restored to its pre-BOSCH layout pending component-placement
+review. The matrix, recipe panels and OES-specific portfolio/Workflow wiring are
+not integrated there. The separate development prototype at `/preview/oes-v065`
+and canonical backend portfolio operations remain available for review.
+Upload still owns process-companion loading and segmentation. No v0.6.4 release
+or historical qualification evidence is changed.
 
 The native reader uses `h5py` and reads dictionary indices without CF masking/scaling. Small, unmodified CC BY 4.0 dictionaries are
 bundled with attribution and checksum validation, so dictionary files need not be uploaded. Metadata inventory lists the wafers before allocating a matrix;
@@ -80,8 +59,9 @@ My Dataset retrieves up to 20,000 acquisition labels within the existing 4 MiB t
 
 ## Experiment context and EPD scope
 
-My Dataset shows initial chamber preparation, conditioning surfaces and repeat
-counts, and the production lot recipe. The bundled catalog transcribes
+The retained experiment-context metadata describes initial chamber preparation,
+conditioning surfaces and repeat counts, and the production lot recipe. Its
+placement in My Dataset is pending review. The bundled catalog transcribes
 `Readme.pdf` (§1 and Figure 1) and `Lot_status.xlsx` from the Zenodo record.
 Lot-specific settings are assigned only after matching the measurement source's
 published checksum. For August 5 this is lot 7, three conditioning repetitions

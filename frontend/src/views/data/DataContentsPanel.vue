@@ -144,7 +144,7 @@
       <DataStorySection v-if="showDataStory" />
     </div>
 
-    <div v-else-if="!dataStore.fileInfo && !hasStructuredSelection" class="explore-empty">
+    <div v-else-if="!dataStore.fileInfo" class="explore-empty">
       <i class="pi pi-table"></i>
       <h3>No contents selected</h3>
       <p>
@@ -153,7 +153,7 @@
     </div>
 
     <details
-      v-if="(dataStore.fileInfo || hasStructuredSelection) && !dataStore.catalogDatasetInfo"
+      v-if="dataStore.fileInfo && !dataStore.catalogDatasetInfo"
       class="focused-dataset-details"
     >
       <summary>
@@ -196,8 +196,7 @@
           <slot name="source-collection" />
         </section>
 
-        <slot name="source-selection" />
-        <section v-if="dataStore.fileInfo" class="dataset-step" aria-label="Acquisition settings">
+        <section class="dataset-step" aria-label="Acquisition settings">
           <div class="essential-card-heading">
             <span class="essential-card-number">2</span>
             <div>
@@ -213,7 +212,6 @@
           <p v-else class="dataset-step-empty">
             No acquisition settings were retained for these files.
           </p>
-          <BoschExperimentContext :context="boschExperimentContext" />
           <section
             v-if="requiresDimensionProjection"
             class="dimension-projection-notice"
@@ -234,7 +232,7 @@
           </section>
         </section>
 
-        <section v-if="dataStore.fileInfo" class="dataset-step" aria-label="Sample details">
+        <section class="dataset-step" aria-label="Sample details">
           <div class="essential-card-heading">
             <span class="essential-card-number">3</span>
             <div>
@@ -457,7 +455,7 @@
           </div>
         </section>
 
-        <section v-if="dataStore.fileInfo" class="dataset-step" aria-label="Dataset metadata and quality">
+        <section class="dataset-step" aria-label="Dataset metadata and quality">
           <div class="essential-card-heading">
             <span class="essential-card-number">4</span>
             <h4 class="panel-title">Dataset metadata and quality</h4>
@@ -519,7 +517,7 @@
           <slot name="portfolio-definitions" />
         </section>
 
-        <details v-if="dataStore.fileInfo" class="technical-details">
+        <details class="technical-details">
           <summary>
             <i class="pi pi-shield" aria-hidden="true"></i> Technical details and provenance
           </summary>
@@ -672,7 +670,6 @@ import DisplayPreferencesSection from "@/views/settings/DisplayPreferencesSectio
 import { useDataStore, type CatalogDatasetInfo, type DataStoryPropertyStat } from "@/stores/data";
 import { useSherpaStore } from "@/stores/sherpa";
 import DataQualityPanel from "./DataQualityPanel.vue";
-import BoschExperimentContext from "./BoschExperimentContext.vue";
 import DatasetAnalysisReadinessCard from "./DatasetAnalysisReadinessCard.vue";
 import type { SampleInclusionState } from "@/utils/datasetCuration";
 import type { DataMatrixResponse } from "@/stores/data";
@@ -716,7 +713,6 @@ function clearSampleTableSaveError(): void {
 const props = withDefaults(
   defineProps<{
     scopeKey?: string;
-    hasStructuredSelection?: boolean;
     activeDatasetName?: string | null;
     selectedFileCount?: number | null;
     selectedFileNames?: string[];
@@ -732,7 +728,6 @@ const props = withDefaults(
   }>(),
   {
     scopeKey: "",
-    hasStructuredSelection: false,
     activeDatasetName: null,
     selectedFileCount: null,
     selectedFileNames: () => [],
@@ -1379,15 +1374,6 @@ const scientificContextRows = computed(() => {
   add("Storage order", history.storage_order);
   add("Scientific digest", manifest.scientific_digest);
   return rows;
-});
-
-const boschExperimentContext = computed(() => {
-  // Bounded wire previews keep admitted extras separate from display metadata.
-  const value = dataStore.fileInfo as unknown as Record<string, unknown> | null;
-  const metadata = value?.metadata;
-  const extra = value?.extra;
-  return (isRecord(metadata) ? metadata["bosch.experiment_context"] : null) ??
-    (isRecord(extra) ? extra["bosch.experiment_context"] : null);
 });
 
 const scientificDescription = computed(() => {

@@ -1173,7 +1173,7 @@
                   <span>{{ selectedExperimentName }}</span>
                 </div>
                 <PlotSelectionCheckbox
-                  v-if="selectedExperiment && !boschComparisonMode"
+                  v-if="selectedExperiment"
                   :checked="isExperimentFullyPlotted(selectedExperiment.id)"
                   :partial="isExperimentPartlyPlotted(selectedExperiment.id)"
                   :disabled="dataStore.experimentFiles.length === 0"
@@ -1297,39 +1297,12 @@
             </div>
           </div>
           <div class="dataset-preview-shell">
-            <div
-              v-if="pendingInspection && inspectionAssets.length > 1"
-              class="inspection-asset-selector"
-            >
-              <label for="inspection-scientific-asset">Scientific result</label>
-              <Dropdown
-                inputId="inspection-scientific-asset"
-                v-model="inspectionAssetId"
-                :options="inspectionAssets"
-                optionLabel="title"
-                optionValue="asset_id"
-                placeholder="Select the exact result to inspect"
-                class="w-full"
-                @change="onInspectionAssetChange"
-              >
-                <template #option="{ option }">
-                  <span
-                    >{{ option.title || option.asset_id }} · {{ option.asset_id }} ·
-                    {{ option.shape.join(" × ") }}</span
-                  >
-                </template>
-              </Dropdown>
-              <small
-                >The same exact result identity is used by preview, workflows, and model
-                application.</small
-              >
-            </div>
             <SelectedSpectraPlotPanel
-              :plot-datasets="[...plotDatasetSources, ...stepSelection.preview.value]"
-              :plot-dataset-count="new Set([...plotDatasetSources, ...stepSelection.preview.value].map(s => s.experimentId)).size"
-              :plot-file-count="boschComparisonMode ? [...plotDatasetSources, ...stepSelection.preview.value].reduce((n, s) => n + s.selectedFileCount, 0) : plottedFileCount"
-              :plot-datasets-loading="plotDatasetsLoading || stepSelection.previewLoading.value"
-              :plot-datasets-error="plotDatasetsError || stepSelection.previewError.value"
+              :plot-datasets="plotDatasetSources"
+              :plot-dataset-count="plottedExperimentIds.length"
+              :plot-file-count="plottedFileCount"
+              :plot-datasets-loading="plotDatasetsLoading"
+              :plot-datasets-error="plotDatasetsError"
               :active-experiment-id="dataStore.activeExperimentId"
               :active-file-name="
                 dataStore.activeFilePath ? extractFileName(dataStore.activeFilePath) : null
@@ -1341,12 +1314,11 @@
           <DataContentsPanel
             :scope-key="JSON.stringify(dataScopeIdentity())"
             :show-data-story="false"
-            :has-structured-selection="boschComparisonMode"
             display-settings-target="#active-dataset-display-settings"
             :active-dataset-name="selectedExperimentName"
             :selected-file-count="activeSelectedFileCount"
             :selected-file-names="activeSelectedFileNames"
-            :sample-inclusion-enabled="Boolean(datasetCurationSource) && (displaySampleInclusion.loading || displaySampleInclusion.rows.length > 0)"
+            :sample-inclusion-enabled="Boolean(datasetCurationSource)"
             :sample-inclusion="displaySampleInclusion"
             :matrix-asset-id="inspectionAssetId"
             :initial-analysis-target="requestedAnalysisSelection.target"
@@ -1359,18 +1331,6 @@
             @toggle-sample="curationPanel?.toggleSample($event)"
             @contents-ready="storyContentsReadyFor = $event"
           >
-            <template #source-selection>
-              <div v-if="boschComparisonMode" class="dataset-step">
-                <p v-if="stepSelection.loading.value" role="status">Loading saved processing steps…</p>
-                <p v-if="stepSelection.error.value" role="alert">{{ stepSelection.error.value }}</p>
-                <BoschStepMatrix :entries="stepSelection.entries.value" v-model="stepSelection.selections.value" />
-                <Button label="Preview selection" class="p-button-sm p-button-text"
-                  :disabled="!stepSelection.active.value || stepSelection.previewLoading.value"
-                  @click="stepSelection.compare" />
-                <Button label="Inspect selected wafer" class="p-button-sm p-button-text"
-                  :disabled="stepSelection.selections.value.length !== 1" @click="inspectStepWafer" />
-              </div>
-            </template>
             <template #source-collection>
               <CollectionDefinitionPanel
                 v-if="dataStore.activeExperimentId"
@@ -1432,24 +1392,18 @@
                     :loading="datasetViewBusy"
                     :disabled="
                       !newDatasetViewName.trim() ||
-                      (stepSelection.active.value ? (stepSelection.busy.value || stepWorkflowBusy) : !analysisSelectionHydrated ||
+                      !analysisSelectionHydrated ||
                       dataStore.fileInfoLoading ||
                       curationAction === 'mixed' ||
                       (!!curationAction && !curationReason.trim()) ||
                       (!curationAction &&
                         currentPortfolioView?.selection.schema_version ===
-                          'spectrasherpa-dataset-view/2'))
+                          'spectrasherpa-dataset-view/2')
                     "
                     @click="savePortfolio"
                   />
                 </div>
                 <ul class="dataset-view-list">
-                  <li v-for="portfolio in stepSelection.portfolios.value" :key="`steps-${portfolio.id}`">
-                    <span>{{ portfolio.name }}</span>
-                    <Button label="Show" class="p-button-sm p-button-text"
-                      :disabled="stepSelection.busy.value" @click="showStepPortfolio(portfolio)" />
-                    <small>Immutable</small>
-                  </li>
                   <li v-for="view in datasetViews" :key="view.id">
                     <span>{{ view.name }}</span>
                     <Button
@@ -1498,6 +1452,33 @@
               class="p-button-sm p-button-outlined"
               @click="reopenSelectedLibraryBasket"
             />
+          </div>
+          <div
+            v-if="pendingInspection && inspectionAssets.length > 1"
+            class="inspection-asset-selector"
+          >
+            <label for="inspection-scientific-asset">Scientific result</label>
+            <Dropdown
+              inputId="inspection-scientific-asset"
+              v-model="inspectionAssetId"
+              :options="inspectionAssets"
+              optionLabel="title"
+              optionValue="asset_id"
+              placeholder="Select the exact result to inspect"
+              class="w-full"
+              @change="onInspectionAssetChange"
+            >
+              <template #option="{ option }">
+                <span
+                  >{{ option.title || option.asset_id }} · {{ option.asset_id }} ·
+                  {{ option.shape.join(" × ") }}</span
+                >
+              </template>
+            </Dropdown>
+            <small
+              >The same exact result identity is used by preview, workflows, and model
+              application.</small
+            >
           </div>
           <div
             v-if="inspectionWarnings.length"
@@ -1678,9 +1659,6 @@ import PlotSelectionCheckbox from "@/components/data/PlotSelectionCheckbox.vue";
 import DataContentsPanel from "./DataContentsPanel.vue";
 import DataStoryCard from "./DataStoryCard.vue";
 import BoschStepComparison from "./BoschStepComparison.vue";
-import BoschStepMatrix from "./BoschStepMatrix.vue";
-import { useProcessingStepSelection, type StepPortfolio } from "./composables/useProcessingStepSelection";
-import type { components as ApiComponents } from "@/types/api/v1";
 import SelectedSpectraPlotPanel from "./SelectedSpectraPlotPanel.vue";
 import DatasetCurationPanel from "@/components/DatasetCurationPanel.vue";
 import { savedPortfolioInclusion, type CurationSource, type SampleInclusionState } from "@/utils/datasetCuration";
@@ -1873,8 +1851,6 @@ const currentPortfolioView = computed(() => {
 });
 const dataPortfolioName = computed(
   () =>
-    stepSelection.selectedPortfolio.value?.name ||
-    (stepSelection.active.value ? "Unsaved step selection" : null) ||
     currentPortfolioView.value?.name ||
     (selectedDatasetView.value ||
     Array.isArray(plotFileSelections.value[dataStore.activeExperimentId ?? -1])
@@ -2002,10 +1978,6 @@ async function prepareDatasetCurationSource(): Promise<void> {
   }
 }
 async function savePortfolio(): Promise<void> {
-  if (stepSelection.active.value) {
-    if (await stepSelection.save(newDatasetViewName.value.trim())) newDatasetViewName.value = "";
-    return;
-  }
   if (curationAction.value === "mixed") return;
   if (curationAction.value) {
     if (!curationReason.value.trim() || !newDatasetViewName.value.trim()) return;
@@ -2145,7 +2117,6 @@ async function saveDatasetView(): Promise<void> {
 }
 
 async function showDatasetView(view: DatasetView): Promise<void> {
-  stepSelection.clear();
   const experimentId = dataStore.activeExperimentId;
   const projectId = projectStore.currentProjectId;
   if (experimentId == null) return;
@@ -2208,7 +2179,6 @@ async function showDatasetView(view: DatasetView): Promise<void> {
 }
 
 async function showDefaultDatasetView(): Promise<void> {
-  stepSelection.clear();
   const experimentId = dataStore.activeExperimentId;
   const projectId = projectStore.currentProjectId;
   if (experimentId == null) return;
@@ -2266,12 +2236,11 @@ async function deleteDatasetView(view: DatasetView): Promise<void> {
   }));
 }
 
-const stepWorkflowBusy = ref(false);
 const workflowHandoffBusy = computed(
   () =>
     activeTab.value === TAB_MY_DATASET &&
     dataStore.activeExperimentId != null &&
-    (stepSelection.active.value ? (stepSelection.busy.value || stepWorkflowBusy.value) : (dataStore.fileInfoLoading || analysisChoice.value.readiness === null)),
+    (dataStore.fileInfoLoading || analysisChoice.value.readiness === null),
 );
 const workflowHandoffTitle = computed(() =>
   workflowHandoffBusy.value
@@ -2287,30 +2256,6 @@ const plottedExperimentIds = computed(() =>
     .map((experiment) => experiment.id),
 );
 const plotDatasetSources = ref<DatasetPlotSource[]>([]);
-const boschComparisonMode = computed(() => dataStore.experimentFiles.some(
-  file => /day_\d{4}_\d{2}_\d{2}.*\.nc$/i.test(file.file_path),
-));
-const stepExperimentIds = computed(() => [...new Set([...(dataStore.activeExperimentId == null ? [] : [dataStore.activeExperimentId]), ...plottedExperimentIds.value])].sort((a,b) => a-b));
-const stepSelection = useProcessingStepSelection(() => [...dataScopeIdentity(), stepExperimentIds.value.join(',')], () => projectStore.currentProjectId);
-watch(() => [boschComparisonMode.value, dataStore.activeExperimentId, projectStore.currentProjectId, stepExperimentIds.value.join(','), dataStore.experimentFiles] as const, () => {
-  if (boschComparisonMode.value && dataStore.activeExperimentId != null)
-    void stepSelection.load(stepExperimentIds.value, dataStore.experimentFiles, dataStore.activeExperimentId);
-}, { immediate: true });
-async function inspectStepWafer() {
-  const selected = stepSelection.selections.value[0];
-  const entry = stepSelection.entries.value.find(e => e.experimentId === selected?.experiment_id && e.file.id === selected?.file_id);
-  if (entry && selected) await inspectBoschAcquisitions(entry.file, selected.asset_id, selected.experiment_id);
-}
-async function showStepPortfolio(portfolio: StepPortfolio) {
-  const ids = [...new Set(portfolio.selection.partitions.map(p => p.experiment_id))];
-  const primary = dataStore.experiments.find(e => e.id === ids[0]);
-  if (!primary) { datasetViewError.value = "The saved portfolio source is unavailable in this project."; return; }
-  if (dataStore.activeExperimentId !== primary.id) await onExperimentSelect(primary);
-  for (const id of ids) setExperimentPlotSelection(id, null);
-  await nextTick();
-  await stepSelection.load(ids, dataStore.experimentFiles, primary.id);
-  await stepSelection.show(portfolio);
-}
 const plotDatasetsLoading = ref(false);
 const plotDatasetsError = ref<string | null>(null);
 const fileSampleLabelsByExperiment = ref<Record<number, Record<string, string[]>>>({});
@@ -4891,12 +4836,8 @@ async function inspectExperimentFile(
     return false;
   }
 
-  if (boschComparisonMode.value) {
-    await onInspectFile(file, { updateRoute: false, tabChoiceCurrent });
-  } else {
-    await showExperimentContents(experimentId);
-  }
-  if (!isCurrent()) return false;
+  await showExperimentContents(experimentId);
+    if (!isCurrent()) return false;
   dataStore.activateFile(file.id, file.file_path);
   activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
   return true;
@@ -5364,27 +5305,6 @@ function workflowSelectionForExperiment(experimentId: number): PlotFileSelection
 }
 
 async function goToWorkflow(addNode?: string) {
-  if (stepSelection.active.value) {
-    const portfolio = stepSelection.selectedPortfolio.value;
-    if (!portfolio) { toast.add({severity:"warn", summary:"Save portfolio first", detail:"Save the selected processing steps before opening Workflow.", life:5000}); return; }
-    if (stepWorkflowBusy.value) return;
-    const ticket = workflowHandoffRequests.begin();
-    stepWorkflowBusy.value = true;
-    const pin = {project_id: portfolio.project_id, portfolio_id: portfolio.id, selection_sha256: portfolio.selection_sha256};
-    try {
-      const body: ApiComponents['schemas']['WorkflowCreate'] = {
-        name: portfolio.name, project_id: portfolio.project_id,
-        nodes: [
-          {node_id:'load',node_type:'data.portfolio_load',label:portfolio.name,parameters:pin,position_x:100,position_y:150},
-          {node_id:'average',node_type:'preprocess.portfolio_average',label:'Average',parameters:{...pin,mode:'step',transition_trim_seconds:0},position_x:360,position_y:150},
-        ], edges:[{from_node_id:'load',to_node_id:'average',from_output:'default',to_input:'default'}],
-      };
-      const result = await api.post<ApiComponents['schemas']['WorkflowDetail']>('/workflows',body,{signal:ticket.signal});
-      if (ticket.isCurrent() && stepSelection.selectedPortfolio.value?.selection_sha256 === portfolio.selection_sha256) await router.push({path:'/workflow',query:{project_id:portfolio.project_id,workflow_id:result.data.id}});
-    } catch (e) { if(ticket.isCurrent()) toast.add({severity:'error',summary:'Workflow could not be created',detail:getErrorMessage(e,'Could not bind saved portfolio'),life:6000}); }
-    finally { stepWorkflowBusy.value = false; }
-    return;
-  }
   if (projectStore.currentProjectId == null) {
     toast.add({ severity: "warn", summary: "Select a project", detail: "Choose a project before opening this dataset in Workflow. Your current selection has not been changed.", life: 6000 });
     return;
@@ -5892,15 +5812,10 @@ async function loadPlottedDatasets(
     plotDatasetsLoading.value = false;
     return;
   }
-  if (boschComparisonMode.value) {
-    await stepSelection.ready();
-    if (!ticket.isCurrent()) return;
-  }
   const selected = plottedExperimentIds.value
-    .filter((id) => !(boschComparisonMode.value && id === dataStore.activeExperimentId) && !stepSelection.sourceExperimentIds.value.includes(id))
     .map((id) => dataStore.experiments.find((experiment) => experiment.id === id))
     .filter((experiment): experiment is ExperimentSummary => Boolean(experiment));
-  if (plottedExperimentIds.value.some(id => !dataStore.experiments.some(e => e.id === id))) {
+  if (selected.length !== plottedExperimentIds.value.length) {
     plotFileSelections.value = Object.fromEntries(
       selected.map((experiment) => [experiment.id, plotFileSelections.value[experiment.id]]),
     );
@@ -6208,11 +6123,6 @@ async function showExperimentContents(
   preferredAssetId: string | null = null,
   exactSelection = false,
 ) {
-  if (boschComparisonMode.value && experimentId === dataStore.activeExperimentId) {
-    inspection.contents.invalidate();
-    dataStore.clearInspection();
-    return;
-  }
   exactInspectionSelection.value = exactSelection;
   const ticket = inspection.contents.begin();
   dataStore.clearCatalogExploration();
@@ -6819,21 +6729,6 @@ async function onDeleteExperiment() {
   }
 }
 
-async function inspectBoschAcquisitions(file: ExperimentFile, assetId: string, experimentId = dataStore.activeExperimentId) {
-  if (experimentId == null) return;
-  inspectionAssetId.value = assetId;
-  const ticket = inspection.selection.begin();
-  try {
-    await dataStore.inspectFile(file.id, file.file_path, experimentId, assetId);
-    if (!ticket.isCurrent()) return;
-    cacheFileSampleLabels(experimentId, dataStore.fileInfo, extractFileName(file.file_path));
-  } catch (reason) {
-    if (!ticket.isCurrent()) return;
-    toast.add({ severity: "error", summary: "Acquisitions unavailable",
-      detail: getErrorMessage(reason, "Could not inspect the selected wafer"), life: 5000 });
-  }
-}
-
 async function onInspectFile(file: ExperimentFile, options: { updateRoute?: boolean; tabChoiceCurrent?: () => boolean } = {}) {
   const ticket = inspection.focus.begin();
   const tabChoiceCurrent = options.tabChoiceCurrent ?? navigation.captureTabChoice();
@@ -7007,9 +6902,6 @@ function sampleLabelsForFile(file: ExperimentFile): string[] {
 }
 
 async function ensureFileSampleLabels(experimentId: number): Promise<void> {
-  // Multi-wafer files have no implicit whole-file observation matrix. Labels are
-  // cached by the exact wafer inspection, never by a default collection read.
-  if (boschComparisonMode.value && experimentId === dataStore.activeExperimentId) return;
   const files = dataStore.activeExperimentId === experimentId ? dataStore.experimentFiles : [];
   const cached = fileSampleLabelsByExperiment.value[experimentId] ?? {};
   if (
