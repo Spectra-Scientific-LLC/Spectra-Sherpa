@@ -249,6 +249,7 @@ const WorkflowToolbarStub = defineComponent({
   },
 });
 
+const inspectorExecute = vi.fn();
 const WorkflowInspectorStub = defineComponent({
   name: "WorkflowInspector",
   props: {
@@ -256,7 +257,8 @@ const WorkflowInspectorStub = defineComponent({
     executionDisabledReason: { type: String, default: "" },
   },
   emits: ["open-trial", "close"],
-  setup(props, { attrs }) {
+  setup(props, { attrs, expose }) {
+    expose({ executeNode: inspectorExecute });
     onUnmounted(() => {
       lifecycleCounts.inspectorUnmounts += 1;
     });
@@ -370,6 +372,25 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
       expect(wrapper.getComponent({ name: "WorkflowCanvas" }).attributes("inert")).toBeUndefined();
     } finally {
       workbookStore.isLoading = false;
+      wrapper.unmount();
+    }
+  });
+  it("routes the canvas Run Node command through the selected Inspector's validation", async () => {
+    workbookStore.activeIndex = 0;
+    workflowStore.nodes = [{ id: "pca_1", type: "model.pca", x: 0, y: 0, params: { n_components: 3 } }];
+    const wrapper = await mountBuilder();
+    try {
+      await flushPromises();
+      inspectorExecute.mockClear();
+      workflowStore.executeNode.mockClear();
+      wrapper.getComponent({ name: "WorkflowCanvas" }).vm.$emit("run-node", "pca_1");
+      await flushPromises();
+      expect(inspectorExecute).toHaveBeenCalledOnce();
+      expect(workflowStore.executeNode).not.toHaveBeenCalled();
+      wrapper.getComponent({ name: "WorkflowCanvas" }).vm.$emit("run-node", "missing-node");
+      await flushPromises();
+      expect(inspectorExecute).toHaveBeenCalledOnce();
+    } finally {
       wrapper.unmount();
     }
   });

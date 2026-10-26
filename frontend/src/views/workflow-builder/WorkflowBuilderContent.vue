@@ -355,6 +355,7 @@
            third-row that appeared with the old v-show="!isTrialTabActive" approach. -->
       <ResizableInspectorPanel v-show="inspectorOpen && !isTrialTabActive" v-model="inspectorScale">
       <WorkflowInspector
+        ref="inspectorRef"
         v-show="inspectorOpen && !isTrialTabActive"
         :class="{ 'trial-hidden': isTrialTabActive }"
         :selected-node="selectedNode"
@@ -961,8 +962,14 @@ const onDuplicateSelection = () => {
   executePaste(temporaryPayload, true);
 };
 
-const onRunNode = async (_nodeId: string) => {
-  // Single-node execution via context menu — not yet wired to API
+const inspectorRef = ref<InstanceType<typeof WorkflowInspector> | null>(null);
+const onRunNode = async (nodeId: string) => {
+  const node = workflowStore.nodes.find((candidate) => candidate.id === nodeId);
+  if (!node) return;
+  onNodeSelect(node);
+  await nextTick();
+  // Use the Inspector's draft and contextual validation, not a second runner.
+  if (selectedNode.value?.id === nodeId) inspectorRef.value?.executeNode();
 };
 
 const onViewOutput = (nodeId: string) => {

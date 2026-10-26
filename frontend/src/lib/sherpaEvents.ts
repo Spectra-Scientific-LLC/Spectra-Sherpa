@@ -1,3 +1,5 @@
+import { newIdempotencyKey } from "@/utils/idempotency";
+
 export interface SherpaEventPayload {
   type: string;
   request_id?: string | null;
@@ -45,7 +47,7 @@ const subscriptions = new Map<number, SherpaSubscription>();
 let nextSubscriptionId = 1;
 
 export function createSherpaRequestId(): string {
-  return crypto.randomUUID();
+  return newIdempotencyKey();
 }
 
 export function dispatchSherpaEvent(payload: SherpaEventPayload): void {

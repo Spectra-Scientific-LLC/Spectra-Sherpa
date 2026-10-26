@@ -30,6 +30,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { newIdempotencyKey } from "@/utils/idempotency";
 import MethodHelp from "@/components/MethodHelp.vue";
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import api from "@/api/client";
@@ -37,7 +38,7 @@ const props = defineProps<{ watchId: number }>();
 type History = {snapshot: Record<string, any>; events: Record<string, any>[]; last_event_digest: string | null; application_refusal: string | null};
 const history = ref<History | null>(null);
 const kind = ref("control");
-const eventId = ref(crypto.randomUUID());
+const eventId = ref(newIdempotencyKey());
 const occurredAt = ref("");
 const payloadText = ref("");
 const error = ref("");
@@ -63,7 +64,7 @@ async function submit() {
       occurred_at: occurredAt.value.trim(), expected_last_event_digest: history.value.last_event_digest,
       payload: JSON.parse(payloadText.value)});
     if (current !== generation) return;
-    eventId.value = crypto.randomUUID(); occurredAt.value = payloadText.value = "";
+    eventId.value = newIdempotencyKey(); occurredAt.value = payloadText.value = "";
     await refresh();
   } catch (e) { if (current === generation) failure(e); }
   finally { if (current === generation) busy.value = false; }
@@ -74,7 +75,7 @@ function download() {
   const a = document.createElement("a"); a.href = url; a.download = `qc-watch-${props.watchId}.json`; a.click(); URL.revokeObjectURL(url);
 }
 watch(() => props.watchId, () => { generation += 1; request += 1; history.value = null; error.value = ""; busy.value = false;
-  eventId.value = crypto.randomUUID(); occurredAt.value = payloadText.value = ""; kind.value = "control"; void refresh(); }, {immediate: true});
+  eventId.value = newIdempotencyKey(); occurredAt.value = payloadText.value = ""; kind.value = "control"; void refresh(); }, {immediate: true});
 </script>
 <style scoped>
 label { display: block; margin: .75rem 0; } textarea { display: block; width: 100%; } pre { white-space: pre-wrap; max-height: 24rem; overflow: auto; }

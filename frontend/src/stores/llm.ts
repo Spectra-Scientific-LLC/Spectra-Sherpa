@@ -13,6 +13,7 @@ import { useProjectStore } from "@/stores/project";
 import { buildAuthMessage, buildWsUrl, resolveWsPolicyClose, withCredentials } from "@/utils/ws";
 import { readStoredApiKey } from "@/utils/authStorage";
 import { createMessageId } from "@/utils/messageIds";
+import { newIdempotencyKey } from "@/utils/idempotency";
 
 const STORAGE_KEY = "llm_conversations";
 const RECORD_STORAGE_KEY = "llm_conversation_records";
@@ -788,7 +789,7 @@ export const useLlmStore = defineStore("llm", () => {
     }
 
     loading.value = true;
-    const requestId = crypto.randomUUID();
+    const requestId = newIdempotencyKey();
     activeChatRequestId = requestId;
     analysisStatus.value = "Analysis in progress. Hit stop to interrupt";
     if (chatDeadline) clearTimeout(chatDeadline);

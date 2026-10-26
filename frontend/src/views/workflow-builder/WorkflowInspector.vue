@@ -3506,6 +3506,8 @@ const {
   execute: (id) => emit("execute-node", id),
 });
 
+defineExpose({ executeNode });
+
 // string_list parameters store an exact list; the editor presents it as one
 // comma-separated line and parses it back the same way.
 const stringListText = (value: unknown): string =>

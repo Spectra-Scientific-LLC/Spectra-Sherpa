@@ -1,3 +1,5 @@
+import { escapeCsvValue } from "./download";
+
 export interface ValidationLedgerRow {
   sample: string;
   target?: string;
@@ -93,13 +95,11 @@ export function extractValidationLedgerRows(value: unknown): ValidationLedgerRow
 
 export function validationLedgerCsv(rows: ValidationLedgerRow[]): string {
   const columns = ["sample", "target", "reference", "predicted", "residual", "correct", "role"] as const;
-  const quote = (value: unknown): string => {
-    const text = value == null ? "" : String(value);
-    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  };
   return [
     columns.join(","),
-    ...rows.map((row) => columns.map((column) => quote(row[column])).join(",")),
+    ...rows.map((row) => columns.map((column) => escapeCsvValue(
+      row[column] == null ? null : String(row[column]),
+    )).join(",")),
   ].join("\n");
 }
 

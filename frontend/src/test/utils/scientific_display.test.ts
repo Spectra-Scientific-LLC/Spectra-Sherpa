@@ -72,7 +72,10 @@ describe("scientific display helpers", () => {
     expect(columnDecimals([0.01234, 0.5])).toBe(4);
     expect(columnDecimals([1450.2, 1200.5], 5)).toBe(1);
     expect(formatMeasurement(99.82868069410324, 2)).toBe("99.83");
-    expect(formatMeasurement(-0.0004, 2)).toBe("0.00");
+    expect(formatMeasurement(-0.0004, 2)).toBe("-4.000e-4");
+    expect(formatMeasurement(1e-12, columnDecimals([1e-12]))).toBe("1.000e-12");
+    expect(formatMeasurement(0, 2)).toBe("0.00");
+    expect(formatMeasurement(-0, 2)).toBe("0.00");
     expect(formatMeasurement("Carbon dioxide", 2)).toBe("Carbon dioxide");
   });
 
