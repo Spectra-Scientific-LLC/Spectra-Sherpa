@@ -8505,6 +8505,13 @@
             ],
             "title": "Format Version"
           },
+          "partition_bytes": {
+            "default": 0,
+            "description": "Additional checksummed partition storage bytes",
+            "minimum": 0.0,
+            "title": "Partition Bytes",
+            "type": "integer"
+          },
           "reason": {
             "anyOf": [
               {

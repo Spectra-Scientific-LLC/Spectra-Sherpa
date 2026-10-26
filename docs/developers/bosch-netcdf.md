@@ -133,8 +133,26 @@ as rows and date/wafer/step/phase/cycle identity in column labels. Missing peaks
 export as blank cells, distinct from measured zero. The CSV is a verified
 canonical ExportArtifact downloadable through the workflow Inspector.
 
-Large averaged or smoothed arrays may exceed the existing persisted-result
-budget even when execution and final CSV export succeed. The local review
-workflow does not raise that budget or claim managed-runtime qualification.
-Release qualification and the older SDK example's sample-table admission remain
-separate checks before promoting this draft feature.
+Large finite two-dimensional spectral outputs are retained as bounded, lossless
+float64 byte-shuffled zlib partitions, each protected by the existing SHA-256
+content-addressed store. The manifest binds every partition and records its
+additional storage bytes. Large JSON outputs also use bounded, lossless compressed
+envelopes; existing uncompressed retained files remain readable. Original sample
+identity, coordinates, provenance and
+values survive reload. Garbage collection retains manifest children; partial
+runs charge them against the same quota. There is no increase to the 16 MiB
+per-file or 64 MiB per-run storage limit. Partitioned datasets have a separate
+16-million-value decoded bound. HTTP inspection uses the canonical bounded
+preview and owner-scoped dataset handle, not an unlimited JSON response.
+
+The real two-day cycle-phase workflow retains all three 598 × 3,648 intermediate
+arrays and its peak outputs. Larger selections can still exhaust the configured
+quota and are reported explicitly. Missing peak detections remain NaN internally
+and null in retained JSON (declared reduced evidence), then blank in CSV; this is
+distinct from missing retention or lost acquisitions.
+
+The standalone example uses the canonical local executor's named deployment
+admission to retain native acquisition annotations. It does not strip the sample
+table or widen the managed spectral capability. Shared runtime qualification
+identities remain unchanged. This draft remains local review work for v0.6.5;
+passing public tests does not qualify new nodes for managed execution.

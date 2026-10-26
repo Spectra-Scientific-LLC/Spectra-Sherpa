@@ -621,7 +621,9 @@ def test_supplied_synthetic_pca_state_retains_complete_diagnostic_evidence():
     evidence = RunEvidence.model_validate(retention.retain_run_outputs(1, {"pca": result.outputs}, {}))
     retained = evidence.outputs["pca"]["diagnostic_state"]
     assert retained.state == "exact", retained.reason
-    assert retained.byte_count > 8 * 1024 * 1024
+    decoded_bytes = len(json.dumps(retention.read_output(1, retained)).encode())
+    assert decoded_bytes > 8 * 1024 * 1024
+    assert retained.byte_count < decoded_bytes
     reopened = retention.read_output(1, retained)
     assert reopened["T2"] == result.outputs["diagnostic_state"]["T2"]
     assert reopened["Q"] == result.outputs["diagnostic_state"]["Q"]

@@ -7,6 +7,7 @@ uses a grace period and retained database references, including failed runs.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import logging
@@ -15,6 +16,7 @@ import os
 import shutil
 import tempfile
 import time
+import zlib
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -207,6 +209,21 @@ def retain_output(
     payload = json.dumps(
         {"format_version": FORMAT_VERSION, "value": value}, ensure_ascii=True, allow_nan=False, separators=(",", ":")
     ).encode()
+    if len(payload) > OUTPUT_BYTES_LIMIT:
+        raise ValueError("Output exceeds the configured retained output byte limit")
+    if len(payload) > 1024 * 1024:
+        # Lossless envelope compression preserves the same decoded file bound.
+        payload = json.dumps(
+            {
+                "format_version": FORMAT_VERSION,
+                "compressed_envelope": {
+                    "codec": "zlib-json/1",
+                    "raw_bytes": len(payload),
+                    "data": base64.b64encode(zlib.compress(payload)).decode("ascii"),
+                },
+            },
+            separators=(",", ":"),
+        ).encode()
     if len(payload) > min(byte_limit, OUTPUT_BYTES_LIMIT):
         raise ValueError("Output exceeds the configured retained output/run byte limit")
     digest = hashlib.sha256(payload).hexdigest()
@@ -268,7 +285,9 @@ def retain_run_outputs(
 
     prior = RunEvidence.model_validate(previous) if previous else None
     inventory = prior.outputs if prior else {}
-    stored_bytes = sum(item.byte_count or 0 for ports in inventory.values() for item in ports.values())
+    stored_bytes = sum(
+        (item.byte_count or 0) + item.partition_bytes for ports in inventory.values() for item in ports.values()
+    )
     # Small provenance records take precedence over large numerical outputs.
     entries = {key: results[key] for key in ("__workflow__", "__application__") if key in results}
     if "__application__" in entries:
@@ -304,6 +323,17 @@ def retain_run_outputs(
             try:
                 if stored_bytes >= RUN_BYTES_LIMIT:
                     raise ValueError("Run exceeds the configured retained-output budget")
+                from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+                if isinstance(value, SherpaDataset) and value.ndim == 2 and value.X.size > 500_000:
+                    from spectra_sherpa.app.services.partitioned_run_output import retain_dataset
+
+                    item, bytes_used = retain_dataset(
+                        user_id, value, role=port, byte_limit=RUN_BYTES_LIMIT - stored_bytes
+                    )
+                    inventory[node_id][port] = item
+                    stored_bytes += bytes_used
+                    continue
                 admit_retained_value(value)
                 # Typed evaluations and scalar/date outputs use the same API
                 # serializer as datasets; a second type allowlist drops valid
@@ -331,7 +361,7 @@ def retain_run_outputs(
     ).model_dump()
 
 
-def read_output(user_id: int, evidence: OutputEvidence) -> Any:
+def read_output(user_id: int, evidence: OutputEvidence, *, expand_partitions: bool = True) -> Any:
     if evidence.storage != "file" or evidence.sha256 is None:
         raise FileNotFoundError(evidence.reason or "This historical output was not retained.")
     path = _user_directory(user_id) / f"{evidence.sha256}.json"
@@ -345,15 +375,58 @@ def read_output(user_id: int, evidence: OutputEvidence) -> Any:
     envelope = json.loads(payload)
     if not isinstance(envelope, dict) or envelope.get("format_version") != FORMAT_VERSION:
         raise ValueError("Unsupported retained output format")
+    if "compressed_envelope" in envelope:
+        packed = envelope["compressed_envelope"]
+        size = packed.get("raw_bytes")
+        if packed.get("codec") != "zlib-json/1" or type(size) is not int or not 0 < size <= FORMAT_OUTPUT_BYTES_LIMIT:
+            raise ValueError("Invalid compressed output bounds")
+        decoder = zlib.decompressobj()
+        raw = decoder.decompress(base64.b64decode(packed["data"], validate=True), size + 1)
+        if len(raw) != size or not decoder.eof or decoder.unused_data or decoder.unconsumed_tail:
+            raise ValueError("Compressed output exceeds decoded bounds")
+        envelope = json.loads(raw)
+        if not isinstance(envelope, dict) or envelope.get("format_version") != FORMAT_VERSION:
+            raise ValueError("Invalid compressed output envelope")
     if "value" not in envelope:
         raise ValueError("Retained output has no value")
-    return envelope["value"]
+    value = envelope["value"]
+    from spectra_sherpa.app.services.partitioned_run_output import SCHEMA, expand_dataset
+
+    if isinstance(value, dict) and value.get("schema") == SCHEMA:
+        partitions = value.get("partitions", [])
+        if not isinstance(partitions, list) or not 1 <= len(partitions) <= 1024:
+            raise ValueError("Invalid retained partition inventory")
+        children = [OutputEvidence.model_validate(p["evidence"]) for p in partitions]
+        if any(child.partition_bytes for child in children):
+            raise ValueError("Nested retention manifests are not supported")
+        if sum(child.byte_count or 0 for child in children) != evidence.partition_bytes:
+            raise ValueError("Retained partition storage size mismatch")
+        if expand_partitions:
+            return expand_dataset(user_id, value)
+    return value
 
 
 def prune_unreferenced_outputs(user_id: int, retained_digests: set[str], *, grace_seconds: int = 86400) -> int:
     """Explicit maintenance only; callers must inventory all retained user runs."""
     if grace_seconds < 86400:
         raise ValueError("Run-output cleanup requires at least a 24-hour finalization grace period")
+    # Retain manifest children as well as directly referenced output files.
+    from spectra_sherpa.app.services.partitioned_run_output import SCHEMA
+
+    retained_digests = set(retained_digests)
+    for digest in tuple(retained_digests):
+        if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+            raise ValueError("Invalid retained digest")
+        path = _user_directory(user_id) / f"{digest}.json"
+        if path.is_file() and not path.is_symlink() and path.stat().st_size <= FORMAT_OUTPUT_BYTES_LIMIT:
+            raw = path.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != digest:
+                raise ValueError("Retained manifest checksum mismatch")
+            value = json.loads(raw).get("value")
+            if isinstance(value, dict) and value.get("schema") == SCHEMA:
+                retained_digests.update(
+                    OutputEvidence.model_validate(p["evidence"]).sha256 for p in value["partitions"]
+                )
     cutoff = time.time() - grace_seconds
     removed = 0
     directory = _user_directory(user_id)

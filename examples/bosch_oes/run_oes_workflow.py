@@ -7,6 +7,7 @@ paths are explicit. No download, source registration or phase inference occurs.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import csv
 import json
 from pathlib import Path
@@ -107,8 +108,23 @@ def run_pipeline(
         limits=ParserLimits(max_source_bytes=1024**3),
     )
     workflow = build_oes_dag()
-    execution = ss.runtime.execute_workflow(workflow, deployment_inputs={"bosch-oes-stream": dataset})
-    rows = execution.output("peak_finding", "peaks")["data"]
+    # Native acquisition annotations are not a managed spectral capability.
+    # Use the canonical local executor's named deployment admission, retaining
+    # the complete typed sample table instead of stripping it for SDK transport.
+    from spectra_sherpa.app.services.dag.executor import DAGExecutor, WorkflowEdge, WorkflowNode
+
+    executor = DAGExecutor()
+    for node in workflow.payload["nodes"]:
+        executor.add_node(WorkflowNode(node["node_id"], node["node_type"], node["parameters"]))
+    for edge in workflow.payload["edges"]:
+        executor.add_edge(
+            WorkflowEdge(
+                edge["from_node_id"], edge["to_node_id"], from_output=edge["from_output"], to_input=edge["to_input"]
+            )
+        )
+    executor.inject_deployment_input("oes_input", dataset, stream_name="bosch-oes-stream")
+    execution = asyncio.run(executor.execute())
+    rows = execution["peak_finding"]["peaks"]["data"]
     analyzer = TransitionAnalyzer(reference_csv) if reference_csv else None
     write_peak_csv(output, rows, analyzer)
     return {

@@ -999,6 +999,12 @@ async def get_retained_run_output(
         raise HTTPException(status_code=410, detail=item.reason or "Output was not retained.")
     try:
         value = await to_thread(read_output, current_user.id, item)
+        if item.partition_bytes:
+            # Durable evidence remains exact; HTTP uses the existing bounded
+            # dataset projection and owner-scoped handle for large matrices.
+            from spectra_sherpa.app.services.partitioned_run_output import api_projection
+
+            value = await to_thread(api_projection, value, current_user.id)
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=410, detail="Retained output is missing; restore the run-output volume from backup."

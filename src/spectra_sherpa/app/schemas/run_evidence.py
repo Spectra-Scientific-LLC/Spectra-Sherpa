@@ -15,6 +15,7 @@ class OutputEvidence(BaseModel):
     sha256: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")
     byte_count: int | None = Field(None, ge=0)
     format_version: Literal[1] | None = None
+    partition_bytes: int = Field(0, ge=0, description="Additional checksummed partition storage bytes")
 
     @model_validator(mode="after")
     def require_explanation(self):

@@ -7394,6 +7394,12 @@ export interface components {
             byte_count?: number | null;
             /** Format Version */
             format_version?: 1 | null;
+            /**
+             * Partition Bytes
+             * @description Additional checksummed partition storage bytes
+             * @default 0
+             */
+            partition_bytes?: number;
             /** Reason */
             reason?: string | null;
             /** Role */
