@@ -29,7 +29,6 @@ from spectra_sherpa.app.api.deps import (
     release_demo_upload_quota_reservation_if_needed,
     reserve_demo_upload_quota_or_429,
 )
-from spectra_sherpa.app.api.v1.routes._http_utils import scientific_asset_warnings
 from spectra_sherpa.app.contracts.hot_storage import get_hot_storage_checker
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
@@ -345,11 +344,11 @@ async def _staged_upload_response(
         if isinstance(assignment, dict) and isinstance(assignment.get("column"), str):
             suggested_overrides["assignment_column"] = assignment["column"]
 
-    from spectra_sherpa.io import ingest
+    from spectra_sherpa.io import inspect_assets
 
     try:
         ingested = await asyncio.to_thread(
-            ingest,
+            inspect_assets,
             saved_path,
             parser_options=parser_options_for_prepared_data(saved_path.name, suggested_overrides),
         )
@@ -365,21 +364,7 @@ async def _staged_upload_response(
         "suggested_overrides": suggested_overrides,
         "format_id": ingested.format_id,
         "variant": ingested.variant,
-        "assets": [
-            {
-                "asset_id": asset.asset_id,
-                "title": asset.dataset.title,
-                "shape": list(asset.dataset.shape),
-                "dimension_roles": list(asset.dimension_roles),
-                "data_role": asset.dataset.data_role,
-                "x_title": _optional_text(asset.dataset.feature_axis.title),
-                "x_units": _optional_text(asset.dataset.feature_axis.units),
-                "data_quantity": _optional_text(asset.dataset.domain.data_quantity),
-                "value_units": _optional_text(asset.dataset.units),
-                "warnings": scientific_asset_warnings(ingested.warnings, asset.warnings),
-            }
-            for asset in ingested.assets
-        ],
+        "assets": list(ingested.assets),
     }
 
 
@@ -1069,7 +1054,9 @@ def _file_as_sherpa(
     registered = _registered_reference_projection(path, asset_id=asset_id)
     if registered is not None:
         return apply_dataset_prepared_data_overrides(registered[0], prepared_overrides or {})
-    result = ingest(path, parser_options=parser_options_for_prepared_data(path.name, prepared_overrides))
+    result = ingest(
+        path, parser_options=parser_options_for_prepared_data(path.name, prepared_overrides), asset_id=asset_id
+    )
     dataset = select_asset(result, asset_id=asset_id).dataset
     return apply_dataset_prepared_data_overrides(dataset, prepared_overrides or {})
 
@@ -1097,7 +1084,9 @@ def _file_as_collection_member(
             prepared_data_sha256=prepared_data_digest(prepared_overrides),
             asset_id=projection_id,
         )
-    result = ingest(path, parser_options=parser_options_for_prepared_data(path.name, prepared_overrides))
+    result = ingest(
+        path, parser_options=parser_options_for_prepared_data(path.name, prepared_overrides), asset_id=asset_id
+    )
     if len(result.source_members) != 1:
         raise ValueError(f"Collection member {file_name!r} must consume exactly one source")
     selected_asset = select_asset(result, asset_id=asset_id)

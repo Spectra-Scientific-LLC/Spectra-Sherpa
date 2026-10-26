@@ -108,6 +108,7 @@ class TestGoldenDataLoading:
 
         plugins = {plugin.format_id: plugin for plugin in builtin_registry.plugins}
         assert set(plugins) == {
+            "bosch-netcdf",
             "csv",
             "jcamp-dx",
             "matlab",

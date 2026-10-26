@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 from importlib import import_module
 from pathlib import Path
 from types import ModuleType
@@ -22,7 +23,7 @@ from spectra_sherpa.io.invariants import (
     INGESTION_INVARIANTS,
     assert_ingestion_invariants,
 )
-from spectra_sherpa.io.types import IngestionResult, ParserLimits, ProbeConfidence, ProbeResult
+from spectra_sherpa.io.types import IngestionInventory, IngestionResult, ParserLimits, ProbeConfidence, ProbeResult
 
 
 def _attach_ingestion_authority(result: IngestionResult) -> None:
@@ -124,17 +125,87 @@ class FormatRegistry:
             )
         return winners[0]
 
+    def source_limit_bytes(self, filename: str | Path, default: int) -> int:
+        """Bound large native containers without changing other format limits."""
+        return max(
+            [
+                default,
+                *(
+                    int(getattr(plugin, "max_source_bytes", default))
+                    for plugin in self._plugins
+                    if matches_filename(filename, extensions=plugin.extensions)
+                ),
+            ]
+        )
+
+    def _limits(self, path: str | Path, limits: ParserLimits | None) -> ParserLimits:
+        if limits is not None:
+            return limits
+        defaults = ParserLimits()
+        return replace(defaults, max_source_bytes=self.source_limit_bytes(path, defaults.max_source_bytes))
+
+    def inspect(
+        self,
+        path: str | Path,
+        *,
+        limits: ParserLimits | None = None,
+        parser_options: Mapping[str, str] | None = None,
+    ) -> IngestionInventory:
+        """Inventory assets; plugins may avoid decoding large multi-asset files."""
+        active = self._limits(path, limits)
+        candidates = [
+            plugin
+            for plugin in self._plugins
+            if matches_filename(path, extensions=plugin.extensions) and hasattr(plugin, "inspect")
+        ]
+        if candidates:
+            with BoundedSource(path, limits=active) as source:
+                plugin, _probe = self.select(source)
+                inspector = getattr(plugin, "inspect", None)
+                if inspector is not None:
+                    inventory = inspector(source, limits=active, parser_options=parser_options)
+                    source.verify_unchanged()
+                    return inventory
+        result = self.ingest(path, limits=active, parser_options=parser_options)
+        return IngestionInventory(
+            result.format_id,
+            result.variant,
+            result.parser_id,
+            result.parser_version,
+            result.source_members,
+            tuple(
+                {
+                    "asset_id": asset.asset_id,
+                    "title": asset.dataset.title,
+                    "shape": list(asset.dataset.shape),
+                    "dimension_roles": list(asset.dimension_roles),
+                    "data_role": asset.dataset.data_role,
+                    "x_title": asset.dataset.feature_axis.title,
+                    "x_units": asset.dataset.feature_axis.units,
+                    "data_quantity": asset.dataset.domain.data_quantity,
+                    "value_units": asset.dataset.units,
+                    "warnings": list(dict.fromkeys((*result.warnings, *asset.warnings))),
+                }
+                for asset in result.assets
+            ),
+        )
+
     def ingest(
         self,
         path: str | Path,
         *,
         limits: ParserLimits | None = None,
         parser_options: Mapping[str, str] | None = None,
+        asset_id: str | None = None,
     ) -> IngestionResult:
-        active_limits = limits or ParserLimits()
+        active_limits = self._limits(path, limits)
         with BoundedSource(path, limits=active_limits) as source:
             plugin, probe = self.select(source)
-            if parser_options is None:
+            if hasattr(plugin, "read_asset"):
+                result = plugin.read_asset(
+                    source, limits=active_limits, parser_options=parser_options, asset_id=asset_id
+                )
+            elif parser_options is None:
                 result = plugin.read(source, limits=active_limits)
             else:
                 result = plugin.read(source, limits=active_limits, parser_options=parser_options)
@@ -197,6 +268,7 @@ class FormatRegistry:
 
 
 def _builtins() -> tuple[FormatPlugin, ...]:
+    from spectra_sherpa.io.bosch_netcdf import PLUGIN as bosch_netcdf
     from spectra_sherpa.io.formats.csv import PLUGIN as csv
     from spectra_sherpa.io.formats.jcamp import PLUGIN as jcamp
     from spectra_sherpa.io.formats.matlab import PLUGIN as matlab
@@ -208,7 +280,7 @@ def _builtins() -> tuple[FormatPlugin, ...]:
     from spectra_sherpa.io.formats.spc import PLUGIN as spc
     from spectra_sherpa.io.formats.wdf import PLUGIN as wdf
 
-    return (csv, jcamp, matlab, numpy, omnic, opus, renishaw_text, sherpa_json, spc, wdf)
+    return (bosch_netcdf, csv, jcamp, matlab, numpy, omnic, opus, renishaw_text, sherpa_json, spc, wdf)
 
 
 builtin_registry = FormatRegistry(_builtins())
@@ -240,6 +312,7 @@ _NATIVE_IMPLEMENTATION_MODULE_NAMES = (
     "spectra_sherpa.ingestion_formats",
     "spectra_sherpa.io.authority",
     "spectra_sherpa.io.base",
+    "spectra_sherpa.io.bosch_netcdf",
     "spectra_sherpa.io.formats._helpers",
     "spectra_sherpa.io.formats._text_limits",
     "spectra_sherpa.io.formats.csv",
@@ -286,10 +359,11 @@ def ingest(
     *,
     limits: ParserLimits | None = None,
     parser_options: Mapping[str, str] | None = None,
+    asset_id: str | None = None,
 ) -> IngestionResult:
     """Read one source through the frozen built-in registry."""
 
-    return builtin_registry.ingest(path, limits=limits, parser_options=parser_options)
+    return builtin_registry.ingest(path, limits=limits, parser_options=parser_options, asset_id=asset_id)
 
 
 def native_implementation_modules() -> tuple[ModuleType, ...]:
@@ -308,6 +382,14 @@ __all__ = [
     "FormatRegistry",
     "builtin_registry",
     "ingest",
+    "inspect_assets",
     "jcamp_implementation_modules",
     "native_implementation_modules",
 ]
+
+
+def inspect_assets(
+    path: str | Path, *, limits: ParserLimits | None = None, parser_options: Mapping[str, str] | None = None
+) -> IngestionInventory:
+    """Return the native registry's lightweight scientific asset inventory."""
+    return builtin_registry.inspect(path, limits=limits, parser_options=parser_options)

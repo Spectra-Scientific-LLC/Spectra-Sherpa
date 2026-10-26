@@ -407,10 +407,22 @@ def require_collection_budget(members: Sequence[CollectionMember]) -> None:
 
     collection_manifest(members)
     elements, retained_bytes = collection_retained_footprint(members)
-    if elements > MAX_COLLECTION_RETAINED_ELEMENTS:
+    # One selected native asset is reused without concatenation. Its parser
+    # already bounded allocation; retain that same bound for container wafers.
+    max_elements, max_bytes = MAX_COLLECTION_RETAINED_ELEMENTS, MAX_COLLECTION_RETAINED_BYTES
+    if len(members) == 1:
+        from spectra_sherpa.io import builtin_registry
+        from spectra_sherpa.io.types import ParserLimits
+
+        authority = members[0].dataset.get_extra("ingestion.authority") or {}
+        plugin = next((p for p in builtin_registry.plugins if p.parser_id == authority.get("parser_id")), None)
+        if plugin is not None and getattr(plugin, "selective_assets", False):
+            limits = ParserLimits()
+            max_elements, max_bytes = limits.max_decoded_elements, limits.max_decoded_bytes
+    if elements > max_elements:
         raise ValueError("scientific collection exceeds the decoded-element limit")
-    if retained_bytes > MAX_COLLECTION_RETAINED_BYTES:
-        raise ValueError("scientific collection exceeds the 256 MiB retained-data limit")
+    if retained_bytes > max_bytes:
+        raise ValueError(f"scientific collection exceeds the {max_bytes // (1024 * 1024)} MiB retained-data limit")
 
 
 def _text(value: object) -> str:

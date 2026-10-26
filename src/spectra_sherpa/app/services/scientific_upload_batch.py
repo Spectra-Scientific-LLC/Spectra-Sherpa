@@ -69,6 +69,8 @@ async def admit_scientific_upload_batch(
     if not selected:
         raise FileValidationError("Select at least one scientific file or ZIP archive")
 
+    from spectra_sherpa.io import builtin_registry
+
     outer_limit = max_size_bytes(max_file_size_mb)
     members: list[ScientificUploadMember] = []
     refusals: list[ScientificUploadRefusal] = []
@@ -107,7 +109,9 @@ async def admit_scientific_upload_batch(
             source_name = upload.filename or "unnamed source"
             try:
                 filename = sanitize_filename(source_name)
-                payload = await _read_upload(upload, max_bytes=outer_limit)
+                payload = await _read_upload(
+                    upload, max_bytes=builtin_registry.source_limit_bytes(filename, outer_limit)
+                )
                 if transport_bytes + len(payload) > MAX_COLLECTION_SOURCE_BYTES:
                     refuse(source_name, "Selection exceeds the 512 MiB transport limit")
                     if index + 1 < len(selected):

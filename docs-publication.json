@@ -36,6 +36,7 @@
     "docs/concepts/glossary.md",
     "docs/developers/adding-a-node.md",
     "docs/developers/analytical-qualification.md",
+    "docs/developers/bosch-netcdf.md",
     "docs/developers/contributing.md",
     "docs/developers/generated-contracts.md",
     "docs/developers/gui-workspace-design.md",

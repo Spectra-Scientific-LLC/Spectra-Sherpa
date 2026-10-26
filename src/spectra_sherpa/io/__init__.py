@@ -11,7 +11,7 @@ from spectra_sherpa.ingestion_errors import (
     UnsupportedFormatVariantError,
 )
 from spectra_sherpa.io.invariants import INGESTION_INVARIANTS, IngestionInvariant
-from spectra_sherpa.io.registry import builtin_registry, ingest
+from spectra_sherpa.io.registry import builtin_registry, ingest, inspect_assets
 from spectra_sherpa.io.selection import select_asset
 from spectra_sherpa.io.types import (
     IngestionResult,
@@ -41,5 +41,6 @@ __all__ = [
     "UnsupportedFormatVariantError",
     "builtin_registry",
     "ingest",
+    "inspect_assets",
     "select_asset",
 ]

@@ -30,6 +30,7 @@ def test_client_data_formats_disclose_native_pending_boundary():
         ".jdx",
         ".json",
         ".mat",
+        ".nc",
         ".npy",
         ".npz",
         ".opus",

@@ -187,7 +187,7 @@ async def test_collection_sample_table_refuses_unsupported_cells_and_declared_ro
     structured_handle = dataset_registry.register(structured, owner_user_id=test_user.id)
     structured_response = await auth_client.get(f"/api/v1/datasets/{structured_handle}/sample-table")
     assert structured_response.status_code == 422
-    assert "unsupported structured value" in structured_response.json()["detail"]
+    assert "sample_id values must be exact, unique" in structured_response.json()["detail"]
 
     malformed_source = _collection_dataset()
     malformed_source.meta["source_collection"]["files"] = []
@@ -301,9 +301,9 @@ async def test_complete_table_refuses_misbound_or_incomplete_scientific_identity
 
     reordered = _with_sample_identity(
         labels=labels,
-        sample_table={"sample_id": list(reversed(labels)), "specimen_id": specimens, "block": blocks},
+        sample_table={"sample_id": ["id", "id", "third", "fourth"], "specimen_id": specimens, "block": blocks},
     )
-    mutations.append((reordered, "does not match its label"))
+    mutations.append((reordered, "exact, unique"))
 
     duplicate_labels = ["A__B1", "A__B1", "A__B2", "B__B2"]
     duplicate = _with_sample_identity(
@@ -461,3 +461,27 @@ def test_complete_table_refuses_cumulative_size_before_aggregate_json_encoding(
     )
     with pytest.raises(ValueError, match="4 MiB retrieval limit"):
         datasets_route._complete_collection_sample_table(dataset)
+
+
+def test_complete_table_retains_ids_separately_from_acquisition_labels():
+    dataset = _with_sample_identity(
+        labels=["Wafer_01 at 10:00", "Wafer_01 at 10:01", "Wafer_02 at 10:00", "Wafer_02 at 10:01"],
+        sample_table={"sample_id": ["source:1", "source:2", "source:3", "source:4"]},
+    )
+    payload = datasets_route._complete_collection_sample_table(dataset)
+    assert payload["sample_table"]["sample_id"] == ["source:1", "source:2", "source:3", "source:4"]
+    assert payload["labels"][0] == "Wafer_01 at 10:00"
+
+
+def test_complete_table_covers_a_full_bosch_wafer_without_widening_response_bytes():
+    dataset = SherpaDataset(
+        X=np.zeros((15_179, 1)),
+        sample_axis=SampleAxis(
+            labels=[f"Wafer_01:{i} at 2024-08-05T10:00:00+00:00" for i in range(15_179)],
+            sample_table={"sample_id": [f"{'a' * 64}:{'b' * 64}:Wafer_01:{i}" for i in range(15_179)]},
+        ),
+        extra={"source_collection": deepcopy(_collection_dataset().meta["source_collection"])},
+    )
+    payload = datasets_route._complete_collection_sample_table(dataset)
+    assert payload["row_count"] == 15_179
+    assert len(json.dumps(payload).encode()) < 4 * 1024 * 1024

@@ -58,8 +58,10 @@ def _experiment_path(experiment_id: int, relative: str) -> Path:
 def _resolved_experiment_file(record: ExperimentFile) -> ResolvedExperimentFile:
     path = _experiment_path(int(record.experiment_id), str(record.file_path))
     source_size = int(path.stat().st_size)
-    if source_size > _MAX_SOURCE_FILE_BYTES:
-        raise ValueError("experiment file exceeds the 256 MiB ingestion limit")
+    from spectra_sherpa.io import builtin_registry
+
+    if source_size > builtin_registry.source_limit_bytes(path, _MAX_SOURCE_FILE_BYTES):
+        raise ValueError("experiment file exceeds its native ingestion source limit")
     overrides = load_prepared_data_overrides(file_path=str(path)).to_sidecar_dict()
     digest = hashlib.sha256()
     with path.open("rb") as source:

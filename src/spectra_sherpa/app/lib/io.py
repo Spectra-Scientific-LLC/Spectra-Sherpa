@@ -863,7 +863,7 @@ def read_spectral_file(filepath: Path, *, asset_id: str | None = None) -> "Sherp
     """
     from spectra_sherpa.io import ingest, select_asset
 
-    result = ingest(filepath)
+    result = ingest(filepath, asset_id=asset_id)
     return select_asset(result, asset_id=asset_id).dataset
 
 
@@ -886,6 +886,7 @@ def load_open_spectral_file_as_sherpa(
     result = builtin_registry.ingest(
         path,
         parser_options=parser_options_for_prepared_data(path.name, prepared_overrides),
+        asset_id=asset_id,
     )
     selected = select_asset(result, asset_id=asset_id)
     return selected.dataset

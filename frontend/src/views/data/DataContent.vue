@@ -1310,7 +1310,7 @@
             :active-dataset-name="selectedExperimentName"
             :selected-file-count="activeSelectedFileCount"
             :selected-file-names="activeSelectedFileNames"
-            :sample-inclusion-enabled="Boolean(datasetCurationSource)"
+            :sample-inclusion-enabled="Boolean(datasetCurationSource) && (displaySampleInclusion.loading || displaySampleInclusion.rows.length > 0)"
             :sample-inclusion="displaySampleInclusion"
             :matrix-asset-id="inspectionAssetId"
             :initial-analysis-target="requestedAnalysisSelection.target"
@@ -2708,7 +2708,7 @@ const uploadFormatHint = computed(() => {
   const supported = availableUploadFormats.value.join(", ");
   const disabled = disabledUploadFormats.value;
   const resourceHint =
-    "50 MB upload limit. Dense CSV/JCAMP text has a decoded-data safety limit; use NPY/NPZ for large numeric matrices";
+    "Source upload limits apply. Dense CSV/JCAMP text has a decoded-data safety limit; use NPY/NPZ for large numeric matrices";
   if (!disabled.length) return `Supported: ${supported} (${resourceHint})`;
   const hints: string[] = [];
   if (disabled.some((format) => format.unsupportedReason && !format.requiresExport)) {
@@ -3036,6 +3036,7 @@ const selectedUploadAssetWarnings = computed(() => {
   return uniqueAssetWarnings(member.assets);
 });
 const previewUploadSource = computed<DataMatrixRef | null>(() => {
+  if (uploading.value) return null;
   const member = selectedUploadMember.value;
   if (!member) return null;
   const assetId = uploadAssetIds[member.staging_id] ?? null;
@@ -3117,6 +3118,9 @@ watch(
   () => {
     const member = selectedUploadMember.value;
     syncUploadControlsFromOverrides(member ? uploadOverrides[member.staging_id] : undefined);
+    if (member && member.assets.length > 1 && !uploadAssetIds[member.staging_id]) {
+      uploadOptionsCollapsed.value = false;
+    }
   },
 );
 
@@ -3297,6 +3301,9 @@ watch(
 const originalSourceSampleCount = computed(() => {
   const id = dataStore.activeExperimentId;
   if (id == null || !originalSourceFilesKey.value) return null;
+  const selectedAsset = inspectionAssets.value.find((asset) => asset.asset_id === inspectionAssetId.value);
+  const sampleDimension = selectedAsset?.dimension_roles?.indexOf("sample") ?? -1;
+  if (selectedAsset && sampleDimension >= 0) return selectedAsset.shape[sampleDimension] ?? null;
   const receipt = sourceSampleCounts.value[id];
   return receipt?.filesKey === originalSourceFilesKey.value ? receipt.count :
     dataStoryInspectedSource.value?.n_samples ?? null;
@@ -6531,6 +6538,9 @@ async function onUploadFile() {
     // typed name (or the file name as default), then uploads the file into
     // it. The user no longer has to pre-create a dataset via the dialog.
     const name = resolvedUploadDatasetName.value;
+    const selectedAssetId = stagedUploadMembers.value.length === 1
+      ? uploadAssetIds[stagedUploadMembers.value[0].staging_id] ?? null
+      : null;
     const created = await dataStore.createExperiment(
       name,
       undefined,
@@ -6568,7 +6578,8 @@ async function onUploadFile() {
     await Promise.all([dataStore.fetchExperiments(), refreshProjectContext()]);
     activeTab.value = TAB_MY_DATASET;
     persistActiveDataTab();
-    await showExperimentContents(created.id);
+    if (selectedAssetId) setExperimentPlotSelection(created.id, null);
+    await showExperimentContents(created.id, null, selectedAssetId);
   } catch (err) {
     console.error("Upload failed:", err);
     toast.add({

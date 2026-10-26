@@ -25,7 +25,6 @@ from spectra_sherpa.app.api.deps import (
     release_demo_upload_quota_reservation_if_needed,
     reserve_demo_upload_quota_or_429,
 )
-from spectra_sherpa.app.api.v1.routes._http_utils import scientific_asset_warnings
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access, scientific_project_ids
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.lib.collection_definition import (
@@ -1471,7 +1470,7 @@ async def inspect_experiment_file_assets_endpoint(
 
     from spectra_sherpa.app.lib.reference_materialization import materialize_reference_member
     from spectra_sherpa.app.lib.registered_reference_storage import read_registered_reference_sidecar
-    from spectra_sherpa.io import ingest
+    from spectra_sherpa.io import inspect_assets
 
     source_path = experiment_dir(experiment_id) / experiment_file.file_path
     registered_reference = read_registered_reference_sidecar(source_path)
@@ -1517,7 +1516,7 @@ async def inspect_experiment_file_assets_endpoint(
         )
 
     try:
-        result = await asyncio.to_thread(ingest, source_path)
+        result = await asyncio.to_thread(inspect_assets, source_path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Could not inspect scientific assets: {exc}") from exc
 
@@ -1528,21 +1527,7 @@ async def inspect_experiment_file_assets_endpoint(
         parser_id=result.parser_id,
         parser_version=result.parser_version,
         source_sha256=member.sha256,
-        assets=[
-            ScientificAssetOut(
-                asset_id=asset.asset_id,
-                title=asset.dataset.title,
-                shape=list(asset.dataset.shape),
-                dimension_roles=list(asset.dimension_roles),
-                data_role=asset.dataset.data_role,
-                x_title=_optional_text(asset.dataset.feature_axis.title),
-                x_units=_optional_text(asset.dataset.feature_axis.units),
-                data_quantity=_optional_text(asset.dataset.domain.data_quantity),
-                value_units=_optional_text(asset.dataset.units),
-                warnings=scientific_asset_warnings(result.warnings, asset.warnings),
-            )
-            for asset in result.assets
-        ],
+        assets=[ScientificAssetOut.model_validate(asset) for asset in result.assets],
     )
 
 

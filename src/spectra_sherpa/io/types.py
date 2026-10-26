@@ -130,3 +130,15 @@ class IngestionResult:
         if len(asset_ids) != len(set(asset_ids)):
             raise ValueError("IngestionResult asset IDs must be unique")
         object.__setattr__(self, "raw_metadata", _closed_mapping(self.raw_metadata))
+
+
+@dataclass(frozen=True, slots=True)
+class IngestionInventory:
+    """Metadata-only asset descriptors, without allocating decoded matrices."""
+
+    format_id: str
+    variant: str
+    parser_id: str
+    parser_version: str
+    source_members: tuple[SourceMember, ...]
+    assets: tuple[Mapping[str, Any], ...]

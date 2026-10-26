@@ -1,0 +1,218 @@
+{
+  "schema_version": "spectrasherpa.bosch-experiment-catalog/1",
+  "source": {
+    "url": "https://zenodo.org/records/17122442",
+    "doi": "10.5281/zenodo.17122442",
+    "protocol_document": "Readme.pdf, §1 and Figure 1",
+    "lot_document": "Lot_status.xlsx, Tabelle1!A1:E11",
+    "lot_document_md5": "339beca13f321dc3af244bf2d2ce284c",
+    "license": "CC BY 4.0"
+  },
+  "initial_chamber_preparation": [
+    {
+      "label": "O₂ plasma",
+      "duration_seconds": 120
+    },
+    {
+      "label": "O₂/SF₆ plasma",
+      "duration_seconds": 120
+    },
+    {
+      "label": "Break",
+      "duration_seconds": 60
+    },
+    {
+      "label": "Dummy BOSCH run",
+      "duration_seconds": 1800
+    },
+    {
+      "label": "Endpoint-controlled O₂/SF₆ clean",
+      "duration_seconds": null
+    },
+    {
+      "label": "Break",
+      "duration_seconds": 1800
+    }
+  ],
+  "conditioning_experiment": {
+    "surface_options": [
+      "System chuck — no conditioning wafer",
+      "Blank Si wafer",
+      "Blank SiO₂ wafer"
+    ],
+    "repetition_options": [
+      1,
+      3,
+      9
+    ],
+    "sequence": [
+      {
+        "label": "O₂ plasma",
+        "duration_seconds": 120
+      },
+      {
+        "label": "O₂/SF₆ plasma",
+        "duration_seconds": 120
+      }
+    ],
+    "break_between_repetitions_seconds": 240
+  },
+  "production_lot": {
+    "planned_wafer_count": 10,
+    "bosch_cycles_per_wafer": 100,
+    "break_between_wafers_seconds": 60,
+    "inter_wafer_sequence": [
+      {
+        "label": "Break",
+        "duration_seconds": 60
+      },
+      {
+        "label": "Endpoint-controlled clean (EPD)",
+        "duration_seconds": null
+      }
+    ],
+    "post_lot_clean_status": "Unconfirmed",
+    "epd_sequence_basis": "User recipe clarification, 2026-10-25: one clean before the first wafer, and cleans between wafers; cleaning after the final wafer is uncertain.",
+    "source_discrepancy": "The source README introduction states that lots were processed without intermediate cleaning. Per-wafer EPD events are not explicitly labeled in the supplied channels.",
+    "observed_post_etch_plasma": "All 96 process groups, including all nine Wafer 10 groups, contain a final RF-powered interval lasting 8.59–8.81 s above a 500 W threshold. The observed interval is not independently identified as EPD cleaning."
+  },
+  "lots_by_date": {
+    "2024-07-02": {
+      "lot_number": 1,
+      "recorded_wafer_count": 10,
+      "conditioning_surface": "System chuck — no conditioning wafer",
+      "conditioning_repetitions": 3,
+      "source_type_code": "3C",
+      "source_cells": "Tabelle1!A2:E2"
+    },
+    "2024-07-05": {
+      "lot_number": 2,
+      "recorded_wafer_count": 10,
+      "conditioning_surface": "System chuck — no conditioning wafer",
+      "conditioning_repetitions": 1,
+      "source_type_code": "1C",
+      "source_cells": "Tabelle1!A3:E3"
+    },
+    "2024-07-09": {
+      "lot_number": 3,
+      "recorded_wafer_count": 10,
+      "conditioning_surface": "System chuck — no conditioning wafer",
+      "conditioning_repetitions": 9,
+      "source_type_code": "9C",
+      "source_cells": "Tabelle1!A4:E4"
+    },
+    "2024-07-11": {
+      "lot_number": 4,
+      "recorded_wafer_count": 10,
+      "conditioning_surface": "Blank Si wafer",
+      "conditioning_repetitions": 3,
+      "source_type_code": "3C - Si",
+      "source_cells": "Tabelle1!A5:E5"
+    },
+    "2024-07-19": {
+      "lot_number": 5,
+      "recorded_wafer_count": 10,
+      "conditioning_surface": "Blank Si wafer",
+      "conditioning_repetitions": 1,
+      "source_type_code": "1C - Si",
+      "source_cells": "Tabelle1!A6:E6"
+    },
+    "2024-08-01": {
+      "lot_number": 6,
+      "recorded_wafer_count": 10,
+      "conditioning_surface": "Blank Si wafer",
+      "conditioning_repetitions": 9,
+      "source_type_code": "9C - Si",
+      "source_cells": "Tabelle1!A7:E7"
+    },
+    "2024-08-05": {
+      "lot_number": 7,
+      "recorded_wafer_count": 6,
+      "conditioning_surface": "Blank SiO₂ wafer",
+      "conditioning_repetitions": 3,
+      "source_type_code": "3C - SiO2",
+      "source_cells": "Tabelle1!A8:E8"
+    },
+    "2024-08-07": {
+      "lot_number": 8,
+      "recorded_wafer_count": 10,
+      "conditioning_surface": "Blank SiO₂ wafer",
+      "conditioning_repetitions": 3,
+      "source_type_code": "3C - SiO2",
+      "source_cells": "Tabelle1!A9:E9"
+    },
+    "2024-08-21": {
+      "lot_number": 9,
+      "recorded_wafer_count": 10,
+      "conditioning_surface": "System chuck — no conditioning wafer",
+      "conditioning_repetitions": 3,
+      "source_type_code": "3C",
+      "source_cells": "Tabelle1!A10:E10"
+    },
+    "2024-08-22": {
+      "lot_number": 10,
+      "recorded_wafer_count": 10,
+      "conditioning_surface": "Blank SiO₂ wafer",
+      "conditioning_repetitions": 3,
+      "source_type_code": "3C - SiO2",
+      "source_cells": "Tabelle1!A11:E11"
+    }
+  },
+  "published_sources": [
+    {
+      "name": "Day_2024_08_07.nc",
+      "size_bytes": 823268300,
+      "md5": "a9e989c84ba2c29aecc6de7f3410f60c"
+    },
+    {
+      "name": "Day_2024_07_05.nc",
+      "size_bytes": 833563333,
+      "md5": "fe2a0432b433daf0bdf9745b877b879b"
+    },
+    {
+      "name": "Day_2024_07_02.nc",
+      "size_bytes": 829417369,
+      "md5": "28f96ab71714e070af1b2ccddb952b60"
+    },
+    {
+      "name": "Day_2024_08_22.nc",
+      "size_bytes": 817952035,
+      "md5": "e63c41f3560914e9a1fa9c388314b3a5"
+    },
+    {
+      "name": "Process_data.nc",
+      "size_bytes": 8819467,
+      "md5": "4567d24ec2125102a2e5129203ba31fa"
+    },
+    {
+      "name": "Day_2024_07_19.nc",
+      "size_bytes": 832144108,
+      "md5": "dd631872ca55ca28965e464fe81f13f2"
+    },
+    {
+      "name": "Day_2024_08_01.nc",
+      "size_bytes": 832648412,
+      "md5": "3a2f4efc1ee23fb09dbe1b920c1913ae"
+    },
+    {
+      "name": "Day_2024_08_21.nc",
+      "size_bytes": 816255663,
+      "md5": "aeee1ee145575633b599a71c2622bb3a"
+    },
+    {
+      "name": "Day_2024_07_11.nc",
+      "size_bytes": 824221762,
+      "md5": "a32f4406f243d267a430fc9a3624ee28"
+    },
+    {
+      "name": "Day_2024_07_09.nc",
+      "size_bytes": 817503133,
+      "md5": "1632b5b67f52cc8e8a53191777a330b7"
+    },
+    {
+      "name": "Day_2024_08_05.nc",
+      "size_bytes": 476308655,
+      "md5": "4d13022c1817334dd02ffdfa936c4469"
+    }
+  ]
+}
