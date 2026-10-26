@@ -88,7 +88,7 @@ from spectra_sherpa.app.services.experiments import (
     resolve_data_path,
     update_experiment,
 )
-from spectra_sherpa.app.services.file_storage import FileValidationError, save_upload_file
+from spectra_sherpa.app.services.file_storage import FileValidationError, sanitize_filename, save_upload_file
 from spectra_sherpa.app.services.model_application import LoadedProjectDataset, load_project_dataset
 from spectra_sherpa.app.services.prepared_data import (
     PreparedDataOverrides,
@@ -763,6 +763,26 @@ async def upload_experiment_file(
         ensure_reader_available(file.filename or "")
     except (ImportError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        upload_name = sanitize_filename(file.filename or "")
+    except FileValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    retained_path = f"{stage}/{upload_name}"
+    existing = await session.scalar(
+        select(ExperimentFile.id).where(
+            ExperimentFile.experiment_id == experiment_id, ExperimentFile.file_path == retained_path
+        )
+    )
+    if existing is not None:
+        await file.close()
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A file with this name already exists in this dataset. "
+                "Select the existing file or rename the new upload."
+            ),
+        )
 
     upload_reserved = reserve_demo_upload_quota_or_429(user_id)
     exp_dir = experiment_dir(experiment_id)

@@ -83,8 +83,17 @@ async def save_upload_file(
     bytes_written = 0
     chunk_size = 1024 * 1024
 
+    created = False
     try:
-        with target_path.open("wb") as buffer:
+        try:
+            buffer = target_path.open("xb")
+        except FileExistsError as exc:
+            raise FileValidationError(
+                "A file with this name already exists in this dataset; "
+                "select the existing file or rename the new upload"
+            ) from exc
+        created = True
+        with buffer:
             while True:
                 chunk = await upload.read(chunk_size)
                 if not chunk:
@@ -93,8 +102,8 @@ async def save_upload_file(
                 if bytes_written > size_limit:
                     raise FileValidationError("File exceeds size limit")
                 buffer.write(chunk)
-    except FileValidationError:
-        if target_path.exists():
+    except BaseException:
+        if created and target_path.exists():
             target_path.unlink()
         raise
     finally:

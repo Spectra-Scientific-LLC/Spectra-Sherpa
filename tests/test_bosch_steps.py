@@ -86,6 +86,14 @@ async def test_phase_api_requires_owned_distinct_process_companion(auth_client, 
     )
     assert uploaded.status_code == 201, uploaded.text
     fid = uploaded.json()["id"]
+    duplicate = await auth_client.post(
+        f"/api/v1/experiments/{eid}/files",
+        data={"stage": "raw"},
+        files={"file": ("Day_2024_08_05.nc", b"replacement", "application/x-netcdf")},
+    )
+    assert duplicate.status_code == 409, duplicate.text
+    inventory = await auth_client.get(f"/api/v1/experiments/{eid}/files/{fid}/scientific-assets")
+    assert inventory.status_code == 200, inventory.text
     url = f"/api/v1/experiments/{eid}/files/{fid}/bosch-steps"
     assert (await auth_client.get(url)).status_code == 422
     assert (await auth_client.get(url, params={"process_file_id": fid})).status_code == 400
