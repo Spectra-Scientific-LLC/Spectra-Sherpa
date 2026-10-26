@@ -471,7 +471,8 @@ class TestDecompositionArtifactEmission:
 
 
 class TestExecutorGracefulArtifact:
-    def test_executor_fails_without_model_store(self, sherpa_dataset):
+    @pytest.mark.asyncio
+    async def test_executor_fails_without_model_store(self, sherpa_dataset):
         """Executor must fail closed when artifact persistence is unavailable."""
         from spectra_sherpa.app.services.dag.executor import DAGExecutor
         from spectra_sherpa.core.execution_runtime import ExecutionCapabilityError
@@ -487,7 +488,7 @@ class TestExecutorGracefulArtifact:
         }
 
         with pytest.raises(ExecutionCapabilityError, match="write capability is unavailable"):
-            executor._process_model_artifact("pca_1")
+            await executor._process_model_artifact("pca_1")
 
 
 # ---------------------------------------------------------------------------

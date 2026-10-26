@@ -103,10 +103,23 @@ def build_application_execution_runtime(
     preloaded_datasets: dict[str, Any] | None = None,
     allowed_model_artifact_uids: tuple[str, ...] | None = None,
     pin_preloaded_members: bool = False,
+    model_owner_session: Any = None,
+    model_owner_user_id: int | None = None,
 ) -> ExecutionRuntime:
     """Project app configuration and durable custody into one closed runtime."""
 
     store = get_model_store()
+    writer = None
+    if model_owner_user_id is not None:
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        from spectra_sherpa.app.services.storage_custody import OwnedModelWriter
+
+        if model_owner_session is None:
+            raise ValueError("Model publication requires its admitted database scope")
+        writer = OwnedModelWriter(
+            store, async_sessionmaker(model_owner_session.bind, expire_on_commit=False), model_owner_user_id
+        )
     reader = store if model_artifact_reader is None else model_artifact_reader
     worker_reader = ReadOnlyModelArtifactReader(settings.data_dir, allowed_artifact_uids=allowed_model_artifact_uids)
     if allowed_model_artifact_uids is not None:
@@ -123,7 +136,7 @@ def build_application_execution_runtime(
     return ExecutionRuntime(
         node_timeout_seconds=float(settings.max_job_duration_sec),
         model_artifact_reader=reader,
-        model_artifact_writer=store,
+        model_artifact_writer=writer,
         worker_model_artifact_reader=worker_reader,
         model_artifact_replay=ApplicationModelArtifactReplay(),
         model_artifact_semantic_validator=ApplicationModelArtifactSemanticValidator(),

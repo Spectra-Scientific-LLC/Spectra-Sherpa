@@ -384,6 +384,8 @@ async def execute_trial(
             runtime=build_application_execution_runtime(
                 preloaded_datasets=preloaded_datasets,
                 allowed_model_artifact_uids=admitted_model_artifact_ids(effective_nodes, payload.initial_data),
+                model_owner_session=session,
+                model_owner_user_id=current_user.id,
             )
         )
 
@@ -1151,6 +1153,8 @@ async def execute_saved_workflow(
                 preloaded_datasets=preloaded_datasets,
                 allowed_model_artifact_uids=allowed_model_artifact_uids,
                 pin_preloaded_members=batch_binding is not None,
+                model_owner_session=session,
+                model_owner_user_id=user_id,
             )
         )
 

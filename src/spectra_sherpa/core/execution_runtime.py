@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Mapping, Protocol
+from typing import Any, Awaitable, Mapping, Protocol
 
 
 class ExecutionCapabilityError(PermissionError):
@@ -33,7 +33,7 @@ class ModelArtifactReader(Protocol):
 class ModelArtifactWriter(Protocol):
     """Write access used only when a scientific node emits a model artifact."""
 
-    def save(self, artifact_uid: str, manifest: dict[str, Any], arrays: dict[str, Any]) -> str: ...
+    def save(self, artifact_uid: str, manifest: dict[str, Any], arrays: dict[str, Any]) -> str | Awaitable[str]: ...
 
     def artifact_directory(self, artifact_uid: str) -> str: ...
 

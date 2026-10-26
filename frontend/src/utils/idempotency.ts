@@ -35,7 +35,7 @@ export function newIdempotencyKey(): string {
   const hex = (n: number, len: number) => n.toString(16).padStart(len, "0");
   const s4 = () => hex(r(0x10000), 4);
   return `${s4()}${s4()}-${s4()}-4${hex(r(0x1000), 3)}-${
-    8 + r(4)
+    hex(8 + r(4), 1)
   }${hex(r(0x1000), 3)}-${s4()}${s4()}${s4()}`;
 }
 

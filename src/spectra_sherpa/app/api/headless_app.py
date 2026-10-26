@@ -184,6 +184,18 @@ async def predict(request: Request) -> Response:
     import copy
 
     executor = copy.deepcopy(_executor)
+    if _executor_workflow_user_id is not None:
+        from dataclasses import replace
+
+        from spectra_sherpa.app.services.model_store import get_model_store
+        from spectra_sherpa.app.services.storage_custody import OwnedModelWriter
+
+        # Bind after cloning: database engines are not deepcopyable and the
+        # deployment's owner, never request input, supplies publication scope.
+        executor.runtime = replace(
+            executor.runtime,
+            model_artifact_writer=OwnedModelWriter(get_model_store(), async_session, _executor_workflow_user_id),
+        )
 
     # Find the deploy entry nodes
     _entry_nodes = executor.find_entry_nodes()  # noqa: F841

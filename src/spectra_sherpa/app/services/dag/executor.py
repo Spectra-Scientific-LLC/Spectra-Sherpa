@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -119,7 +120,7 @@ class DAGExecutor:
         # Restore reference to global process pool
         self._process_pool = get_default_pool()
 
-    def _process_model_artifact(
+    async def _process_model_artifact(
         self, node_id: str, positional_inputs: List[Any] | None = None, named_inputs: Dict[str, Any] | None = None
     ) -> None:
         """Save model artifact to disk if the node produced one.
@@ -153,6 +154,8 @@ class DAGExecutor:
                     source = positional_inputs[0]
                 retain_pls_training_specimens(artifact, source)
             integrity_hash = store.save(artifact_uid, metadata, arrays)
+            if inspect.isawaitable(integrity_hash):
+                integrity_hash = await integrity_hash
 
             # Only pop after successful save — avoid losing data on failure
             result.pop("_model_artifact")
@@ -1379,7 +1382,7 @@ class DAGExecutor:
                 await retain_population_display(self, node_id)
 
                 # Persist model artifact if present
-                self._process_model_artifact(node_id, positional_inputs, named_inputs)
+                await self._process_model_artifact(node_id, positional_inputs, named_inputs)
 
                 self._param_hashes[node_id] = self._compute_param_hash(node_id)
                 # Pool workers mutate their own copy's status; the main-process
@@ -1521,7 +1524,7 @@ class DAGExecutor:
             await retain_population_display(self, dep_node_id)
 
             # Persist model artifact if present
-            self._process_model_artifact(dep_node_id, positional_inputs, named_inputs)
+            await self._process_model_artifact(dep_node_id, positional_inputs, named_inputs)
 
             self._param_hashes[dep_node_id] = self._compute_param_hash(dep_node_id)
             # Main-process status update: pool worker's status never flows back,

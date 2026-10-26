@@ -51,6 +51,24 @@ flowchart LR
 
 A calibration or classifier is useful only if it can be reapplied to compatible spectra. The artifact should carry enough contract information to explain what the model expects, why it was saved, and what has to match at apply time.
 
+## Publication custody
+
+Application-owned model files have a private ownership claim before publication.
+That claim is not a saved model or evidence of a successful run. It remains if
+execution fails or times out, and transfers to the completed model record in the
+same database transaction that registers the artifact. Startup cleanup must not
+discard a claimed file merely because it is old.
+
+Publication rechecks the live owner under a short database lock; fitting does
+not hold that lock. Cancellation waits for the actual file writer to stop before
+releasing custody. File publication uses separate bounded thread capacity from
+computation to avoid deadlock under concurrent runs. An uncertain claim commit
+does not authorize writing files.
+
+SDK callers that supply their own storage capability remain responsible for its
+ownership and cleanup. These safeguards do not retroactively identify historical
+orphan files or certify deletion of backups.
+
 ## Apply-Time Review
 
 Before applying a model, confirm spectral axis, preprocessing, feature count, and units match the training data.

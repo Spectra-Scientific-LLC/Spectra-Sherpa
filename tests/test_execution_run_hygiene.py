@@ -22,6 +22,78 @@ from spectra_sherpa.app.api.v1.routes.workflows._helpers import (
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.services.run_artifact_roles import attempted_artifact_fields
+from spectra_sherpa.app.services.storage_custody import await_file_writer
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fails", [False, True])
+async def test_retention_cancellation_waits_for_writer_even_on_repeated_cancel(fails):
+    import asyncio
+    import threading
+
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def write():
+        loop.call_soon_threadsafe(started.set)
+        assert release.wait(5), "writer barrier was not released"
+        finished.set()
+        if fails:
+            raise RuntimeError("synthetic retention failure")
+        return "written"
+
+    task = asyncio.create_task(await_file_writer(write))
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+        for _ in range(2):
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not task.done(), "account lock could be released before file publication stops"
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 5)
+        assert finished.is_set()
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancelling_all_tasks_cannot_detach_file_writer():
+    import asyncio
+    import threading
+
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
+    release = threading.Event()
+    exited = threading.Event()
+    existing = asyncio.all_tasks()
+
+    def write():
+        loop.call_soon_threadsafe(started.set)
+        assert release.wait(5)
+        exited.set()
+
+    owner = asyncio.create_task(await_file_writer(write))
+    try:
+        await asyncio.wait_for(started.wait(), 5)
+        # asyncio.run's shutdown cancels workers directly, not just their
+        # parent. A nested to_thread Task fails this test.
+        for task in asyncio.all_tasks() - existing:
+            task.cancel()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not owner.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(owner, 5)
+        assert exited.is_set()
+    finally:
+        release.set()
+        await asyncio.gather(owner, return_exceptions=True)
+
 
 # ---------------------------------------------------------------------------
 # M8 — status CHECK constraint

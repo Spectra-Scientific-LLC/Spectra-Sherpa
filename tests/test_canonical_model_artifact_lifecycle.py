@@ -128,7 +128,7 @@ async def test_curated_training_persists_reopens_and_applies_to_all_new_rows(
     store = ModelStore(tmp_path)
     executor = DAGExecutor(runtime=ExecutionRuntime(model_artifact_writer=store))
     executor.results["fit"] = outputs
-    executor._process_model_artifact("fit")
+    await executor._process_model_artifact("fit")
     uid = executor.saved_artifacts[0]["artifact_uid"]
     reopened = ModelStore(tmp_path)
     monkeypatch.setattr(model_store, "get_model_store", lambda: reopened)
@@ -178,7 +178,7 @@ async def test_fit_persist_reopen_list_and_apply(node_type, tmp_path, test_sessi
     assert "_model_artifact" in outputs, f"{node_type} finished but did not produce a persistent model"
     executor = DAGExecutor(runtime=ExecutionRuntime(model_artifact_writer=store))
     executor.results["fit"] = outputs
-    executor._process_model_artifact("fit")
+    await executor._process_model_artifact("fit")
     assert len(executor.saved_artifacts) == 1
     uid = executor.saved_artifacts[0]["artifact_uid"]
     assert outputs["model_id"] == uid
@@ -497,7 +497,7 @@ async def test_artifact_write_failure_cannot_become_successful_model_registratio
     executor = DAGExecutor(runtime=ExecutionRuntime(model_artifact_writer=store))
     executor.results["fit"] = outputs
     with pytest.raises(OSError, match="disk full"):
-        executor._process_model_artifact("fit")
+        await executor._process_model_artifact("fit")
     assert executor.saved_artifacts == []
     assert "model_id" not in outputs
     assert "_model_artifact" in outputs
