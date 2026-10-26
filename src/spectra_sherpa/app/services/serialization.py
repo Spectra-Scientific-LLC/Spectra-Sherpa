@@ -107,7 +107,7 @@ def serialize_result(
     if isinstance(obj, dict):
         result_dict = {}
         for k, v in obj.items():
-            if not retain_full and k.startswith("_"):
+            if not retain_full and k.startswith("_") and k != "__workflow_population":
                 continue  # Skip _internal, _model_artifact, and other private keys
             # Dataset MUST be serialized via serialize_for_api, never as a model placeholder.
             if isinstance(v, SherpaDataset):

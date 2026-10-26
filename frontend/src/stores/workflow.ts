@@ -25,6 +25,7 @@ import {
   filenameFromContentDisposition,
 } from "@/utils/download";
 import type { EvidenceGap } from "@/utils/runEvidence";
+import type { WorkflowPopulation, WorkflowPopulationActions } from "@/utils/workflowPopulation";
 
 // Types extracted to workflow-types.ts for module size reduction.
 // Re-exported here for backward compatibility.
@@ -108,6 +109,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const workflowOwnership = useScopedRequest(workspaceIdentity);
   const loadScope = useScopedRequest(workspaceIdentity, () => { isLoading.value = false; });
   const saveScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
+  const populationScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value, restoredRunId.value]);
   const preflightScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
   const executionScope = useScopedRequest(workspaceIdentity, () => { preparingExecution.value = false; }, { abortOnInvalidate: false });
   const choiceScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
@@ -2000,6 +2002,105 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
   }
 
+  const workflowPopulations = computed(() => nodes.value.flatMap(node => {
+    const result = lastExecutionResults.value?.[node.id] as Record<string, unknown> | undefined;
+    const state = result?.exclusions as WorkflowPopulation | undefined;
+    return state?.schema_version === "spectrasherpa-workflow-population/1" && Array.isArray(state.rows)
+      && state.rows.length === state.source_count
+      ? [{ node, state }] : [];
+  }));
+  async function hydrateWorkflowPopulations() {
+    const runId = restoredRunId.value;
+    if (runId == null || !lastExecutionResults.value) return;
+    const request = populationScope.begin();
+    const candidates = nodes.value.filter(node => {
+      const result = lastExecutionResults.value?.[node.id] as Record<string, unknown> | undefined;
+      return result?.exclusions && !workflowPopulations.value.some(item => item.node.id === node.id);
+    });
+    await Promise.all(candidates.map(async node => {
+      try {
+        const response = await api.get(`/runs/${runId}/outputs/${encodeURIComponent(node.id)}/exclusions`, {
+          params: { project_id: useProjectStore().currentProjectId }, signal: request.signal,
+        });
+        if (!request.isCurrent() || !lastExecutionResults.value) return;
+        const current = lastExecutionResults.value[node.id] as Record<string, unknown> | undefined;
+        if (current) lastExecutionResults.value[node.id] = { ...current, exclusions: response.data.value };
+      } catch (error) {
+        if (request.isCurrent() && !isRequestCanceled(error))
+          console.warn("Exact workflow population unavailable; plot curation stays disabled.");
+      }
+    }));
+  }
+  watch(() => [workflowId.value, restoredRunId.value, isLoading.value], () => {
+    if (!isLoading.value) void hydrateWorkflowPopulations();
+  });
+  const workflowExcludedCount = computed(() => nodes.value.reduce((total, node) => {
+    const decision = node.params.workflow_exclusions as { excluded_refs?: unknown[] } | null;
+    return total + (decision?.excluded_refs?.length ?? 0);
+  }, 0));
+  const workflowObservationLookup = computed(() => {
+      const lookup = new Map<string, { excluded: boolean; restorable: boolean }>();
+      for (const { node, state } of workflowPopulations.value) {
+        const executed = lastExecutionParams.value[node.id];
+        const metadata = getNodeMetadata(node.type);
+        const defaults = Object.fromEntries((metadata?.parameters ?? []).map(parameter => [parameter.name, parameter.default]));
+        const sourceParams = (params: UnknownRecord) => Object.fromEntries(
+          Object.entries(params).filter(([key]) => key !== "workflow_exclusions"));
+        if (executed && (metadata
+          ? !valuesEqual(sourceParams({ ...defaults, ...node.params }), sourceParams({ ...defaults, ...executed }))
+          : Object.entries(node.params).some(([key, value]) => key !== "workflow_exclusions" && !valuesEqual(value, executed[key]))
+        )) continue;
+        const decision = node.params.workflow_exclusions as { source_digest: string; excluded_refs: string[] } | null;
+        if (decision && decision.source_digest !== state.source_digest) continue;
+        const excluded = new Set(decision?.excluded_refs ?? []);
+        for (const row of state.rows) lookup.set(row.observation_ref, {
+          excluded: excluded.has(row.observation_ref), restorable: row.source_included,
+        });
+      }
+      return lookup;
+  });
+  const workflowPopulationActions: WorkflowPopulationActions = {
+    scope: () => JSON.stringify([...workspaceIdentity(), workflowId.value]),
+    resolve: ref => workflowObservationLookup.value.get(ref) ?? null,
+    change(refs, exclude) {
+      if (isExecuting.value) throw new Error("Wait for this run to finish before changing workflow exclusions.");
+      const requested = new Set(refs);
+      const updates: Array<{ node: WorkflowNode; decision: { source_digest: string; excluded_refs: string[] } }> = [];
+      for (const { node, state } of workflowPopulations.value) {
+        const selected = state.rows.filter(row => requested.has(row.observation_ref));
+        if (!selected.length) continue;
+        if (selected.some(row => !workflowPopulationActions.resolve(row.observation_ref)))
+          throw new Error("Source changed; inspect Load Data before changing exclusions.");
+        const current = node.params.workflow_exclusions as { source_digest: string; excluded_refs: string[] } | null;
+        if (current && current.source_digest !== state.source_digest) throw new Error("Source changed; inspect Load Data before changing exclusions.");
+        const excluded = new Set(current?.excluded_refs ?? []);
+        for (const row of selected) {
+          if (!row.source_included) throw new Error("Restore source exclusions in My Dataset.");
+          if (exclude) excluded.add(row.observation_ref); else excluded.delete(row.observation_ref);
+          requested.delete(row.observation_ref);
+        }
+        if (state.rows.every(row => !row.source_included || excluded.has(row.observation_ref)))
+          throw new Error("Keep at least one active workflow observation.");
+        updates.push({ node, decision: { source_digest: state.source_digest, excluded_refs: [...excluded].sort() } });
+      }
+      if (requested.size) throw new Error("Selection does not belong to the current workflow source.");
+      for (const { node, decision } of updates) {
+        const params = { ...node.params };
+        delete params.workflow_exclusions;
+        if (decision.excluded_refs.length) params.workflow_exclusions = decision;
+        updateNode(node.id, { params });
+      }
+    },
+  };
+  function restoreWorkflowObservations() {
+    if (isExecuting.value) return;
+    for (const node of nodes.value) if ("workflow_exclusions" in node.params) {
+      const params = { ...node.params };
+      delete params.workflow_exclusions;
+      updateNode(node.id, { params });
+    }
+  }
+
   /**
    * Validate an edge connection between two nodes.
    * Checks if the output type of the source node is compatible with the input types of the target node.
@@ -2266,6 +2367,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   return {
+    workflowPopulations,
+    workflowExcludedCount,
+    workflowPopulationActions,
+    restoreWorkflowObservations,
     // State
     nodes,
     edges,

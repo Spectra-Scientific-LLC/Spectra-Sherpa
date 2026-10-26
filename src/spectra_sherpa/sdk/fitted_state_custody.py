@@ -38,6 +38,71 @@ class FittedStateCustodyCapability:
 _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingProxyType(
     {
         (
+            "spectrasherpa.model-artifact.pca/3",
+            "1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.pca/3",
+            contract_digest="1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale=(
+                "Display projection reuses one input; fitting, application arrays and serializer are unchanged."
+            ),
+        ),
+        (
+            "spectrasherpa.model-artifact.pca/3",
+            "7f5425b11e126eb8c8359dd480e9af00c62a1d852fa372bed41e31c08d5cbf60",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.pca/3",
+            contract_digest="7f5425b11e126eb8c8359dd480e9af00c62a1d852fa372bed41e31c08d5cbf60",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Display membership and dispatch fixes; fitted arrays and serializer are unchanged.",
+        ),
+        (
+            "spectra.scale-reference-json.v2",
+            "5bcce28bb446d20a2a5f1a44b43d10dc5d98c69e1b981d831151885b069b41e8",
+        ): FittedStateCustodyCapability(
+            serializer="spectra.scale-reference-json.v2",
+            contract_digest="5bcce28bb446d20a2a5f1a44b43d10dc5d98c69e1b981d831151885b069b41e8",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Display membership and dispatch fixes; fitted arrays and serializer are unchanged.",
+        ),
+        (
+            "spectra.scale-reference-json.v2",
+            "9baeb1b89c4ea311d9cc47b8bc4188c01faa88637ecfe36475cd20af99af3b87",
+        ): FittedStateCustodyCapability(
+            serializer="spectra.scale-reference-json.v2",
+            contract_digest="9baeb1b89c4ea311d9cc47b8bc4188c01faa88637ecfe36475cd20af99af3b87",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Display-only application hook; serialized scale parameters and custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.sherpa-plsda-state/5",
+            "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Workflow display/source-curation bindings; fitted arrays and serializers are unchanged.",
+        ),
+        (
+            "spectra.sherpa-simpls-regression-json/9",
+            "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
+        ): FittedStateCustodyCapability(
+            serializer="spectra.sherpa-simpls-regression-json/9",
+            contract_digest="d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Workflow display/source-curation bindings; fitted arrays and serializers are unchanged.",
+        ),
+        (
+            "spectrasherpa.model-artifact.pca/3",
+            "869a320a282d9484457f4e3237a0a098c26403c65ed1e699482403231630b608",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.pca/3",
+            contract_digest="869a320a282d9484457f4e3237a0a098c26403c65ed1e699482403231630b608",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Workflow display/source-curation bindings; fitted arrays and serializers are unchanged.",
+        ),
+        (
             "spectrasherpa.sherpa-plsda-state/5",
             "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
         ): FittedStateCustodyCapability(

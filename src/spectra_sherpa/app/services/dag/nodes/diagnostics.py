@@ -439,6 +439,22 @@ class OutlierDetectionNode(Node):
             f"{indent}results[{self.node_id!r}] = _outlier_outputs",
         ]
 
+    async def project_population(self, outputs: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+        """Show application statistics with the active fit's unchanged limits."""
+        state = inputs.get("pca_model", inputs.get("default"))
+        if not isinstance(state, dict) or "calibration_state" not in state:
+            return {}
+        t2, q = np.asarray(state["T2"]), np.asarray(state["Q"])
+        flags = (t2 > outputs["T2_limit"]) | (q > outputs["Q_limit"])
+        return {
+            "T2": t2.tolist(),
+            "Q": q.tolist(),
+            "flags": flags.tolist(),
+            "outliers": flags.tolist(),
+            "sample_labels": state["sample_labels"],
+            "observation_axis": state["scores"].sample_axis.model_dump(mode="json"),
+        }
+
     async def execute(self, pca_model: Any) -> Any:
         """
         Execute outlier detection on PCA model.
@@ -450,6 +466,11 @@ class OutlierDetectionNode(Node):
             Dict containing outlier flags and statistics
         """
         result, diagnostics = _outlier_dispatch(pca_model, **self._resolve_params())
+        # Exact same-input observation coordinates also support selection
+        # before the first exclusion; no display projection/refit is needed.
+        scores = pca_model.get("scores") if isinstance(pca_model, Mapping) else None
+        if isinstance(scores, SherpaDataset) and scores.sample_axis is not None:
+            result["metadata"]["observation_axis"] = scores.sample_axis.model_dump(mode="json")
 
         logger.debug(
             "[Outlier Detection] Found %s outliers (%.1f%%) at %.1f%% confidence",

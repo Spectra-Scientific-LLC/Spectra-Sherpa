@@ -32,7 +32,8 @@ describe("canonical export artifacts", () => {
 
   it("distinguishes plain and portable CSV, including historical prepared files", async () => {
     expect(exportFilenameForFormat("prepared.json", "portable_csv")).toBe("prepared.csv");
-    expect(exportDownloadReason({ ...artifact, content: "#spectrasherpa-portable-csv/2 header" }, { format: "csv", filename: "spectra.csv" })).toContain("plain CSV");
+    expect(exportDownloadReason({ ...artifact, content: "#spectrasherpa-portable-csv/2 header" }, { format: "plain_csv", filename: "spectra.csv" })).toContain("plain CSV");
+    expect(exportDownloadReason({ ...artifact, content: "#spectrasherpa-portable-csv/2 header" }, { format: "csv", filename: "spectra.csv" })).toBe("");
     await downloadExportArtifact({ ...artifact, format: "portable_csv" }, { format: "portable_csv", filename: "spectra.csv" });
     expect(downloadText).toHaveBeenCalledWith(content, "spectra.csv", "text/csv;charset=utf-8");
     expect(exportArtifactSummary(artifact)).toEqual({ label: "Prepared file: spectra.csv", rows: 1, cols: 2 });

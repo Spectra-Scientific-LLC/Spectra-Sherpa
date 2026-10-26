@@ -46,6 +46,19 @@ describe("XGSC-01 advisor execution gate", () => {
     expect(value.nodes[0].parameters).toEqual({ n_components: 2, scale: false });
     expect(value.execution_run_id).toBe(10);
   });
+
+  it("discloses counts, never source refs, from both draft and retained parameter paths", () => {
+    const source = { nodes: [{ node_id: "load", parameters: { experiment_id: 1,
+      workflow_exclusions: { source_digest: "PRIVATE_DIGEST", excluded_refs: ["PRIVATE_REF"] } } }] };
+    for (const live of [true, false]) {
+      const value = bindAdvisorExecutionContext(source, { workflowExcludedCount: 1,
+        executionEvidenceScope: live ? "live_full" : "unavailable", restoredRunId: live ? 10 : null,
+        lastExecutionParams: { load: source.nodes[0].parameters } });
+      expect(value.workflow_population?.excluded_count).toBe(1);
+      expect(JSON.stringify(value)).not.toContain("PRIVATE_");
+      expect(source.nodes[0].parameters.workflow_exclusions.excluded_refs).toEqual(["PRIVATE_REF"]);
+    }
+  });
   it("leaves unavailable historical parameters unknown", () => {
     expect(
       bindAdvisorExecutionContext(context, {

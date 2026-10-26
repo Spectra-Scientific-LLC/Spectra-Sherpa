@@ -996,6 +996,10 @@ def test_provider_archive_round_trip_reaches_the_project_collection_identity(
         prepared_overrides={},
     )
     collection = _loaded_files_to_sherpa([loaded], "Provider reference", definition=None)
+    # Singleton assembly mutates the loaded source in place. That is exactly
+    # the pre-handoff collection projection used by existing trial grants;
+    # refreshing its receipt must not rewrite scientific content or identity.
+    assert collection.scientific_digest == loaded.dataset.scientific_digest
 
     assert collection.shape == (2, 2)
     assert collection.target.tolist() == [10.0, 11.0]
@@ -1042,9 +1046,11 @@ def test_provider_archive_round_trip_reaches_the_project_collection_identity(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("explicit_target", [False, True])
 async def test_registered_reference_collection_node_accepts_pinned_projection_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    explicit_target: bool,
 ) -> None:
     """Registered references carry generated collection identity into DAG execution."""
 
@@ -1085,7 +1091,17 @@ async def test_registered_reference_collection_node_accepts_pinned_projection_id
         prepared_overrides={},
     )
     collection = _loaded_files_to_sherpa([loaded], "Eigenvector Corn M5", definition=None)
+    from spectra_sherpa.app.services.dag.supervision_binding import admit_attached_sample_table_supervision
+
+    assert admit_attached_sample_table_supervision(collection) is not None
     source_collection = collection.meta["source_collection"]
+    from spectra_sherpa.app.lib.target_authority import issue_target_authority
+
+    target_authority = (
+        issue_target_authority(collection, column="Moisture", target_type="continuous").canonical_dict()
+        if explicit_target
+        else None
+    )
 
     class Resolver:
         async def resolve_experiment_collection(self, *, experiment_id: int, stage: str = "raw"):
@@ -1117,6 +1133,8 @@ async def test_registered_reference_collection_node_accepts_pinned_projection_id
             "source_manifest_sha256": source_collection["manifest_digest"],
             "collection_definition_sha256": source_collection["collection_definition_sha256"],
             "scientific_collection_sha256": source_collection["scientific_collection_sha256"],
+            "target_authority": target_authority,
+            "group_column": "source_label" if explicit_target else "",
         },
         source_resolver=Resolver(),
     )
@@ -1140,13 +1158,23 @@ async def test_registered_reference_collection_node_accepts_pinned_projection_id
             "source_manifest_sha256": source_collection["manifest_digest"],
             "collection_definition_sha256": source_collection["collection_definition_sha256"],
             "scientific_collection_sha256": source_collection["scientific_collection_sha256"],
-            "target_authority": None,
-            "group_column": "",
+            "target_authority": target_authority,
+            "group_column": "source_label" if explicit_target else "",
         },
     )
     node.bind_execution_runtime(ExecutionRuntime(dataset_source_resolver=Resolver()))
 
     node_result = await node.execute()
+
+    assert admit_attached_sample_table_supervision(reader_result["default"]) is not None
+    assert admit_attached_sample_table_supervision(node_result["default"]) is not None
+    if explicit_target:
+        assert admit_attached_sample_table_supervision(node_result["default"]).groups.tolist() == [
+            "Sample A",
+            "Sample B",
+        ]
+    np.testing.assert_array_equal(node_result["default"].target, reader_result["default"].target)
+    np.testing.assert_array_equal(node_result["default"].X, reader_result["default"].X)
 
     assert node_result["default"].meta["source_collection"]["collection_definition_sha256"] == (
         source_collection["collection_definition_sha256"]
@@ -1154,6 +1182,57 @@ async def test_registered_reference_collection_node_accepts_pinned_projection_id
     assert node_result["default"].meta["source_collection"]["scientific_collection_sha256"] == (
         source_collection["scientific_collection_sha256"]
     )
+
+
+@pytest.mark.parametrize("changed", ["X", "sample_mask", "feature_units", "response_units", "groups"])
+def test_registered_supervision_handoff_refuses_scientific_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str
+) -> None:
+    from spectra_sherpa.app.services.dag.supervision_binding import (
+        attach_sample_table_supervision,
+    )
+    from spectra_sherpa.app.services.registered_reference_supervision import (
+        capture_registered_supervision,
+        restore_registered_supervision,
+    )
+
+    member = b"native-dso-placeholder"
+    selected = tmp_path / "provider.zip"
+    archive = _write_archive(selected, member)
+    registry = _registry(archive, member)
+    monkeypatch.setattr(
+        "spectra_sherpa.app.lib.reference_materialization.ingest", lambda _path: _ingestion_result(member)
+    )
+    original = materialize_reference_projection(selected, "fixture-projection-v1", registry=registry).dataset
+    original = attach_sample_table_supervision(
+        original, target_column="Moisture", target_type="continuous", group_column="source_label", node_id="fixture"
+    )
+    handoff = capture_registered_supervision(original, selected_asset_id="fixture-projection-v1")
+    assert handoff is not None and handoff.group_column == "source_label"
+    result = original.snapshot()
+    if changed == "X":
+        result.X[0, 0] += 1
+    elif changed == "sample_mask":
+        result.sample_axis = result.sample_axis.model_copy(update={"include_mask": np.asarray([True, False])})
+    elif changed == "feature_units":
+        result.feature_axis = result.feature_axis.model_copy(update={"units": "cm-1"})
+    elif changed == "response_units":
+        result.target_context = result.target_context.model_copy(update={"target_units": "wt %"})
+    else:
+        table = result.sample_axis.sample_table
+        table["source_label"] = ["B", "A"]
+        result.sample_axis = result.sample_axis.model_copy(update={"sample_table": table})
+    with pytest.raises(ValueError, match="changed the supervised observations"):
+        restore_registered_supervision(result, handoff)
+
+    # A bad original receipt is refused before assembly, not silently repaired.
+    original.meta["supervision_binding"]["supervision_binding_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="supervision"):
+        capture_registered_supervision(original, selected_asset_id="fixture-projection-v1")
+
+    original.meta.pop("supervision_binding")
+    assert capture_registered_supervision(original, selected_asset_id="fixture-projection-v1") is None
+    assert capture_registered_supervision(original, selected_asset_id="other") is None
 
 
 def test_persisted_member_is_removed_when_post_copy_verification_fails(

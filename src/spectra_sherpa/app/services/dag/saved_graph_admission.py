@@ -72,11 +72,11 @@ def _canonical_port_type(metadata: Any, name: str, *, direction: str) -> str | N
     ports = metadata.output_ports if direction == "output" else metadata.input_ports
     if not ports:
         return None
-    if name == "default":
-        return ports[0].type_ref
     for port in ports:
         if port.name == name:
             return port.type_ref
+    if name == "default":
+        return ports[0].type_ref
     return None
 
 

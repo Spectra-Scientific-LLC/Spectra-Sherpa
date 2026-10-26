@@ -44,6 +44,8 @@ _READ_ONLY_CONSUMERS = {
     "model.apply_fitted_linear_regression": "d78b114e9232c089d62045df8389531f24d24a20a8d94daf201063007c819665",
     "model.apply_fitted_pcr": "f83e7ed65a6ab4f2efe14346e515fa57aa618fe268f68be0044bb538cc660428",
     "model.apply_fitted_svr": "755d8867e11d93d20d752af591cc995b180f559a10ecdbdd31c145ed1e92b320",
+    "classification.plsda": "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+    "model.fitted_pls": "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
 }
 _PROFILE_DIGESTS = (None, "9f37d08a914c3e276859c0ba10b5d2187d5d5ba4ff85f6d00b35cba23e7369f4")
 
@@ -108,7 +110,11 @@ def test_other_changed_consumers_have_no_archived_profile_or_application_alias(o
 def test_scientific_audit_preserves_exact_prior_application_not_execution(operation):
     before, current = _REVIEWED[operation]
     contract = node_registry.get_metadata(operation).resolved_execution_contract()
-    assert contract.digest == current
+    latest = {entry.operation_id: entry.consumer_digest for entry in authority._WORKFLOW_POPULATION_PREDECESSORS}
+    # The reviewed display-only reuse has its own exact current PCA consumer;
+    # the historical scientific-audit pairs below remain pinned unchanged.
+    latest["model.pca"] = "1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f"
+    assert contract.digest == latest.get(operation, current)
     serializer = contract.payload["fitted_state_serializer"]
     previous = list(authority.saved_state_compatibilities())
     for name, entries in vars(authority).items():

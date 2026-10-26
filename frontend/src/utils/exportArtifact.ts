@@ -6,6 +6,7 @@ const MAX_EXPORT_BYTES = 32 * 1024 * 1024;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const FORMAT_CONTRACT = {
   csv: { suffix: ".csv", mediaType: "text/csv;charset=utf-8" },
+  plain_csv: { suffix: ".csv", mediaType: "text/csv;charset=utf-8" },
   portable_csv: { suffix: ".csv", mediaType: "text/csv;charset=utf-8" },
   json: { suffix: ".json", mediaType: "application/json" },
   jdx: { suffix: ".zip", mediaType: "application/zip" },
@@ -24,7 +25,7 @@ const ARTIFACT_FIELDS = new Set([
 ]);
 
 type ExportFormat = keyof typeof FORMAT_CONTRACT;
-export const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = { csv: "CSV (plain)", portable_csv: "CSV (portable)", json: "JSON", jdx: "JCAMP-DX (ZIP)" };
+export const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = { plain_csv: "CSV (plain)", csv: "CSV (legacy; choose format)", portable_csv: "CSV (portable)", json: "JSON", jdx: "JCAMP-DX (ZIP)" };
 
 /** Summary only; downloads still verify the complete closed artifact and digest. */
 export function exportArtifactSummary(value: unknown): { label: string; rows: number; cols: number } | null {
@@ -45,7 +46,7 @@ export function exportFilenameForFormat(filename: unknown, format: unknown): str
 /** Retained bytes are never reformatted or renamed by the download surface. */
 export function exportDownloadReason(value: unknown, params: Record<string, unknown>): string {
   if (!isRecord(value)) return "Run this node to prepare a file.";
-  if (params.format === "csv" && typeof value.content === "string" && value.content.startsWith("#spectrasherpa-portable-csv/")) {
+  if (params.format === "plain_csv" && typeof value.content === "string" && value.content.startsWith("#spectrasherpa-portable-csv/")) {
     return "Run this node to prepare plain CSV. The retained file uses the older portable CSV format.";
   }
   const filename = value.schema_version === ZIP_EXPORT_ARTIFACT_SCHEMA && params.format === "jdx"

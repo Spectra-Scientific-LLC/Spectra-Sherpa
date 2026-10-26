@@ -535,9 +535,9 @@ class PeakFindingNode(Node):
                     if right - left >= 2:
                         absolute_window_integrals.append(float(abs(np.trapz(spectrum[left:right], x_axis[left:right]))))
                     else:
-                        absolute_window_integrals.append(float(abs(spectrum[idx])))
+                        absolute_window_integrals.append(float("nan"))
                 else:
-                    absolute_window_integrals.append(float(abs(spectrum[idx])))
+                    absolute_window_integrals.append(float("nan"))
 
             total_peaks += len(indices)
             all_positions.extend(positions)

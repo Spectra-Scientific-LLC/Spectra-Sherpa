@@ -366,7 +366,10 @@
         </div>
         <div v-if="saveError" class="plan-error inline" role="alert">
           <i class="pi pi-exclamation-triangle" /><span>{{ saveError }}</span>
+          <Button v-if="saveConflict" label="Refresh saved version" icon="pi pi-refresh"
+            class="p-button-sm p-button-outlined" :loading="saving" @click="refreshSavedRevision" />
           <Button
+            v-else
             label="Retry save"
             icon="pi pi-refresh"
             class="p-button-sm p-button-outlined"
@@ -458,6 +461,7 @@ const loading = ref(false);
 const saving = ref(false);
 const loadError = ref<string | null>(null);
 const saveError = ref<string | null>(null);
+const saveConflict = ref(false);
 const revision = ref("");
 const planLoaded = ref(false);
 const baseline = ref("");
@@ -801,6 +805,7 @@ async function savePlan(): Promise<void> {
   const submitted = serializedDraft.value;
   saving.value = true;
   saveError.value = null;
+  saveConflict.value = false;
   try {
     const { data } = await api.put<AcquisitionPlan>(
       `/experiments/${experimentId}/acquisition-plan`,
@@ -822,10 +827,30 @@ async function savePlan(): Promise<void> {
       life: 3000,
     });
   } catch (cause) {
-    if (token === requestToken) saveError.value = getErrorMessage(cause);
+    if (token === requestToken) {
+      saveError.value = getErrorMessage(cause);
+      saveConflict.value = (cause as { response?: { status?: number } })?.response?.status === 409;
+    }
   } finally {
     saving.value = false;
   }
+}
+
+async function refreshSavedRevision(): Promise<void> {
+  if (props.experimentId == null || saving.value) return;
+  const token = requestToken;
+  saving.value = true;
+  try {
+    const { data } = await api.get<AcquisitionPlan>(`/experiments/${props.experimentId}/acquisition-plan`);
+    if (token !== requestToken) return;
+    // Explicit conflict recovery advances only the CAS token. Keep the draft
+    // untouched so the scientist can review it before deliberately resaving.
+    revision.value = data.revision;
+    saveConflict.value = false;
+    saveError.value = "Saved version refreshed. Your edits are unchanged; review and save again.";
+  } catch (cause) {
+    if (token === requestToken) saveError.value = getErrorMessage(cause);
+  } finally { saving.value = false; }
 }
 
 watch(() => props.experimentId, loadPlan, { immediate: true });

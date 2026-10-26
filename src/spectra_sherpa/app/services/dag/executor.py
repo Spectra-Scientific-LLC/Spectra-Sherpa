@@ -24,6 +24,7 @@ from .executor_pool import (
     IsolatedWorkerPool,
     WorkerExecutionContext,
     _run_node_in_worker,
+    _run_population_in_worker,
     get_default_pool,
 )  # noqa: F401
 from .executor_pool import set_default_pool as set_default_pool
@@ -42,6 +43,7 @@ from .executor_validation import (  # noqa: F401 — tests import/monkeypatch th
 from .graph_utils import Edge as _Edge
 from .graph_utils import build_dependency_map, topological_sort
 from .node_base import Node, NodeResult, NodeStatus, node_registry, resolved_runtime_worker_capabilities
+from .population_display import computational_outputs, retain_population_display
 from .transport import reject_spectrochempy_transport
 
 logger = logging.getLogger(__name__)
@@ -277,6 +279,14 @@ class DAGExecutor:
         for edge in self.edges:
             if edge.from_node == node_id:
                 self.invalidate_node(edge.to_node)
+
+    def _invalidate_changed_parameters(self) -> None:
+        # Invalidate descendants *before* executing any changed source. Updating
+        # its cache hash first would make old descendants appear valid again.
+        for node_id in list(self._param_hashes):
+            previous = self._param_hashes.get(node_id)
+            if previous not in (None, "__injected__") and previous != self._compute_param_hash(node_id):
+                self.invalidate_node(node_id)
 
     def _transitive_descendants(self, node_id: str) -> Set[str]:
         """Return every node id reachable downstream of ``node_id``.
@@ -847,6 +857,8 @@ class DAGExecutor:
             raise ValueError(f"Source node {edge.from_node} not found")
         if edge.to_node not in self.nodes:
             raise ValueError(f"Target node {edge.to_node} not found")
+        if edge.from_output in {"__workflow_population", "__source_population"}:
+            raise ValueError("Workflow population display evidence is not a connectable computational port")
 
         self.edges.append(edge)
 
@@ -1035,6 +1047,34 @@ class DAGExecutor:
                 source_results=self.results,
             )
 
+    async def _run_population_projection(self, node: Node, outputs: dict, inputs: dict) -> dict:
+        """Display work uses the existing scientific worker and cancellation policy."""
+        if self._process_pool is None or self._process_pool is False:
+            raise ValueError("Excluded display projection requires a worker; active results remain available.")
+        # Projection is pure display application, even for a data-category
+        # node. Never run its synchronous numerical work on the event loop.
+        args = (
+            node.metadata.node_type,
+            node.node_id,
+            dict(node.parameters),
+            self._sanitize_for_pool(outputs),
+            self._sanitize_for_pool(inputs),
+            self._worker_context(node),
+        )
+        timeout = 60.0  # display-only work has its own bounded budget, not a scientist parameter
+        if isinstance(self._process_pool, IsolatedWorkerPool):
+            try:
+                projected = await self._process_pool.run(_run_population_in_worker, *args, timeout=timeout)
+            except Exception:
+                self._process_pool.recover_optional_projection_failure()
+                raise
+        else:
+            future = asyncio.get_running_loop().run_in_executor(self._process_pool, _run_population_in_worker, *args)
+            projected = await asyncio.wait_for(future, timeout=timeout)
+        if "__projection_refusal" in projected:
+            raise ValueError(projected["__projection_refusal"])
+        return projected
+
     def _validate_runtime_data_roles(
         self,
         node: Node,
@@ -1101,6 +1141,8 @@ class DAGExecutor:
 
         # Find all edges that connect to this node
         incoming_edges = [e for e in self.edges if e.to_node == node_id]
+        if any(edge.from_output in {"__workflow_population", "__source_population"} for edge in incoming_edges):
+            raise ValueError("Workflow population display evidence is not a connectable computational port")
 
         # Check if node uses named input ports
         if node.uses_named_ports():
@@ -1131,7 +1173,7 @@ class DAGExecutor:
                     _legacy_port_counter += 1
 
                 # Extract specific output from multi-output nodes
-                result = self.results[edge.from_node]
+                result = computational_outputs(self.results[edge.from_node])
                 data = None
                 if isinstance(result, dict):
                     if edge.from_output and edge.from_output != "default":
@@ -1198,7 +1240,7 @@ class DAGExecutor:
                     raise ValueError(f"Node {edge.from_node} has not been executed yet (required by {node_id})")
 
                 # Extract specific output from multi-output nodes
-                result = self.results[edge.from_node]
+                result = computational_outputs(self.results[edge.from_node])
                 data = None
                 if isinstance(result, dict):
                     if edge.from_output and edge.from_output != "default":
@@ -1273,6 +1315,7 @@ class DAGExecutor:
                             node.parameters.update(config)
 
             # Get execution order
+            self._invalidate_changed_parameters()
             execution_order = self._topological_sort()
 
             # Mark all nodes as queued
@@ -1332,6 +1375,8 @@ class DAGExecutor:
                 else:
                     self.results[node_id] = result
                     self.diagnostics[node_id] = {}
+
+                await retain_population_display(self, node_id)
 
                 # Persist model artifact if present
                 self._process_model_artifact(node_id, positional_inputs, named_inputs)
@@ -1415,6 +1460,7 @@ class DAGExecutor:
                         node.parameters.update(config)
 
         # Get dependencies for this node
+        self._invalidate_changed_parameters()
         deps = self._get_dependencies()
         nodes_to_execute = self._get_execution_path(node_id, deps)
 
@@ -1471,6 +1517,8 @@ class DAGExecutor:
             else:
                 self.results[dep_node_id] = result
                 self.diagnostics[dep_node_id] = {}
+
+            await retain_population_display(self, dep_node_id)
 
             # Persist model artifact if present
             self._process_model_artifact(dep_node_id, positional_inputs, named_inputs)

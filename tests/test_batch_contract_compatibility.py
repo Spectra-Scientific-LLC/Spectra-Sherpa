@@ -80,8 +80,10 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
     from spectra_sherpa.core.contract_compatibility import (
         _DIAGNOSTIC_REFUSAL_PREDECESSORS,
         _FEATURE_PRESENTATION_PREDECESSORS,
+        _PCA_DISPLAY_INPUT_REUSE_PREDECESSORS,
         _SCIENTIFIC_AUDIT_PREDECESSORS,
         _SCIENTIFIC_AUTHORITY_PREDECESSORS,
+        _WORKFLOW_POPULATION_PREDECESSORS,
     )
 
     audited = {entry.operation_id for entry in _SCIENTIFIC_AUDIT_PREDECESSORS}
@@ -93,6 +95,13 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
             + tuple(e for e in _DIAGNOSTIC_REFUSAL_PREDECESSORS if e.operation_id not in {"model.ica", "model.mcr_als"})
         )
         if entry.operation_id not in audited
+    )
+    updated = {entry.operation_id for entry in _WORKFLOW_POPULATION_PREDECESSORS}
+    current_entries = tuple(_WORKFLOW_POPULATION_PREDECESSORS) + tuple(
+        entry for entry in current_entries if entry.operation_id not in updated
+    )
+    current_entries = tuple(_PCA_DISPLAY_INPUT_REUSE_PREDECESSORS) + tuple(
+        entry for entry in current_entries if entry.operation_id != "model.pca"
     )
     for entry in current_entries:
         current = node_registry.get_metadata(entry.operation_id).resolved_execution_contract()
@@ -136,14 +145,14 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         "model.kmeans": "c65f7f11e6d2089abdec190e2c7aee80088eed4f2545ce55c0b92db1b2ebef30",
         "model.parafac": "caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
         "classification.plsda": "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
-        "model.load_apply": "d3fb0d37037ce5c51bd5e8343386d8dc9bce131f53c08d368b21da3af97b54d9",
+        "model.load_apply": "e5b31488bd88dd6e39380f533fed6c560afe9de17f4e68860d2aea23c8fad0e1",
         "model.apply_fitted_linear_regression": "d78b114e9232c089d62045df8389531f24d24a20a8d94daf201063007c819665",
         "model.apply_fitted_pcr": "f83e7ed65a6ab4f2efe14346e515fa57aa618fe268f68be0044bb538cc660428",
         "model.apply_fitted_pls": "cd9c84a4d7b44d1768db8f627418c8e04899a2a1fb8b8aeb44016cbaa42df648",
         "model.apply_fitted_svr": "755d8867e11d93d20d752af591cc995b180f559a10ecdbdd31c145ed1e92b320",
         "model.fitted_linear_regression": "0ba997bbc87209703db011f38850ee82d93027bb72ab28db27aa108a8f9cca9a",
         "model.fitted_pcr": "99359a3588dfe55e29fd32428ce896d1ca503e3472e8b17a5982ed24d72a0d0d",
-        "model.fitted_pls": "ba02705c9868ae460e80af30207f8fa1c60f5ff20e8e6588be267292811472da",
+        "model.fitted_pls": "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
         "model.fitted_svr": "b8ba060d1154848d0f96e25a0178c0c5eeff6658a4fc36de6ae3f7c82cb3f7ed",
     }
     reviewed_changes = {
@@ -226,7 +235,12 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
             "spectra_sherpa.app.services.dag.nodes.classification.plsda_state",
             "spectra_sherpa.app.services.dag.nodes.modeling.load_apply_node",
             "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
+            "spectra_sherpa.app.services.dag.nodes.preprocessing.derivative_node",
+            "spectra_sherpa.app.services.dag.nodes.preprocessing.emsc_node",
+            "spectra_sherpa.app.services.dag.nodes.preprocessing.normalize_node",
+            "spectra_sherpa.app.services.dag.nodes.preprocessing.penalized_baseline_node",
             "spectra_sherpa.app.services.dag.nodes.preprocessing.scale_node",
+            "spectra_sherpa.app.services.dag.nodes.preprocessing.smooth_node",
             "spectra_sherpa.app.services.dag.nodes.selection.variable_select_node",
         ],
         "model.parafac": [

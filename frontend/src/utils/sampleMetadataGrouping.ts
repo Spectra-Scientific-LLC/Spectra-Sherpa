@@ -1,12 +1,15 @@
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { createCategoryColorMap } from "@/utils/colors";
+import { observationTraceMetadata } from "@/utils/workflowPopulation";
 
 export type MetadataGroupingState =
   | { kind: "absent" }
   | { kind: "invalid"; message: string }
   | {
       kind: "valid";
-      sampleIds: string[];
+      sampleIds: string[] | null;
+      observationAxis?: unknown;
+      sampleLabels: string[];
       columns: Record<string, string[]>;
       columnLabels: Record<string, string[]>;
       colorOptions: { label: string; value: string }[];
@@ -54,7 +57,7 @@ function scalarLabel(value: unknown): string {
 
 /** Add a recorded categorical response as a display group; never infer classes from numbers. */
 export function datasetMetadataGroupingState(payload: any, rows: number): MetadataGroupingState {
-  const axis = payload?.y_axis;
+  const axis = payload?.sample_axis ?? payload?.y_axis;
   const context = payload?.target_context;
   const target = payload?.target;
   if (context?.target_type !== "categorical" || !Array.isArray(target) || target.length !== rows)
@@ -72,7 +75,8 @@ export function metadataGroupingState(yAxis: unknown, rows: number): MetadataGro
   const axis = yAxis as Record<string, unknown>;
   const table = axis.sample_table;
   const classSets = axis.class_sets;
-  if (table == null && classSets == null) return { kind: "absent" };
+  const classes = axis.classes;
+  if (table == null && classSets == null && classes == null) return { kind: "absent" };
   if (table != null && (!table || typeof table !== "object" || Array.isArray(table))) {
     return {
       kind: "invalid",
@@ -86,31 +90,20 @@ export function metadataGroupingState(yAxis: unknown, rows: number): MetadataGro
     };
   }
   const values = (table ?? {}) as Record<string, unknown>;
-  const labels = exactStrings(axis.labels, rows);
-  if (!labels) {
+  const labels = axis.labels == null ? null : exactStrings(axis.labels, rows);
+  if (axis.labels != null && !labels) {
     return {
       kind: "invalid",
       message: "Metadata grouping refused: aligned exact sample labels are required.",
     };
   }
-  // Axis labels are the row-identity authority. Native readers may expose
-  // additional aligned metadata without redundantly materializing sample_id.
-  // If a producer does supply sample_id, it must still match labels exactly.
-  const sampleIds =
-    table == null || values.sample_id == null ? labels : exactStrings(values.sample_id, rows);
-  if (!sampleIds) {
+  // These vectors belong to the same typed observation axis: no cross-source
+  // join is performed here. Editable/repeated display labels are not IDs.
+  const sampleIds = values.sample_id == null ? null : exactStrings(values.sample_id, rows);
+  if (values.sample_id != null && (!sampleIds || new Set(sampleIds).size !== rows)) {
     return {
       kind: "invalid",
-      message: "Metadata grouping refused: sample_id and aligned score-row labels are required.",
-    };
-  }
-  if (
-    new Set(sampleIds).size !== rows ||
-    sampleIds.some((value, index) => value !== labels[index])
-  ) {
-    return {
-      kind: "invalid",
-      message: "Metadata grouping refused: sample IDs do not exactly match score-row labels.",
+      message: "Metadata grouping refused: sample IDs must be unique and row-aligned.",
     };
   }
   const columns: Record<string, string[]> = {};
@@ -119,6 +112,15 @@ export function metadataGroupingState(yAxis: unknown, rows: number): MetadataGro
   const symbolOptions: { label: string; value: string }[] = [{ label: "None", value: "__none__" }];
   const admittedColumns: Array<{ name: string; raw: unknown[]; labels?: string[] }> =
     Object.entries(values).map(([name, raw]) => ({ name, raw: Array.isArray(raw) ? raw : [] }));
+  if (classes != null) {
+    if (!Array.isArray(classes) || classes.length !== rows) {
+      return { kind: "invalid", message: "Metadata grouping refused: classes must be row-aligned." };
+    }
+    // Keep an existing metadata column named Class; never overwrite it.
+    if (!("Class" in values) && !(classSets as Array<{ name?: string }> | undefined)?.some(set => set?.name === "Class")) {
+      admittedColumns.push({ name: "Class", raw: classes });
+    }
+  }
   const seenClassNames = new Set<string>();
   const seenClassIndices = new Set<number>();
   for (const item of (classSets ?? []) as unknown[]) {
@@ -243,6 +245,8 @@ export function metadataGroupingState(yAxis: unknown, rows: number): MetadataGro
   return {
     kind: "valid",
     sampleIds,
+    observationAxis: axis,
+    sampleLabels: labels ?? sampleIds ?? Array.from({ length: rows }, (_, index) => `Result row ${index + 1}`),
     columns,
     columnLabels,
     colorOptions,
@@ -260,10 +264,10 @@ export function projectMetadataStyle(
     : grouping.columns[colorField] ? colorField : grouping.colorOptions[0]?.value;
   if (!colorKey || (colorKey !== "__none__" && !grouping.columns[colorKey])) return null;
   const colorValues = colorKey === "__none__"
-    ? Array(grouping.sampleIds.length).fill("color:none")
+    ? Array(grouping.sampleLabels.length).fill("color:none")
     : grouping.columns[colorKey];
   const colorLabels = colorKey === "__none__"
-    ? Array(grouping.sampleIds.length).fill("All samples")
+    ? Array(grouping.sampleLabels.length).fill("All samples")
     : grouping.columnLabels[colorKey];
   const colorCategories = Array.from(new Set(colorValues));
   const useStyles = styleField !== "__none__" && Boolean(grouping.columns[styleField]);
@@ -327,8 +331,9 @@ export function buildMetadataScoreTraces(
       legendgroup: `color-${colorKey}`,
       x: indices.map((index) => Number(scores[index]?.[pcX])),
       y: indices.map((index) => Number(scores[index]?.[pcY])),
+      ...observationTraceMetadata(grouping.observationAxis, scores.length, indices),
       customdata: indices.map((index) => [
-        grouping.sampleIds[index],
+        grouping.sampleLabels[index],
         colorLabels[index],
         styleLabels[index],
       ]),
@@ -362,6 +367,24 @@ export function buildMetadataScoreTraces(
 
 const LINE_DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"];
 
+/** Select values, inclusion and navigation together; never reindex a full mask. */
+export function subsetMetadataGrouping(
+  grouping: Extract<MetadataGroupingState, { kind: "valid" }>, indices: number[],
+): Extract<MetadataGroupingState, { kind: "valid" }> {
+  const select = <T>(values: T[]) => indices.map(index => values[index]);
+  const axis = grouping.observationAxis as { include_mask?: boolean[]; workflow_observation_refs?: string[] } | undefined;
+  return { ...grouping,
+    sampleIds: grouping.sampleIds ? select(grouping.sampleIds) : null,
+    sampleLabels: select(grouping.sampleLabels),
+    columns: Object.fromEntries(Object.entries(grouping.columns).map(([key, values]) => [key, select(values)])),
+    columnLabels: Object.fromEntries(Object.entries(grouping.columnLabels).map(([key, values]) => [key, select(values)])),
+    observationAxis: axis ? { count: indices.length,
+      ...(axis.include_mask ? { include_mask: select(axis.include_mask) } : {}),
+      ...(axis.workflow_observation_refs ? { workflow_observation_refs: select(axis.workflow_observation_refs) } : {}),
+    } : undefined,
+  };
+}
+
 export function buildMetadataLineTraces(
   x: number[],
   rows: number[][],
@@ -384,15 +407,21 @@ export function buildMetadataLineTraces(
     styleCategories,
   } = style;
   const dashMap = new Map(styleCategories.map((value, index) => [value, LINE_DASHES[index]]));
-  const traces: Record<string, unknown>[] = rows.slice(0, limit).map((row, index) => ({
+  const included = (grouping.observationAxis as { include_mask?: boolean[] } | undefined)?.include_mask;
+  const indices = rows.map((_, i) => i);
+  const displayed = included
+    ? [...indices.filter(i => included[i] !== false).slice(0, limit), ...indices.filter(i => included[i] === false)].sort((a, b) => a - b)
+    : indices.slice(0, limit);
+  const traces: Record<string, unknown>[] = displayed.map(index => ({
     type: "scatter",
     mode: "lines",
     x,
-    y: row,
-    name: grouping.sampleIds[index],
+    y: rows[index],
+    name: grouping.sampleLabels[index],
+    ...observationTraceMetadata(grouping.observationAxis, rows.length, x.map(() => index)),
     showlegend: false,
     legendgroup: `color-${colorKey}-${colorValues[index]}`,
-    customdata: x.map(() => [grouping.sampleIds[index], colorLabels[index], styleLabels[index]]),
+    customdata: x.map(() => [grouping.sampleLabels[index], colorLabels[index], styleLabels[index]]),
     line: {
       width: 1.5,
       color: colorMap.get(colorValues[index]),

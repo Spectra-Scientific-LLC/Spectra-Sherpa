@@ -163,8 +163,8 @@ async def test_file_load_and_group_use_one_exact_spc_asset(tmp_path: Path) -> No
             "asset_id": "spectrum_1",
         },
     ).execute()
-    assert grouped.shape == (2, 8)
-    assert grouped.feature_axis.units == "m/z"
+    assert grouped["default"].shape == (2, 8)
+    assert grouped["default"].feature_axis.units == "m/z"
 
 
 def test_spc_declared_elements_fail_before_signal_decode(monkeypatch) -> None:

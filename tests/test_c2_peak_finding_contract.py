@@ -50,6 +50,23 @@ def _parameters() -> dict[str, object]:
     }
 
 
+def test_unmeasurable_integral_is_missing_not_a_height_with_area_units(monkeypatch):
+    import scipy.signal
+
+    def zero_width(spectrum, indices, **kwargs):
+        count = len(indices)
+        positions = np.asarray(indices, dtype=float)
+        return np.zeros(count), np.zeros(count), positions, positions
+
+    monkeypatch.setattr(scipy.signal, "peak_widths", zero_width)
+    dataset = _dataset()
+    dataset.units = "absorbance"
+    result = execute_peak_finding(dataset, parameters=_parameters(), node_id="peaks")
+    rows = result.outputs["peaks"]["data"]
+    assert rows and all(np.isnan(row["median_absolute_window_integral"]) for row in rows)
+    assert all(np.isfinite(row["median_height"]) for row in rows)
+
+
 def test_peak_tables_declare_each_coordinate_and_signal_unit() -> None:
     dataset = _dataset()
     dataset.units = "absorbance"

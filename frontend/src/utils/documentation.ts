@@ -10,6 +10,7 @@ export const METHOD_TOPICS = {
   folderWatches: "chemometrics/validation-application/#local-folder-watches",
   referenceValues: "chemometrics/validation-application/#reference-values",
   displayExports: "workflows/reports-exports/#display-and-table-exports",
+  workflowExclusions: "workflows/build-a-workflow/#workflow-wide-observation-exclusions",
   shortSummary: "workflows/reports-exports/#short-summary-default",
   batch: "workflows/projects-datasets-runs/#batch-execution",
   availability: "workflows/projects-datasets-runs/#availability-lights",

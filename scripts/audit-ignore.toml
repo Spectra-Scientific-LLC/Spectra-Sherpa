@@ -24,6 +24,9 @@ ignore = []
 # id = "GHSA-xxxx-yyyy-zzzz"
 # reason = "Dev build tooling only; vulnerable code path is not reachable at build time."
 # expires = "2026-12-31"
+# package = "affected-package"
+# lockfile = "frontend/package-lock.json"
+# severity = "high"
 
 [npm-audit]
 ignore = []

@@ -891,6 +891,15 @@ class SampleAxis(AxisInfo):
     sample_table: dict[str, list[Any]] | None = Field(
         None, description="Tabular metadata (arbitrary columns) for samples"
     )
+    workflow_observation_refs: list[str] | None = Field(
+        None,
+        description="Source-scoped workflow navigation references; not specimen IDs or supervision",
+        max_length=MAX_AXIS_SET_LENGTH,
+    )
+
+    def bind_expected_length(self, expected: int) -> None:
+        super().bind_expected_length(expected)
+        self._validate_sample_fields()
 
     @model_validator(mode="before")
     @classmethod
@@ -927,6 +936,14 @@ class SampleAxis(AxisInfo):
     def _validate_sample_fields(self) -> SampleAxis:
         # Prefer bound expected length when attached to a dataset.
         n = self._expected_length if self._expected_length is not None else self.length
+        if self.workflow_observation_refs is not None:
+            refs = self.workflow_observation_refs
+            if (n > 0 and len(refs) != n) or len(set(refs)) != len(refs):
+                raise ValueError("workflow_observation_refs must be unique and aligned with observations")
+            if any(not ref or ref != ref.strip() or len(ref) > MAX_AXIS_TEXT_CHARS for ref in refs):
+                raise ValueError("workflow_observation_refs must contain exact non-empty references")
+            if sum(len(ref.encode("utf-8")) for ref in refs) > MAX_AXIS_TOTAL_TEXT_BYTES:
+                raise ValueError("workflow_observation_refs exceeds the axis text budget")
         if self.classes is not None and n > 0 and len(self.classes) != n:
             raise ValueError(f"classes length ({len(self.classes)}) != expected length ({n})")
         if self.include_mask is not None and n > 0 and len(self.include_mask) != n:

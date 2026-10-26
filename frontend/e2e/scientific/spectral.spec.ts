@@ -39,14 +39,26 @@ for (const name of ["mixture-ir", "moisture-nir"]) {
     }
     const workflow = await instantiate(request, dataset, "pca");
     const result = await runWorkflow(page, workflow, project);
-    const source = result.results.data_1.default;
-    assertMatrix(source.data, expected.values);
-    expect(source.y_axis.include_mask).toEqual(expected.included);
     const indices = expected.included.flatMap((included: boolean, i: number) =>
       included ? [i] : [],
     );
     const labels = indices.map((i: number) => expected.labels[i]);
     const values = indices.map((i: number) => expected.values[i]);
+    const source = result.results.data_1.default;
+    assertMatrix(source.data, values);
+    assertIdentity(source.y_axis.labels, labels);
+    expect(source.y_axis.include_mask).toEqual(labels.map(() => true));
+    const membership = result.results.data_1.exclusions;
+    expect(membership.source_count).toBe(expected.labels.length);
+    expect(membership.active_count).toBe(labels.length);
+    assertIdentity(membership.rows.map((row: { sample_label: string }) => row.sample_label), expected.labels);
+    expect(membership.rows.map((row: { included: boolean }) => row.included)).toEqual(expected.included);
+    expect(membership.rows.map((row: { source_included: boolean }) => row.source_included)).toEqual(expected.included);
+    expect(membership.rows.map((row: { source_row: number }) => row.source_row)).toEqual(expected.labels.map((_: string, i: number) => i + 1));
+    let resultRow = 0;
+    expect(membership.rows.map((row: { result_row: number | null }) => row.result_row)).toEqual(
+      expected.included.map((included: boolean) => included ? ++resultRow : null),
+    );
     assertIdentity(result.results.inclusion_1.default.y_axis.labels, labels);
     assertMatrix(result.results.inclusion_1.default.data, values);
     await page.locator(".workflow-node").filter({ hasText: "Load Data" }).first().click();
@@ -99,18 +111,36 @@ for (const name of ["mixture-ir", "moisture-nir"]) {
       page.getByRole("dialog").locator(".plotly-canvas .main-svg").first(),
     ).toBeVisible();
     const plot = await plotData(page.getByRole("dialog"));
+    // The table/fit contain active rows; source plots also show excluded rows
+    // as display-only traces. Keep both populations independently asserted.
+    const observationTraces = plot.traces.filter((trace) => expected.labels.includes(trace.name));
     assertIdentity(
-      plot.traces.map((trace) => trace.name),
-      labels,
+      observationTraces.map((trace) => trace.name),
+      expected.labels,
     );
     assertMatrix(
-      plot.traces.map((trace) => trace.y),
-      values,
+      observationTraces.map((trace) => trace.y),
+      expected.values,
     );
     assertMatrix(
-      plot.traces.map((trace) => trace.x),
-      values.map(() => expected.axis),
+      observationTraces.map((trace) => trace.x),
+      expected.values.map(() => expected.axis),
     );
+    expect(plot.traces.map((trace) => trace.name)).toContain("Excluded / not in fit");
+    const roles = await page.getByRole("dialog").locator(".plotly-canvas").first().evaluate((el) => {
+      const graph = el as HTMLElement & { data: Array<{
+        name: string; line?: { dash?: string }; meta?: { workflow_excluded?: boolean };
+      }> };
+      return graph.data.map((trace) => ({ name: trace.name, dash: trace.line?.dash, meta: trace.meta }));
+    });
+    // Numerical parity alone cannot establish that excluded rows are visibly
+    // distinguished from observations used for fitting.
+    for (let i = 0; i < expected.labels.length; i++) {
+      const trace = roles.find((trace) => trace.name === expected.labels[i]);
+      expect(trace).toBeDefined();
+      if (!expected.included[i]) expect(trace?.dash).toBe("dot");
+      else expect(trace?.dash).not.toBe("dot");
+    }
     expect(plot.xTitle).toBe(name === "mixture-ir" ? "Wavenumber (cm-1)" : "Wavelength (nm)");
     await closeDialog(page);
     // Reopening must read the retained result, not refit or use a current draft.

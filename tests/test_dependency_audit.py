@@ -34,7 +34,11 @@ def _report(advisory=None):
     return json.dumps(
         {
             "auditReportVersion": 2,
-            "vulnerabilities": {} if advisory is None else {"tool": {"via": [{"url": advisory}]}},
+            "vulnerabilities": (
+                {}
+                if advisory is None
+                else {"tool": {"severity": "high", "via": [{"url": advisory, "severity": "high"}]}}
+            ),
         }
     )
 
@@ -132,7 +136,10 @@ def test_reviewed_waiver_cannot_hide_another_advisory(audit, npm_tree, monkeypat
     monkeypatch.setattr(audit, "_require_tool", lambda name: None)
     monkeypatch.setattr(audit, "_load_npm_audit_ignores", lambda path: {"GHSA-834v-8h66-3h79": "test-only waiver"})
     report = json.loads(_report("https://github.com/advisories/GHSA-834v-8h66-3h79"))
-    report["vulnerabilities"]["second"] = {"via": [{"url": "https://github.com/advisories/GHSA-xjj6-f33q-929c"}]}
+    report["vulnerabilities"]["second"] = {
+        "severity": "high",
+        "via": [{"url": "https://github.com/advisories/GHSA-xjj6-f33q-929c", "severity": "high"}],
+    }
     monkeypatch.setattr(
         audit.subprocess, "run", lambda args, **kwargs: subprocess.CompletedProcess(args, 1, json.dumps(report), "")
     )
@@ -161,3 +168,37 @@ def test_scanner_failure_cannot_be_waived(audit, npm_tree, monkeypatch):
     )
     with pytest.raises(SystemExit, match="incomplete or failed report"):
         audit.audit_desktop(npm_tree, ignore_file=npm_tree / "ignore.toml")
+
+
+@pytest.mark.parametrize("case", ["exact", "critical", "other-package", "private-lock", "non-ghsa", "low", "mixed-low"])
+def test_waivers_are_individual_severity_and_lock_scoped(audit, npm_tree, monkeypatch, case):
+    identity = "GHSA-834v-8h66-3h79"
+    monkeypatch.setattr(audit, "_require_tool", lambda name: None)
+    monkeypatch.setattr(
+        audit,
+        "_load_npm_audit_ignores",
+        lambda path: {identity: {"package": "tool", "lockfile": "frontend/package-lock.json", "severity": "high"}},
+    )
+    report = json.loads(_report(f"https://github.com/advisories/{identity}"))
+    issue = report["vulnerabilities"]["tool"]
+    directory = npm_tree / "frontend"
+    if case in {"critical", "low"}:
+        issue["severity"] = issue["via"][0]["severity"] = case
+    if case == "other-package":
+        report["vulnerabilities"] = {"different-tool": issue}
+    if case == "non-ghsa":
+        issue["via"].append({"url": "https://nvd.nist.gov/vuln/detail/CVE-2026-999999", "severity": "high"})
+    if case == "mixed-low":
+        issue["via"].append({"url": "https://nvd.nist.gov/vuln/detail/CVE-2026-111111", "severity": "low"})
+    if case == "private-lock":
+        directory = npm_tree / "private" / "frontend"
+        directory.mkdir(parents=True)
+        (directory / "package-lock.json").write_text("{}")
+    monkeypatch.setattr(
+        audit.subprocess, "run", lambda args, **kwargs: subprocess.CompletedProcess(args, 1, json.dumps(report), "")
+    )
+    if case in {"exact", "low", "mixed-low"}:
+        audit.audit_npm(directory, scope="full", ignore_file=npm_tree / "scripts/audit-ignore.toml")
+    else:
+        with pytest.raises(SystemExit, match="without a reviewed suppression"):
+            audit.audit_npm(directory, scope="full", ignore_file=npm_tree / "scripts/audit-ignore.toml")

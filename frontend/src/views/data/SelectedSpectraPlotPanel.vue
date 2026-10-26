@@ -158,7 +158,7 @@ import {
   PRIMARY_AXIS_SET,
   projectDatasetAxisDisplay,
 } from "@/utils/datasetAxisSets";
-import { buildMetadataLineTraces, metadataGroupingState } from "@/utils/sampleMetadataGrouping";
+import { buildMetadataLineTraces, metadataGroupingState, subsetMetadataGrouping } from "@/utils/sampleMetadataGrouping";
 import SampleMetadataStyleControls from "@/views/workflow-builder/node-detail/panels/SampleMetadataStyleControls.vue";
 import { shouldReverseFeatureAxis } from "@/utils/plotLabels";
 
@@ -501,24 +501,14 @@ const singlePlotData = computed(() => {
     sampleColorField.value !== "__none__" &&
     metadataGrouping.value.columns[sampleColorField.value]
   ) {
+    const styleLabels = selectedRows(metadataGrouping.value.sampleLabels);
     const traces = buildMetadataLineTraces(
       x,
       rows as number[][],
       {
-        ...metadataGrouping.value,
-        sampleIds: labels,
-        columns: Object.fromEntries(
-          Object.entries(metadataGrouping.value.columns).map(([key, values]) => [
-            key,
-            selectedRows(values),
-          ]),
-        ),
-        columnLabels: Object.fromEntries(
-          Object.entries(metadataGrouping.value.columnLabels).map(([key, values]) => [
-            key,
-            selectedRows(values),
-          ]),
-        ),
+        ...subsetMetadataGrouping(metadataGrouping.value, selectedRowIndexes.value ?? []),
+        sampleLabels: styleLabels.map((fallback, index) =>
+          typeof labels[index] === "string" && labels[index].length > 0 ? labels[index] : fallback),
       },
       sampleColorField.value,
       sampleLineField.value,
@@ -619,6 +609,8 @@ function formatCell(value: number | null): string {
 
 <style scoped>
 .selected-spectra-panel {
+  min-width: 0;
+  overflow: hidden;
   background: var(--surface-card);
   border: 1px solid var(--surface-border);
   border-radius: 8px;

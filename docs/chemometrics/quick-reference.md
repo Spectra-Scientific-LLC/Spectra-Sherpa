@@ -16,10 +16,10 @@ clicks.
 
 | I want to… | Analysis Starter | Nodes it adds | Starter settings | What you get | Read |
 | --- | --- | --- | --- | --- | --- |
-| See sample structure, groups and outliers | **PCA Exploration & Outlier Diagnostics** | Scale / Center → Fit PCA Transform → Detect Outliers | Mean-centred; 3 components; outlier limits at 95 % | Scores, loadings, explained variance, Hotelling T² and Q residuals | [PCA](pca.md) |
-| Clean up spectra before modeling | **Preprocessing Pipeline** | Baseline (Penalized LS) → Smooth → Normalize | ALS baseline; Savitzky–Golay window 15, order 2; SNV | Corrected spectra for downstream nodes | [Preprocessing Spectra](../workflows/preprocessing.md) |
+| See sample structure, groups and outliers | **PCA Exploration & Outlier Diagnostics** | Filter → Fit PCA Transform → Detect Outliers | Scaling inside PCA: mean-centred spectra, autoscaled feature tables; 3 components; outlier limits at 95 % | Scores, loadings, explained variance, Hotelling T² and Q residuals | [PCA](pca.md) |
+| Clean up spectra before modeling | **Preprocessing Pipeline** | Filter → Baseline (Penalized LS) → Smooth → Normalize | ALS baseline; Savitzky–Golay window 15, order 2; SNV | Corrected spectra for downstream nodes | [Preprocessing Spectra](../workflows/preprocessing.md) |
 | Clean up Raman spectra | **Raman Processing Pipeline** | Cosmic Ray Removal → Baseline (Penalized LS) → Smooth → Scale / Center | Cosmic rays at z-score 5; ALS baseline; Whittaker smoothing; mean-centred | Corrected Raman spectra | [Preprocessing Spectra](../workflows/preprocessing.md) |
-| Correct scatter against a reference | **MSC Reference Correction**, **EMSC Reference Correction**, **Target-Orthogonal Signal Correction** | Multiplicative Scatter Correction (MSC); EMSC; Orthogonal Signal Correction | MSC to the mean spectrum; EMSC to the first spectrum, polynomial order 2; OSC with 1 component | Scatter-corrected spectra | [Preprocessing Nodes](../nodes/preprocessing.md) |
+| Correct scatter against a reference | **MSC Reference Correction**, **EMSC Reference Correction**, **Target-Orthogonal Signal Correction** | Multiplicative Scatter Correction (MSC); EMSC; Orthogonal Signal Correction | MSC to the mean spectrum; EMSC requires explicit reference and known-interferent spectra, polynomial order 2; OSC with 1 component | Scatter-corrected spectra | [Preprocessing Nodes](../nodes/preprocessing.md) |
 | Predict a property or concentration | **PLS Regression Calibration** | Train/Test Split → Fit PLS1 / PLS2 Regression (SIMPLS) → Predict Regression → Held-out Regression with Source Labels | Kennard–Stone split, 25 % test; **3 latent variables, fixed** (not chosen by cross-validation) | Held-out RMSE, MAE, bias, R², SEP, slope, intercept and RER; predicted-vs-measured plot | [PLS Calibration](pls.md) |
 | Build a calibration on a representative training set | **Representative Calibration (Kennard-Stone)** | Smooth → Train/Test Split → Fit PLS → Predict Regression → Reference Regression Evaluator (v2) | Savitzky–Golay 15/2; Kennard–Stone, 25 % test; 4 latent variables | Held-out regression metrics | [Designing Validation](validation-design.md) |
 | Calibrate on selected variables | **Variable Selection + PLS Calibration**, **VIP-Assisted PLS**, **Peak-Guided PLS** | Fit PLS → Variable Selection Rule → refit PLS on the selected variables | VIP threshold 1.0 (Peak-Guided PLS selects windows around peaks instead) | Selected variables and held-out regression metrics | [Selection and Validation Nodes](../nodes/selection-validation.md) |
@@ -33,12 +33,16 @@ clicks.
 | Transfer a calibration between instruments | **Calibration Transfer Method Comparison** | Piecewise Direct Standardization, Direct Standardization, Single-Wavelength Standardization → Apply Fitted Spectral Transfer | Sequential split, 25 %; PDS half-window 3 | Transferred spectra for each method | [Preprocessing Nodes](../nodes/preprocessing.md) |
 | Decompose genuinely multiway data | **PARAFAC Multiway Decomposition** (expert) | Fit PARAFAC Decomposition | 3 components | Mode loadings | [Exploratory Nodes](../nodes/exploratory.md) |
 
-Starters marked *pending qualification* appear in **Analysis Starter** with that
-label. You can start them, but their results have not been qualified for routine use.
+Pending starters are shown only when enabled in the picker. Their availability
+and qualification status are distinct; a pending label is not a qualified result.
 Starters that need the SpectroChemPy extra stop before running and say how to
 install it; see [Optional SpectroChemPy Nodes](../nodes/spectrochempy.md).
 
 ## Metrics at a glance
+
+The NMF starter explicitly clips negative intensities to zero before fitting;
+review that transformation for baseline-corrected spectra. The PARAFAC starter
+requires a declared hyperspectral cube, not an ordinary sample-by-wavelength table.
 
 | Metric | Meaning in SpectraSherpa |
 | --- | --- |

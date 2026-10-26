@@ -318,7 +318,7 @@ describe("PlotsPanel", () => {
         sections,
       );
       expect(wrapper.findComponent({ name: "SampleMetadataStyleControls" }).exists()).toBe(true);
-      expect(wrapper.text()).toContain("Color by metadata");
+      expect(wrapper.text()).toContain("Color by");
     },
   );
 

@@ -268,7 +268,7 @@ const nonEmptyStringArray = (value: unknown): string[] =>
   Array.isArray(value) && value.every(item => typeof item === "string" && item.trim().length > 0)
     ? [...value] : [];
 
-const enrichDeclaredContext = (
+export const enrichDeclaredContext = (
   result: UnknownRecord,
   ports: Record<string, PortOutput>,
   contract?: NodePresentationContract | null,
@@ -469,6 +469,7 @@ export const buildNodeOutput = (
     {
       data: primary.data || [],
       metadata: {
+        ...(isRecord(resultRecord.__workflow_population) ? { workflow_population: resultRecord.__workflow_population } : {}),
         ...(isRecord(resultRecord.metadata) ? resultRecord.metadata : {}),
         ...(primary.metadata || {}),
         ...(primary.descriptor ? { scientific_value: primary.descriptor } : {}),

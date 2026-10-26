@@ -2543,6 +2543,9 @@ def _slice_axis(axis: AxisInfo | None, key: Any) -> AxisInfo | None:
         payload["selection_scores"] = slice_array(axis.selection_scores)
     if isinstance(axis, SampleAxis):
         payload["classes"] = slice_array(axis.classes)
+        payload["workflow_observation_refs"] = (
+            slice_sequence(axis.workflow_observation_refs) if axis.workflow_observation_refs is not None else None
+        )
         payload["exclusion_reasons"] = (
             slice_sequence(axis.exclusion_reasons) if axis.exclusion_reasons is not None else None
         )

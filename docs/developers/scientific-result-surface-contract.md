@@ -82,6 +82,13 @@ A renderer should consume a typed result or presentation contract. It should not
 - Slice the complete typed axis, including alternate labels, sample tables,
   inclusion masks and exclusion reasons. Do not rebuild a partial axis in a
   split, filter or renderer.
+- Sample styling uses columns recorded on that same observation axis, including
+  classes and explicitly categorical responses. It must not require editable
+  labels to equal typed IDs, or invent verified IDs when labels are absent.
+  Quick Plot and Detailed View expose the same Color by / Symbol by choices.
+- A Filter sample map reads its own exact retained `selected_indices` receipt;
+  it distinguishes immediate input positions from result positions. It must
+  not infer source identity from matrix values, row counts, or prior filters.
 
 #### Retained summary facts
 
@@ -447,6 +454,34 @@ separate reduction from exclusion. Sample and feature masks must have exact bool
 with their respective dimensions; malformed or all-excluded inputs refuse explicitly when no
 scientific view remains. A mask indicates exclusion, not statistical rejection or an outlier verdict.
 
+Workflow-owned exclusions are materialized once by the Load Data authority
+(`app/lib/workflow_population.py`) before branching. Its Exclusion State is the
+canonical source/result membership map. `SampleAxis.workflow_observation_refs`
+is aligned navigation context, not a specimen identity or a second inclusion
+mask; slicing preserves it and scientific dataset identity omits it.
+`include_mask` remains the inclusion authority.
+
+An explicitly declared `project_population` may supply a private, retained
+`__workflow_population` display companion. It applies the current fitted state
+or a declared row-local transformation; it must not refit, evaluate, write an
+artifact, alter thresholds, or copy an active-cohort supervision receipt onto
+the full population. The companion has no connectable output port. Numerical
+ports and ordinary table/export results remain active only. Display application
+uses the existing scientific worker and bounded resource policy.
+Pure display projections use that worker even for data-category nodes whose
+computational execution remains in process. Disabled workers make the optional
+overlay explicitly unavailable; never run blocking projection work on the API
+event loop or treat a timeout as permission to change active results.
+
+An excluded overlay may make total displayed observations exceed the active
+count; in that case distinguish `displayed active <= active` and
+`displayed excluded <= source excluded`, with excluded symbols and legend.
+Loadings and aggregate curves do not acquire fictitious per-sample positions.
+Undeclared or refused applications retain the active result and identify the
+overlay as unavailable. Selection uses exact aligned source references, never
+row-count equality or editable label matching. A plot opened for a different
+user/project/sheet cannot mutate the current workflow.
+
 Record-oriented plots must validate every retained row. If the declared contract does not
 specify a policy for partial missing/invalid records, refuse the projection with counts and a
 reason; do not quietly plot only the valid subset. A supported exclusion policy must retain
@@ -689,6 +724,16 @@ For same-node retained results, `output_binding` names the exact output carrying
 port, including when ports are renamed; it does not pair response ports by
 spelling or select a loadings port from an allowlist. Missing declared evidence
 is unavailable, not a reason to borrow another population or axis.
+
+In-memory `SampleTable/2.0` ports may carry an exact ordered subset after
+source-owned workflow curation. `row_indices` and the structural `row_index`
+annotation retain original, strictly increasing nonnegative integer indices;
+they are never compacted to result positions. Every row field is projected by
+the same admitted source positions. File import still requires the complete
+contiguous source table. This extends current-runtime subset admission; older
+readers may refuse it, and no compatibility alias claims otherwise. Attachment
+retains typed workflow navigation references only after its existing exact
+file and ordered-identity checks.
 
 An explicit typed sample-table `sample_id` column contains unique, nonempty
 strings with no leading or trailing whitespace. Numeric IDs must be explicitly

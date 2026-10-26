@@ -468,7 +468,9 @@ async def test_registered_project_collection_reuses_exact_definition_and_combine
     )
     node.bind_execution_runtime(ExecutionRuntime(dataset_source_resolver=Resolver()))
 
-    result = await node.execute()
+    outputs = await node.execute()
+    result = outputs["default"]
+    assert outputs["exclusions"]["active_count"] == 2
 
     np.testing.assert_array_equal(result.X, [[1.0, 2.0], [3.0, 4.0]])
     assert result.sample_axis.labels == ["A__B1", "B__B1"]

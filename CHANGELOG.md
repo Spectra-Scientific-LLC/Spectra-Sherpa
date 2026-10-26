@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Staging GUI corrections
 
+- Workflow plot selections can exclude or partially restore observations at
+  Load Data before every branch, with an inspectable Exclusion State map and
+  Restore all action. Supported overlays apply the current fit to excluded
+  observations without adding them to fitting or validation; unsupported
+  overlays are explicit. Advisor and Guidance use bounded workflow counts.
+  Editable workflow and active-result exports preserve their respective scope;
+  executable Python/notebook export refuses source curation it cannot replay.
+- Restore shared Color by and Symbol by controls for aligned sample metadata,
+  classes and categorical responses without requiring display labels to be IDs.
+  Filter Data View adds an exact input/result sample map and honors its Rows
+  control; anonymous T²/Q labels distinguish result rows from source identities.
 - Data source subtabs lead to My Dataset before Workflow. Synthesis Guide and
   Upload Load share the page header; reference previews align with the catalog
   and show their selected dataset title once in the context strip.

@@ -324,7 +324,7 @@ describe("persisted T2/Q diagnostic labels", () => {
     expect(t2QDiagnosticRows(value, metadata).map((row) => row.sample)).toEqual([
       "sample-a",
       "sample-b",
-      "Sample 3",
+      "Result row 3",
       "sample-d",
     ]);
   });
@@ -332,7 +332,7 @@ describe("persisted T2/Q diagnostic labels", () => {
   it("uses the same persisted identities in plot hover labels", () => {
     const plot = buildT2QDiagnosticsPlot(value, metadata);
 
-    expect(plot.data[0].text).toEqual(["sample-a", "Sample 3"]);
+    expect(plot.data[0].text).toEqual(["sample-a", "Result row 3"]);
     expect(plot.data[1].text).toEqual(["sample-b", "sample-d"]);
   });
 });

@@ -63,10 +63,10 @@ describe("PCA typed specimen/block grouping", () => {
     expect(state.symbolOptions.map((option) => option.value)).toContain("block");
   });
 
-  it("refuses reordered and duplicate sample identity while allowing other metadata schemas", () => {
+  it("keeps typed IDs independent of display labels and refuses duplicate IDs", () => {
     const { yAxis } = fixture();
     yAxis.sample_table.sample_id = [...yAxis.sample_table.sample_id].reverse();
-    expect(metadataGroupingState(yAxis, 33)).toMatchObject({ kind: "invalid" });
+    expect(metadataGroupingState(yAxis, 33)).toMatchObject({ kind: "valid", sampleIds: yAxis.sample_table.sample_id, sampleLabels: yAxis.labels });
     const missing = fixture().yAxis;
     delete (missing.sample_table as any).block;
     const withoutBlock = metadataGroupingState(missing, 33);
@@ -86,10 +86,29 @@ describe("PCA typed specimen/block grouping", () => {
       { labels: ["a", "b"], sample_table: { acquired_at: ["first", "second"] } },
       2,
     );
-    expect(state).toMatchObject({ kind: "valid", sampleIds: ["a", "b"] });
+    expect(state).toMatchObject({ kind: "valid", sampleIds: null, sampleLabels: ["a", "b"] });
     expect(
       metadataGroupingState({ labels: ["a", "b"], sample_table: { sample_id: ["b", "a"] } }, 2),
-    ).toMatchObject({ kind: "invalid" });
+    ).toMatchObject({ kind: "valid", sampleIds: ["b", "a"], sampleLabels: ["a", "b"] });
+  });
+
+  it("styles aligned classes without inventing labels or observation IDs", () => {
+    const state = metadataGroupingState({ classes: ["setosa", "setosa", "virginica"] }, 3);
+    expect(state).toMatchObject({ kind: "valid", sampleIds: null,
+      sampleLabels: ["Result row 1", "Result row 2", "Result row 3"] });
+    if (state.kind !== "valid") throw new Error("Expected aligned classes");
+    expect(state.colorOptions).toContainEqual({ label: "Class", value: "Class" });
+    expect(state.symbolOptions).toContainEqual({ label: "Class", value: "Class" });
+    const traces = buildMetadataScoreTraces([[0, 1], [2, 3], [4, 5]], state, "__none__", "Class", 0, 1, "PC1", "PC2");
+    expect(traces[0].marker).toMatchObject({ symbol: ["circle", "circle", "diamond"] });
+    expect(metadataGroupingState({ classes: ["setosa"] }, 3)).toMatchObject({ kind: "invalid" });
+  });
+
+  it("allows repeated display labels without promoting them to identity", () => {
+    const state = metadataGroupingState({ labels: ["replicate", "replicate"], sample_table: {
+      sample_id: ["id-1", "id-2"], batch: ["A", "B"],
+    } }, 2);
+    expect(state).toMatchObject({ kind: "valid", sampleIds: ["id-1", "id-2"], sampleLabels: ["replicate", "replicate"] });
   });
 
   it("keeps aligned tables without a low-cardinality field valid but unstyled", () => {

@@ -156,9 +156,18 @@ api.interceptors.request.use(async (config) => {
     const { useAuthStore } = await import('@/stores/auth');
     const auth = useAuthStore();
     const revision = auth.sessionRevision;
-    await auth.ensureStoredSession();
+    const initialIdentityMissing = !auth.user;
     const bootstrap = config.url === '/config' || /^\/auth\/(me|login|register|verify|resend)/.test(config.url ?? '');
-    if (revision !== auth.sessionRevision ||
+    await auth.ensureStoredSession(bootstrap);
+    // A reload can request the catalogue before the host's /auth/me resolves.
+    // Wait for identity rather than rejecting a legitimate initial request.
+    const initialRead = config.method?.toLowerCase() === 'get';
+    const needsIdentity = !bootstrap && initialRead && !!readBrowserToken() && !auth.user;
+    if (needsIdentity) await auth.initializeActor();
+    // Another initial reader may have completed /auth/me during the await.
+    // Only that single same-login identity transition is admissible for reads.
+    const expectedRevision = revision + (initialRead && initialIdentityMissing && auth.user ? 1 : 0);
+    if ((!bootstrap && expectedRevision !== auth.sessionRevision) ||
         (!bootstrap && readBrowserToken() && !auth.user)) {
       throw new Error('Login session changed. Retry from the current account.');
     }

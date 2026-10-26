@@ -10,12 +10,13 @@ from typing import Any
 from spectra_sherpa.app.lib import data_formats as data_formats_contract
 from spectra_sherpa.app.lib import io as sherpa_io
 from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
+from spectra_sherpa.app.lib import workflow_population as workflow_population_contract
 from spectra_sherpa.app.lib.data_formats import CANONICAL_FILE_LOAD_EXTENSIONS
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.target_authority import verify_target_authority
+from spectra_sherpa.app.lib.workflow_population import canonical_exclusions, source_population_outputs
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
-from spectra_sherpa.app.services.dag.io_contracts import extract_target_like
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.core import spectra_meta as spectra_meta_contract
@@ -36,7 +37,7 @@ from spectra_sherpa.io import registry as ingestion_registry_contract
 
 from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
 from . import sample_table as sample_table_contract
-from .sample_table import load_portable_sample_table
+from .sample_table import load_portable_sample_table, subset_sample_table_payload
 
 _PORTABLE_EXTENSIONS = frozenset(CANONICAL_FILE_LOAD_EXTENSIONS)
 
@@ -45,6 +46,7 @@ def _canonical_parameters(parameters: dict[str, object]) -> dict[str, object]:
     """Require exact persisted identities at the source-admission boundary."""
 
     projected = dict(parameters)
+    projected["workflow_exclusions"] = canonical_exclusions(projected.get("workflow_exclusions"))
     for name in ("experiment_id", "file_id"):
         value = projected[name]
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
@@ -73,6 +75,9 @@ class FileLoadNode(Node):
         label="File Load",
         description="Load a portable experiment file through the Sherpa-native reader",
         parameters=[
+            NodeParameter(
+                "workflow_exclusions", "Workflow Exclusions", "json", default=None, required=False, category="internal"
+            ),
             NodeParameter(
                 name="experiment_id",
                 label="Experiment ID",
@@ -148,6 +153,13 @@ class FileLoadNode(Node):
                     "Exact source-row identities, inclusion decisions, target values, and annotations "
                     "when the selected file is a portable Sherpa sample table"
                 ),
+            ),
+            PortMetadata(
+                "exclusions",
+                "spectrasherpa://types/WorkflowPopulation/1.0",
+                False,
+                "Exclusion State",
+                description="Exact original and result row mapping for this workflow",
             ),
         ],
         policy=NodePolicy(
@@ -245,11 +257,28 @@ class FileLoadNode(Node):
                 _canonical_parameters(dict(self.parameters)),
                 node_id=self.node_id,
             )
-            return {
-                "default": dataset,
-                "target": extract_target_like(dataset),
-                "sample_table": sample_table,
-            }
+            outputs = source_population_outputs(
+                dataset,
+                node_id=self.node_id,
+                exclusions=self.parameters.get("workflow_exclusions"),
+                source_binding=self.parameters,
+            )
+            if source.preloaded_dataset is not None:
+                # The typed output axis already carries the exact active
+                # subset. Preserve the native annotation-table representation
+                # rather than inventing portable target declarations.
+                axis = outputs["default"].sample_axis
+                sample_table = None if axis is None or axis.sample_table is None else dict(axis.sample_table)
+            elif sample_table is not None:
+                state = outputs["exclusions"]
+                if state.get("availability") == "unavailable":
+                    axis = dataset.get_observation_axis()
+                    mask = None if axis is None else axis.include_mask
+                    positions = [i for i in range(dataset.n_samples) if mask is None or mask[i]]
+                else:
+                    positions = [row["source_row"] - 1 for row in state["rows"] if row["included"]]
+                sample_table = subset_sample_table_payload(sample_table, positions, source=dataset)
+            return {**outputs, "sample_table": sample_table}
         except Exception as exc:
             raise ValueError(f"Error loading file: {exc}") from exc
 
@@ -320,7 +349,7 @@ class FileLoadNode(Node):
     def exported_output_ports(self) -> set[str]:
         """Declare the named source envelope used by every export runtime."""
 
-        return {"default", "target", "sample_table"}
+        return {"default", "target", "sample_table", "exclusions"}
 
 
 bind_stable_execution_contract(
@@ -328,7 +357,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.DATA_SOURCE,
     implementation_id="spectrasherpa.data.file_load",
-    implementation_version="6.0.0",
+    implementation_version="6.1.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="generates_samples",
@@ -339,6 +368,7 @@ bind_stable_execution_contract(
     license_id="Apache-2.0",
     help_reference="docs/nodes/data.md",
     implementation_modules=(
+        workflow_population_contract,
         data_formats_contract,
         spectra_meta_contract,
         dag_meta_helpers,

@@ -482,6 +482,19 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     workflowStore.getNodeMetadata.mockReturnValue({ label: "PCA" });
   });
 
+  it("mounts a workflow on HTTP where randomUUID is unavailable", async () => {
+    workbookStore.activeIndex = 0;
+    vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
+    let wrapper: Awaited<ReturnType<typeof mountBuilder>> | undefined;
+    try {
+      wrapper = await mountBuilder();
+      expect(wrapper.get('[data-testid="workflow-canvas"]').exists()).toBe(true);
+    } finally {
+      wrapper?.unmount();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("loads the selected project's workbook instead of retaining the previous canvas", async () => {
     workbookStore.projectId = 1;
     projectStore.currentProjectId = 1;

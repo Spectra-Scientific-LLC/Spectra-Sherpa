@@ -37,6 +37,7 @@ from spectra_sherpa.app.services.dag.node_base import (
     PortMetadata,
     register_node,
 )
+from spectra_sherpa.app.services.dag.population_display import RetainedTransformPopulationProjection
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
@@ -463,7 +464,7 @@ def _osc_dispatch(input_data: Any, target: Any = None, *, n_components: int = 1)
 
 
 @register_node
-class OSCNode(Node):
+class OSCNode(RetainedTransformPopulationProjection, Node):
     """Fit target-orthogonal loadings once and apply their frozen projection."""
 
     metadata = NodeMetadata(

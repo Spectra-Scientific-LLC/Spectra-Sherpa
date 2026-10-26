@@ -323,11 +323,13 @@ No input ports (source node).
 | --- | --- | --- | --- | --- | --- |
 | output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
 | output | <code>target</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>exclusions</code> | <code>spectrasherpa://types/WorkflowPopulation/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
 
 #### Parameters
 
 | Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>workflow_exclusions</code> | <code>json</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
 | <code>experiment_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | <code>{&quot;min_value&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
 | <code>stage</code> | <code>select</code> | <code>true</code> | <code>&quot;raw&quot;</code> | <code>[&quot;raw&quot;, &quot;preprocessed&quot;, &quot;synthetic&quot;]</code> | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
 | <code>group_title</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
@@ -352,11 +354,13 @@ No input ports (source node).
 | output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
 | output | <code>target</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
 | output | <code>sample_table</code> | <code>spectrasherpa://types/SampleTable/2.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>exclusions</code> | <code>spectrasherpa://types/WorkflowPopulation/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
 
 #### Parameters
 
 | Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>workflow_exclusions</code> | <code>json</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
 | <code>experiment_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | <code>{&quot;min_value&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Experiment containing the file |
 | <code>file_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | <code>{&quot;min_value&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Specific file to load |
 | <code>stage</code> | <code>select</code> | <code>false</code> | <code>&quot;raw&quot;</code> | <code>[&quot;raw&quot;, &quot;preprocessed&quot;, &quot;synthetic&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Data processing stage |
@@ -398,11 +402,14 @@ No input ports (source node).
 | Direction | Port | Type URI | Required | Variadic | Accepted data roles |
 | --- | --- | --- | --- | --- | --- |
 | output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>target</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>exclusions</code> | <code>spectrasherpa://types/WorkflowPopulation/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
 
 #### Parameters
 
 | Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>workflow_exclusions</code> | <code>json</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
 | <code>source_mode</code> | <code>select</code> | <code>false</code> | <code>&quot;local_folder&quot;</code> | <code>[&quot;local_folder&quot;, &quot;experiment_collection&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Use a local folder or an exact project-owned experiment collection |
 | <code>collection_definition_sha256</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Exact scientist-definition digest, empty only when no definition is attached |
 | <code>scientific_collection_sha256</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Combined exact source and scientist-definition identity |

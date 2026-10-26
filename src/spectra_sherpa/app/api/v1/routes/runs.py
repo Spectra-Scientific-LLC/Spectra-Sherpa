@@ -49,6 +49,12 @@ from spectra_sherpa.app.services.run_params import build_effective_params_snapsh
 logger = logging.getLogger(__name__)
 
 
+def _application_refusal_reason(exc: Exception) -> str:
+    from spectra_sherpa.app.services.batch_verification import application_refusal_reason
+
+    return application_refusal_reason(exc)
+
+
 def _scientific_collection_fields(loaded: Any) -> dict[str, Any]:
     if not hasattr(loaded, "scientific_collection_sha256"):
         return {}
@@ -331,7 +337,12 @@ async def execute_verification_batch(
 
     from spectra_sherpa.app.api.v1.routes.workflows.execute import execute_saved_workflow
     from spectra_sherpa.app.schemas.workflows import WorkflowExecuteRequest
-    from spectra_sherpa.app.services.batch_verification import BatchAuthorityChanged, BatchWorkflowBinding
+    from spectra_sherpa.app.services.batch_verification import (
+        BatchAuthorityChanged,
+        BatchWorkflowBinding,
+        application_refusal_reason,
+        preflight_refusal_reason,
+    )
 
     user_id = current_user.id
     prepared = []
@@ -340,7 +351,13 @@ async def execute_verification_batch(
         try:
             admitted = await _prepare_verification_pair(payload, pair, session, user_id)
         except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
+            logger.warning("Batch execution admission refused", exc_info=True)
+            raise HTTPException(422, application_refusal_reason(exc)) from exc
+        except HTTPException as exc:
+            if exc.status_code not in {400, 409, 422}:
+                raise
+            logger.warning("Batch execution admission refused (HTTP %s)", exc.status_code, exc_info=True)
+            raise HTTPException(exc.status_code, preflight_refusal_reason(exc.status_code)) from exc
         if pair.receipt != admitted["receipt"]:
             raise HTTPException(409, "Batch selection changed; review a fresh preflight before running")
         if pair.receipt in seen:
@@ -474,7 +491,10 @@ async def _resolve_owned_deployment_binding(session: AsyncSession, *, user_id: i
             artifact_uid=artifact_uid,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        logger.warning("Application binding refused", exc_info=True)
+        raise HTTPException(
+            422, "Saved model binding is unavailable. Reopen the model and review its application settings."
+        ) from exc
 
 
 async def _start_file_batch(
@@ -583,7 +603,10 @@ async def batch_run_folder(
         folder_path = await validate_user_folder_path(session, payload.folder_path, current_user.id)
         files = await asyncio.to_thread(discover_files, str(folder_path), payload.file_pattern)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        logger.warning("Prediction folder refused", exc_info=True)
+        raise HTTPException(
+            422, "Prediction folder is unavailable or not authorized. Choose an accessible folder and file pattern."
+        ) from exc
     if not files:
         raise HTTPException(
             status_code=422,
@@ -610,7 +633,10 @@ async def batch_run_uploaded_files(
     try:
         files, receipts = await asyncio.to_thread(persist_prediction_files, current_user.id, uploads)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        logger.warning("Prediction upload refused", exc_info=True)
+        raise HTTPException(
+            422, "Prediction files could not be admitted. Check file types and upload size limits."
+        ) from exc
     payload = BatchPredictRequest(
         folder_path=str(files[0].parent),
         artifact_uid=artifact_uid,
@@ -1146,12 +1172,10 @@ async def _load_batch_dataset(session, user_id, payload):
         raise HTTPException(409, "Saved dataset definition is incomplete") from exc
     except ValueError as exc:
         logger.warning("Batch dataset admission failed: %s", exc)
-        detail = (
-            "Dataset could not be loaded with the selected stage and scientific result. Check its source files."
-            if uses_managed_project_access()
-            else str(exc)
-        )
-        raise HTTPException(400, detail) from exc
+        raise HTTPException(
+            400,
+            "Dataset could not be loaded with the selected stage and scientific result. Check its source files.",
+        ) from exc
 
 
 @router.post("/batch", response_model=ArtifactBatchRunResponse, status_code=201)
@@ -1222,7 +1246,7 @@ async def execute_artifact_batch(
         )
         for artifact in artifacts:
             if artifact.project_id != loaded.project_id:
-                raise ValueError("All selected artifacts and the dataset must belong to the same project")
+                raise HTTPException(400, "All selected artifacts and the dataset must belong to the same project")
         if verification_check is not None:
             await verification_check(loaded, artifacts)
         from spectra_sherpa.app.services.dag.presentation_limits import require_bounded_presentation
@@ -1268,15 +1292,12 @@ async def execute_artifact_batch(
                     ArtifactBatchRunItemResult(
                         artifact_uid=artifact.artifact_uid,
                         status="failed",
-                        error=(
-                            "Model application refused: check feature axes, target roles, and sample scope."
-                            if uses_managed_project_access()
-                            else str(exc)
-                        ),
+                        error=_application_refusal_reason(exc),
                     )
                 )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.warning("Batch application admission refused", exc_info=True)
+        raise HTTPException(status_code=400, detail=_application_refusal_reason(exc)) from exc
 
     # Re-admit after compute and before retention/publication. The write admission
     # serializes publication with managed account/project/grant mutations.

@@ -1798,12 +1798,16 @@ const {
   hydrated: analysisSelectionHydrated, requested: requestedAnalysisSelection,
   status: analysisSelectionStatus,
 } = readinessSelection;
+function scientificRouteScope(): string {
+  const { tab: _tab, ...source } = route.query;
+  return JSON.stringify(source);
+}
 const navigation = useDatasetNavigation(() => [
   authStore.user?.id, projectStore.currentProjectId, workflowContextId.value,
-  workflowSourceNodeId.value, JSON.stringify(route.query),
+  workflowSourceNodeId.value, scientificRouteScope(),
 ]);
 const projectAdmission = useScopedRequest(() => [
-  authStore.user?.id, authStore.sessionRevision, JSON.stringify(route.query), navigation.intent.value,
+  authStore.user?.id, authStore.sessionRevision, scientificRouteScope(), navigation.intent.value,
 ]);
 const definitions = useDatasetDefinitions(dataScopeIdentity);
 const {
@@ -4865,8 +4869,7 @@ function activateDataTab(tab: number, tabChoiceCurrent: () => boolean): void {
   persistActiveDataTab();
 }
 
-async function applyRouteExploreState(ticket = navigation.route.begin(), tabChoiceCurrent = navigation.captureTabChoice()) {
-  const query = { ...route.query };
+async function applyRouteExploreState(ticket = navigation.route.begin(), tabChoiceCurrent = navigation.captureTabChoice(), query = { ...route.query }) {
   syncGuidedExampleSession();
   const wantsExplore =
     query.tab === "inspect" ||
@@ -4943,11 +4946,11 @@ async function applyRouteExploreState(ticket = navigation.route.begin(), tabChoi
   if (ticket.isCurrent()) activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
 }
 
-async function applyRouteDataState(tabChoiceCurrent = navigation.captureTabChoice()) {
+async function applyRouteDataState(tabChoiceCurrent = navigation.captureTabChoice(), query = { ...route.query }) {
   const ticket = navigation.route.begin();
-  const requestedTab = routeTabIndex(route.query.tab);
+  const requestedTab = routeTabIndex(query.tab);
   const starterIntent = pendingAnalysisStarterIntent();
-  if (starterIntent?.imported_experiment_id != null) {
+  if (starterIntent?.imported_experiment_id != null && (requestedTab === null || requestedTab === TAB_MY_DATASET)) {
     const importedExperiment = dataStore.experiments.find(
       (experiment) => experiment.id === starterIntent.imported_experiment_id,
     );
@@ -4970,7 +4973,7 @@ async function applyRouteDataState(tabChoiceCurrent = navigation.captureTabChoic
   if (requestedTab !== null) {
     activateDataTab(requestedTab, tabChoiceCurrent);
     if (requestedTab === TAB_MY_DATASET) {
-      await applyRouteExploreState(ticket, tabChoiceCurrent);
+      await applyRouteExploreState(ticket, tabChoiceCurrent, query);
     } else if (requestedTab === TAB_MULTI_WELL) {
       const experimentId = queryNumber(route.query.experimentId ?? route.query.experiment);
       if (
@@ -5513,7 +5516,20 @@ async function goToWorkflow(addNode?: string) {
 
 // --- Lifecycle ---
 
+let starterCatalogsReady: Promise<unknown> = Promise.resolve();
+async function resumeStarterImport(): Promise<void> {
+  const current = navigation.captureTabChoice();
+  const scope = navigation.bootstrap.capture();
+  await starterCatalogsReady;
+  const intent = pendingAnalysisStarterIntent();
+  if (!current() || !scope.isCurrent() || activeTab.value !== TAB_IMPORT || !intent
+    || intent.imported_experiment_id != null || importing.value) return;
+  applyAnalysisStarterIntent();
+  if (selectedRefDatasets.size > 0) await onImportSelectedDatasets();
+}
+
 onMounted(async () => {
+  const entryQuery = { ...route.query };
   const intent = navigation.intent.value;
   const tabChoiceCurrent = navigation.captureTabChoice();
   const admission = projectAdmission.begin();
@@ -5539,6 +5555,7 @@ onMounted(async () => {
     ...(qualified.value ? [] : [dataStore.fetchCatalog()]),
     workflowStore.fetchCompatibilityMatrix(),
   ]);
+  starterCatalogsReady = catalogsReady;
   await dataStore.fetchExperiments();
   if (!ticket.isCurrent()) return;
   if (tabChoiceCurrent() && pendingAnalysisStarterIntent()) await catalogsReady;
@@ -5546,13 +5563,13 @@ onMounted(async () => {
   await dataStore.restoreActiveExperimentForCurrentProject();
   if (!ticket.isCurrent()) return;
   syncGuidedExampleSession();
-  await applyRouteDataState(tabChoiceCurrent);
+  await applyRouteDataState(tabChoiceCurrent, entryQuery);
   if (!ticket.isCurrent()) return;
   // New Analysis carries a reference choice, rather than merely suggesting
   // one. Admit bundled/catalog sources automatically. Provider packages stay
   // manual because they require the exact user-acquired archive.
-  if (tabChoiceCurrent() && pendingAnalysisStarterIntent() && selectedRefDatasets.size > 0) {
-    await onImportSelectedDatasets();
+  if (activeTab.value === TAB_IMPORT && pendingAnalysisStarterIntent()) {
+    await resumeStarterImport();
     if (!ticket.isCurrent()) return;
   }
   if (workflowSelectionContextRequested.value) {
@@ -5628,7 +5645,10 @@ function onDataTabSelected(tabIndex: number) {
   // tab activation without abandoning inventory, source or sheet hydration.
   navigation.chooseTab();
   dataTabSelection.invalidate();
+  const tab = DATA_TAB_IDS[tabIndex];
+  if (tab && route.query.tab !== tab) void router.replace({ path: route.path, query: { ...route.query, tab } });
   if (tabIndex === TAB_MY_DATASET) void ensureInitialContentsSelection();
+  if (tabIndex === TAB_IMPORT) void resumeStarterImport();
 }
 
 watch(

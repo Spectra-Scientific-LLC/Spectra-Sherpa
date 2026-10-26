@@ -389,7 +389,7 @@ def test_file_load_categorical_csv_no_scp(no_scp, tmp_path):
     assert len(dataset.target) == 150
     assert dataset.target_context.target_type == "categorical"
     assert dataset.target_context.selected_target == "target"
-    assert node.exported_output_ports() == {"default", "target", "sample_table"}
+    assert node.exported_output_ports() == {"default", "target", "sample_table", "exclusions"}
 
 
 # ---------------------------------------------------------------------------

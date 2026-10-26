@@ -58,7 +58,7 @@ def generate(destination: Path) -> None:
             units="absorbance",
             data_role="X_spectra",
         )
-        artifact = build_export_artifact(dataset, filename=f"{name}.csv", format="csv")
+        artifact = build_export_artifact(dataset, filename=f"{name}.csv", format="portable_csv")
         (destination / f"{name}.csv").write_text(str(artifact["content"]), encoding="utf-8")
         expected = {
             "provenance": "Original deterministic synthetic mixture; not Lavender or Corn provider data",

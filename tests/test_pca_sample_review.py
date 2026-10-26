@@ -594,7 +594,7 @@ async def test_real_http_execute_exclude_project_and_restore(auth_client, test_s
     )
     assert experiment.status_code == 201, experiment.text
     eid = experiment.json()["id"]
-    artifact = build_export_artifact(dataset(), filename="spectra.csv", format="csv")
+    artifact = build_export_artifact(dataset(), filename="spectra.csv", format="portable_csv")
     upload = await auth_client.post(
         f"/api/v1/experiments/{eid}/files",
         data={"stage": "raw"},

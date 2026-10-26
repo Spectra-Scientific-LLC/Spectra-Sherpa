@@ -406,7 +406,7 @@ describe("useNodePlotData canonical fitted PLS presentation", () => {
       y_axis: {
         labels: ["A", "B"],
         sample_table: {
-          sample_id: ["B", "A"],
+          sample_id: ["B", "B"],
           specimen_id: ["S1", "S2"],
           block: ["1", "2"],
           acquisition_order: [1, 2],

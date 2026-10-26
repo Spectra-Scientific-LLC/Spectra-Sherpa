@@ -296,7 +296,7 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
       }
     }
     const rows = payloads.flatMap((payload, index) => keyResultRows(index === 0 ? withoutRenderedClassRows(payload) : payload, descriptors)).filter(([label]) => !(node?.node_type.startsWith("data.") && /components|latent variables/i.test(label))).filter(([label]) => !hasRegressionTable ||
-      /latent variables|Variables \(p\)|Explained [XY] variance/.test(label));
+      /Components \(A\)|latent variables|Variables \(p\)|Explained [XY] variance/.test(label));
     if (!rows.length && !node?.node_type.match(modelTypes)) continue;
     if (node) rows.unshift(["Analysis", node.node_type]);
     // Only retained settings, never defaults/current graph, supply method context.

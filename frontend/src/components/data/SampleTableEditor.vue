@@ -816,9 +816,18 @@ async function loadMeasuredSamples(): Promise<void> {
   try {
     if (!props.analysisBinding) {
       const initialPlate = JSON.stringify([plateFormatId.value, rows.value.map(row => [row.plate_id, row.well])]);
-      const { data } = await api.get<components["schemas"]["WorkbenchPreferencesOut"]>(
-        "/acquisition-preferences", { signal: request.signal },
-      );
+      let data: components["schemas"]["WorkbenchPreferencesOut"];
+      try {
+        ({ data } = await api.get<components["schemas"]["WorkbenchPreferencesOut"]>(
+          "/acquisition-preferences", { signal: request.signal },
+        ));
+      } catch (error) {
+        if (!request.isCurrent()) return;
+        // Preferences are a convenience for a new table, not its authority.
+        // Keep the explicit format picker usable if preferences are offline.
+        plateError.value = getErrorMessage(error, "Default plate format unavailable; choose a format.");
+        return;
+      }
       if (!request.isCurrent()) return;
       if (JSON.stringify([plateFormatId.value, rows.value.map(row => [row.plate_id, row.well])]) !== initialPlate) return;
       // Preferences seed only a new measured table. Saved tables retain their
@@ -1280,7 +1289,8 @@ const publicationDifferences = computed(() => {
   }
   return changes;
 });
-const publicationDifferenceCount = computed(() => publicationDifferences.value.length);
+const publicationDifferenceCount = computed(() => publicationDifferences.value.length
+  + (plateFormatId.value !== originalPlateFormatId.value ? 1 : 0));
 const publicationRowCount = computed(
   () => new Set(publicationDifferences.value.map((item) => item.rowIndex)).size,
 );

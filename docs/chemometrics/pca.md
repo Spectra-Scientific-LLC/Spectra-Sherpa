@@ -50,11 +50,61 @@ Native PCA mean-centers by default and uses a deterministic full-SVD fit. Mean-c
 
 Scores show sample relationships. Loadings explain which spectral regions drive those relationships. A good PCA review looks at both, not only the score plot.
 
-In the Workbench, use **Color by metadata** and **Symbol by metadata** to switch
+In Quick Plot or Detailed View, use **Color by** and **Symbol by** to switch
 among available sample-table fields such as specimen, block, operator, batch,
 or an author-supplied status. The styling changes only the graph; it does not
-refit PCA or change scores. Missing or misaligned sample identity is refused
-rather than guessed from filenames or row order.
+refit PCA or change scores. Aligned categorical responses and recorded classes
+are also available. Display labels need not equal observation IDs; metadata
+from unrelated rows is never joined by matching counts or names.
+
+### Exclusions and row numbers
+
+To investigate observations such as source rows **135** and **142**:
+
+1. Open **Quick Plot** for **Screen PCA Outliers** (T² versus Q), or the PCA
+   score map. Click those observations, or use box/lasso selection. Hover checks
+   the recorded label; a row number is a position, not a specimen ID.
+2. Click **Exclude selected**. This changes this sheet's **Load Data** settings,
+   before preprocessing, fitting and every downstream branch. It does not edit
+   **My Dataset** or previous runs. Click **Run** to fit the remaining 148 of
+   150 observations.
+3. Inspect the refitted score map. Excluded observations use an open-cross
+   marker and the **Excluded / not in fit** legend. Their coordinates come from
+   applying the **new fit**, not from retaining their old-fit positions.
+4. Select only one excluded observation and click **Restore selected**. You can
+   do this from another node's supported plot in the same sheet. The other
+   observation stays excluded; the next fit contains 149 observations.
+   **Restore all** in the workflow top bar (or **Actions** on narrow screens)
+   removes every workflow override. It does not restore observations already
+   excluded in My Dataset or undo a separate branch Filter.
+
+On **Load Data**, select **Exclusion State → View Data** for the complete source
+row, recorded label, inclusion decision and resulting row number. For example,
+when 135 and 142 are excluded, original row136 becomes result row135; the
+original label is not renamed. A typed `sample_id` is shown when the source has
+one. Source-bound navigation references are not a substitute for specimen IDs.
+
+Excluded points can be shown only where an operation has a declared, valid
+out-of-fit application. PCA scores and T²/Q use the current fit and its unchanged
+active-population limits. Loadings and explained variance describe that fit,
+not individual excluded observations. Unsupported operations show **Excluded
+overlay unavailable** instead of invented coordinates. See
+[workflow exclusion scope and limits](../workflows/build-a-workflow.md#workflow-wide-observation-exclusions).
+
+An unusual point is not automatically an error. Inspect its spectrum and
+acquisition context before exclusion. Selection after seeing results is
+exploratory curation: rerunning CV does not make that choice independent, and
+excluding observations before a split changes the population to which later
+validation applies. Retain the original run for comparison.
+
+After **Filter Samples**, open **Data View → Sample map** to compare input row,
+sample label (when retained), inclusion status and result row. Result rows are
+positions in the filtered output, not new sample identities. Missing labels in
+T²/Q diagnostics appear as **Result row N**, not an original sample number.
+The map describes this Filter's immediate input, not an inferred import history.
+
+Use **Rows** to set the table preview limit; **Export all rows CSV** exports
+the entire retained active result. Plot styling does not exclude observations.
 
 ## Further reading
 

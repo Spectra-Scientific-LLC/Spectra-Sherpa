@@ -627,7 +627,7 @@ async def test_real_http_pls_review_cohort_mask_refit_restore(
     ds = dataset()
     ds.target = ds.X[:, 0] * 2 + ds.X[:, 1] * 0.4
     ds.target_context = TargetContext(target_type="continuous", target_name="Concentration")
-    artifact = build_export_artifact(ds, filename="spectra.csv", format="csv")
+    artifact = build_export_artifact(ds, filename="spectra.csv", format="portable_csv")
     uploaded = await auth_client.post(
         f"/api/v1/experiments/{eid}/files",
         data={"stage": "raw"},

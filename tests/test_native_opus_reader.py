@@ -261,8 +261,8 @@ async def test_group_builder_and_batch_share_one_exact_opus_asset(tmp_path: Path
             "asset_id": "a",
         },
     ).execute()
-    assert grouped.shape == (1, 2126)
-    assert grouped.domain.data_quantity == "Absorbance"
+    assert grouped["default"].shape == (1, 2126)
+    assert grouped["default"].domain.data_quantity == "Absorbance"
 
     # A second byte-identical source carries the same explicit scientific
     # sample label. Collection assembly must not fabricate a distinct sample

@@ -211,6 +211,13 @@ def bind_stable_execution_contract(
 
     components = [_source_component(node_module)]
     components.extend(_source_component(module) for module in implementation_modules)
+    if callable(getattr(node_class, "project_population", None)):
+        # A declared display application is part of what this implementation
+        # actually does, even though it cannot affect computational outputs.
+        from . import population_display
+
+        if population_display.__name__ not in {item["component_id"] for item in components}:
+            components.append(_source_component(population_display))
     components.extend(
         _distribution_component(distribution, requirement_versions[distribution])
         for distribution in implementation_distributions

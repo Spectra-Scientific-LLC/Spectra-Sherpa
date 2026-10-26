@@ -64,7 +64,7 @@ template_data:
     label: Export Results
     parameters:
       filename: mcr_results.csv
-      format: csv
+      format: portable_csv
     position_x: 850
     position_y: 1050
   - node_id: stats_1

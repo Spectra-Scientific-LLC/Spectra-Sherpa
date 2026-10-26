@@ -30,6 +30,17 @@ function fixture(): ReportData {
 }
 
 describe("deterministic short scientific report", () => {
+  it("keeps fitted PCR component count beside requested settings and regression metrics", () => {
+    const data = fixture();
+    const run = data.runs![0];
+    run.saved_definition = { nodes: [{ node_id: "pls", label: "PCR", node_type: "model.fitted_pcr" }] };
+    run.results_summary = { pls: { n_components: 2 } };
+    run.validation_summary!.regression_results = [{ node_id: "pls", source_port: "comparison", target: "protein",
+      role: "held_out_test", units: "mg/L", metrics: { n_samples: 30, rmse: 0.5 }, bias_definition: "predicted_minus_reference" }];
+    const rows = scientificSummaryGroups(data).flatMap(group => group.rows);
+    expect(rows).toContainEqual(["Components (A)", "2"]);
+    expect(rows).toContainEqual(["Requested components", "3"]);
+  });
   it("omits a declared scree alias only when the retained diagnostic vector agrees", () => {
     const data = fixture();
     const run = data.runs![0];

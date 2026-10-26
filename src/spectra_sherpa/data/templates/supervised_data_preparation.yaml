@@ -24,7 +24,7 @@ template_data:
     label: Download Prepared Dataset
     parameters:
       filename: prepared-supervised-data.csv
-      format: csv
+      format: portable_csv
     position_x: 175
     position_y: 700
   edges:

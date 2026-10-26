@@ -54,6 +54,7 @@ import {
   scientificPlotOptions,
 } from "@/utils/scientificPresentation";
 import { resolvePortPayload } from "@/utils/nodeOutput";
+import { populationPlotOutput, observationTraceMetadata } from "@/utils/workflowPopulation";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- plotly payloads and node metadata vary too widely to tighten meaningfully here; see PlotDataBag per-family comments for the boundary. */
 
@@ -88,7 +89,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
   // this as pure code motion — tightening the metadata shape is a
   // follow-up (same eslint-disable story as useNodeOutputData).
   const nodeOutput = computed<any>(() => {
-    const output = deps.nodeOutput.value;
+    const output = populationPlotOutput(deps.nodeOutput.value);
     if (isProjectedScientificKind(output, "pca_loadings")) {
       return { ...output, ports: { ...output?.ports, loadings: {
         data: numericMatrix(output), value: output?.presentation_value ?? output,
@@ -151,8 +152,9 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
   const primaryOutputPayload = computed(() => {
     const primaryPort = nodeOutput.value?.primary_port;
-    if (!primaryPort) return null;
-    return resolvePortPayload(nodeOutput.value?.ports?.[primaryPort]);
+    const primary = primaryPort ? resolvePortPayload(nodeOutput.value?.ports?.[primaryPort]) : null;
+    const presentation = resolvePortPayload(nodeOutput.value?.presentation_value);
+    return primary ?? (Array.isArray(presentation?.data) ? presentation : null);
   });
 
   const primaryRows = computed<any[]>(() => {
@@ -182,7 +184,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
   });
   const sampleAxisState = computed(() =>
     datasetAxisDisplayState(
-      primaryOutputPayload.value?.y_axis,
+      primaryOutputPayload.value?.sample_axis ?? primaryOutputPayload.value?.y_axis,
       primaryRows.value.length || undefined,
     ),
   );
@@ -241,7 +243,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       sampleAxisDisplay.value?.labels,
       metadata.sample_labels,
       metadata.labels,
-      primaryOutputPayload.value?.y_axis?.labels,
+      (primaryOutputPayload.value?.sample_axis ?? primaryOutputPayload.value?.y_axis)?.labels,
     ];
     for (const raw of candidates) {
       if (Array.isArray(raw) && raw.length > 0) {
@@ -258,8 +260,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       Array.isArray(rows) ? rows.length : 0,
     );
     const displayLabels = sampleAxisDisplay.value?.labels;
-    return state.kind === "valid" && displayLabels?.length === state.sampleIds.length
-      ? { ...state, sampleIds: displayLabels }
+    return state.kind === "valid" && displayLabels?.length === state.sampleLabels.length
+      ? { ...state, sampleLabels: displayLabels }
       : state;
   });
 
@@ -423,12 +425,13 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     if (colorMode === "labels" && classInfo) {
       const colorMap = createCategoryColorMap(classInfo.labels, classInfo.categories);
       return classInfo.categories.flatMap((category) => {
-        const group = { x: [] as number[], y: [] as number[], text: [] as string[] };
+        const group = { x: [] as number[], y: [] as number[], text: [] as string[], indices: [] as number[] };
         scores.forEach((row, idx) => {
           if (classInfo.labels[idx] !== category) return;
           group.x.push(row[pcaXAxis.value]);
           group.y.push(row[pcaYAxis.value]);
           group.text.push(String(sampleLabels[idx] ?? `Sample ${idx + 1}`));
+          group.indices.push(idx);
         });
         if (group.x.length === 0) return [];
         return [
@@ -438,6 +441,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
             x: group.x,
             y: group.y,
             text: group.text,
+            ...observationTraceMetadata(primaryOutputPayload.value?.sample_axis ?? primaryOutputPayload.value?.y_axis,
+              scores.length, group.indices),
             name: category,
             marker: {
               size: 10,
@@ -476,6 +481,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         x,
         y,
         text: sampleLabels,
+        ...observationTraceMetadata(primaryOutputPayload.value?.sample_axis ?? primaryOutputPayload.value?.y_axis, scores.length),
         marker,
         hovertemplate:
           colorMode === "target"
@@ -2912,7 +2918,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
             xValues.push(featureNames[featureIndex] || `Feature ${featureIndex + 1}`);
             yValues.push(data[rowIndex][featureIndex]);
             pointSymbols.push(style.symbolMap.get(style.styleValues[rowIndex]) || "circle");
-            sampleIds.push(grouping.sampleIds[rowIndex]);
+            sampleIds.push(grouping.sampleLabels[rowIndex]);
           }
         }
         traces.push({

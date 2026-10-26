@@ -511,17 +511,21 @@ describe("DataTableModal", () => {
     );
   });
 
-  it("bounds large previews with pagination instead of assuming fixed row heights", async () => {
+  it("honors the row control instead of silently capping each page at 100", async () => {
     const wrapper = factory({ nodeOutput: { data: Array.from({ length: 155 }, (_, i) => ({
       median_pos: i, members: [{ label: "A long label that can wrap over several lines" }],
     })), metadata: {} } });
     (wrapper.vm as any).rowLimit = 300;
     await wrapper.vm.$nextTick();
     const table = wrapper.find(".data-table-stub");
-    expect(table.attributes("data-paginator")).toBe("true");
-    expect(table.attributes("data-page-size")).toBe("100");
+    expect(table.attributes("data-paginator")).toBe("false");
+    expect(table.attributes("data-page-size")).toBe("300");
     expect(table.attributes("data-row-count")).toBe("155");
     expect(table.attributes("data-item-size")).toBeUndefined();
+    (wrapper.vm as any).rowLimit = 100;
+    await wrapper.vm.$nextTick();
+    expect(table.attributes("data-row-count")).toBe("100");
+    expect(table.attributes("data-page-size")).toBe("100");
   });
 
   it("shows every scientific field represented by a regression-comparison plot", () => {
@@ -621,8 +625,12 @@ it("labels both axes of a retained confusion matrix", () => {
 });
 
 it("keeps execution internals out of the scientific metadata and counts integral", () => {
-  const wrapper = factory({ nodeOutput: { data: [1, 2], metadata: { worker_pid: 123, execution_id: "private", n_samples: 2 } } });
+  const wrapper = factory({ nodeOutput: { data: [1, 2], metadata: {
+    worker_pid: 123, execution_id: "private", n_samples: 2,
+    workflow_population: { outputs: { default: { data: [[999]], labels: ["excluded-private-row"] } } },
+  } } });
   expect((wrapper.vm as any).displayMetadata).toEqual({ n_samples: 2 });
+  expect(wrapper.text()).not.toContain("excluded-private-row");
   expect((wrapper.vm as any).formatValue(2, true)).toBe("2");
 });
 

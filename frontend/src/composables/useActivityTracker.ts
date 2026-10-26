@@ -6,6 +6,7 @@ import { useAdvisorStore } from "@/stores/advisor";
 import { useGuidanceStore } from "@/stores/guidance";
 import { useLlmStore } from "@/stores/llm";
 import { useProjectStore } from "@/stores/project";
+import { useWorkflowStore } from "@/stores/workflow";
 
 type GuidanceActivityKind = "route_change" | "scope_switch" | "action_click" | "idle_tick";
 const IDLE_TICK_SECONDS = 5;
@@ -19,6 +20,7 @@ interface ActivityPayload {
   idle_seconds?: number;
   occurred_at: string;
   active_attention?: ActiveAttention;
+  workflow_id?: number;
 }
 
 export function useActivityTracker() {
@@ -60,6 +62,8 @@ export function useActivityTracker() {
       scope_node_id: scopeNodeId,
       occurred_at: new Date().toISOString(),
       ...extras,
+      ...(route.path === "/workflow" && useWorkflowStore().workflowId
+        ? { workflow_id: useWorkflowStore().workflowId! } : {}),
     };
     ws.send(JSON.stringify({ action: "guidance.activity", payload }));
   }

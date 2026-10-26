@@ -33,6 +33,7 @@ from spectra_sherpa.app.lib.registered_reference_collection_identity import (
     registered_reference_collection_identity,
 )
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.lib.workflow_population import WORKFLOW_POPULATION_OPERATION
 from spectra_sherpa.app.services.artifact_preprocessing_authority import (
     validate_experiment_source_provenance,
     validate_variable_selection_provenance,
@@ -275,6 +276,16 @@ def _loaded_files_to_sherpa(
         if definition is not None and project_definition
         else definition
     )
+    from spectra_sherpa.app.services.registered_reference_supervision import (
+        capture_registered_supervision,
+        restore_registered_supervision,
+    )
+
+    supervision = (
+        capture_registered_supervision(loaded[0].dataset, selected_asset_id=loaded[0].selected_asset_id)
+        if effective_definition is None and len(loaded) == 1
+        else None
+    )
     spectra = (
         apply_collection_definition(members, effective_definition)
         if effective_definition is not None
@@ -307,6 +318,7 @@ def _loaded_files_to_sherpa(
         if registered_identity is not None:
             identity = registered_identity
     spectra.meta["source_collection"].update(identity)
+    spectra = restore_registered_supervision(spectra, supervision)
     reject_spectrochempy_transport(spectra, boundary="model dataset-loader handoff")
     return spectra
 
@@ -834,6 +846,7 @@ def _prepare_artifact_input(
         # to a new population would discard observations or select the wrong
         # people/spectra; only feature transformations are replayed.
         "data.filter_samples",
+        WORKFLOW_POPULATION_OPERATION,
     }
     for step in chain:
         if not isinstance(step, Mapping) or set(step) != {"op_id", "parameters"}:

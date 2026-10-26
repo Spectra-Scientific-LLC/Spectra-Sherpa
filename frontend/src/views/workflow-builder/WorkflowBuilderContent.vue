@@ -2,6 +2,9 @@
   <section class="workflow-builder-content">
     <WorkspaceHeader title="Workflow" :actions="actionMenuItems">
       <template #badge>
+        <span v-if="workflowStore.workflowExcludedCount" class="workflow-meta-badge" role="status">
+          {{ workflowStore.workflowExcludedCount }} excluded
+        </span>
         <span
           v-if="isManagedCandidateAuthority"
           class="workflow-meta-badge"
@@ -12,6 +15,9 @@
         </span>
       </template>
         <div class="toolbar-action-group">
+          <Button v-if="workflowStore.workflowExcludedCount" label="Restore all" icon="pi pi-undo"
+            class="p-button-outlined p-button-sm" :disabled="isExecuting"
+            data-action="restore_workflow_observations" @click="workflowStore.restoreWorkflowObservations()" />
           <Button
             label="Analysis Starter"
             icon="pi pi-sparkles"
@@ -373,6 +379,7 @@
 </template>
 
 <script setup lang="ts">
+import { newIdempotencyKey } from "@/utils/idempotency";
 /* eslint-disable @typescript-eslint/no-explicit-any -- builder canvas mixes generic node-library metadata with loose drag/drop payloads. */
 import { ref, computed, provide, watch, onMounted, onUnmounted, nextTick } from "vue";
 import { useConfirmAction } from "@/composables/useConfirmAction";
@@ -384,6 +391,7 @@ import OverlayPanel from "primevue/overlaypanel";
 import { useToast } from "primevue/usetoast";
 import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 import { useWorkflowStore, type WorkflowNode, type WorkflowEdge } from "@/stores/workflow";
+import { WORKFLOW_POPULATION_ACTIONS } from "@/utils/workflowPopulation";
 import { useExperimentStore } from "@/stores/experiment";
 import { useProjectStore } from "@/stores/project";
 import { useWorkbookStore } from "@/stores/workbook";
@@ -443,6 +451,7 @@ const canOptimize = computed(() =>
 const route = useRoute();
 const router = useRouter();
 const workflowStore = useWorkflowStore();
+provide(WORKFLOW_POPULATION_ACTIONS, workflowStore.workflowPopulationActions);
 const experimentStore = useExperimentStore();
 const projectStore = useProjectStore();
 const workbookStore = useWorkbookStore();
@@ -1165,9 +1174,9 @@ const createNodeId = (
 
 // Handle BroadcastChannel messages from NodeDetailView.
 // DetailView is send-only for `node_params_updated` (fired on Save and Exit).
-let trialOwnerId = crypto.randomUUID();
+let trialOwnerId = newIdempotencyKey();
 watch([() => authStore.user?.id, () => authStore.sessionRevision], () => {
-  trialOwnerId = crypto.randomUUID();
+  trialOwnerId = newIdempotencyKey();
 }, { flush: "sync" });
 const handleBroadcastMessage = (event: MessageEvent) => {
   if (event.data?.ownerId && event.data.ownerId !== trialOwnerId) return;
@@ -2282,6 +2291,8 @@ const exportMenuItems = computed(() => workflowStore.hasFoldValidationPlan ? [
 ]);
 
 const actionMenuItems = computed(() => [
+  ...(workflowStore.workflowExcludedCount ? [{ label: `Restore all (${workflowStore.workflowExcludedCount} excluded)`,
+    icon: "pi pi-undo", disabled: isExecuting.value, command: () => workflowStore.restoreWorkflowObservations() }] : []),
   {
     label: "Analysis Starter",
     icon: "pi pi-sparkles",

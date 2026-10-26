@@ -757,6 +757,8 @@ async def test_peak_detection_project_executes_one_canonical_peak_table(canonica
         source_parameters={"data_1": canonical_peak_source},
     )
     result = run.results["analysis_1"]
+    # No workflow exclusions: source-only/empty decisions do not inject a
+    # private overlay into every downstream operation (Option B).
     assert set(result) == {"peaks", "plots", "per_spectrum"}
     rows = result["peaks"]["data"]
     assert len(rows) == 2
@@ -1183,7 +1185,7 @@ async def test_preprocessing_project_executes_the_declared_chain_and_exports_exa
     np.testing.assert_array_equal(transformed.sample_axis.labels, source.sample_axis.labels)
     np.testing.assert_array_equal(transformed.feature_axis.values, source.feature_axis.values)
     assert transformed.target is source.target is None
-    assert artifact["format"] == "csv"
+    assert artifact["format"] == "portable_csv"
     assert artifact["shape"] == [18, 81]
     assert artifact["source_digest"] == transformed.scientific_digest
 

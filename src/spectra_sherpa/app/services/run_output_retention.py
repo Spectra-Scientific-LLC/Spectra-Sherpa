@@ -296,7 +296,7 @@ def retain_run_outputs(
                 return RunEvidence(
                     reason="Run exceeds the 1024-output retention inventory limit.", outputs=inventory
                 ).model_dump()
-            if port.startswith("_") and node_id != "__diagnostics__":
+            if port.startswith("_") and node_id != "__diagnostics__" and port != "__workflow_population":
                 inventory[node_id][port] = OutputEvidence(
                     state="missing", reason="Not retained: private runtime output excluded by policy.", role=port
                 )

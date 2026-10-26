@@ -68,6 +68,12 @@
       "parent": null,
       "description": "Exact source-row identities, inclusion decisions, target values, and per-sample annotations"
     },
+    "WorkflowPopulation": {
+      "uri": "spectrasherpa://types/WorkflowPopulation/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Source-bound workflow inclusion and exact original-to-result observation mapping"
+    },
     "OutOfFoldEvidence": {
       "uri": "spectrasherpa://types/OutOfFoldEvidence/1.0",
       "category": "config",
@@ -354,6 +360,14 @@
       "dimension_roles": [],
       "view_modes": ["record", "table"],
       "content_categories": ["reference_targets", "sample_membership", "provenance_and_evidence"]
+    },
+    "WorkflowPopulation": {
+      "scientific_kind": "structured_record",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record", "table"],
+      "content_categories": ["sample_membership", "provenance_and_evidence"]
     },
     "OutOfFoldEvidence": {
       "scientific_kind": "out_of_fold_evidence",

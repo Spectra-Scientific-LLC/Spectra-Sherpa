@@ -497,6 +497,8 @@ describe("DataContentsPanel", () => {
     } });
     const checks = wrapper.get("[aria-label='Collection sample table']").findAll('input[type="checkbox"]');
     expect(checks.map(item => item.attributes("aria-label"))).toEqual(["Include sample row-0", "Include sample row-50", "Include sample row-100"]);
+    await checks[1].setValue(false);
+    expect(wrapper.emitted("toggleSample")?.at(-1)).toEqual(["row-50"]);
     wrapper.unmount();
   });
 

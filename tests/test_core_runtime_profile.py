@@ -29,6 +29,13 @@ def _load_profile_module():
 profile = _load_profile_module()
 
 
+def test_native_group_journey_reads_the_declared_default_port():
+    result = profile._native_group_journey()
+    assert result["operation"] == "data.load_group"
+    assert result["shape"] == [2, 3]
+    assert len(result["result_digest"]) == 64
+
+
 def _load_workbench_smoke_module():
     spec = importlib.util.spec_from_file_location("spectra_workbench_runtime_smoke", WORKBENCH_SMOKE_PATH)
     assert spec is not None and spec.loader is not None

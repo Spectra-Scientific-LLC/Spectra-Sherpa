@@ -27,7 +27,11 @@ _SEMANTICS_CENSUS_PATH = _REPOSITORY_ROOT / "docs/evidence/scientific-output-sem
 def test_every_type_has_closed_scientific_semantics() -> None:
     ensure_type_registry_loaded()
 
-    assert len(type_registry.list_types()) == 43
+    assert len(type_registry.list_types()) == 44
+    population = type_registry.resolve("spectrasherpa://types/WorkflowPopulation/1.0")
+    assert population.scientific_kind == "structured_record"
+    assert population.view_kind == "structured_record"
+    assert tuple(population.content_categories) == ("sample_membership", "provenance_and_evidence")
     for type_def in type_registry.list_types():
         assert type_def.scientific_kind
         assert type_def.view_kind

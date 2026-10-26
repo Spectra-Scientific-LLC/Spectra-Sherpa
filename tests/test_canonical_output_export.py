@@ -94,7 +94,12 @@ def test_export_node_publishes_one_closed_local_contract() -> None:
 
 @pytest.mark.parametrize(
     ("fmt", "filename"),
-    [("csv", "spectra.csv"), ("portable_csv", "spectra.csv"), ("json", "spectra.json"), ("jdx", "spectra.zip")],
+    [
+        ("plain_csv", "spectra.csv"),
+        ("portable_csv", "spectra.csv"),
+        ("json", "spectra.json"),
+        ("jdx", "spectra.zip"),
+    ],
 )
 def test_live_and_generated_paths_prepare_identical_verified_bytes(fmt: str, filename: str) -> None:
     dataset = _spectra(rows=2)
@@ -147,12 +152,21 @@ def test_plain_csv_is_default_and_has_no_portable_preamble() -> None:
     dataset = _spectra()
     node = ExportNode("export", {})
     artifact = asyncio.run(node.execute(dataset))["artifact"]
-    assert artifact["format"] == "csv"
+    assert artifact["format"] == "plain_csv"
     assert artifact["content"].startswith("sample,4000,2500,1000\n")
     assert "#spectrasherpa" not in artifact["content"]
     portable = build_export_artifact(dataset, filename="output.csv", format="portable_csv")
     assert portable["content"].split("\n", 1)[1] == artifact["content"]
     assert verify_export_artifact(portable)["format"] == "portable_csv"
+    node = ExportNode("legacy", {"filename": "output.csv", "format": "csv"})
+    # Still editable/admissible, never silently reinterpreted at execution.
+    assert node.metadata.canonicalize_parameters(node._resolve_params())["format"] == "csv"
+    with pytest.raises(ValueError, match="saved CSV setting is ambiguous"):
+        asyncio.run(node.execute(dataset))
+    for retained in (artifact, portable):
+        legacy = {**retained, "format": "csv"}
+        assert verify_export_artifact(legacy)["content"] == retained["content"]
+        assert verify_export_artifact(legacy)["content_sha256"] == retained["content_sha256"]
 
 
 def test_res15_repeated_oes_wavelength_blocks_export_with_unique_feature_identity() -> None:
@@ -575,7 +589,7 @@ def test_export_rejects_spreadsheet_formula_labels_and_jcamp_header_injection() 
     spreadsheet_formula = _spectra()
     spreadsheet_formula.sample_axis = SampleAxis(labels=['=HYPERLINK("https://invalid")', "sample-2"])
     with pytest.raises(ValueError, match="formula-like axis labels"):
-        build_export_artifact(spreadsheet_formula, filename="spectra.csv", format="csv")
+        build_export_artifact(spreadsheet_formula, filename="spectra.csv", format="portable_csv")
 
     injected_header = _spectra(rows=1)
     injected_header.title = "Measured spectrum\n##END="
@@ -603,10 +617,10 @@ def test_export_rejects_nonfinite_data_and_tampered_or_open_artifacts(tmp_path: 
         build_export_artifact(
             SherpaDataset(X=np.array([[1.0, np.nan]])),
             filename="bad.csv",
-            format="csv",
+            format="portable_csv",
         )
 
-    artifact = build_export_artifact(_spectra(), filename="spectra.csv", format="csv")
+    artifact = build_export_artifact(_spectra(), filename="spectra.csv", format="portable_csv")
     for field, replacement in (
         ("content", "changed"),
         ("byte_length", 1),
@@ -629,7 +643,7 @@ def test_export_rejects_nonfinite_data_and_tampered_or_open_artifacts(tmp_path: 
 def test_generated_script_host_materializes_exact_prepared_bytes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    artifact = build_export_artifact(_spectra(), filename="scientist.csv", format="csv")
+    artifact = build_export_artifact(_spectra(), filename="scientist.csv", format="portable_csv")
     monkeypatch.setenv("SPECTRA_SHERPA_EXPORT_DIR", str(tmp_path))
 
     archive_path = Path(export_artifacts({"export": {"artifact": artifact}}, "canonical-export"))
@@ -647,7 +661,7 @@ def test_generated_script_host_materializes_exact_prepared_bytes(
 def test_export_serialization_has_a_fixed_size_performance_ceiling() -> None:
     dataset = _spectra(rows=200, columns=1600)
     with PerformanceCeiling("output.export", "200x1600-csv", 5.0).measure():
-        artifact = build_export_artifact(dataset, filename="representative.csv", format="csv")
+        artifact = build_export_artifact(dataset, filename="representative.csv", format="portable_csv")
 
     assert artifact["shape"] == [200, 1600]
     assert artifact["content_sha256"]

@@ -42,7 +42,7 @@ template_data:
     label: Export Estimates
     parameters:
       filename: initial_estimates.csv
-      format: csv
+      format: portable_csv
     position_x: 175
     position_y: 900
   edges:

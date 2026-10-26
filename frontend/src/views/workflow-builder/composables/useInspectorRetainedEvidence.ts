@@ -121,6 +121,7 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
       const summaryPorts = view === "plot" && selected?.presentation.kind === "pca_scores"
         ? ["variable_correlations", "explained_variance", "loadings"].filter(port => source?.ports?.[port]) : [];
       const retainedPorts = view === "detail" && !source ? [] : [...new Set([
+        ...(view !== "table" && source?.metadata.workflow_population ? ["__workflow_population"] : []),
         // Retain the original primary context when plotting another port.
         // Otherwise rebuilding a one-port node changes shared model labels.
         ...(view === "plot" && source?.primary_port ? [source.primary_port] : []),
@@ -135,7 +136,16 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
         connections = connections.filter(connection => connection.data);
       }
       const [outputs, inputs] = await Promise.all([
-        Promise.all(retainedPorts.map(async port => [port, await read(nodeId, port)] as const)),
+        Promise.all(retainedPorts.map(async port => {
+          if (port !== "__workflow_population") return [port, await read(nodeId, port)] as const;
+          try { return [port, await read(nodeId, port)] as const; }
+          catch {
+            // Optional display evidence cannot invalidate exact active scores
+            // or thresholds. Never fall back to its bounded preview coordinates.
+            return [port, { sources: (source?.metadata.workflow_population as { sources?: unknown })?.sources ?? {},
+              availability: "unavailable", outputs: {}, reason: "Excluded overlay was not retained; active results remain available." }] as const;
+          }
+        })),
         Promise.all(connections.map(async connection => {
           let value: unknown;
           try {

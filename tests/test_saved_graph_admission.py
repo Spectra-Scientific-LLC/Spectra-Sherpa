@@ -18,6 +18,22 @@ RETIRED_PROTOTYPE_NODE_TYPES = (
 )
 
 
+@pytest.mark.parametrize("direction", ["input", "output"])
+def test_named_default_port_wins_over_first_port_alias(direction: str) -> None:
+    from types import SimpleNamespace
+
+    from spectra_sherpa.app.services.dag.node_base import PortMetadata
+    from spectra_sherpa.app.services.dag.saved_graph_admission import _canonical_port_type
+
+    table = PortMetadata("exclusions", "spectrasherpa://types/WorkflowPopulation/1.0", False, "Exclusions")
+    data = PortMetadata("default", "spectrasherpa://types/SpectralDataset/1.0", True, "Dataset")
+    metadata = SimpleNamespace(input_ports=[table, data], output_ports=[table, data])
+    assert _canonical_port_type(metadata, "default", direction=direction) == data.type_ref
+    assert _canonical_port_type(metadata, "exclusions", direction=direction) == table.type_ref
+    metadata = SimpleNamespace(input_ports=[table], output_ports=[table])
+    assert _canonical_port_type(metadata, "default", direction=direction) == table.type_ref
+
+
 @pytest.mark.parametrize(
     "parameters",
     [{"method": "snv", "std_ddof": ddof, "scale_method": "max"} for ddof in (0, 1)]

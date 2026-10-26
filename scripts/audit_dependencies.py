@@ -55,7 +55,7 @@ def _load_pip_audit_ignores(path: Path) -> list[str]:
     return ids
 
 
-def _load_npm_audit_ignores(path: Path) -> dict[str, str]:
+def _load_npm_audit_ignores(path: Path) -> dict[str, dict[str, str]]:
     """Reviewed npm suppressions, fail-closed: expired entries never waive."""
     if not path.is_file():
         return {}
@@ -65,7 +65,7 @@ def _load_npm_audit_ignores(path: Path) -> dict[str, str]:
         raise SystemExit(f"{path}: [npm-audit].ignore must be a list")
 
     today = date.today()
-    waivers: dict[str, str] = {}
+    waivers: dict[str, dict[str, str]] = {}
     for idx, entry in enumerate(entries, start=1):
         if not isinstance(entry, dict):
             raise SystemExit(f"{path}: npm ignore entry {idx} must be a table")
@@ -80,7 +80,20 @@ def _load_npm_audit_ignores(path: Path) -> dict[str, str]:
             raise SystemExit(f"{path}: npm ignore entry {idx} has an invalid expires date: {expires!r}") from None
         if expiry <= today:
             raise SystemExit(f"{path}: npm suppression {advisory_id} expired on {expires}; re-review or remove it")
-        waivers[advisory_id] = reason
+        package = str(entry.get("package", "")).strip()
+        lockfile = str(entry.get("lockfile", "")).strip()
+        severity = str(entry.get("severity", "")).strip()
+        if (
+            not package
+            or lockfile not in {"frontend/package-lock.json", "desktop/electron/package-lock.json"}
+            or severity not in {"moderate", "high", "critical"}
+        ):
+            raise SystemExit(
+                f"{path}: npm suppression {advisory_id} requires package, exact public lockfile and reviewed severity"
+            )
+        if advisory_id in waivers:
+            raise SystemExit(f"{path}: duplicate npm suppression {advisory_id}")
+        waivers[advisory_id] = {"package": package, "lockfile": lockfile, "severity": severity}
         print(f"Using npm-audit suppression {advisory_id}: {reason} expires={expires}", flush=True)
     return waivers
 
@@ -181,19 +194,50 @@ def audit_npm(directory: Path, *, scope: str, ignore_file: Path) -> None:
         or not isinstance(report.get("vulnerabilities"), dict)
     ):
         raise SystemExit(f"npm audit returned an incomplete or failed report for {directory}")
-    if result.returncode == 0:
-        return
-    found = set(GHSA_ID.findall(result.stdout))
-    if not found:
-        # The report failed without a parseable advisory id; surface it whole.
-        sys.stdout.write(result.stdout)
-        sys.stderr.write(result.stderr)
+    # A public waiver can apply only to its own exact public lock, never a
+    # sibling/private tree passed to this shared scanner.
+    try:
+        lockfile = (
+            (directory / "package-lock.json").resolve().relative_to(ignore_file.resolve().parent.parent).as_posix()
+        )
+    except ValueError:
+        lockfile = None
+    levels = {"info": 0, "low": 1, "moderate": 2, "high": 3, "critical": 4}
+    unwaived = []
+    direct_count = 0
+    for package, vulnerability in report["vulnerabilities"].items():
+        if (
+            not isinstance(vulnerability, dict)
+            or vulnerability.get("severity") not in levels
+            or not isinstance(vulnerability.get("via"), list)
+        ):
+            raise SystemExit(f"npm audit returned an incomplete advisory for {package}")
+        for advisory in vulnerability["via"]:
+            if isinstance(advisory, str):
+                if advisory not in report["vulnerabilities"]:
+                    raise SystemExit(f"npm audit returned an unresolved advisory reference for {package}")
+                continue
+            if not isinstance(advisory, dict) or advisory.get("severity") not in levels:
+                raise SystemExit(f"npm audit returned an incomplete advisory for {package}")
+            direct_count += 1
+            # Aggregate severity belongs to the package, not every advisory.
+            # A waived high finding must not promote an unrelated low one.
+            severity = advisory["severity"]
+            if levels[severity] < levels["moderate"]:
+                continue
+            url = str(advisory.get("url", ""))
+            match = GHSA_ID.search(url)
+            identity = match.group() if match else url or f"npm:{advisory.get('source', 'unidentified')}"
+            waiver = waivers.get(identity)
+            if waiver != {"package": package, "lockfile": lockfile, "severity": severity} or lockfile is None:
+                unwaived.append(identity)
+    if result.returncode == 1 and not direct_count:
         raise SystemExit("npm full-lockfile audit failed without an identifiable advisory")
-    unwaived = sorted(found - waivers.keys())
     if unwaived:
         sys.stdout.write(result.stdout)
         raise SystemExit(
-            "npm full-lockfile audit reported advisories without a reviewed suppression: " + ", ".join(unwaived)
+            "npm full-lockfile audit reported advisories without a reviewed suppression: "
+            + ", ".join(sorted(set(unwaived)))
         )
 
 

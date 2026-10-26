@@ -35,6 +35,7 @@ from spectra_sherpa.app.services.dag.node_base import (
     PortMetadata,
     register_node,
 )
+from spectra_sherpa.app.services.dag.population_display import RetainedTransformPopulationProjection
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
@@ -304,7 +305,7 @@ def _msc_dispatch(
 
 
 @register_node
-class MSCNode(Node):
+class MSCNode(RetainedTransformPopulationProjection, Node):
     """Fit one MSC reference and apply the frozen slope/intercept correction."""
 
     metadata = NodeMetadata(

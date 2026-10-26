@@ -9,7 +9,7 @@ import { useProjectStore } from "@/stores/project";
 const originalLocation = window.location;
 
 vi.mock("@/stores/auth", () => ({
-  useAuthStore: () => ({ user: { id: 7 }, ensureStoredSession: async () => undefined }),
+  useAuthStore: () => ({ user: { id: 7 }, sessionRevision: 0, ensureStoredSession: async () => undefined }),
 }));
 
 describe("api client — active project 404 handler", () => {

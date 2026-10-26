@@ -8,6 +8,7 @@ import numpy as np
 
 from spectra_sherpa.app.services.dag import supervision_binding
 from spectra_sherpa.app.services.dag.node_base import NodePolicy
+from spectra_sherpa.app.services.dag.population_display import RowLocalPopulationProjection
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
@@ -221,7 +222,7 @@ def _execute_derivative(
 
 
 @register_node
-class DerivativeNode(Node):
+class DerivativeNode(RowLocalPopulationProjection, Node):
     """Compute a first or second spectral derivative with one admitted method."""
 
     metadata = NodeMetadata(

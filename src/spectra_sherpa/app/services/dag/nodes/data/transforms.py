@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
+import numpy as np
+
 from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
@@ -370,6 +372,31 @@ class FilterSamplesNode(Node):
             *(f"{indent}    {name}={value!r}," for name, value in arguments.items()),
             f"{indent})",
         ]
+
+    async def project_population(self, outputs: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+        from spectra_sherpa.app.services.dag.population_display import application_input, observation_refs
+
+        source = inputs.get("X", inputs.get("default"))
+        if source is None:
+            return {}
+        field = str(self.parameters.get("field", "sample_label"))
+        if field == "source_inclusion":
+            # Load Data has already applied inclusion to computational ports.
+            # This identity branch preserves the full display population.
+            return {"default": source}
+        if field == "sample_index":
+            raise ValueError("Excluded observations have no retained branch result-row index; inspect Load Data")
+        selected = await self.execute(X=application_input(source))
+        kept = set(observation_refs(selected["default"]))
+        refs = observation_refs(source)
+        # Apply the same row-local branch predicate, including to excluded
+        # observations. A class-A branch must never borrow class-B samples.
+        mask = np.asarray([ref in kept for ref in refs], dtype=bool)
+        from spectra_sherpa.app.services.dag.sample_subset_supervision import rebind_sample_subset_supervision
+
+        subset = source[mask]
+        rebind_sample_subset_supervision(source, subset)
+        return {"default": subset}
 
     async def execute(self, X: Any = None, **kwargs: Any) -> dict[str, Any]:
         """Filter dataset samples by labels or aligned sample metadata."""
