@@ -57,6 +57,7 @@ def test_source_only_registrations_preserve_all_previously_supported_producers()
             "_DIAGNOSTIC_REFUSAL_PREDECESSORS",
             "_SCIENTIFIC_AUDIT_PREDECESSORS",
             "_WORKFLOW_POPULATION_PREDECESSORS",
+            "_PCA_DISPLAY_INPUT_REUSE_PREDECESSORS",
         }:
             previous.extend(entries)
     for operation, (old, current) in _REVIEWED.items():

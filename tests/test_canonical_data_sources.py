@@ -682,7 +682,9 @@ async def test_load_group_is_deterministic_and_binds_exact_member_bytes(
     monkeypatch.setattr(node, "_load_single_file", load_member)
 
     outputs = await node.execute()
-    assert set(outputs) == {"default", "target", "__source_population", "exclusions"}
+    # An uncurated source keeps its inspectable exclusion state but does not
+    # carry a second full-source matrix for optional display application.
+    assert set(outputs) == {"default", "target", "exclusions"}
     dataset = outputs["default"]
     metadata = get_spectra_meta(dataset)
 

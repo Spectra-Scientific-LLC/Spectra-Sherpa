@@ -160,7 +160,7 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
     # Display-only population companions apply this run's retained state.
     # These exact calls neither refit nor enter computational graph ports.
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/pca_nodes.py": (
-        ("apply_fitted_state", 1292, 12),
+        ("apply_fitted_state", 1293, 12),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/population_display.py": (
         ("apply_fitted_state", 180, 20),
@@ -252,7 +252,7 @@ _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
         ("SherpaPLSDAArtifact.from_fitted_state", 91, 19),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/model_application.py": (
-        ("extract_cls.from_artifact", 383, 18),
+        ("extract_cls.from_artifact", 384, 18),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/saved_model_diagnostics.py": (
         ("SherpaPLSDAArtifact.from_fitted_state", 47, 15),

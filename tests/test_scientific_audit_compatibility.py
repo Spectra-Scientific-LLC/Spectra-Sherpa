@@ -111,6 +111,9 @@ def test_scientific_audit_preserves_exact_prior_application_not_execution(operat
     before, current = _REVIEWED[operation]
     contract = node_registry.get_metadata(operation).resolved_execution_contract()
     latest = {entry.operation_id: entry.consumer_digest for entry in authority._WORKFLOW_POPULATION_PREDECESSORS}
+    # The reviewed display-only reuse has its own exact current PCA consumer;
+    # the historical scientific-audit pairs below remain pinned unchanged.
+    latest["model.pca"] = "1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f"
     assert contract.digest == latest.get(operation, current)
     serializer = contract.payload["fitted_state_serializer"]
     previous = list(authority.saved_state_compatibilities())
