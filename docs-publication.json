@@ -3,6 +3,8 @@
   "purpose": "Reviewed publication audience inventory; not a claim that every scientific assertion has independent qualification. New pages need explicit audience review. Internal plans belong outside the public package.",
   "pages": [
     "docs/AUTHORITIES.md",
+    "docs/scientific-references/index.md",
+    "docs/scientific-references/preprocessing-validation.md",
     "docs/architecture/code-execution-boundary.md",
     "docs/architecture/export.md",
     "docs/architecture/index.md",

@@ -1,6 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, h, nextTick, onUnmounted, reactive } from "vue";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { WorkflowValidationError } from "@/utils/errors";
 import {
   dataSelectionReceiptStorageKey,
   storeDataSelectionReceipt,
@@ -328,6 +329,26 @@ async function mountBuilder() {
 }
 
 describe("WorkflowBuilderContent trial/detail layout", () => {
+  it("notifies a preflight refusal once, without a second Execution Failed toast", async () => {
+    workbookStore.activeIndex = 0;
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    toastAdd.mockClear();
+    const message = "Scale / Center: fit after Train/Test Split, using training rows only.";
+    workflowStore.executeWorkflow.mockImplementationOnce(async () => {
+      workflowStore.workflowWarnings = [message];
+      await nextTick();
+      throw new WorkflowValidationError([message]);
+    });
+    await wrapper.findAll("button").find(button => button.text() === "Run")!.trigger("click");
+    await flushPromises();
+    expect(toastAdd).toHaveBeenCalledTimes(1);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+      summary: "Workflow needs attention", severity: "warn", detail: message,
+    }));
+    wrapper.unmount();
+  });
+
   it("sends new warnings to notifications once without inserting header prose", async () => {
     workbookStore.activeIndex = 0;
     const wrapper = await mountBuilder();

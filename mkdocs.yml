@@ -113,6 +113,9 @@ nav:
       - 12.9. Native WDF: attributions/native-wdf.md
       - 12.10. Open Specy: attributions/open-specy.md
       - 12.11. OPUSReader2: attributions/opusreader2.md
+  - 13. Scientific References:
+      - Reference Index: scientific-references/index.md
+      - Preprocessing and Validation: scientific-references/preprocessing-validation.md
 theme:
   name: material
   logo: assets/ss-logo.png

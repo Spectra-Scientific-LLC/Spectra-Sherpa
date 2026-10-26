@@ -414,7 +414,7 @@ import ResizableInspectorPanel from "@/components/ResizableInspectorPanel.vue";
 import NodeDetailView from "./NodeDetailView.vue";
 import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
 import { downloadText } from "@/utils/download";
-import { getErrorMessage } from "@/utils/errors";
+import { getErrorMessage, WorkflowValidationError } from "@/utils/errors";
 import { activeWorkflowQuery } from "@/utils/workflowDeepLink";
 import {
   editableWorkflowGraph,
@@ -528,21 +528,24 @@ const workflowContextLoading = computed(() =>
 // path. Autosave preflight must not turn the workspace header into an error log.
 let notifiedWorkflow: number | null = null;
 let notifiedWarnings = new Set<string>();
+const notifyWorkflowWarnings = (warnings: readonly string[]) => {
+  if (workflowStore.workflowId !== notifiedWorkflow) notifiedWarnings.clear();
+  notifiedWorkflow = workflowStore.workflowId;
+  const current = new Set(warnings);
+  const added = [...current].filter(message => !notifiedWarnings.has(message));
+  notifiedWarnings = current;
+  if (added.length) toast.add({
+    severity: "warn",
+    summary: "Workflow needs attention",
+    detail: added.join("\n"),
+    life: 6000,
+  });
+};
 watch(
   () => [workflowContextLoading.value, workflowStore.workflowId, [...workflowStore.workflowWarnings]] as const,
-  ([loading, workflowId, warnings]) => {
+  ([loading, , warnings]) => {
     if (loading) return;
-    if (workflowId !== notifiedWorkflow) notifiedWarnings.clear();
-    notifiedWorkflow = workflowId;
-    const current = new Set(warnings);
-    const added = [...current].filter(message => !notifiedWarnings.has(message));
-    notifiedWarnings = current;
-    if (added.length) toast.add({
-      severity: "warn",
-      summary: "Workflow needs attention",
-      detail: added.join("\n"),
-      life: 6000,
-    });
+    notifyWorkflowWarnings(warnings);
   },
 );
 const preferredAnalysisStarterSlug = ref<string | null>(null);
@@ -2555,6 +2558,12 @@ const executeWorkflow = async () => {
     }
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === "AbortError") return;
+    if (error instanceof WorkflowValidationError) {
+      // The preflight watcher may already have delivered this same refusal.
+      // Keep one notification and do not label an unstarted run as failed.
+      notifyWorkflowWarnings([...workflowStore.workflowWarnings, ...error.messages]);
+      return;
+    }
     const message = getErrorMessage(error);
     toast.add({
       severity: "error",

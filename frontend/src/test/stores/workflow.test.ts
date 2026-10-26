@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 
 import api from "@/api/client";
 import { useWorkflowStore } from "@/stores/workflow";
+import { WorkflowValidationError } from "@/utils/errors";
 import type { NodeLibraryResponse, NodeTypeMetadata } from "@/types";
 import type { TypeRegistryPayload, WorkflowTemplate } from "@/stores/workflow-types";
 
@@ -1043,7 +1044,8 @@ describe("Workflow partial execution status", () => {
     store.lastExecutionResults = { source: { values: [1, 2] } };
     vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: false, semantic_edges: [],
       issues: [{ level: "error", message: "Derivative requires an input" }] } } as never);
-    await expect(store.executeWorkflow()).rejects.toThrow("Derivative requires an input");
+    await expect(store.executeWorkflow()).rejects.toBeInstanceOf(WorkflowValidationError);
+    expect(store.workflowWarnings).toContain("Derivative requires an input");
     expect(store.lastExecutionResults).toEqual({ source: { values: [1, 2] } });
     expect(store.nodes[0].executionState?.status).toBe("completed");
     expect(vi.mocked(api.post).mock.calls.map(call => call[0])).toEqual(["/workflows/77/preflight"]);

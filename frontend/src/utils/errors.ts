@@ -1,5 +1,18 @@
 import axios from "axios";
 
+/** A workflow refused before execution, not a failed scientific calculation. */
+export class WorkflowValidationError extends Error {
+  readonly messages: string[];
+
+  constructor(messages: string[]) {
+    const unique = [...new Set(messages)];
+    if (!unique.length) unique.push("Connect required inputs before running this workflow.");
+    super(unique.join("; "));
+    this.name = "WorkflowValidationError";
+    this.messages = unique;
+  }
+}
+
 /** Transport cancellation says nothing about whether the server committed a write. */
 export function isRequestCanceled(error: unknown): boolean {
   return axios.isCancel(error) || (
