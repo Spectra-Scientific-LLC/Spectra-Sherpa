@@ -66,7 +66,7 @@ const workflowStore = reactive({
   workflowId: 101,
   workflowName: "PCA Sheet",
   workflowHash: null,
-  workflowWarnings: [],
+  workflowWarnings: [] as string[],
   hasFoldValidationPlan: false,
   hasUnsavedChanges: false,
   isWorkflowStale: false,
@@ -328,6 +328,26 @@ async function mountBuilder() {
 }
 
 describe("WorkflowBuilderContent trial/detail layout", () => {
+  it("sends new warnings to notifications once without inserting header prose", async () => {
+    workbookStore.activeIndex = 0;
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    toastAdd.mockClear();
+    workflowStore.workflowWarnings = ["Input Spectra is not connected"];
+    await nextTick();
+    expect(wrapper.find('[aria-label="Workflow warnings"]').exists()).toBe(false);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "warn", detail: "Input Spectra is not connected" }));
+    toastAdd.mockClear();
+    workflowStore.workflowWarnings = ["Input Spectra is not connected"];
+    await nextTick();
+    expect(toastAdd).not.toHaveBeenCalled();
+    workflowStore.workflowWarnings = [];
+    await nextTick();
+    workflowStore.workflowWarnings = ["Input Spectra is not connected"];
+    await nextTick();
+    expect(toastAdd).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
   it("shows an interrupted load instead of an empty successful workbook", async () => {
     workbookStore.activeIndex = 0;
     workbookStore.loadSheets.mockImplementationOnce(async () => { workbookStore.projectId = null as unknown as number; });
@@ -416,6 +436,8 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     confirmAction.mockReset();
     confirmAction.mockResolvedValue(false);
     workflowStore.workflowId = 101;
+    workflowStore.workflowWarnings = [];
+    toastAdd.mockClear();
     workflowStore.workflowHash = null;
     workflowStore.hasUnsavedChanges = false;
     workflowStore.hasFoldValidationPlan = false;

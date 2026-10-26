@@ -148,7 +148,16 @@ class TestStructuralValidation:
         )
         result = executor.validate_full()
         assert not result.is_valid
-        assert any("no input" in e.message.lower() for e in result.errors)
+        input_issues = [e for e in result.errors if "input" in e.message.lower()]
+        assert len(input_issues) == 1
+        assert "Required input port" in input_issues[0].message
+
+    def test_legacy_disconnected_node_still_refuses(self):
+        executor = _build_executor(
+            WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}),
+        )
+        with patch.object(executor.nodes["snv1"], "uses_named_ports", return_value=False):
+            assert any("no input" in e.message.lower() for e in executor.validate_full().errors)
 
     def test_source_node_needs_no_input(self):
         executor = _build_executor(

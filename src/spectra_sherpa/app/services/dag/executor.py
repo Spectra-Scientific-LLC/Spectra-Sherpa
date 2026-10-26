@@ -616,6 +616,10 @@ class DAGExecutor:
             )
             if not is_source and len(dep_list) == 0:
                 assert node.metadata is not None
+                # Named required ports already provide the precise refusal.
+                # Retain the generic guard only for legacy/optional-port nodes.
+                if node.uses_named_ports() and any(port.required for port in node.metadata.input_ports or []):
+                    continue
                 issues.append(
                     ValidationIssue(
                         "error",

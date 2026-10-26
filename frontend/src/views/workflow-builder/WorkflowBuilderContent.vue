@@ -165,10 +165,6 @@
       <template v-else>For an application, import an available signed Model package from Dashboard.</template>
       Standalone Python, notebook, and ZIP exports cannot preserve this validation plan.
     </p>
-    <aside v-if="!workflowContextLoading && workflowStore.workflowWarnings.length" role="status" aria-label="Workflow warnings">
-      <p v-for="warning in workflowStore.workflowWarnings" :key="warning">{{ warning }}</p>
-    </aside>
-
     <section
       v-if="!workflowContextLoading && pendingDataSelection && !dataSelectionReceipt"
       id="workflow-selection-unavailable"
@@ -527,6 +523,27 @@ const workbookContextReady = ref(false);
 const workbookLoadError = ref("");
 const workflowContextLoading = computed(() =>
   !workbookContextReady.value || workbookStore.isLoading || workflowStore.isLoading,
+);
+// Warn once per current issue, via the canonical toast → notification centre
+// path. Autosave preflight must not turn the workspace header into an error log.
+let notifiedWorkflow: number | null = null;
+let notifiedWarnings = new Set<string>();
+watch(
+  () => [workflowContextLoading.value, workflowStore.workflowId, [...workflowStore.workflowWarnings]] as const,
+  ([loading, workflowId, warnings]) => {
+    if (loading) return;
+    if (workflowId !== notifiedWorkflow) notifiedWarnings.clear();
+    notifiedWorkflow = workflowId;
+    const current = new Set(warnings);
+    const added = [...current].filter(message => !notifiedWarnings.has(message));
+    notifiedWarnings = current;
+    if (added.length) toast.add({
+      severity: "warn",
+      summary: "Workflow needs attention",
+      detail: added.join("\n"),
+      life: 6000,
+    });
+  },
 );
 const preferredAnalysisStarterSlug = ref<string | null>(null);
 const dataSelectionFileCount = computed(() =>
@@ -1810,17 +1827,6 @@ const initializeWorkbook = async (respectDeepLink = true) => {
     resetCanvasUi();
     restoreNodeOutputsForActiveSheet();
 
-    if (workflowStore.workflowWarnings.length > 0) {
-      for (const warning of workflowStore.workflowWarnings) {
-        toast.add({
-          severity: "warn",
-          summary: "Workflow Warning",
-          detail: warning,
-          life: 6000,
-        });
-      }
-    }
-
     toast.add({
       severity: "info",
       summary: "Workbook Loaded",
@@ -2605,22 +2611,8 @@ const onCloseInspector = () => {
   inspectorOpen.value = false;
 };
 
-watch(
-  () => [selectedNode.value?.id || null, inspectorOpen.value] as const,
-  ([nodeId, isOpen]) => {
-    if (!nodeId || !isOpen) {
-      return;
-    }
-
-    setTimeout(() => {
-      canvasRef.value?.centerNode?.(nodeId);
-    }, 0);
-
-    setTimeout(() => {
-      canvasRef.value?.centerNode?.(nodeId);
-    }, 320);
-  },
-);
+// Pointer selection must not recenter the canvas under an active drag.
+// Adding a node explicitly reveals it through onAddNode instead.
 
 const onNodeConnect = (connection: {
   from: string;
