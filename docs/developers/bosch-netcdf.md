@@ -6,12 +6,20 @@ In **Data → Upload**, add one or more `Day_*.nc` files and their shared
 `Process_data.nc` companion to the same named dataset. Prepare the alignment
 there before adding the dataset to My Dataset. Native files upload sequentially.
 
-My Dataset has been restored to its pre-BOSCH layout pending component-placement
-review. The matrix, recipe panels and OES-specific portfolio/Workflow wiring are
-not integrated there. The separate development prototype at `/preview/oes-v065`
-and canonical backend portfolio operations remain available for review.
-Upload still owns process-companion loading and segmentation. No v0.6.4 release
-or historical qualification evidence is changed.
+My Dataset preserves its shared layout. Its sequential filters are Packaged
+Datasets → Data Views → **Steps Selection** → Comparison preview. The expanded,
+collapsible Steps Selection panel sits immediately above the plot and reads
+retained Upload catalogs. No step groups are selected initially. Clicking wafer
+boxes adds/removes groups automatically; the selected box fill matches all
+preview curves in that group, the border retains recipe color, and hover/focus
+shows acquisition metadata. The comparison has no legend. Explanations and the
+bounded preview sampling disclosure live in the panel's question-mark help.
+
+The old whole-container inspection path is not invoked for daily OES filtering:
+Process_data.nc and daily wafer groups cannot share one observation matrix.
+No OES-specific portfolio/Workflow controls or recipe panels are inserted into
+Active dataset. Those placements remain pending user review. The separate
+prototype and canonical backend operations remain available for v0.6.5 review.
 
 The native reader uses `h5py` and reads dictionary indices without CF masking/scaling. Small, unmodified CC BY 4.0 dictionaries are
 bundled with attribution and checksum validation, so dictionary files need not be uploaded. Metadata inventory lists the wafers before allocating a matrix;

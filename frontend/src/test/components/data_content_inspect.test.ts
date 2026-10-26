@@ -4496,4 +4496,22 @@ describe("DataContent file inspection", () => {
     expect(buttons.some((button) => button.text() === "Refresh")).toBe(false);
     wrapper.unmount();
   });
+  it("does not inspect a daily OES container and process companion as one shared result", async () => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    mocks.dataStore.experimentFiles = [
+      {id:22, experiment_id:11, file_path:'raw/Day_2024_08_05.nc', stage:'raw'},
+      {id:23, experiment_id:11, file_path:'raw/Process_data.nc', stage:'raw'},
+    ];
+    mocks.dataStore.fetchFileAssets.mockClear();
+    mocks.dataStore.inspectExperimentRawFiles.mockClear();
+    mocks.toastAdd.mockClear();
+    const vm = wrapper.vm as unknown as {showExperimentContents:(id:number)=>Promise<void>};
+    await vm.showExperimentContents(11);
+    await flushPromises();
+    expect(mocks.dataStore.fetchFileAssets).not.toHaveBeenCalled();
+    expect(mocks.dataStore.inspectExperimentRawFiles).not.toHaveBeenCalled();
+    expect(mocks.toastAdd.mock.calls.some(call => call[0].summary === 'Scientific results unavailable')).toBe(false);
+  });
+
 });

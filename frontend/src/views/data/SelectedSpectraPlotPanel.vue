@@ -197,7 +197,7 @@ const singleSource = computed(() =>
   props.plotDatasets.length === 1 ? props.plotDatasets[0] : null,
 );
 const singleMember = computed(() =>
-  props.plotDatasets.length === 1 && props.plotDatasets[0].members.length === 1
+  props.plotDatasets.length === 1 && props.plotDatasets[0].members.length === 1 && !props.plotDatasets[0].members[0].curveGroupColor
     ? props.plotDatasets[0].members[0]
     : null,
 );
@@ -603,7 +603,7 @@ const plotLayout = computed(() => ({
   autosize: true,
   height: 480,
   margin: { t: 20, r: 20, b: 58, l: 66 },
-  showlegend: props.plotDatasets.some(source => source.members.some(member => member.curveGroupLabel)),
+  showlegend: false,
   plot_bgcolor: SCIENTIFIC_COLORS.plotPaper,
   paper_bgcolor: SCIENTIFIC_COLORS.paper,
 }));

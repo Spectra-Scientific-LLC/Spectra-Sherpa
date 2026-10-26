@@ -1,6 +1,6 @@
 <template>
   <div aria-label="Processing step selection">
-    <p class="footnote">
+    <p v-if="!hideInstructions" class="footnote">
       Select wafer numbers by day and step. Hover or focus for acquisition times and ranges. Breaks
       are excluded.
     </p>
@@ -46,6 +46,7 @@
                     :aria-label="`${entry.catalog.date}, ${column.label}, ${wafer.asset_id}`"
                     :aria-pressed="isChosen(entry, wafer, column)"
                     :class="{ picked: isChosen(entry, wafer, column) }"
+                    :style="isChosen(entry, wafer, column) ? { backgroundColor: groupColors?.[stepSelectionKey({experiment_id: entry.experimentId, file_id: entry.file.id, asset_id: wafer.asset_id, step_id: column.id as StepSelection['step_id']})] } : undefined"
                     @click="toggle(entry, wafer, column)"
                     @mouseenter="show(entry, wafer, column, $event)"
                     @mousemove="show(entry, wafer, column, $event, true)"
@@ -69,10 +70,11 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import PlateWellHoverCard from "@/components/PlateWellHoverCard.vue";
+import { stepSelectionKey } from "./composables/useProcessingStepSelection";
 import type { StepEntry, StepSelection } from "./composables/useProcessingStepSelection";
 type Entry = StepEntry;
 type Wafer = Entry["catalog"]["wafers"][number];
-const props = defineProps<{ entries: Entry[]; modelValue: StepSelection[] }>();
+const props = defineProps<{ entries: Entry[]; modelValue: StepSelection[]; groupColors?: Record<string, string>; hideInstructions?: boolean }>();
 const emit = defineEmits<{ "update:modelValue": [value: StepSelection[]] }>();
 const hover = ref<InstanceType<typeof PlateWellHoverCard> | null>(null);
 const columns = [
@@ -234,13 +236,17 @@ td {
 }
 .step-box.selected {
   transform: scale(1.025);
-  border-color: var(--ss-action);
+
 }
 .bosch {
+  border-color: var(--ss-info-strong);
+  --recipe-color: var(--ss-info-strong);
   background: var(--ss-info-surface);
   color: var(--ss-info-strong);
 }
 .clean {
+  border-color: var(--ss-success-strong);
+  --recipe-color: var(--ss-success-strong);
   background: var(--ss-success-surface);
   color: var(--ss-success-strong);
 }
@@ -252,13 +258,14 @@ td {
 }
 button {
   height: 2rem;
-  border: 1px solid var(--ss-border-strong);
+  border: 2px solid var(--recipe-color);
   border-radius: 6px;
   background: var(--ss-surface);
   color: var(--ss-text);
   cursor: pointer;
 }
 button.picked {
+  transform: scale(1.08);
   background: var(--ss-action);
   color: var(--ss-surface);
 }

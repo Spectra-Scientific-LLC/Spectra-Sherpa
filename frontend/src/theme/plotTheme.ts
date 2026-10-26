@@ -71,6 +71,16 @@ export function categoricalPalette(preference: PlotPalette, categoryCount = 10):
     : ACCESSIBLE_PALETTES[preference];
 }
 
+/** Stable selection colors extend a categorical palette without wrapping to an
+ * already assigned color. Selection identities retain their index on toggle. */
+export function selectionSeriesColor(palette: readonly string[], index: number): string {
+  const base = palette[index % palette.length];
+  const cycle = Math.floor(index / palette.length);
+  if (!cycle) return base;
+  const amount = 1 / (1 + cycle * 0.24);
+  return '#' + [1, 3, 5].map(start => Math.round(parseInt(base.slice(start, start + 2), 16) * amount).toString(16).padStart(2, '0')).join('');
+}
+
 /** Static exports do not depend on browser CSS variables or an online theme. */
 export const PRINT_PLOT_THEME = {
   paper: themeToken("surface"),

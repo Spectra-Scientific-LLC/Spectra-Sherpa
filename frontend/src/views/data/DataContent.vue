@@ -1297,12 +1297,16 @@
             </div>
           </div>
           <div class="dataset-preview-shell">
+            <ProcessingStepFilter v-if="selectedStepFiles.length && dataStore.activeExperimentId"
+              :experiment-id="dataStore.activeExperimentId" :project-id="projectStore.currentProjectId"
+              :files="selectedStepFiles" :file-selections="plotFileSelections" @sources="onStepFilterSources" :scope-key="JSON.stringify(dataScopeIdentity())"
+              @preview="stepFilterPreview = $event" @loading="stepFilterLoading = $event" @error="stepFilterError = $event" />
             <SelectedSpectraPlotPanel
-              :plot-datasets="plotDatasetSources"
-              :plot-dataset-count="plottedExperimentIds.length"
-              :plot-file-count="plottedFileCount"
-              :plot-datasets-loading="plotDatasetsLoading"
-              :plot-datasets-error="plotDatasetsError"
+              :plot-datasets="[...plotDatasetSources, ...stepFilterPreview]"
+              :plot-dataset-count="selectedStepFiles.length ? new Set([...plotDatasetSources, ...stepFilterPreview].map(s => s.experimentId)).size : plottedExperimentIds.length"
+              :plot-file-count="selectedStepFiles.length ? [...plotDatasetSources, ...stepFilterPreview].reduce((n, s) => n + s.selectedFileCount, 0) : plottedFileCount"
+              :plot-datasets-loading="plotDatasetsLoading || stepFilterLoading"
+              :plot-datasets-error="plotDatasetsError || stepFilterError"
               :active-experiment-id="dataStore.activeExperimentId"
               :active-file-name="
                 dataStore.activeFilePath ? extractFileName(dataStore.activeFilePath) : null
@@ -1657,6 +1661,7 @@ import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import { resolveMethodHelpUrl } from "@/utils/documentation";
 import PlotSelectionCheckbox from "@/components/data/PlotSelectionCheckbox.vue";
 import DataContentsPanel from "./DataContentsPanel.vue";
+import ProcessingStepFilter from "./ProcessingStepFilter.vue";
 import DataStoryCard from "./DataStoryCard.vue";
 import BoschStepComparison from "./BoschStepComparison.vue";
 import SelectedSpectraPlotPanel from "./SelectedSpectraPlotPanel.vue";
@@ -2256,6 +2261,28 @@ const plottedExperimentIds = computed(() =>
     .map((experiment) => experiment.id),
 );
 const plotDatasetSources = ref<DatasetPlotSource[]>([]);
+const stepFilterPreview = ref<DatasetPlotSource[]>([]);
+const stepFilterSourceIds = ref<number[]>([]);
+function onStepFilterSources(ids: number[]) {
+  stepFilterSourceIds.value = ids;
+  void loadPlottedDatasets();
+}
+const stepFilterLoading = ref(false);
+const stepFilterError = ref<string | null>(null);
+const selectedStepFiles = computed(() => {
+  const id = dataStore.activeExperimentId;
+  if (id == null) return [];
+  const selection = plotFileSelections.value[id];
+  return dataStore.experimentFiles.filter(file => /day_\d{4}_\d{2}_\d{2}.*\.nc$/i.test(file.file_path) &&
+    (selection === null || selection?.some(selected => selected.id === file.id)));
+});
+watch(() => [dataStore.activeExperimentId, selectedStepFiles.value] as const, (current, previous) => {
+  stepFilterPreview.value = [];
+  stepFilterError.value = null;
+  stepFilterLoading.value = false;
+  if (current[1].length || previous?.[1].length) void loadPlottedDatasets();
+});
+
 const plotDatasetsLoading = ref(false);
 const plotDatasetsError = ref<string | null>(null);
 const fileSampleLabelsByExperiment = ref<Record<number, Record<string, string[]>>>({});
@@ -5813,9 +5840,10 @@ async function loadPlottedDatasets(
     return;
   }
   const selected = plottedExperimentIds.value
+    .filter(id => !(selectedStepFiles.value.length && (id === dataStore.activeExperimentId || stepFilterSourceIds.value.includes(id))))
     .map((id) => dataStore.experiments.find((experiment) => experiment.id === id))
     .filter((experiment): experiment is ExperimentSummary => Boolean(experiment));
-  if (selected.length !== plottedExperimentIds.value.length) {
+  if (plottedExperimentIds.value.some(id => !dataStore.experiments.some(e => e.id === id))) {
     plotFileSelections.value = Object.fromEntries(
       selected.map((experiment) => [experiment.id, plotFileSelections.value[experiment.id]]),
     );
@@ -6123,6 +6151,15 @@ async function showExperimentContents(
   preferredAssetId: string | null = null,
   exactSelection = false,
 ) {
+  // Processing-step filtering has no whole-container observation matrix.
+  // Process companions and daily wafer groups cannot share an inspection asset.
+  if (!preferredAssetId && experimentId === dataStore.activeExperimentId &&
+      dataStore.experimentFiles.some(file => /day_\d{4}_\d{2}_\d{2}.*\.nc$/i.test(file.file_path))) {
+    inspection.contents.invalidate();
+    dataStore.clearInspection();
+    await loadPlottedDatasets();
+    return;
+  }
   exactInspectionSelection.value = exactSelection;
   const ticket = inspection.contents.begin();
   dataStore.clearCatalogExploration();
@@ -6902,6 +6939,9 @@ function sampleLabelsForFile(file: ExperimentFile): string[] {
 }
 
 async function ensureFileSampleLabels(experimentId: number): Promise<void> {
+  if (experimentId === dataStore.activeExperimentId &&
+      dataStore.experimentFiles.some(file => /day_\d{4}_\d{2}_\d{2}.*\.nc$/i.test(file.file_path))) return;
+
   const files = dataStore.activeExperimentId === experimentId ? dataStore.experimentFiles : [];
   const cached = fileSampleLabelsByExperiment.value[experimentId] ?? {};
   if (

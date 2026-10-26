@@ -465,7 +465,7 @@ export function buildMultiDatasetOverlay(
         ]),
         line: {
           width: active ? 3.2 : 1.4,
-          color: identityColors.get(colorKey),
+          color: admittedSource.member.curveGroupColor ?? identityColors.get(colorKey),
           dash,
         },
         opacity: 0.84,

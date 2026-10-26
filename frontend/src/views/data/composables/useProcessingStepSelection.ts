@@ -1,4 +1,6 @@
 import { computed, ref, watch } from "vue";
+import { selectionSeriesColor } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import api from "@/api/client";
 import type { components } from "@/types/api/v1";
 import type { DatasetPlotSource, SherpaDatasetDict, ExperimentFile } from "@/types";
@@ -12,11 +14,17 @@ export type StepEntry = {
   catalog: components["schemas"]["BoschStepsOut"];
 };
 
+export function stepSelectionKey(s: Pick<StepSelection, "experiment_id" | "file_id" | "asset_id" | "step_id">): string {
+  return `${s.experiment_id}:${s.file_id}:${s.asset_id}:${s.step_id}`;
+}
+
 /** Application adapter for retained segmentation. Never uploads, segments or averages. */
 export function useProcessingStepSelection(
   identity: () => readonly ScopeIdentity[],
   project: () => number | null,
 ) {
+  const colorSlots = ref<Record<string, number>>({});
+  const groupColors = computed(() => Object.fromEntries(Object.entries(colorSlots.value).map(([key, index]) => [key, selectionSeriesColor(seriesPalette("overlay"), index)])));
   const entries = ref<StepEntry[]>([]),
     selections = ref<StepSelection[]>([]);
   const sourceExperimentIds = ref<number[]>([]);
@@ -53,17 +61,22 @@ export function useProcessingStepSelection(
   );
   watch(selections, () => {
     selectedPortfolio.value = null;
+    for (const s of selections.value) {
+      const key = stepSelectionKey(s);
+      if (!(key in colorSlots.value)) colorSlots.value[key] = Object.keys(colorSlots.value).length;
+    }
   }, { flush: "sync" });
   const active = computed(() => selections.value.length > 0 || selectedPortfolio.value != null);
   let pendingLoad: Promise<void> = Promise.resolve();
-  function load(experimentIds: number[], filesForActive: StepEntry["file"][], activeId: number) {
-    pendingLoad = loadCatalogs(experimentIds, filesForActive, activeId);
+  function load(experimentIds: number[], filesForActive: StepEntry["file"][], activeId: number, fileSelections?: Record<number, readonly {id: number}[] | null>) {
+    pendingLoad = loadCatalogs(experimentIds, filesForActive, activeId, fileSelections);
     return pendingLoad;
   }
   async function loadCatalogs(
     experimentIds: number[],
     filesForActive: StepEntry["file"][],
     activeId: number,
+    fileSelections?: Record<number, readonly {id: number}[] | null>,
   ) {
     const ticket = listing.begin();
     entries.value = [];
@@ -92,7 +105,7 @@ export function useProcessingStepSelection(
                   signal: ticket.signal,
                 })
               ).data;
-        for (const file of files.filter((f) => /Day_\d{4}_\d{2}_\d{2}.*\.nc$/i.test(f.file_path))) {
+        for (const file of files.filter((f) => (!fileSelections || fileSelections[experimentId] === null || fileSelections[experimentId]?.some(selected => selected.id === f.id)) && /Day_\d{4}_\d{2}_\d{2}.*\.nc$/i.test(f.file_path))) {
           if (!ticket.isCurrent()) return;
           if (!sourceExperimentIds.value.includes(experimentId))
             sourceExperimentIds.value.push(experimentId);
@@ -223,6 +236,7 @@ export function useProcessingStepSelection(
           source.members.push({
             fileId: entry.file.id,
             fileName: entry.file.file_path,
+            curveGroupColor: groupColors.value[stepSelectionKey(selection)],
             curveGroupLabel: `${entry.catalog.date} · ${wafer.asset_id} · ${phase.label}`,
             dataset: response.data.dataset as unknown as SherpaDatasetDict,
           });
@@ -238,6 +252,7 @@ export function useProcessingStepSelection(
     }
   }
   return {
+    groupColors,
     entries,
     sourceExperimentIds,
     ready: () => pendingLoad,

@@ -2318,7 +2318,7 @@ describe("DataContentsPanel", () => {
     expect(wrapper.text()).toContain("batch");
     expect(wrapper.text()).toContain("Existing workflows remain bound to their previous file IDs");
   });
-  it("shows BOSCH protocol from the admitted extras of a bounded dataset preview", () => {
+  it("keeps the shared Active dataset panel free of the withdrawn BOSCH protocol panel", () => {
     mocks.dataStore.fileInfo = {
       title: "BOSCH wafer", n_samples: 14920, n_features: 3648,
       data: [[1, 2]], x_axis: {data:[250, 400]},
@@ -2327,9 +2327,9 @@ describe("DataContentsPanel", () => {
         schema_version:"spectrasherpa.bosch-experiment-context/1", selected_lot:null}},
     };
     const wrapper = mount(DataContentsPanel);
-    const context = wrapper.get("[aria-label='BOSCH experiment context']");
-    expect(context.text()).toContain("Initial chamber preparation");
-    expect(context.text()).toContain("EPD clean after the last wafer: Unconfirmed");
+    expect(wrapper.find("[aria-label='BOSCH experiment context']").exists()).toBe(false);
+    expect(wrapper.text()).toContain("Acquisition settings");
+    expect(wrapper.text()).toContain("Save dataset");
   });
 
 });

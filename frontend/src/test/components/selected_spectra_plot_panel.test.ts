@@ -75,6 +75,16 @@ function source(
 }
 
 describe("SelectedSpectraPlotPanel", () => {
+  it("matches group colors even for a single selected group and hides the legend", () => {
+    const selected = source(4, "Day", [{ id: 5, name: "Day.nc", dataset: dataset("Acq1") }]);
+    selected.members[0].curveGroupLabel = "Day · Wafer 1 · Cleaning";
+    selected.members[0].curveGroupColor = "#2563eb";
+    const wrapper = mount(SelectedSpectraPlotPanel, { props: { plotDatasets: [selected], plotDatasetCount: 1, plotFileCount: 1 } });
+    const chart = wrapper.getComponent({name: "PlotlyChart"});
+    expect(chart.props("layout").showlegend).toBe(false);
+    expect(chart.props("data")[0].line.color).toBe("#2563eb");
+  });
+
   function retainedSource(): DatasetPlotSource {
     const full = dataset("A");
     full.n_samples = 3;

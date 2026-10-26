@@ -233,6 +233,8 @@ export interface DatasetAnalysisReadiness {
 export interface DatasetPlotMember {
   /** Optional presentation grouping; never replaces sample or source identity. */
   curveGroupLabel?: string;
+  /** Display-only color shared by a selection box and its spectra. */
+  curveGroupColor?: string;
   fileId: number | null;
   fileName: string;
   dataset: SherpaDatasetDict;

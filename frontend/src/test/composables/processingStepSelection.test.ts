@@ -143,3 +143,22 @@ it('does not reclassify sources from an old dataset file response', async () => 
  expect(state.entries.value).toEqual([]);
  expect(api.get).toHaveBeenCalledTimes(2);
 });
+
+it("keeps one color across phases and stable colors after another group is removed", async () => {
+  const {state} = setup();
+  await state.load([4], files, 4);
+  state.selections.value = [selection];
+  await nextTick();
+  await state.compare();
+  const first = state.preview.value[0].members.map(m => m.curveGroupColor);
+  expect(new Set(first).size).toBe(1);
+  expect(first[0]).toBeTruthy();
+  state.selections.value = [];
+  await nextTick();
+  await state.compare();
+  expect(state.preview.value).toEqual([]);
+  state.selections.value = [selection];
+  await nextTick();
+  await state.compare();
+  expect(state.preview.value[0].members.map(m => m.curveGroupColor)).toEqual(first);
+});
