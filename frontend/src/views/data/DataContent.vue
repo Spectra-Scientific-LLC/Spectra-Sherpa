@@ -1289,6 +1289,33 @@
             </div>
           </div>
           <div class="dataset-preview-shell">
+            <div
+              v-if="pendingInspection && inspectionAssets.length > 1"
+              class="inspection-asset-selector"
+            >
+              <label for="inspection-scientific-asset">Scientific result</label>
+              <Dropdown
+                inputId="inspection-scientific-asset"
+                v-model="inspectionAssetId"
+                :options="inspectionAssets"
+                optionLabel="title"
+                optionValue="asset_id"
+                placeholder="Select the exact result to inspect"
+                class="w-full"
+                @change="onInspectionAssetChange"
+              >
+                <template #option="{ option }">
+                  <span
+                    >{{ option.title || option.asset_id }} · {{ option.asset_id }} ·
+                    {{ option.shape.join(" × ") }}</span
+                  >
+                </template>
+              </Dropdown>
+              <small
+                >The same exact result identity is used by preview, workflows, and model
+                application.</small
+              >
+            </div>
             <SelectedSpectraPlotPanel
               :plot-datasets="plotDatasetSources"
               :plot-dataset-count="plottedExperimentIds.length"
@@ -1444,33 +1471,6 @@
               class="p-button-sm p-button-outlined"
               @click="reopenSelectedLibraryBasket"
             />
-          </div>
-          <div
-            v-if="pendingInspection && inspectionAssets.length > 1"
-            class="inspection-asset-selector"
-          >
-            <label for="inspection-scientific-asset">Scientific result</label>
-            <Dropdown
-              inputId="inspection-scientific-asset"
-              v-model="inspectionAssetId"
-              :options="inspectionAssets"
-              optionLabel="title"
-              optionValue="asset_id"
-              placeholder="Select the exact result to inspect"
-              class="w-full"
-              @change="onInspectionAssetChange"
-            >
-              <template #option="{ option }">
-                <span
-                  >{{ option.title || option.asset_id }} · {{ option.asset_id }} ·
-                  {{ option.shape.join(" × ") }}</span
-                >
-              </template>
-            </Dropdown>
-            <small
-              >The same exact result identity is used by preview, workflows, and model
-              application.</small
-            >
           </div>
           <div
             v-if="inspectionWarnings.length"
@@ -5815,6 +5815,14 @@ async function loadPlottedDatasets(
     const selection = plotFileSelections.value[experiment.id];
     const assetId = experiment.id === dataStore.activeExperimentId ? inspectionAssetId.value : null;
     if (
+      experiment.id === dataStore.activeExperimentId &&
+      pendingInspection.value &&
+      inspectionAssets.value.length > 1 &&
+      !assetId
+    ) {
+      return Promise.reject(new Error("Choose a scientific result (wafer) above to preview this file."));
+    }
+    if (
       !assetId &&
       resident &&
       (selection === null ||
@@ -6048,7 +6056,7 @@ async function onPlotFileToggle(file: ExperimentFile, checked: boolean): Promise
     }
     await loadPlottedDatasets();
   } else {
-    await showExperimentContents(experimentId);
+    await showExperimentContents(experimentId, null, inspectionAssetId.value);
   }
   if (activeFocus && selected.some((candidate) => candidate.id === activeFocus.id)) {
     dataStore.activateFile(activeFocus.id, activeFocus.file_path);
@@ -6155,7 +6163,9 @@ async function showExperimentContents(
       inspectionAssets.value = (inventories[0]?.assets ?? []).filter((asset) =>
         commonIds.has(asset.asset_id),
       );
-      inspectionAssetId.value = preferredAssetId;
+      inspectionAssetId.value = inspectionAssets.value.some(
+        (asset) => asset.asset_id === preferredAssetId,
+      ) ? preferredAssetId : null;
       pendingInspection.value = { kind: "experiment", experimentId };
       dataStore.clearInspection();
       if (!inspectionAssets.value.length) {
@@ -6163,11 +6173,10 @@ async function showExperimentContents(
           "Files in this dataset do not share a selectable scientific result identity.",
         );
       }
-      if (preferredAssetId) {
+      if (inspectionAssetId.value) {
         await onInspectionAssetChange();
-        if (!ticket.isCurrent()) return;
-        if (dataStore.fileInfo)
-          await loadPlottedDatasets(new Map([[experimentId, dataStore.fileInfo]]));
+      } else {
+        await loadPlottedDatasets();
       }
       return;
     }
@@ -6772,6 +6781,8 @@ async function onInspectionAssetChange() {
       }
       cacheFileSampleLabels(selection.experimentId, dataStore.fileInfo);
     }
+    if (!ticket.isCurrent()) return;
+    await loadPlottedDatasets();
   } catch {
     // The store exposes the exact preview error in the Contents panel.
   }

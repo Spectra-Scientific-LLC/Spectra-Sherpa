@@ -569,6 +569,7 @@ type DataContentVm = {
     members: Array<{ fileName: string }>;
   }>;
   plotFileSelections: Record<number, unknown>;
+  plotDatasetsError: string | null;
   originalSourceFilesKey: string;
   originalSourceSampleCount: number | null;
   inspectedDatasetShape: string;
@@ -2801,6 +2802,44 @@ describe("DataContent file inspection", () => {
     await vm.onInspectionAssetChange();
 
     expect(mocks.dataStore.inspectFile).toHaveBeenCalledWith(22, "raw/wine.csv", 11, "igsm");
+  });
+
+  it("keeps the chosen wafer when toggling a file and refreshes comparison preview", async () => {
+    const inventory = {
+      format_id: "bosch-netcdf", variant: "oes", parser_id: "bosch", parser_version: "1",
+      source_sha256: "c".repeat(64),
+      assets: [
+        { asset_id: "Wafer_01", title: "Wafer 1", shape: [14920, 3648], warnings: [] },
+        { asset_id: "Wafer_02", title: "Wafer 2", shape: [14930, 3648], warnings: [] },
+      ],
+    };
+    mocks.dataStore.fetchFileAssets.mockResolvedValue(inventory);
+    const wrapper = mountDataContent();
+    await flushPromises();
+    vi.mocked(api.post).mockResolvedValue({ data: { data: [[1, 2]], n_samples: 1, n_features: 2 } } as never);
+    const vm = wrapper.vm as unknown as DataContentVm;
+    await vm.onInspectFile(mocks.dataStore.experimentFiles[0], { updateRoute: false });
+    vi.mocked(api.post).mockClear();
+    await vm.onPlotFileToggle(mocks.dataStore.experimentFiles[0], true);
+    // Never send the multi-wafer container to a matrix reader without a choice.
+    expect(api.post).not.toHaveBeenCalled();
+    expect(vm.plotDatasetsError).toContain("Choose a scientific result (wafer)");
+    vm.inspectionAssetId = "Wafer_01";
+    await vm.onInspectionAssetChange();
+    expect(api.post).toHaveBeenLastCalledWith("/builder/file-info", {
+      experiment_id: 11, asset_id: "Wafer_01",
+    });
+    vi.mocked(api.post).mockClear();
+    await vm.onPlotFileToggle(mocks.dataStore.experimentFiles[0], true);
+    expect(vm.inspectionAssetId).toBe("Wafer_01");
+    expect(api.post).toHaveBeenLastCalledWith("/builder/file-info", {
+      experiment_id: 11, asset_id: "Wafer_01",
+    });
+    vm.inspectionAssetId = "Wafer_02";
+    await vm.onInspectionAssetChange();
+    expect(api.post).toHaveBeenLastCalledWith("/builder/file-info", {
+      experiment_id: 11, asset_id: "Wafer_02",
+    });
   });
 
   it("renders staged-upload scientific import warnings", async () => {
