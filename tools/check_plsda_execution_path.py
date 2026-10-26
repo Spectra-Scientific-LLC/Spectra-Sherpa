@@ -163,7 +163,7 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
         ("apply_fitted_state", 1292, 12),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/population_display.py": (
-        ("apply_fitted_state", 163, 20),
+        ("apply_fitted_state", 180, 20),
     ),
     (
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/"

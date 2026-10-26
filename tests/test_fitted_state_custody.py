@@ -72,7 +72,7 @@ def test_custody_capabilities_bind_the_current_registered_execution_contracts() 
         {
             FITTED_PLS_STATE_SERIALIZER: "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
             PLSDA_FITTED_STATE_SERIALIZER: "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
-            "spectra.scale-reference-json.v2": "9baeb1b89c4ea311d9cc47b8bc4188c01faa88637ecfe36475cd20af99af3b87",
+            "spectra.scale-reference-json.v2": "5bcce28bb446d20a2a5f1a44b43d10dc5d98c69e1b981d831151885b069b41e8",
         }
     )
     assert observed == expected

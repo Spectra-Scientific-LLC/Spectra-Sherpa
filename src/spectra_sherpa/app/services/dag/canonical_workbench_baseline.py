@@ -575,8 +575,25 @@ def _require_parameters(value: object) -> dict[str, object]:
     return dict(value)
 
 
+def _managed_source_parameters(source: WorkflowNode) -> dict[str, Any]:
+    from spectra_sherpa.app.lib.workflow_population import canonical_exclusions
+
+    parameters = dict(source.parameters)
+    try:
+        decision = canonical_exclusions(parameters.pop("workflow_exclusions", None))
+    except ValueError as exc:
+        raise CanonicalWorkbenchBaselineError(
+            "Workflow exclusions are invalid; review Load Data before Optimize"
+        ) from exc
+    if decision and decision["excluded_refs"]:
+        raise CanonicalWorkbenchBaselineError(
+            "Optimize does not yet support workflow exclusions. Restore workflow exclusions before creating a baseline."
+        )
+    return parameters
+
+
 def _dataset_selection(source: WorkflowNode) -> CanonicalDatasetSelection:
-    parameters = source.parameters
+    parameters = _managed_source_parameters(source)
     if set(parameters) - {"experiment_id", "file_id", "stage", "asset_id", "target_authority"}:
         raise CanonicalWorkbenchBaselineError("Managed baseline source has undeclared data binding parameters")
     experiment_id = parameters.get("experiment_id")
@@ -612,7 +629,7 @@ def _collection_dataset_selection(
     source: WorkflowNode,
     supervision: WorkflowNode,
 ) -> CanonicalDatasetSelection:
-    parameters = source.parameters
+    parameters = _managed_source_parameters(source)
     allowed_source = {
         "source_mode",
         "folder_path",

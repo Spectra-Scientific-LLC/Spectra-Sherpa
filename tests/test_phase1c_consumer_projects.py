@@ -757,9 +757,9 @@ async def test_peak_detection_project_executes_one_canonical_peak_table(canonica
         source_parameters={"data_1": canonical_peak_source},
     )
     result = run.results["analysis_1"]
-    assert set(result) == {"peaks", "plots", "per_spectrum", "__workflow_population"}
-    assert result["__workflow_population"]["outputs"] == {}
-    assert result["__workflow_population"]["availability"] == "unavailable"
+    # No workflow exclusions: source-only/empty decisions do not inject a
+    # private overlay into every downstream operation (Option B).
+    assert set(result) == {"peaks", "plots", "per_spectrum"}
     rows = result["peaks"]["data"]
     assert len(rows) == 2
     assert [row["sample_count"] for row in rows] == [10, 10]

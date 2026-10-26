@@ -38,6 +38,24 @@ class FittedStateCustodyCapability:
 _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingProxyType(
     {
         (
+            "spectrasherpa.model-artifact.pca/3",
+            "7f5425b11e126eb8c8359dd480e9af00c62a1d852fa372bed41e31c08d5cbf60",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.pca/3",
+            contract_digest="7f5425b11e126eb8c8359dd480e9af00c62a1d852fa372bed41e31c08d5cbf60",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Display membership and dispatch fixes; fitted arrays and serializer are unchanged.",
+        ),
+        (
+            "spectra.scale-reference-json.v2",
+            "5bcce28bb446d20a2a5f1a44b43d10dc5d98c69e1b981d831151885b069b41e8",
+        ): FittedStateCustodyCapability(
+            serializer="spectra.scale-reference-json.v2",
+            contract_digest="5bcce28bb446d20a2a5f1a44b43d10dc5d98c69e1b981d831151885b069b41e8",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Display membership and dispatch fixes; fitted arrays and serializer are unchanged.",
+        ),
+        (
             "spectra.scale-reference-json.v2",
             "9baeb1b89c4ea311d9cc47b8bc4188c01faa88637ecfe36475cd20af99af3b87",
         ): FittedStateCustodyCapability(

@@ -247,6 +247,26 @@ def test_saved_workbench_baseline_binds_integrity_source_and_admitted_graph() ->
     assert len(baseline.digest) == 64
 
 
+@pytest.mark.parametrize("decision", [None, {"source_digest": "a" * 64, "excluded_refs": []}])
+def test_restored_workflow_exclusions_do_not_block_managed_baseline(decision) -> None:
+    nodes, edges, _ = _records()
+    nodes[0].parameters["workflow_exclusions"] = decision
+    baseline = canonical_workbench_baseline_from_records(
+        workflow_id=9, stored_integrity_hash=_integrity(nodes, edges), nodes=nodes, edges=edges
+    )
+    assert baseline.dataset.file_id == 12
+    assert "workflow_exclusions" in nodes[0].parameters  # admission never rewrites saved records
+
+
+def test_active_workflow_exclusions_have_an_explicit_optimize_refusal() -> None:
+    nodes, edges, _ = _records()
+    nodes[0].parameters["workflow_exclusions"] = {"source_digest": "a" * 64, "excluded_refs": ["exact-ref"]}
+    with pytest.raises(CanonicalWorkbenchBaselineError, match="Restore workflow exclusions"):
+        canonical_workbench_baseline_from_records(
+            workflow_id=9, stored_integrity_hash=_integrity(nodes, edges), nodes=nodes, edges=edges
+        )
+
+
 def test_persisted_baseline_re_admission_rejects_tampered_scientific_identity() -> None:
     """The Runner may reuse only the exact baseline originally admitted from the canvas."""
 
@@ -343,7 +363,8 @@ def test_saved_workbench_baseline_requires_exactly_one_source_at_the_scientific_
         )
 
 
-def test_saved_workbench_baseline_admits_exact_grouped_collection_supervision() -> None:
+@pytest.mark.parametrize("decision", [None, {"source_digest": "a" * 64, "excluded_refs": []}])
+def test_saved_workbench_baseline_admits_exact_grouped_collection_supervision(decision) -> None:
     nodes = [
         _Node(
             "source",
@@ -361,6 +382,7 @@ def test_saved_workbench_baseline_admits_exact_grouped_collection_supervision() 
                 "source_manifest_sha256": "a" * 64,
                 "collection_definition_sha256": "b" * 64,
                 "scientific_collection_sha256": "c" * 64,
+                "workflow_exclusions": decision,
             },
         ),
         _Node(

@@ -263,7 +263,13 @@ class FileLoadNode(Node):
                 exclusions=self.parameters.get("workflow_exclusions"),
                 source_binding=self.parameters,
             )
-            if sample_table is not None and source.preloaded_dataset is None:
+            if source.preloaded_dataset is not None:
+                # The typed output axis already carries the exact active
+                # subset. Preserve the native annotation-table representation
+                # rather than inventing portable target declarations.
+                axis = outputs["default"].sample_axis
+                sample_table = None if axis is None or axis.sample_table is None else dict(axis.sample_table)
+            elif sample_table is not None:
                 state = outputs["exclusions"]
                 if state.get("availability") == "unavailable":
                     axis = dataset.get_observation_axis()

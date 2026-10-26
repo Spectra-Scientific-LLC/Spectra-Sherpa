@@ -42,35 +42,35 @@ class HistoricalValidationGraph(ValidationGraph):
 _INSPECTION_CONSUMERS = {
     "baseline.penalized_ls": (
         "b3b824ef38585a9f7e1e673f2369f03c3d2e4900028168f79948aa35592095da",
-        "2ed48350a7f23decb5ab1e8db40a80f77292a08bb6619e430c106ed2d7a1ca77",
+        "3572299978c258b77523d201247340fc62dce738c2feff9357583016f37574c1",
     ),
     "preprocess.emsc": (
         "631c4572049eb1905849bf92a2ea724a431e4b5adb1784833e94f9f362440d16",
-        "b7761f7e53738c91e7406e8629602e4275f6dd0a1473ad00429fd8ec78458516",
+        "0da011667fde2f08550fe6f637df908a551a6157f9030a1c46052b4e97926d1f",
     ),
     "preprocess.msc": (
         "7ef892787a6eba403892932a0fe46be310cd018bd9b7b912c91cf9107dc8b808",
-        "fedd3abb19b61b25bebf14e3f26fd75295aa00d1c8d4582543817199072bc6fa",
+        "844ebd3436bace984337141982e3bdd3be446cc388d6f0d2c5efaac549172f13",
     ),
     "preprocess.normalize": (
         "bd82b536be57256c0c54233d85bb5c8206b93a4c670aca4e878b1c3be824180e",
-        "9d1e46702f16620d4e6540b8cc0ce6c3120b4a39c3503993f8c68a820e642441",
+        "b245b1e293f1b89b311663a3d73bfb36ac56a1898f586cb81a07ffefee72bd6e",
     ),
     "preprocess.smooth": (
         "4d405cdbf887713619a462b33e9c941a62abcd281176f590415c46bf606507b6",
-        "64d1a235cd8ae5422bcdb2fea4877ff53536853132d009b3a28b013df571713d",
+        "da86321ad34a334b778e3e3632e542fbfb6374f9283bd92c34657f1e79f1b490",
     ),
     "preprocess.derivative": (
         "99e268546748f7c1cbe0bbd1ad29f7d23291e77b5200e7900dbee3ae55e168a7",
-        "415e23d4cfec34c30c104cbb6cf926a1c4dbdde34792d8a7cd828539e94da454",
+        "ede30b45160f45b072086c5ae83aaaf7acbf86a37ffe270fc27e7cc55c69df9c",
     ),
     "preprocess.scale": (
         "cbe147638d9ba374a04f1f333fb50c81e3cc031c3a62046012c979f0ec2472d7",
-        "9baeb1b89c4ea311d9cc47b8bc4188c01faa88637ecfe36475cd20af99af3b87",
+        "5bcce28bb446d20a2a5f1a44b43d10dc5d98c69e1b981d831151885b069b41e8",
     ),
     "preprocess.osc": (
         "02a4281542fe5fe2a349dbc5e61a42e82fa4a9f346ddb21fd5bf2d64b96c7b1b",
-        "c2ce772bcbfbf52b98294bbefa78ef1de11686f5d3086c46cb250ca0fcdaf252",
+        "65b5b9a4b266638082d75717e7cf33d75ce0e4fb6a4fbc9d1062e65ed430bd03",
     ),
     "selection.variable_select": (
         "3209ca10ae4dfa04fe81b944d866182bb88bf5f3f9677c2618c5c100542b4f52",

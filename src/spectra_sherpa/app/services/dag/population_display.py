@@ -17,6 +17,14 @@ DISPLAY_KEY = "__workflow_population"
 logger = logging.getLogger(__name__)
 
 
+def computational_outputs(value: Any) -> Any:
+    """Legacy dictionary inputs retain public results, never display payloads."""
+    private = {DISPLAY_KEY, "__source_population"}
+    if not isinstance(value, dict) or not private.intersection(value):
+        return value
+    return {key: item for key, item in value.items() if key not in private}
+
+
 def observation_refs(dataset: SherpaDataset) -> list[str]:
     axis = dataset.sample_axis
     refs = None if axis is None else axis.workflow_observation_refs
@@ -56,33 +64,42 @@ def application_input(dataset: SherpaDataset) -> SherpaDataset:
 
 def projection_within_budget(outputs: Any, inputs: Any, *, limit: int = 64 * 1024 * 1024) -> bool:
     """Bound the entire dispatch, including nested datasets and fitted state."""
+    import sys
+
     import numpy as np
 
-    remaining, visited = limit, set()
+    remaining, visited = limit, {}
 
     def charge(value: Any) -> bool:
         nonlocal remaining
         if id(value) in visited:
             return True
-        visited.add(id(value))
-        if len(visited) > 100_000:
-            return False
+        # Hold references: NumPy structured scalars are temporary wrappers and
+        # Python may otherwise reuse their ids before the walk is finished.
+        visited[id(value)] = value
         if isinstance(value, np.ndarray):
-            remaining -= value.nbytes
+            remaining -= max(sys.getsizeof(value), value.nbytes)
+            if value.dtype.hasobject:
+                return remaining >= 0 and all(charge(item) for item in value.flat)
+        elif isinstance(value, np.void) and value.dtype.hasobject and value.dtype.names:
+            remaining -= sys.getsizeof(value)
+            return remaining >= 0 and all(charge(value[name]) for name in value.dtype.names)
         elif isinstance(value, SherpaDataset):
             # The worker receives the dataset, not just its numerical matrix:
             # axes/sample tables, provenance and typed contexts travel too.
             return charge(vars(value))
         elif isinstance(value, dict):
-            remaining -= 16 * len(value)
+            remaining -= sys.getsizeof(value)
             return remaining >= 0 and all(charge(item) for pair in value.items() for item in pair)
-        elif isinstance(value, (list, tuple)):
-            remaining -= 8 * len(value)
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            remaining -= sys.getsizeof(value)
             return remaining >= 0 and all(charge(item) for item in value)
-        elif isinstance(value, (str, bytes)):
-            remaining -= len(value) * (4 if isinstance(value, str) else 1)
+        elif isinstance(value, (str, bytes, bytearray)):
+            remaining -= sys.getsizeof(value)
+        elif isinstance(value, memoryview):
+            remaining -= max(sys.getsizeof(value), value.nbytes)
         elif isinstance(value, (int, float, np.number)):
-            remaining -= 8
+            remaining -= sys.getsizeof(value)
         elif hasattr(value, "__dict__"):
             return charge(vars(value))
         return remaining >= 0
@@ -181,6 +198,7 @@ async def retain_population_display(executor: Any, node_id: str) -> None:
         return
     sources: dict[str, Any] = {}
     inputs: dict[str, Any] = {}
+    source_states: dict[str, dict[str, Any]] = {}
     for edge in executor.edges:
         if edge.to_node != node_id:
             continue
@@ -188,9 +206,18 @@ async def retain_population_display(executor: Any, node_id: str) -> None:
         companion = upstream.get(DISPLAY_KEY) if isinstance(upstream, dict) else None
         if not isinstance(companion, dict):
             continue
-        sources.update(companion["sources"])
+        workflow_sources = {
+            key: state for key, state in companion["sources"].items() if state.get("workflow_excluded_count", 0) > 0
+        }
+        if not workflow_sources:
+            continue
+        sources.update(workflow_sources)
         if edge.from_output in companion.get("outputs", {}):
-            inputs[edge.to_input] = companion["outputs"][edge.from_output]
+            value = companion["outputs"][edge.from_output]
+            state = upstream.get("exclusions")
+            if isinstance(value, SherpaDataset) and isinstance(state, dict) and state.get("rows"):
+                source_states[edge.to_input] = state
+            inputs[edge.to_input] = value
     if not sources:
         return
     record: dict[str, Any] = {
@@ -200,14 +227,29 @@ async def retain_population_display(executor: Any, node_id: str) -> None:
         "reason": "This operation has no declared out-of-fit observation projection.",
     }
     projector = getattr(node, "project_population", None)
-    has_excluded = any(state.get("active_count", 0) < state.get("source_count", 0) for state in sources.values())
-    # No numerical copy/projection is needed for an entirely active population.
-    # Original output axes already carry the exact navigation references.
-    bounded = projection_within_budget(outputs, inputs)
-    if not bounded:
-        record["reason"] = "Excluded display projection exceeds the 64 MiB input budget."
-    if projector is not None and inputs and has_excluded and bounded:
+    if callable(projector) and inputs:
+        if not projection_within_budget(outputs, inputs):
+            record["reason"] = "Excluded display projection exceeds the 64 MiB input budget."
+            outputs[DISPLAY_KEY] = record
+            return
         try:
+            # Only eligible, bounded projections may allocate a source copy.
+            # My Dataset defines the starting population; workflow exclusions
+            # alone travel downstream as display-only overlays.
+            import numpy as np
+
+            from .sample_subset_supervision import rebind_sample_subset_supervision
+
+            for name, state in source_states.items():
+                value = inputs[name]
+                source_refs = {row["observation_ref"] for row in state["rows"] if row["source_included"]}
+                mask = np.asarray([ref in source_refs for ref in observation_refs(value)], dtype=bool)
+                if not mask.all():
+                    subset = value[mask]
+                    rebind_sample_subset_supervision(value, subset)
+                    inputs[name] = subset
+            if not projection_within_budget(outputs, inputs):
+                raise ValueError("Excluded display projection exceeds the 64 MiB input budget.")
             record["outputs"] = await executor._run_population_projection(node, outputs, inputs)
         except Exception as exc:
             # A projection refusal must not turn a successful fit into a failed

@@ -43,7 +43,7 @@ from .executor_validation import (  # noqa: F401 — tests import/monkeypatch th
 from .graph_utils import Edge as _Edge
 from .graph_utils import build_dependency_map, topological_sort
 from .node_base import Node, NodeResult, NodeStatus, node_registry, resolved_runtime_worker_capabilities
-from .population_display import retain_population_display
+from .population_display import computational_outputs, retain_population_display
 from .transport import reject_spectrochempy_transport
 
 logger = logging.getLogger(__name__)
@@ -1171,7 +1171,7 @@ class DAGExecutor:
                     _legacy_port_counter += 1
 
                 # Extract specific output from multi-output nodes
-                result = self.results[edge.from_node]
+                result = computational_outputs(self.results[edge.from_node])
                 data = None
                 if isinstance(result, dict):
                     if edge.from_output and edge.from_output != "default":
@@ -1238,7 +1238,7 @@ class DAGExecutor:
                     raise ValueError(f"Node {edge.from_node} has not been executed yet (required by {node_id})")
 
                 # Extract specific output from multi-output nodes
-                result = self.results[edge.from_node]
+                result = computational_outputs(self.results[edge.from_node])
                 data = None
                 if isinstance(result, dict):
                     if edge.from_output and edge.from_output != "default":

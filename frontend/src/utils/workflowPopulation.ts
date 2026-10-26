@@ -1,5 +1,5 @@
 import type { NodeOutput, PortOutput } from "@/utils/nodeOutput";
-import { resolvePortPayload } from "@/utils/nodeOutput";
+import { enrichDeclaredContext, resolvePortPayload } from "@/utils/nodeOutput";
 import { projectScientificPresentation, projectedPresentationIdentity, resolveScientificPresentation } from "@/utils/scientificPresentation";
 
 export interface WorkflowObservation {
@@ -35,12 +35,16 @@ export function populationPlotOutput(output: NodeOutput | null): NodeOutput | nu
     outputs?: Record<string, unknown>; availability?: string;
   } | undefined;
   if (!output || !population?.outputs || output.metadata.workflow_population_projected) return output;
-  const ports = { ...output.ports };
+  const ports = Object.fromEntries(Object.entries(output.ports ?? {}).map(([name, port]) =>
+    [name, { ...port, metadata: { ...port.metadata } }]));
   for (const [name, value] of Object.entries(population.outputs)) {
     const payload = resolvePortPayload(value);
     ports[name] = { ...ports[name], data: Array.isArray(payload?.data) ? payload.data : Array.isArray(value) ? value : [],
-      metadata: payload?.metadata ?? {}, value } as PortOutput;
+      metadata: payload?.metadata ?? {}, descriptor: undefined, value } as PortOutput;
   }
+  // Reapply the same declared context used for computational results. The
+  // active cohort's labels/descriptors cannot describe a larger display cohort.
+  enrichDeclaredContext(population.outputs, ports, output.presentation_contract);
   const axis = population.outputs.observation_axis;
   const raw = { ...output, ports, metadata: { ...output.metadata,
     workflow_population_projected: true, ...(axis ? { observation_axis: axis } : {}) } };

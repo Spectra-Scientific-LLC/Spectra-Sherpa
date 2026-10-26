@@ -801,8 +801,9 @@ _WORKFLOW_POPULATION_PREDECESSORS = tuple(
         (
             "model.pca",
             "spectrasherpa.model-artifact.pca/3",
-            "869a320a282d9484457f4e3237a0a098c26403c65ed1e699482403231630b608",
+            "7f5425b11e126eb8c8359dd480e9af00c62a1d852fa372bed41e31c08d5cbf60",
             (
+                "869a320a282d9484457f4e3237a0a098c26403c65ed1e699482403231630b608",
                 "2d4457cd7ca9ce699326aad70e1b4a77deb74d6cea88afd08066f106f45df161",
                 "5e809716a8266c4ddd5fb3902b8a68c264019fd05237bdb1397f664ae31dea10",
                 "85b458d4b762f028fd9e825c47642460faf9f4682122def13416c88082a879f6",

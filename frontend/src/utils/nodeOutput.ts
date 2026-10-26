@@ -268,7 +268,7 @@ const nonEmptyStringArray = (value: unknown): string[] =>
   Array.isArray(value) && value.every(item => typeof item === "string" && item.trim().length > 0)
     ? [...value] : [];
 
-const enrichDeclaredContext = (
+export const enrichDeclaredContext = (
   result: UnknownRecord,
   ports: Record<string, PortOutput>,
   contract?: NodePresentationContract | null,

@@ -158,7 +158,7 @@ import {
   PRIMARY_AXIS_SET,
   projectDatasetAxisDisplay,
 } from "@/utils/datasetAxisSets";
-import { buildMetadataLineTraces, metadataGroupingState } from "@/utils/sampleMetadataGrouping";
+import { buildMetadataLineTraces, metadataGroupingState, subsetMetadataGrouping } from "@/utils/sampleMetadataGrouping";
 import SampleMetadataStyleControls from "@/views/workflow-builder/node-detail/panels/SampleMetadataStyleControls.vue";
 import { shouldReverseFeatureAxis } from "@/utils/plotLabels";
 
@@ -506,22 +506,9 @@ const singlePlotData = computed(() => {
       x,
       rows as number[][],
       {
-        ...metadataGrouping.value,
-        sampleIds: metadataGrouping.value.sampleIds ? selectedRows(metadataGrouping.value.sampleIds) : null,
+        ...subsetMetadataGrouping(metadataGrouping.value, selectedRowIndexes.value ?? []),
         sampleLabels: styleLabels.map((fallback, index) =>
           typeof labels[index] === "string" && labels[index].length > 0 ? labels[index] : fallback),
-        columns: Object.fromEntries(
-          Object.entries(metadataGrouping.value.columns).map(([key, values]) => [
-            key,
-            selectedRows(values),
-          ]),
-        ),
-        columnLabels: Object.fromEntries(
-          Object.entries(metadataGrouping.value.columnLabels).map(([key, values]) => [
-            key,
-            selectedRows(values),
-          ]),
-        ),
       },
       sampleColorField.value,
       sampleLineField.value,

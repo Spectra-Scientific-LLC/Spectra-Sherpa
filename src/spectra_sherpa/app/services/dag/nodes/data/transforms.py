@@ -374,20 +374,24 @@ class FilterSamplesNode(Node):
         ]
 
     async def project_population(self, outputs: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
-        from spectra_sherpa.app.services.dag.population_display import observation_refs
+        from spectra_sherpa.app.services.dag.population_display import application_input, observation_refs
 
         source = inputs.get("X", inputs.get("default"))
-        active = outputs["default"]
         if source is None:
             return {}
-        kept = set(observation_refs(active))
-        included = source.sample_axis.include_mask
+        field = str(self.parameters.get("field", "sample_label"))
+        if field == "source_inclusion":
+            # Load Data has already applied inclusion to computational ports.
+            # This identity branch preserves the full display population.
+            return {"default": source}
+        if field == "sample_index":
+            raise ValueError("Excluded observations have no retained branch result-row index; inspect Load Data")
+        selected = await self.execute(X=application_input(source))
+        kept = set(observation_refs(selected["default"]))
         refs = observation_refs(source)
-        # A branch filter keeps its own active membership. Globally excluded
-        # observations remain a display-only companion, never numerical input.
-        mask = np.asarray(
-            [ref in kept or (included is not None and not included[i]) for i, ref in enumerate(refs)], dtype=bool
-        )
+        # Apply the same row-local branch predicate, including to excluded
+        # observations. A class-A branch must never borrow class-B samples.
+        mask = np.asarray([ref in kept for ref in refs], dtype=bool)
         return {"default": source[mask]}
 
     async def execute(self, X: Any = None, **kwargs: Any) -> dict[str, Any]:

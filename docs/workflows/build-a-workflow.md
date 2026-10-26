@@ -100,6 +100,9 @@ spectra, responses, groups and sample metadata remain aligned. All connected
 nodes receive that population. A downstream **Filter Samples** can further
 restrict its own branch; restoring a workflow exclusion does not change it.
 Restoration also does not undo exclusions already saved in My Dataset.
+Those saved exclusions define the workflow's starting population: they remain
+inspectable in My Dataset and Load Data, but do not appear as downstream model
+overlays. Only workflow exclusions can be restored from a workflow plot.
 Each source owns its own exact ordered references, even if two sources have
 the same editable labels. Changing the source invalidates its old decisions
 instead of applying them to a different set of observations.
@@ -120,6 +123,8 @@ exports (including executable bundles) currently refuse a nonempty workflow
 exclusion: their portable deployment-input substitution cannot yet replay the
 Workbench source binding. They do not silently export an uncurated fit.
 Active-result CSV/JSON downloads remain available.
+Optimize currently refuses active workflow exclusions with an explicit reason;
+**Restore all** removes the override and makes the workflow eligible again.
 
 ### Excluded observations on plots
 
@@ -127,10 +132,13 @@ Numerical ports, data tables, CSV exports and fit/evaluation metrics contain
 the active result. Display-only companions may additionally show excluded
 observations with open-cross symbols (spectral lines are dotted). They cannot
 be connected to computational nodes or counted as fit/validation rows.
+Numeric color scales and their hover values are preserved; the cross, rather
+than a replacement color, identifies excluded points on those plots.
 
 | Operation | Excluded-observation display |
 | --- | --- |
-| Load Data and branch Filter | Source values, with exact membership and source references |
+| Load Data | Source values, with exact membership and source references |
+| Branch Filter | Only observations matching the branch predicate; result-row index filters have no inferred excluded-row position |
 | Declared row-local preprocessing (normalization, smoothing, derivatives, clipping and supported baseline corrections) | The same per-spectrum transformation, without a cohort refit |
 | Scale/Center, MSC, EMSC and OSC | Application of the exact retained active-population transform state |
 | PCA scores and T²/Q diagnostics | Application to the current PCA fit; diagnostic limits and fitted population stay unchanged |

@@ -367,6 +367,24 @@ export function buildMetadataScoreTraces(
 
 const LINE_DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"];
 
+/** Select values, inclusion and navigation together; never reindex a full mask. */
+export function subsetMetadataGrouping(
+  grouping: Extract<MetadataGroupingState, { kind: "valid" }>, indices: number[],
+): Extract<MetadataGroupingState, { kind: "valid" }> {
+  const select = <T>(values: T[]) => indices.map(index => values[index]);
+  const axis = grouping.observationAxis as { include_mask?: boolean[]; workflow_observation_refs?: string[] } | undefined;
+  return { ...grouping,
+    sampleIds: grouping.sampleIds ? select(grouping.sampleIds) : null,
+    sampleLabels: select(grouping.sampleLabels),
+    columns: Object.fromEntries(Object.entries(grouping.columns).map(([key, values]) => [key, select(values)])),
+    columnLabels: Object.fromEntries(Object.entries(grouping.columnLabels).map(([key, values]) => [key, select(values)])),
+    observationAxis: axis ? { count: indices.length,
+      ...(axis.include_mask ? { include_mask: select(axis.include_mask) } : {}),
+      ...(axis.workflow_observation_refs ? { workflow_observation_refs: select(axis.workflow_observation_refs) } : {}),
+    } : undefined,
+  };
+}
+
 export function buildMetadataLineTraces(
   x: number[],
   rows: number[][],

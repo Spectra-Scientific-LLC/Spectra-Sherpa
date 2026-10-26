@@ -3,10 +3,11 @@ import { createPinia, setActivePinia } from "pinia";
 import { buildNodeOutput } from "@/utils/nodeOutput";
 import { populationPlotOutput, observationTraceContext, type WorkflowPopulation } from "@/utils/workflowPopulation";
 import { displayObservationTraces } from "@/utils/workflowPopulationTrace";
+import { t2QDiagnosticRows } from "@/utils/scientificPlots";
 import { useWorkflowStore } from "@/stores/workflow";
 import { displayPlot } from "@/utils/displayPlot";
 import { DEFAULT_DISPLAY_PREFERENCES } from "@/composables/useDisplayPreferences";
-import { metadataGroupingState } from "@/utils/sampleMetadataGrouping";
+import { buildMetadataLineTraces, metadataGroupingState, subsetMetadataGrouping } from "@/utils/sampleMetadataGrouping";
 
 vi.mock("@/api/client", () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
 const digest = "a".repeat(64);
@@ -20,6 +21,65 @@ const state: WorkflowPopulation = { schema_version: "spectrasherpa-workflow-popu
 
 describe("source-owned workflow observation curation", () => {
   beforeEach(() => setActivePinia(createPinia()));
+  it("binds projected diagnostic labels to display rows rather than active-result positions", () => {
+    const output = buildNodeOutput({ T2: [1, 3], Q: [.1, .3], sample_labels: ["Original 1", "Original 3"] });
+    output.presentation_contract = { schema_version: "spectrasherpa-node-presentation/1", digest: "test", payload: {
+      default_presentation: "diagnostics", presentations: [{ presentation_id: "diagnostics", label: "Diagnostics",
+        kind: "t2_q_diagnostics", modes: ["plot", "table"], source_ports: ["T2", "Q"], sample_labels_field: "sample_labels" }],
+    } } as typeof output.presentation_contract;
+    output.metadata.workflow_population = { outputs: { T2: [1, 2, 3], Q: [.1, .2, .3],
+      sample_labels: ["Original 1", "Original 2", "Original 3"] } };
+    const display = populationPlotOutput(output)!;
+    expect(display.ports?.T2.metadata.sample_labels).toEqual(["Original 1", "Original 2", "Original 3"]);
+    expect(t2QDiagnosticRows({ T2: display.ports?.T2.value, Q: display.ports?.Q.value },
+      display.ports?.T2.metadata).map(row => row.sample)).toEqual(["Original 1", "Original 2", "Original 3"]);
+    expect(output.ports?.T2.metadata.sample_labels).not.toEqual(display.ports?.T2.metadata.sample_labels);
+  });
+  it("removes the source override after restoring the last selected point or all points", () => {
+    const store = useWorkflowStore();
+    store.nodes = [{ id: "load", type: "data.file_load", x: 0, y: 0, params: { experiment_id: 1,
+      workflow_exclusions: { source_digest: digest, excluded_refs: [refs[1]] } } }];
+    store.lastExecutionResults = { load: { exclusions: state } };
+    store.workflowPopulationActions.change([refs[1]], false);
+    expect(store.nodes[0].params).toEqual({ experiment_id: 1 });
+    store.nodes[0].params.workflow_exclusions = null;
+    store.restoreWorkflowObservations();
+    expect(store.nodes[0].params).toEqual({ experiment_id: 1 });
+  });
+  it("aligns subset inclusion and navigation with selected source rows, not subset positions", () => {
+    const rows = Array.from({ length: 121 }, (_, i) => [i, i + 1]);
+    const axis = { count: rows.length, labels: rows.map((_, i) => `source-${i}`),
+      include_mask: rows.map((_, i) => i > 2), workflow_observation_refs: rows.map((_, i) => `ref-${i}`),
+      sample_table: { Class: rows.map(() => "A") } };
+    const grouping = metadataGroupingState(axis, rows.length);
+    expect(grouping.kind).toBe("valid");
+    if (grouping.kind !== "valid") return;
+    const indices = Array.from({ length: 71 }, (_, i) => i + 50);
+    const subset = subsetMetadataGrouping(grouping, indices);
+    const traces = buildMetadataLineTraces([1, 2], indices.map(i => rows[i]), subset, "Class", "__none__", 1);
+    const curves = traces.filter(trace => trace.showlegend === false);
+    expect(curves).toHaveLength(1);
+    expect(curves[0].y).toEqual([50, 51]);
+    expect(curves[0].meta).toEqual({ workflow_observation_refs: ["ref-50", "ref-50"], workflow_included: [true, true] });
+  });
+  it("keeps numeric color values, bounds, scale and hover intact for excluded points", () => {
+    const colors = [1.2, 2.4, 3.6];
+    const trace = { type: "scatter", mode: "markers", x: [1, 2, 3], y: [4, 5, 6],
+      marker: { color: colors, colorscale: "Viridis", cmin: 0, cmax: 4, showscale: true },
+      hovertemplate: "%{marker.color}", meta: observationTraceContext(axis, 3) };
+    const displayed = displayObservationTraces([trace])[0];
+    expect(displayed.marker).toMatchObject({ color: colors, colorscale: "Viridis", cmin: 0, cmax: 4, showscale: true,
+      symbol: ["circle", "x-open", "x-open"] });
+    expect(displayed.hovertemplate).toBe(trace.hovertemplate);
+    expect(displayed.x).toBe(trace.x);
+  });
+  it("resolves each source reference only once even across many spectral points", () => {
+    const resolve = vi.fn(() => ({ excluded: true, restorable: true }));
+    const trace = { mode: "lines", x: Array(2000).fill(1), y: Array(2000).fill(2),
+      meta: { workflow_observation_refs: Array(2000).fill(refs[1]) } };
+    displayObservationTraces([trace, trace], { resolve, change: vi.fn() });
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
   it("uses exact source refs, permits subset restoration, and never changes a branch filter", () => {
     const store = useWorkflowStore();
     store.nodes = [{ id: "load", type: "data.collection_load", x: 0, y: 0, params: { workflow_exclusions: {
