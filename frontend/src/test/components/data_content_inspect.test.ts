@@ -4444,6 +4444,138 @@ describe("DataContent file inspection", () => {
     wrapper.unmount();
   });
 
+  it.each(["dataset", "acquisition", "file"].flatMap(selection =>
+    [false, true].map(returnToOriginal => ({ selection, returnToOriginal }))))(
+    "preserves pending navigation for $selection (return to original tab: $returnToOriginal)",
+    async ({ selection, returnToOriginal }) => {
+      const { createRouter, createMemoryHistory } = await vi.importActual<typeof import("vue-router")>("vue-router");
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [{ path: "/data", component: { render: () => null } }],
+      });
+      await router.push("/data?tab=multi-well");
+      mocks.route.query = { tab: "multi-well" };
+      const wrapper = mountDataContent();
+      await flushPromises();
+      const replace = mocks.routerReplace.getMockImplementation()!;
+      mocks.routerReplace.mockImplementation(location => router.replace(location));
+      const removeAfter = router.afterEach((to, _from, failure) => {
+        if (!failure) mocks.route.query = { ...to.query } as Record<string, string>;
+      });
+      let releaseNavigation!: () => void;
+      const heldNavigation = new Promise<void>(resolve => { releaseNavigation = resolve; });
+      let firstTabNavigation = true;
+      const removeGuard = router.beforeEach(to => {
+        if (to.query.tab === "synthesis" && (firstTabNavigation || returnToOriginal)) {
+          firstTabNavigation = false;
+          return heldNavigation;
+        }
+      });
+      let finish!: () => void;
+      const heldSelection = new Promise<void>(resolve => { finish = resolve; });
+      const vm = wrapper.vm as unknown as DataContentVm;
+      if (selection === "file") {
+        const fetchAssets = mocks.dataStore.fetchFileAssets.getMockImplementation()!;
+        mocks.dataStore.fetchFileAssets.mockImplementationOnce(async (...args) => {
+          await heldSelection;
+          return fetchAssets(...args);
+        });
+      } else {
+        mocks.dataStore.selectExperiment.mockImplementationOnce(() => heldSelection);
+      }
+      const selecting = selection === "dataset"
+        ? vm.onExperimentSelect(mocks.dataStore.experiments[0])
+        : selection === "acquisition"
+          ? vm.onAcquisitionExperimentSelect(mocks.dataStore.experiments[0].id)
+          : vm.onInspectFile(mocks.dataStore.experimentFiles[0]);
+      try {
+        await flushPromises();
+        const settledTab = router.currentRoute.value.query.tab;
+        wrapper.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", 1);
+        await flushPromises();
+        // Vue Router has not committed Synthesis yet. A late selection must
+        // not copy the old route's tab into its replacement.
+        expect(settledTab).not.toBe("synthesis");
+        expect(router.currentRoute.value.query.tab).toBe(settledTab);
+        finish();
+        if (returnToOriginal) {
+          await flushPromises();
+          wrapper.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", settledTab === "my-dataset" ? 5 : 4);
+        } else {
+          await selecting;
+        }
+        releaseNavigation();
+        await selecting;
+        await flushPromises();
+        expect(router.currentRoute.value.query.tab).toBe(returnToOriginal ? settledTab : "synthesis");
+        expect(router.currentRoute.value.query.experiment).toBe("11");
+        if (selection === "file") expect(router.currentRoute.value.query.fileId).toBe("22");
+        expect(wrapper.get("[data-testid='data-tabs']").attributes("data-active-index")).toBe(
+          returnToOriginal ? (settledTab === "my-dataset" ? "5" : "4") : "1",
+        );
+      } finally {
+        finish();
+        releaseNavigation();
+        removeGuard();
+        removeAfter();
+        mocks.routerReplace.mockImplementation(replace);
+        wrapper.unmount();
+      }
+    },
+  );
+
+  it("does not restore a pending selection after Back commits another dataset", async () => {
+    const { createRouter, createMemoryHistory } = await vi.importActual<typeof import("vue-router")>("vue-router");
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: "/data", component: { render: () => null } }],
+    });
+    await router.push("/data?tab=multi-well&experiment=10");
+    await router.push("/data?tab=multi-well&experiment=11");
+    const originalRoute = mocks.route;
+    const liveRoute = reactive({
+      ...mocks.route, path: "/data", query: { tab: "multi-well", experiment: "11" } as Record<string, string>,
+      fullPath: router.currentRoute.value.fullPath,
+    });
+    mocks.route = liveRoute;
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const replace = mocks.routerReplace.getMockImplementation()!;
+    mocks.routerReplace.mockImplementation(location => router.replace(location));
+    const removeAfter = router.afterEach((to, _from, failure) => {
+      if (!failure) {
+        liveRoute.fullPath = to.fullPath;
+        liveRoute.query = { ...to.query } as Record<string, string>;
+      }
+    });
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const removeGuard = router.beforeEach(to => to.query.fileId === "22" ? held : undefined);
+    const selecting = (wrapper.vm as unknown as DataContentVm).onInspectFile(mocks.dataStore.experimentFiles[0]);
+    try {
+      await flushPromises();
+      expect(mocks.routerReplace).toHaveBeenLastCalledWith(expect.objectContaining({
+        query: expect.objectContaining({ experiment: "11", fileId: "22" }),
+      }));
+      router.back();
+      await flushPromises();
+      expect(router.currentRoute.value.query.experiment).toBe("10");
+      wrapper.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", 1);
+      release();
+      await selecting;
+      await flushPromises();
+      expect(router.currentRoute.value.query).toMatchObject({ tab: "synthesis", experiment: "10" });
+      expect(router.currentRoute.value.query.fileId).toBeUndefined();
+    } finally {
+      release();
+      removeGuard();
+      removeAfter();
+      wrapper.unmount();
+      mocks.route = originalRoute;
+      mocks.routerReplace.mockImplementation(replace);
+    }
+  });
+
   it("restores project drafts even when a tab was chosen during admission", async () => {
     const first = mountDataContent();
     await flushPromises();
