@@ -32,6 +32,7 @@ from spectra_sherpa.app.models.project_data_source import ProjectDataSource, Wor
 from spectra_sherpa.app.models.project_script import ProjectScript
 from spectra_sherpa.app.models.sample_review_revision import SampleReviewRevision
 from spectra_sherpa.app.models.saved_model_qualification import SavedModelQualificationRecord
+from spectra_sherpa.app.models.time_series_portfolio import TimeSeriesPortfolioRecord
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_data_selection_revision import WorkflowDataSelectionRevision
@@ -43,6 +44,7 @@ from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
 from spectra_sherpa.app.models.workflow_version import WorkflowVersion
 
 __all__ = [
+    "TimeSeriesPortfolioRecord",
     "APIKey",
     "AnalyticalQualificationRecord",
     "InstrumentQCRecord",

@@ -3,7 +3,7 @@
 This example uses the source checkout of SpectraSherpa OSS. The tested public
 baseline is `2a6e70062663cc436226d98a4347740958bc2c3c` (main, package 0.6.3),
 plus the new reader and example in this change. It does not require the private
-server or SpectroChemPy. The change adds netCDF4 to the supported OSS dependencies.
+server or SpectroChemPy. The reader uses the existing h5py dependency.
 
 The supported source is [Zenodo record 17122442](https://zenodo.org/records/17122442),
 version 1. It is NetCDF4/HDF5 with uint16 dictionary indices, not an ordinary
@@ -105,8 +105,7 @@ row selection, missing values, links, and resource limits.
 
 Workbench Upload supports one measurement `.nc` file using the bundled,
 checksum-pinned dictionaries and explicit wafer selection. The native reader
-uses `netCDF4`; h5py provides structural preflight and an independent test
-oracle. See [the reader guide](../../docs/developers/bosch-netcdf.md).
+uses `h5py` for structural preflight and dictionary decoding. See [the reader guide](../../docs/developers/bosch-netcdf.md).
 
 The Workbench bounds each source to 512 MiB and selected decoded wafer to
 64 million elements / 512 MiB. Other daily files beyond that bound are

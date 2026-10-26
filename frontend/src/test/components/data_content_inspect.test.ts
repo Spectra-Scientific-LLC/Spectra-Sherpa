@@ -4185,7 +4185,7 @@ describe("DataContent file inspection", () => {
           target_type: "categorical",
         },
       },
-    ]);
+    ], null);
     expect(vm.selectedFile).toBeNull();
     expect(vm.stagedUploadMembers).toEqual([]);
     expect(vm.uploadDatasetName).toBe("");

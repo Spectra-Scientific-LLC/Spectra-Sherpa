@@ -14,8 +14,7 @@ and experiment metadata** opens the original wafer's Data View; expand its
 **Active dataset** section to inspect the complete acquisition table and protocol
 context. Sample values, identities and irregular source times remain unchanged.
 
-The native reader uses the `netCDF4` package, with automatic masking/scaling
-disabled for dictionary indices. Small, unmodified CC BY 4.0 dictionaries are
+The native reader uses `h5py` and reads dictionary indices without CF masking/scaling. Small, unmodified CC BY 4.0 dictionaries are
 bundled with attribution and checksum validation, so dictionary files need not be uploaded. Metadata inventory lists the wafers before allocating a matrix;
 only the selected wafer is decoded. `Process_data.nc` is also supported with
 named process features rather than wavelength spectra.
@@ -97,4 +96,45 @@ Fluorine emission alone cannot distinguish the two fluorinated feed gases.
 The daily groups do not cover the complete chamber preparation and conditioning
 sequence. Recipe context is not presented as observed phase boundaries. A final
 Gas1-only RF interval is selectable, but neither EPD control nor cleaning purpose
-is inferred from its duration. BOSCH cycle numbers are not generated.
+is inferred from its duration. The legacy phase preview does not retain cycle indices.
+
+
+## v0.6.5 portfolio review workflow
+
+This feature is isolated to the v0.6.5 integration branch. The development-only
+`/preview/oes-v065` matrix saves named, immutable selections. Saving binds exact
+acquisition intervals, source and process hashes, both decoding dictionary hashes,
+and segmentation identity. Names cannot be overwritten; save a new portfolio to
+change membership. Every execution re-admits access and verifies these bindings.
+
+Select individual day/wafer/step boxes, name the selection, then save it. Select
+saved portfolios to create independent canonical workflow branches:
+Load Data · Portfolio → Average · Portfolio → Smooth → optional Normalize →
+Find peaks · Partitioned → Combine peak columns → Export wide peak CSV.
+Reference wavelengths and matching tolerance are explicit user settings, shared
+initially but independently editable on each branch.
+
+Averaging uses equal acquisition weights and never combines wafers:
+
+- **Step:** one spectrum per day × wafer × selected step.
+- **Phase across cycles:** one spectrum per day × wafer × step × phase.
+- **Cycle phase:** one spectrum per day × wafer × step × phase × cycle.
+
+Cycle indices derive from aligned process etch onsets. Transition acquisitions
+and intervals without an assigned cycle remain explicit; they are not silently
+dropped. The default includes all acquisitions. Optional transition trimming
+removes a declared duration from each retained interval's ends; it is relative
+to the OES interval timestamps, not a calibrated gas transport delay.
+
+Raw decoding uses h5py in bounded acquisition batches, without netCDF4. Averaged
+outputs have a 16-million-value bound; peak detection runs in bounded batches.
+The combined table retains independent measurement columns, with peak references
+as rows and date/wafer/step/phase/cycle identity in column labels. Missing peaks
+export as blank cells, distinct from measured zero. The CSV is a verified
+canonical ExportArtifact downloadable through the workflow Inspector.
+
+Large averaged or smoothed arrays may exceed the existing persisted-result
+budget even when execution and final CSV export succeed. The local review
+workflow does not raise that budget or claim managed-runtime qualification.
+Release qualification and the older SDK example's sample-table admission remain
+separate checks before promoting this draft feature.

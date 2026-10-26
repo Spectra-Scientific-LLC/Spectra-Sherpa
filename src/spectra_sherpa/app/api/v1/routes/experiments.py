@@ -1779,18 +1779,23 @@ async def _bosch_comparison_paths(session, experiment_id, daily_id, process_id, 
 async def bosch_steps_endpoint(
     experiment_id: int,
     file_id: int,
-    process_file_id: int,
+    process_file_id: int | None = None,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    from spectra_sherpa.app.services.bosch_step_comparison import phase_catalog
+    from spectra_sherpa.app.services.bosch_step_comparison import load_phase_catalog
 
-    _, paths = await _bosch_comparison_paths(session, experiment_id, file_id, process_file_id, current_user.id)
+    await _require_experiment(session, experiment_id, current_user.id, "read")
+    if process_file_id is not None:
+        await _bosch_comparison_paths(session, experiment_id, file_id, process_file_id, current_user.id)
     try:
-        result = await asyncio.to_thread(phase_catalog, *paths)
+        result = load_phase_catalog(experiment_dir(experiment_id), file_id)
+        if process_file_id is not None and process_file_id != result["process_file_id"]:
+            raise ValueError("Saved processing steps use a different process companion")
+        await _bosch_comparison_paths(session, experiment_id, file_id, result["process_file_id"], current_user.id)
         return BoschStepsOut.model_validate(result)
     except (ValueError, OSError) as exc:
-        raise HTTPException(status_code=400, detail=f"Processing steps unavailable: {exc}") from exc
+        raise HTTPException(status_code=409, detail=f"Processing steps unavailable: {exc}") from exc
 
 
 @router.post(
@@ -1805,15 +1810,18 @@ async def bosch_step_preview_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    from spectra_sherpa.app.services.bosch_step_comparison import step_preview
+    from spectra_sherpa.app.services.bosch_step_comparison import load_phase_catalog, step_preview
     from spectra_sherpa.app.services.serialization import serialize_result
 
     experiment, paths = await _bosch_comparison_paths(
         session, experiment_id, file_id, payload.process_file_id, current_user.id
     )
     try:
+        retained = load_phase_catalog(experiment_dir(experiment_id), file_id)
+        if retained["process_file_id"] != payload.process_file_id:
+            raise ValueError("Saved processing steps use a different process companion")
         dataset, count = await asyncio.to_thread(
-            step_preview, *paths, **payload.model_dump(exclude={"process_file_id"})
+            step_preview, *paths, retained_catalog=retained, **payload.model_dump(exclude={"process_file_id"})
         )
         return BoschStepPreviewOut(
             dataset=serialize_result(dataset, owner_user_id=current_user.id, project_id=experiment.project_id),

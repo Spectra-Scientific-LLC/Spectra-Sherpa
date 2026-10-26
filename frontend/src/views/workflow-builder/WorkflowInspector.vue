@@ -843,7 +843,7 @@
             </span>
           </div>
           <div
-            v-if="selectedNodeType === 'output.export' && preparedExportSummary"
+            v-if="isPreparedExportNode && preparedExportSummary"
             class="diagnostics-card"
           >
             <span class="diagnostics-title">Prepared Export</span>
@@ -875,7 +875,7 @@
           <RepeatedValidationSummary :record="asObject(selectedPortOutput?.value)" />
           <PLSDAPermutationSummary :record="asObject(selectedPortOutput?.value)" />
           <!-- Data shape summary - always show for any output -->
-          <div v-if="selectedNodeType !== 'output.export' && selectedResultDimensions.length" class="data-shape-summary">
+          <div v-if="!isPreparedExportNode && selectedResultDimensions.length" class="data-shape-summary">
             <template v-if="selectedResultDimensions.length">
               <span
                 v-for="dimension in selectedResultDimensions"
@@ -925,7 +925,7 @@
           <!-- Universal Quick Plot and View Data buttons -->
           <div class="output-actions">
             <Button
-              v-if="selectedNodeType === 'output.export'"
+              v-if="isPreparedExportNode"
               icon="pi pi-download"
               label="Download Prepared File"
               class="p-button-sm p-button-outlined"
@@ -933,10 +933,10 @@
               :title="preparedExportDownloadReason || undefined"
               @click="downloadPreparedExport"
             />
-            <span v-if="selectedNodeType === 'output.export' && preparedExportDownloadReason" role="status">{{ preparedExportDownloadReason }}</span>
+            <span v-if="isPreparedExportNode && preparedExportDownloadReason" role="status">{{ preparedExportDownloadReason }}</span>
             <Button
               v-if="
-                selectedNodeType !== 'output.export' &&
+                !isPreparedExportNode &&
                 selectedOutputHasData &&
                 selectedOutputSupportsPlot
               "
@@ -948,7 +948,7 @@
             />
             <Button
               v-if="
-                selectedNodeType !== 'output.export' &&
+                !isPreparedExportNode &&
                 selectedOutputHasData &&
                 selectedOutputSupportsTable
               "
@@ -1818,8 +1818,10 @@ watch(
   },
   { immediate: true, deep: true },
 );
+const isPreparedExportNode = computed(() => selectedNodeType.value === "output.export" || nodeMetadata.value?.output_ports?.some(port => port.type_ref === "spectrasherpa://types/ExportArtifact/1.0"));
 const preparedExportArtifact = computed(() => extractExportArtifact(props.nodeOutput));
-const preparedExportDownloadReason = computed(() => exportDownloadReason(preparedExportArtifact.value, localParams.value));
+const preparedExportParams = computed(() => ({ ...localParams.value, format: localParams.value.format ?? nodeMetadata.value?.parameters.find(p => p.name === "format")?.default ?? (!nodeMetadata.value?.parameters.some(p => p.name === "format") ? (preparedExportArtifact.value as Record<string, unknown> | null)?.format : undefined) }));
+const preparedExportDownloadReason = computed(() => exportDownloadReason(preparedExportArtifact.value, preparedExportParams.value));
 
 function onSelectParameterChange(name: string): void {
   if (props.selectedNode?.type === "output.export" && name === "format") {
@@ -1831,7 +1833,7 @@ function onSelectParameterChange(name: string): void {
 
 const downloadPreparedExport = async (): Promise<void> => {
   try {
-    const artifact = await downloadExportArtifact(preparedExportArtifact.value, localParams.value);
+    const artifact = await downloadExportArtifact(preparedExportArtifact.value, preparedExportParams.value);
     toast.add({
       severity: "success",
       summary: "Prepared export downloaded",

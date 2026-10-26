@@ -28,7 +28,7 @@ from spectra_sherpa.app.services.dataset_access import (
     require_file_access as require_file_access_domain,
 )
 
-DATA_ACCESS_NODE_TYPES = {"data.collection_load", "data.file_load", "data.load_group"}
+DATA_ACCESS_NODE_TYPES = {"data.collection_load", "data.file_load", "data.load_group", "data.portfolio_load"}
 TRIAL_SOURCE_NODE_TYPES = DATA_ACCESS_NODE_TYPES | {
     "custom.catmull_rom_curve",
     "custom.concentration_curve",
@@ -337,6 +337,17 @@ async def validate_workflow_execution_access(
                 await require_model_artifact_access(session, model_id, user_id, workflow_project_id)
             elif uses_managed_project_access():
                 raise HTTPException(403, "An exact admitted model_id is required")
+            continue
+
+        if node_type in {"data.portfolio_load", "preprocess.portfolio_average"}:
+            from spectra_sherpa.app.services.time_series_portfolios import admit_portfolio
+
+            params = _merged_node_parameters(node, initial_data)
+            if params.get("project_id") != workflow_project_id:
+                raise HTTPException(403, "Portfolio must belong to the workflow project")
+            await admit_portfolio(
+                session, user_id, workflow_project_id, params.get("portfolio_id"), params.get("selection_sha256")
+            )
             continue
 
         if node_type not in TRIAL_SOURCE_NODE_TYPES:

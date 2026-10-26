@@ -182,6 +182,7 @@ class BoschWaferStepsOut(BaseModel):
 
 
 class BoschStepsOut(BaseModel):
+    process_file_id: int | None = None
     source_sha256: str
     process_sha256: str
     date: str

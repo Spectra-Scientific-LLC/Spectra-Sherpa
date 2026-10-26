@@ -90,6 +90,23 @@ class ApplicationDatasetSourceResolver:
             getattr(value, "loaded_dataset", value) for value in (preloaded_datasets or {}).values()
         )
 
+    async def resolve_time_series_portfolio(self, *, project_id: int, portfolio_id: int, selection_sha256: str) -> dict:
+        from spectra_sherpa.app.models.time_series_portfolio import TimeSeriesPortfolioRecord
+        from spectra_sherpa.core.time_series_portfolio import TimeSeriesPortfolio
+
+        async with async_session() as session:
+            record = await session.get(TimeSeriesPortfolioRecord, portfolio_id)
+            if record is None or record.project_id != project_id:
+                raise ValueError("Portfolio is not in the admitted project")
+            receipt = TimeSeriesPortfolio.model_validate(record.selection)
+            if (
+                receipt.project_id != project_id
+                or receipt.sha256() != selection_sha256
+                or record.selection_sha256 != selection_sha256
+            ):
+                raise ValueError("Portfolio selection changed")
+            return receipt.model_dump(mode="json")
+
     async def resolve_dataset_view(self, *, experiment_id: int, view_id: int, selection_sha256: str) -> dict:
         """Return one immutable definition; execution admission owns access control.
 

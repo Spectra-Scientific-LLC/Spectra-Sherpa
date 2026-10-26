@@ -46,7 +46,7 @@ def _runs(values: np.ndarray) -> list[tuple[int, int]]:
     return list(zip(edges[:-1].tolist(), edges[1:].tolist()))
 
 
-def phase_projection(times, signal, process, *, minimum_correlation=0.8):
+def phase_projection(times, signal, process, *, minimum_correlation=0.8, retain_cycle_membership=False):
     """Return exact source-row labels plus explicit alignment diagnostics.
 
     Clock offset is estimated, not declared as a shared Unix clock. A broad
@@ -151,9 +151,20 @@ def phase_projection(times, signal, process, *, minimum_correlation=0.8):
     # Preserve uncertain DAQ-resolution transition edges rather than claiming
     # sub-sample precision from the much faster optical acquisition clock.
     boundary = pt[np.flatnonzero(labels[1:] != labels[:-1]) + 1]
-    for edge in boundary:
-        mapped[np.abs(mapped_times - edge) <= cadence] = "transition"
+    if not retain_cycle_membership:
+        for edge in boundary:
+            mapped[np.abs(mapped_times - edge) <= cadence] = "transition"
+    # Cycle identity comes from process etch onsets, never optical recording gaps.
+    onsets = (labels == "etch") & np.r_[True, labels[:-1] != "etch"]
+    cycles = np.cumsum(onsets)[safe]
+    production_membership = valid & (safe >= a) & (safe < b)
+    cycles[~production_membership] = 0
     return mapped, {
+        **(
+            {"cycle_indices": cycles.tolist(), "production_membership": production_membership.tolist()}
+            if retain_cycle_membership
+            else {}
+        ),
         "method": "gas5 / strongest OES channel correlation",
         "correlation": best_score,
         "alias_margin": best_score - competitor,
@@ -220,15 +231,24 @@ class BoschPhaseLabelsNode(Node):
         probes = np.unique(np.linspace(0, source.shape[0] - 1, min(source.shape[0], 256)).astype(int))
         channel = int(np.argmax(np.mean(source.X[probes], axis=0)))
         labels, diagnostics = phase_projection(source.sample_axis.values, source.X[:, channel], companion)
-        result = source.copy()
-        axis = source.sample_axis.model_dump()
-        table = dict(axis.get("sample_table") or {})
-        table["processing_step"] = labels.tolist()
-        axis["sample_table"] = table
-        result.sample_axis = SampleAxis(**axis)
-        add_processing_step(result, self.metadata.node_type, {}, node_id=self.node_id, input_shape=source.shape)
-        result.set_extra("bosch.phase_alignment", diagnostics)
+        result = apply_phase_labels(source, labels, diagnostics, node_id=self.node_id)
         return NodeResult(outputs={"default": result}, diagnostics=diagnostics)
+
+
+def apply_phase_labels(source, labels, diagnostics, *, node_id):
+    """Project canonical phase keys onto the typed sample table, preserving identities."""
+    labels = np.asarray(labels, dtype=object)
+    if labels.shape != (source.n_samples,) or any(label not in PHASE_LABELS for label in labels):
+        raise ValueError("Processing labels must match the exact acquisition population")
+    result = source.copy()
+    axis = source.sample_axis.model_dump()
+    table = dict(axis.get("sample_table") or {})
+    table["processing_step"] = labels.tolist()
+    axis["sample_table"] = table
+    result.sample_axis = SampleAxis(**axis)
+    add_processing_step(result, "preprocess.bosch_phase_labels", {}, node_id=node_id, input_shape=source.shape)
+    result.set_extra("bosch.phase_alignment", diagnostics)
+    return result
 
 
 bind_stable_execution_contract(

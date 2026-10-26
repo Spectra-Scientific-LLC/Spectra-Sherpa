@@ -19,6 +19,7 @@ if os.environ.get("SPECTRA_DAG_SKIP_BUILTIN_REGISTRATION") != "1":
         diagnostics,
         labeled_regression_evaluator_node,
         modeling,
+        oes_portfolios,
         output,
         preprocessing,
         regression_evaluator_node,
@@ -28,6 +29,7 @@ if os.environ.get("SPECTRA_DAG_SKIP_BUILTIN_REGISTRATION") != "1":
     )
 
 __all__ = [
+    "oes_portfolios",
     "data",
     "modeling",
     "labeled_regression_evaluator_node",

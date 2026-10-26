@@ -115,7 +115,7 @@ Reference examples are imported through Analysis Starter into an exact project f
 
 <!-- BEGIN GENERATED NODE REFERENCE -->
 
-<!-- NODE HELP REFERENCES {"help_reference": "docs/nodes/data.md", "node_types": ["custom.catmull_rom_curve", "custom.concentration_curve", "custom.golden_grid_align", "custom.hybrid_selector", "custom.linear_calibration", "custom.noise_injection", "custom.saturation_model", "custom.system_saturation", "data.attach_target", "data.collection_load", "data.file_load", "data.filter_samples", "data.load_group", "data.nist_library", "data.synthetic_curve", "data.train_test_split", "deploy.input", "deploy.output", "synthesis.blend", "synthesis.hitran_response", "synthesis.merge", "synthesis.nist_quant_ir_response", "synthesis.ppm_fraction", "synthesis.species"]} -->
+<!-- NODE HELP REFERENCES {"help_reference": "docs/nodes/data.md", "node_types": ["analysis.partitioned_peaks", "custom.catmull_rom_curve", "custom.concentration_curve", "custom.golden_grid_align", "custom.hybrid_selector", "custom.linear_calibration", "custom.noise_injection", "custom.saturation_model", "custom.system_saturation", "data.attach_target", "data.collection_load", "data.file_load", "data.filter_samples", "data.load_group", "data.nist_library", "data.portfolio_load", "data.synthetic_curve", "data.train_test_split", "data.wide_peak_table", "deploy.input", "deploy.output", "output.peak_csv", "preprocess.portfolio_average", "synthesis.blend", "synthesis.hitran_response", "synthesis.merge", "synthesis.nist_quant_ir_response", "synthesis.ppm_fraction", "synthesis.species"]} -->
 
 ## Registry reference
 
@@ -126,6 +126,7 @@ Conditional visibility describes the editor; execution admission remains node-ow
 
 | Node | Operation |
 | --- | --- |
+| Find peaks · Partitioned | <code>analysis.partitioned_peaks</code> |
 | Catmull-Rom Curve | <code>custom.catmull_rom_curve</code> |
 | Concentration Curve | <code>custom.concentration_curve</code> |
 | Golden Grid Align | <code>custom.golden_grid_align</code> |
@@ -140,16 +141,42 @@ Conditional visibility describes the editor; execution admission remains node-ow
 | Filter Samples | <code>data.filter_samples</code> |
 | Load Group | <code>data.load_group</code> |
 | NIST Library | <code>data.nist_library</code> |
+| Load Data · Portfolio | <code>data.portfolio_load</code> |
 | Synthetic Curve | <code>data.synthetic_curve</code> |
 | Train/Test Split | <code>data.train_test_split</code> |
+| Combine peak columns | <code>data.wide_peak_table</code> |
 | Deploy Input | <code>deploy.input</code> |
 | Deploy Output | <code>deploy.output</code> |
+| Export wide peak CSV | <code>output.peak_csv</code> |
+| Average · Portfolio | <code>preprocess.portfolio_average</code> |
 | Bilinear Mixture | <code>synthesis.blend</code> |
 | HITRAN Cross-section Response | <code>synthesis.hitran_response</code> |
 | Merge Pure Responses | <code>synthesis.merge</code> |
 | NIST Quant IR Response | <code>synthesis.nist_quant_ir_response</code> |
 | PPM to Fraction | <code>synthesis.ppm_fraction</code> |
 | Species | <code>synthesis.species</code> |
+
+### Find peaks · Partitioned (`analysis.partitioned_peaks`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>per_spectrum</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>height</code> | <code>number</code> | <code>false</code> | <code>null</code> | — | <code>{&quot;min_value&quot;: 0.0, &quot;step&quot;: 0.01}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Minimum peak height in response units. Blank passes height=None (no height filter). |
+| <code>threshold</code> | <code>number</code> | <code>false</code> | <code>null</code> | — | <code>{&quot;min_value&quot;: 0.0, &quot;step&quot;: 0.01}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Minimum vertical distance to neighbors in response units. Blank passes threshold=None. |
+| <code>distance</code> | <code>number</code> | <code>false</code> | <code>10</code> | — | <code>{&quot;min_value&quot;: 0, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Minimum horizontal distance in sample points (default 10). Blank or 0 passes distance=None (disabled); otherwise must be &gt;= 1. |
+| <code>prominence</code> | <code>number</code> | <code>false</code> | <code>null</code> | — | <code>{&quot;min_value&quot;: 0.0, &quot;step&quot;: 0.01}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Minimum prominence in response units. Blank passes prominence=None (no prominence filter). |
+| <code>width</code> | <code>number</code> | <code>false</code> | <code>null</code> | — | <code>{&quot;min_value&quot;: 0, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Minimum width at half prominence in sample points. Blank or 0 passes width=None (no width filter). |
+| <code>consensus_tolerance</code> | <code>number</code> | <code>true</code> | <code>0.0</code> | — | <code>{&quot;min_value&quot;: 0.0, &quot;step&quot;: 0.1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Maximum span of one cross-sample consensus bin in feature-axis units; enter 0 to group only identical positions. Required; not a SciPy find_peaks argument. |
+| <code>reference_positions</code> | <code>string_list</code> | <code>false</code> | <code>[]</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+| <code>matching_tolerance</code> | <code>number</code> | <code>true</code> | <code>0.5</code> | — | <code>{&quot;min_value&quot;: 0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
 
 ### Catmull-Rom Curve (`custom.catmull_rom_curve`)
 
@@ -432,6 +459,24 @@ No input ports (source node).
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | <code>library_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | ID of the NIST library entry |
 
+### Load Data · Portfolio (`data.portfolio_load`)
+
+#### Ports
+
+No input ports (source node).
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| output | <code>default</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>project_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+| <code>portfolio_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+| <code>selection_sha256</code> | <code>text</code> | <code>true</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+
 ### Synthetic Curve (`data.synthetic_curve`)
 
 #### Ports
@@ -480,6 +525,22 @@ No input ports (source node).
 | <code>distance_metric</code> | <code>select</code> | <code>false</code> | <code>&quot;euclidean&quot;</code> | <code>[&quot;euclidean&quot;, &quot;mahalanobis&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;, &quot;visible_when&quot;: {&quot;split_method&quot;: [&quot;kennard_stone&quot;, &quot;duplex&quot;]}}</code> | Sample dissimilarity for Kennard–Stone and DUPLEX |
 | <code>n_components</code> | <code>number</code> | <code>false</code> | <code>0</code> | — | <code>{&quot;max_value&quot;: 10000, &quot;min_value&quot;: 0, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;, &quot;visible_when&quot;: {&quot;split_method&quot;: [&quot;kennard_stone&quot;, &quot;duplex&quot;]}}</code> | Optional centered PCA projection before Kennard–Stone or DUPLEX distances (0 = raw X) The runtime additionally limits components to the smaller data dimension. |
 
+### Combine peak columns (`data.wide_peak_table`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>true</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>reference_positions</code> | <code>string_list</code> | <code>true</code> | <code>[]</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+| <code>tolerance</code> | <code>number</code> | <code>true</code> | <code>0.5</code> | — | <code>{&quot;min_value&quot;: 0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+
 ### Deploy Input (`deploy.input`)
 
 #### Ports
@@ -514,6 +575,41 @@ No input ports (source node).
 | <code>output_format</code> | <code>select</code> | <code>true</code> | <code>&quot;json&quot;</code> | <code>[&quot;json&quot;, &quot;csv&quot;, &quot;plain_text&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Exact response representation |
 | <code>key_value_separator</code> | <code>select</code> | <code>true</code> | <code>&quot;=&quot;</code> | <code>[&quot;=&quot;, &quot;:&quot;, &quot;\t&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Closed separator for plain-text mappings |
 | <code>end_of_message_tag</code> | <code>select</code> | <code>true</code> | <code>&quot;\\n&quot;</code> | <code>[&quot;&quot;, &quot;\\n&quot;, &quot;\\r\\n&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Closed line ending for plain-text responses |
+
+### Export wide peak CSV (`output.peak_csv`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>artifact</code> | <code>spectrasherpa://types/ExportArtifact/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>filename</code> | <code>text</code> | <code>true</code> | <code>&quot;peak-intensities.csv&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+| <code>format</code> | <code>select</code> | <code>true</code> | <code>&quot;csv&quot;</code> | <code>[&quot;csv&quot;]</code> | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### Average · Portfolio (`preprocess.portfolio_average`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>project_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+| <code>portfolio_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+| <code>selection_sha256</code> | <code>text</code> | <code>true</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+| <code>mode</code> | <code>select</code> | <code>true</code> | <code>&quot;step&quot;</code> | <code>[&quot;step&quot;, &quot;phase_across_cycles&quot;, &quot;cycle_phase&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+| <code>transition_trim_seconds</code> | <code>number</code> | <code>true</code> | <code>0</code> | — | <code>{&quot;min_value&quot;: 0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
 
 ### Bilinear Mixture (`synthesis.blend`)
 

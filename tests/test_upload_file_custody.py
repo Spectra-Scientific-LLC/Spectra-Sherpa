@@ -26,3 +26,45 @@ async def test_failed_new_upload_removes_only_its_partial_file(tmp_path):
         await save_upload_file(upload, tmp_path, 1)
     assert not (tmp_path / "new.nc").exists()
     assert upload.file.closed
+
+
+@pytest.mark.anyio
+async def test_failed_commit_returns_sources_to_staging(auth_client, monkeypatch, test_session, test_user):
+    from spectra_sherpa.app.api.v1.routes import builder
+
+    stage = await auth_client.post(
+        "/api/v1/builder/upload/stage",
+        files={
+            "file": ("measurements.csv", b"wavelength,a\n400,1\n500,2\n600,3\n", "text/csv"),
+        },
+    )
+    assert stage.status_code == 200, stage.text
+    sid = stage.json()["staging_id"]
+    experiment = (await auth_client.post("/api/v1/experiments", json={"name": "Retry upload"})).json()
+
+    async def reject(*args, **kwargs):
+        from fastapi import HTTPException
+
+        raise HTTPException(409, "Simulated admission failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(builder, "add_experiment_file", reject)
+        refused = await auth_client.post(
+            "/api/v1/builder/upload/commit",
+            json={
+                "experiment_id": experiment["id"],
+                "files": [{"staging_id": sid}],
+            },
+        )
+    assert refused.status_code == 409, refused.text
+    # This fixture reuses the same ORM user across requests; real requests reload it.
+    await test_session.refresh(test_user)
+    retry = await auth_client.post(
+        "/api/v1/builder/upload/commit",
+        json={
+            "experiment_id": experiment["id"],
+            "files": [{"staging_id": sid}],
+        },
+    )
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["imported"] == 1

@@ -95,7 +95,7 @@ async def test_phase_api_requires_owned_distinct_process_companion(auth_client, 
     inventory = await auth_client.get(f"/api/v1/experiments/{eid}/files/{fid}/scientific-assets")
     assert inventory.status_code == 200, inventory.text
     url = f"/api/v1/experiments/{eid}/files/{fid}/bosch-steps"
-    assert (await auth_client.get(url)).status_code == 422
+    assert (await auth_client.get(url)).status_code == 409
     assert (await auth_client.get(url, params={"process_file_id": fid})).status_code == 400
     assert (await auth_client.get(url, params={"process_file_id": fid + 1000})).status_code == 404
 
@@ -173,6 +173,7 @@ def test_step_preview_selects_only_original_phase_rows_and_rejects_changed_compa
     catalog = {
         "source_sha256": source_sha,
         "process_sha256": process_sha,
+        "wafers": [{"asset_id": "Wafer_01", "alignment": {"method": "test retained alignment"}}],
         "_private": {"Wafer_01": {"labels": np.array(["etch", "passivation", "transition", "etch"])}},
     }
     monkeypatch.setattr(service, "phase_catalog", lambda *args: catalog)
@@ -191,3 +192,152 @@ def test_step_preview_selects_only_original_phase_rows_and_rejects_changed_compa
         root.attrs["mutation"] = "changed since inventory"
     with pytest.raises(ValueError, match="companion changed"):
         service.step_preview(daily, process, **kwargs)
+
+
+def test_saved_phase_labels_are_integrity_checked_and_never_reestimated(tmp_path):
+    import json
+
+    from spectra_sherpa.app.services.bosch_step_comparison import load_phase_catalog, save_phase_catalog
+
+    catalog = {
+        "source_sha256": "a" * 64,
+        "process_sha256": "b" * 64,
+        "wafers": [],
+        "_private": {"Wafer_01": {"labels": np.array(["etch", "transition", "passivation"])}},
+    }
+    path = save_phase_catalog(tmp_path, 1, 2, catalog)
+    retained = load_phase_catalog(tmp_path, 1)
+    assert retained["process_file_id"] == 2
+    np.testing.assert_array_equal(retained["_private"]["Wafer_01"]["labels"], catalog["_private"]["Wafer_01"]["labels"])
+    receipt = json.loads(path.read_text())
+    receipt["catalog"]["_private"]["Wafer_01"]["labels"][0] = "break"
+    path.write_text(json.dumps(receipt))
+    with pytest.raises(ValueError, match="receipt changed"):
+        load_phase_catalog(tmp_path, 1)
+
+
+@pytest.mark.anyio
+async def test_daily_upload_requires_process_before_consuming_staging(auth_client, tmp_path):
+    daily, *_ = files(tmp_path)
+    stage = await auth_client.post(
+        "/api/v1/builder/upload/stage",
+        files={"file": ("Day_2024_08_05.nc", daily.read_bytes(), "application/x-netcdf")},
+    )
+    assert stage.status_code == 200, stage.text
+    sid = stage.json()["staging_id"]
+    experiment = (await auth_client.post("/api/v1/experiments", json={"name": "Required process"})).json()
+    response = await auth_client.post(
+        "/api/v1/builder/upload/commit",
+        json={
+            "experiment_id": experiment["id"],
+            "files": [{"staging_id": sid}],
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert "Process_data.nc" in response.json()["detail"]
+    preview = await auth_client.post(
+        "/api/v1/builder/data-matrix",
+        json={
+            "kind": "staged",
+            "staging_id": sid,
+            "asset_id": "Wafer_01",
+        },
+    )
+    assert preview.status_code == 200, preview.text
+
+
+@pytest.mark.anyio
+async def test_upload_prepares_and_saved_dataset_reuses_exact_labels(auth_client, tmp_path, monkeypatch):
+    from spectra_sherpa.app.services import bosch_step_comparison as service
+
+    daily, *_ = files(tmp_path)
+    process_root = tmp_path / "process"
+    process_root.mkdir()
+    process, *_ = files(process_root, process=True)
+    original = builtin_registry.ingest(daily, asset_id="Wafer_01")
+    times = original.assets[0].dataset.sample_axis.values
+    catalog = {
+        "source_sha256": original.source_members[0].sha256,
+        "process_sha256": builtin_registry.inspect(process).source_members[0].sha256,
+        "date": "2024-08-05",
+        "lot": None,
+        "warnings": [],
+        "unrecorded_protocol_steps": [],
+        "wafers": [
+            {
+                "asset_id": "Wafer_01",
+                "alignment": {"method": "fixture"},
+                "refusal": None,
+                "steps": [
+                    {
+                        "step_id": "etch",
+                        "label": "Etch",
+                        "acquisition_count": 2,
+                        "intervals": [
+                            {
+                                "first_acquisition": 1,
+                                "last_acquisition": 2,
+                                "start_time": float(times[0]),
+                                "end_time": float(times[1]),
+                                "acquisition_count": 2,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+        "_private": {"Wafer_01": {"labels": np.array(["etch", "etch", "transition", "break"])}},
+    }
+    monkeypatch.setattr(service, "phase_catalog", lambda *args: catalog)
+    ids = []
+    for name, path in [("Day_2024_08_05.nc", daily), ("Process_data.nc", process)]:
+        response = await auth_client.post(
+            "/api/v1/builder/upload/stage",
+            files={
+                "file": (name, path.read_bytes(), "application/x-netcdf"),
+            },
+        )
+        assert response.status_code == 200, response.text
+        ids.append(response.json()["staging_id"])
+    staged = await auth_client.post(
+        "/api/v1/builder/upload/bosch-steps",
+        json={
+            "daily_staging_id": ids[0],
+            "process_staging_id": ids[1],
+        },
+    )
+    assert staged.status_code == 200, staged.text
+    experiment = (await auth_client.post("/api/v1/experiments", json={"name": "Prepared phases"})).json()
+    commit = await auth_client.post(
+        "/api/v1/builder/upload/commit",
+        json={
+            "experiment_id": experiment["id"],
+            "files": [{"staging_id": sid} for sid in ids],
+            "bosch_process_staging_id": ids[1],
+        },
+    )
+    assert commit.status_code == 200, commit.text
+    daily_id, process_id = commit.json()["files"]
+
+    def refuse_recomputation(*args):
+        raise AssertionError("My Dataset must consume retained preparation")
+
+    monkeypatch.setattr(service, "phase_catalog", refuse_recomputation)
+    url = f"/api/v1/experiments/{experiment['id']}/files/{daily_id}"
+    retained = await auth_client.get(url + "/bosch-steps")
+    assert retained.status_code == 200, retained.text
+    assert retained.json()["process_file_id"] == process_id
+    assert retained.json()["wafers"] == staged.json()["wafers"]
+    preview = await auth_client.post(
+        url + "/bosch-step-preview",
+        json={
+            "process_file_id": process_id,
+            "asset_id": "Wafer_01",
+            "step_id": "etch",
+            "source_sha256": catalog["source_sha256"],
+            "process_sha256": catalog["process_sha256"],
+        },
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["selected_acquisition_count"] == 2
+    assert preview.json()["dataset"]["n_samples"] == 2

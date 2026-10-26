@@ -1,7 +1,7 @@
 """Bounded BOSCH dictionary-encoded NetCDF4 ingestion (Zenodo 17122442).
 
 The native reader inventories wafer groups without decoding matrices, then
-uses netCDF4 to decode the selected wafer with a checksum-pinned dictionary.
+uses h5py to decode the selected wafer with a checksum-pinned dictionary.
 The explicit SDK entry point also accepts a companion dictionary.
 """
 
@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import threading
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -18,7 +17,6 @@ from importlib.resources import files
 from pathlib import Path
 
 import h5py
-import netCDF4
 import numpy as np
 
 from spectra_sherpa.app.lib.axes import FeatureAxis, SampleAxis, SpectralAxis
@@ -32,9 +30,6 @@ from spectra_sherpa.ingestion_errors import IngestionError, UnreadableSpectrumEr
 from spectra_sherpa.io.base import BoundedSource
 from spectra_sherpa.io.formats._helpers import dataset_asset, derive_data_role, ingestion_result
 from spectra_sherpa.io.types import IngestionInventory, IngestionResult, ParserLimits, ProbeConfidence, ProbeResult
-
-# netCDF-C is not thread safe; web previews execute in worker threads.
-_NETCDF_LOCK = threading.RLock()
 
 _FORMAT = "bosch-netcdf"
 _GROUP = re.compile(r"(?:Day_\d{4}_\d{2}_\d{2}_)?Wafer_\d+")
@@ -76,7 +71,7 @@ def _netcdf(file: h5py.File) -> None:
 
 
 def _preflight_links(file: h5py.File, source: BoundedSource) -> None:
-    """Reject indirect/external storage before netCDF-C opens the container."""
+    """Reject indirect/external storage before decoding the container."""
     seen: set[int] = set()
     objects = 0
 
@@ -175,17 +170,9 @@ class _BoschPlugin:
                     if not 1 <= table.size <= 65_536:
                         raise _fail("Dictionary must contain 1..65536 real entries")
                     source.require_decoded_bytes(int(table.size) * 8, format_id=_FORMAT)
-                    # Disable NetCDF masking/scaling: these are dictionary indices,
-                    # including valid zero and uint16 values, not intensities.
-                    with (
-                        _NETCDF_LOCK,
-                        netCDF4.Dataset(dictionary.snapshot_path) as nc_lookup,
-                        netCDF4.Dataset(source.snapshot_path) as nc_file,
-                    ):
-                        nc_lookup.set_auto_maskandscale(False)
-                        nc_file.set_auto_maskandscale(False)
-                        decoder = np.asarray(nc_lookup.variables["data"][:], dtype=np.float64)
-                        dataset = self._decode(file, decoder, source, dictionary, nc_file)
+                    # HDF5 reads raw dictionary indices without CF masking/scaling.
+                    decoder = np.asarray(table[:], dtype=np.float64)
+                    dataset = self._decode(file, decoder, source, dictionary)
                 dataset.set_extra("bosch.experiment_context", _experiment_context(source, self.group))
                 dictionary.verify_unchanged()
             except (OSError, ValueError, KeyError, UnicodeError, RuntimeError, OverflowError) as exc:
@@ -213,7 +200,6 @@ class _BoschPlugin:
         decoder: np.ndarray,
         source: BoundedSource,
         dictionary: BoundedSource,
-        nc_file: netCDF4.Dataset,
     ) -> SherpaDataset:
         if not _GROUP.fullmatch(self.group):
             raise _fail("Select an explicit Wafer_NN or Day_YYYY_MM_DD_Wafer_NN group")
@@ -255,7 +241,7 @@ class _BoschPlugin:
             axis_data = _array(group, "wavelengths", ndim=1, kinds="f")
             if axis_data.shape != (features,):
                 raise _fail("Wavelength count does not match encoded channels")
-            values = np.asarray(nc_file.groups[self.group].variables["wavelengths"][:], dtype=np.float64)
+            values = np.asarray(axis_data[:], dtype=np.float64)
             if not np.isfinite(values).all() or not np.all(np.diff(values) > 0):
                 raise _fail("OES wavelengths must be finite and strictly increasing")
             feature_axis = SpectralAxis(values=values, units="nm", title="Wavelength")
@@ -268,7 +254,7 @@ class _BoschPlugin:
             names = []
             metadata_bytes = count * 200
             for index in range(features):
-                name = _text(nc_file.groups[self.group].variables["feature"][index])
+                name = _text(labels[index])
                 metadata_bytes += len(name.encode("utf-8"))
                 source.require_metadata_bytes(metadata_bytes, format_id=_FORMAT)
                 if not name or len(name.encode("utf-8")) > 4096:
@@ -279,7 +265,6 @@ class _BoschPlugin:
             feature_axis = FeatureAxis(labels=names, title="Process parameter")
             domain = DomainContext(data_quantity="Process value")
             roles = ("sample", "feature")
-        nc_group = nc_file.groups[self.group]
         X = np.empty((count, features), dtype=np.float64)
         for offset in range(0, count, chunk_rows):
             end = min(offset + chunk_rows, count)
@@ -288,12 +273,12 @@ class _BoschPlugin:
                 if isinstance(self.rows, tuple)
                 else slice(start + offset * step, min(start + end * step, stop), step)
             )
-            codes = np.asarray(nc_group.variables["data"][selected_rows, :])
+            codes = np.asarray(encoded[selected_rows, :])
             if codes.size and int(codes.max()) >= decoder.size:
                 raise _fail("Encoded value exceeds the supplied dictionary; no clipping or wrapping is permitted")
             X[offset:end] = decoder[codes]
         timestamps = np.asarray(
-            nc_group.variables["times"][list(indices) if isinstance(self.rows, tuple) else slice(start, stop, step)],
+            times[list(indices) if isinstance(self.rows, tuple) else slice(start, stop, step)],
             dtype=np.float64,
         )
         if not np.isfinite(timestamps).all():
@@ -330,6 +315,7 @@ class _BoschPlugin:
                 ],
                 sample_table={
                     "sample_id": [f"{identity}:{row}" for row in indices],
+                    "acquisition_number": [int(row) + 1 for row in indices],
                 },
             ),
             domain=domain,
@@ -505,7 +491,7 @@ def bosch_phase_observations(path: str | Path) -> dict:
 
     The strongest mean channel is selected on at most 256 evenly spaced raw
     acquisitions. Its complete trace and the original irregular times are read
-    through netCDF4. This is an alignment probe, not a spectral average output.
+    through h5py. This is an alignment probe, not a spectral average output.
     """
     limits = ParserLimits(max_source_bytes=PLUGIN.max_source_bytes)
     with BoundedSource(path, limits=limits) as source:
@@ -528,10 +514,8 @@ def bosch_phase_observations(path: str | Path) -> dict:
         from importlib.resources import as_file
 
         groups = []
-        with as_file(dictionary) as dictionary_path, _NETCDF_LOCK:
-            with netCDF4.Dataset(dictionary_path) as lookup, netCDF4.Dataset(source.snapshot_path) as nc:
-                lookup.set_auto_maskandscale(False)
-                nc.set_auto_maskandscale(False)
+        with as_file(dictionary) as dictionary_path:
+            with h5py.File(dictionary_path, "r") as lookup, h5py.File(source.snapshot_path, "r") as nc:
                 decoder = np.asarray(lookup["data"][:])
                 for asset in inventory.assets:
                     name = asset["asset_id"]
@@ -541,7 +525,7 @@ def bosch_phase_observations(path: str | Path) -> dict:
                     if rows > 100_000 or features > 4096:
                         raise _fail("Phase alignment supports up to 100000 acquisitions and 4096 channels per wafer")
                     group = nc[name]
-                    if _text(group["times"].getncattr("units")) != _TIME_UNITS:
+                    if _text(group["times"].attrs["units"]) != _TIME_UNITS:
                         raise _fail("Unsupported acquisition timestamp units")
                     times = np.asarray(group["times"][:], dtype=np.float64)
                     if not np.isfinite(times).all() or np.any(np.diff(times) <= 0):

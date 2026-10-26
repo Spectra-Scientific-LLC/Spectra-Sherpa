@@ -1,24 +1,23 @@
 <template>
   <section class="bosch-step-comparison" aria-label="BOSCH processing step comparison">
-    <h3>Scientific result · processing steps across days</h3>
-    <div class="companion-selection">
+    <h3 v-if="stagedFiles.length">Processing steps</h3>
+    <div v-if="stagedFiles.length" class="companion-selection">
       <label>Required process companion
         <select v-model.number="processFileId" aria-label="Process companion">
           <option :value="null">Select Process_data.nc</option>
           <option v-for="file in processFiles" :key="file.id" :value="file.id">{{ basename(file.file_path) }}</option>
         </select>
       </label>
-      <label class="companion-upload">Add Process_data.nc
-        <input type="file" accept=".nc" aria-label="Add Process_data.nc" :disabled="uploading" @change="addCompanion" />
-      </label>
     </div>
-    <p v-if="!processFileId" role="status">Upload Process_data.nc to this dataset before comparing daily OES steps. Its gas records define phase boundaries.</p>
+    <p v-if="stagedFiles.length && !processFileId" role="status">Use Load to add Process_data.nc alongside the daily files. Its gas records define phase boundaries.</p>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="inventoryLoading" role="status">Matching process records and checking acquisition clocks…</p>
     <template v-if="catalogs.length">
       <div class="step-controls">
         <label>Processing steps to compare
-          <select v-model="selectedSteps" multiple size="6" aria-label="Processing steps to compare">
+          <MultiSelect v-if="compact" v-model="selectedSteps" :options="availableSteps"
+            option-label="label" option-value="step_id" placeholder="Select steps" aria-label="Processing steps to compare" />
+          <select v-else v-model="selectedSteps" multiple size="6" aria-label="Processing steps to compare">
             <option v-for="step in availableSteps" :key="step.step_id" :value="step.step_id">{{ step.label }}</option>
           </select>
         </label>
@@ -26,10 +25,10 @@
           <button type="button" @click="selectAll(true)">Select all days and wafers</button>
           <button type="button" @click="selectAll(false)">Clear wafers</button>
           <button type="button" :disabled="!selectedPairCount || plotting" @click="compare">Compare selected steps ({{ selectedPairCount }} groups)</button>
-          <small>Steps apply to every checked wafer. Previews use four original acquisitions per group, with no averaging. At most 50 wafer/step groups.</small>
+          <small v-if="!compact">Steps apply to every checked wafer. Previews use four original acquisitions per group, with no averaging. At most 50 wafer/step groups.</small>
         </div>
       </div>
-      <details v-for="entry in catalogs" :key="entry.file.id" class="day-group" open>
+      <details v-for="entry in catalogs" :key="entry.file.id" class="day-group" :open="!compact">
         <summary>
           <input type="checkbox" :aria-label="`Select all wafers in ${basename(entry.file.file_path)}`"
             :checked="entry.catalog.wafers.filter(w => !w.refusal).every(w => selectedWafers.includes(key(entry.file.id, w.asset_id)))"
@@ -44,7 +43,7 @@
             {{ wafer.asset_id }}
             <small v-if="wafer.alignment"> · clock fit {{ Number(wafer.alignment.correlation).toFixed(3) }} · edge uncertainty ±{{ Number(wafer.alignment.boundary_uncertainty_s).toFixed(2) }} s</small>
           </summary>
-          <button type="button" @click="emit('inspect', entry.file, wafer.asset_id)">Inspect all acquisitions and experiment metadata</button>
+          <button v-if="!stagedFiles.length" type="button" @click="emit('inspect', entry.file, wafer.asset_id)">Inspect all acquisitions and experiment metadata</button>
           <p v-if="wafer.refusal" role="alert">{{ wafer.refusal }}</p>
           <table v-else :aria-label="`Processing steps ${basename(entry.file.file_path)} ${wafer.asset_id}`">
             <thead><tr><th>Processing step</th><th>Start / end (UTC)</th><th>Acquisition ranges (1-based)</th><th>Observations</th></tr></thead>
@@ -60,11 +59,11 @@
             </tr></tbody>
           </table>
         </details>
-        <details class="protocol-coverage"><summary>Protocol stages outside these recordings</summary>
+        <details v-if="!compact" class="protocol-coverage"><summary>Protocol stages outside these recordings</summary>
           <p v-for="step in entry.catalog.unrecorded_protocol_steps" :key="step">{{ step }} — no source interval identified.</p>
         </details>
       </details>
-      <details><summary>Gas mapping and alignment evidence</summary>
+      <details v-if="!compact"><summary>Gas mapping and alignment evidence</summary>
         <p>Gas4 → C₄F₈ and Gas5 → SF₆ are tentative assignments checked against C₂ and fluorine emission. Gas1 → O₂ is unconfirmed; its optical spectrum must be reviewed before labeling it as an oxygen clean. EPD control is not inferred from duration.</p>
         <p v-for="warning in catalogs[0].catalog.warnings" :key="warning">{{ warning }}</p>
       </details>
@@ -78,10 +77,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import api from "@/api/client";
+import MultiSelect from "primevue/multiselect";
 import type { components } from "@/types/api/v1";
 import type { DatasetPlotSource, ExperimentFile, SherpaDatasetDict } from "@/types";
 import { useScopedRequest } from "@/composables/useScopedRequest";
-import { useDataStore } from "@/stores/data";
+import type { StagedUpload } from "@/stores/data";
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
 import { getErrorMessage } from "@/utils/errors";
@@ -89,9 +89,8 @@ import SelectedSpectraPlotPanel from "./SelectedSpectraPlotPanel.vue";
 
 type Catalog = components["schemas"]["BoschStepsOut"];
 type CatalogEntry = { file: ExperimentFile; catalog: Catalog };
-const props = defineProps<{ experimentId: number; files: ExperimentFile[] }>();
-const emit = defineEmits<{ inspect: [file: ExperimentFile, assetId: string] }>();
-const dataStore = useDataStore();
+const props = withDefaults(defineProps<{ experimentId?: number; files?: ExperimentFile[]; stagedFiles?: StagedUpload[]; compact?: boolean }>(), { experimentId: 0, files: () => [], stagedFiles: () => [] });
+const emit = defineEmits<{ inspect: [file: ExperimentFile, assetId: string]; prepared: [processStagingId: string | null] }>();
 const auth = useAuthStore();
 const project = useProjectStore();
 const processFileId = ref<number | null>(null);
@@ -99,7 +98,6 @@ const catalogs = ref<CatalogEntry[]>([]);
 const selectedSteps = ref<string[]>(["etch"]);
 const selectedWafers = ref<string[]>([]);
 const inventoryLoading = ref(false);
-const uploading = ref(false);
 const plotting = ref(false);
 const error = ref<string | null>(null);
 const plotError = ref<string | null>(null);
@@ -107,10 +105,14 @@ const sources = ref<DatasetPlotSource[]>([]);
 const basename = (name: string) => name.split("/").pop() ?? name;
 const time = (value: number) => new Date(value * 1000).toISOString().replace("T", " ").replace("Z", " UTC");
 const key = (fileId: number, assetId: string) => `${fileId}:${assetId}`;
-const processFiles = computed(() => props.files.filter(file => /(?:^|\/)Process_data[^/]*\.nc$/i.test(file.file_path)));
-const dailyFiles = computed(() => props.files.filter(file => /day_\d{4}_\d{2}_\d{2}.*\.nc$/i.test(file.file_path)));
+const stagedId = (fileId: number) => props.stagedFiles[-fileId - 1]?.staging_id;
+const inputFiles = computed(() => props.stagedFiles.length ? props.stagedFiles.map((file, index) => ({
+  id: -index - 1, file_path: file.filename, file_size_bytes: file.size_bytes, stage: "raw",
+}) as ExperimentFile) : props.files);
+const processFiles = computed(() => inputFiles.value.filter(file => /(?:^|\/)Process_data[^/]*\.nc$/i.test(file.file_path)));
+const dailyFiles = computed(() => inputFiles.value.filter(file => /day_\d{4}_\d{2}_\d{2}.*\.nc$/i.test(file.file_path)));
 const scope = () => [auth.user?.id, project.currentProjectId, props.experimentId,
-  JSON.stringify(props.files.map(file => [file.id, file.file_path, file.file_size_bytes])), processFileId.value];
+  JSON.stringify(inputFiles.value.map(file => [file.id, file.file_path, file.file_size_bytes])), JSON.stringify(props.stagedFiles.map(file => file.staging_id)), processFileId.value];
 const inventoryRequests = useScopedRequest(scope, () => { catalogs.value = []; sources.value = []; inventoryLoading.value = false; });
 const plotRequests = useScopedRequest(() => [...scope(), JSON.stringify(selectedSteps.value), JSON.stringify(selectedWafers.value)],
   () => { sources.value = []; plotting.value = false; plotError.value = null; });
@@ -123,20 +125,28 @@ watch(processFiles, files => {
 }, { immediate: true });
 watch(scope, async () => {
   selectedWafers.value = [];
-  if (!processFileId.value || !dailyFiles.value.length) return;
+  emit("prepared", null);
+  if ((props.stagedFiles.length && !processFileId.value) || !dailyFiles.value.length) return;
   const ticket = inventoryRequests.begin();
   inventoryLoading.value = true;
   error.value = null;
   const entries: CatalogEntry[] = [];
   try {
     for (const file of dailyFiles.value) {
-      const response = await api.get<Catalog>(`/experiments/${props.experimentId}/files/${file.id}/bosch-steps`,
-        { params: { process_file_id: processFileId.value }, signal: ticket.signal });
+      const response = props.stagedFiles.length
+        ? await api.post<Catalog>("/builder/upload/bosch-steps", {
+            daily_staging_id: stagedId(file.id), process_staging_id: stagedId(processFileId.value!),
+          }, { signal: ticket.signal })
+        : await api.get<Catalog>(`/experiments/${props.experimentId}/files/${file.id}/bosch-steps`, { params: processFileId.value ? { process_file_id: processFileId.value } : {}, signal: ticket.signal });
       if (!ticket.isCurrent()) return;
-      entries.push({ file, catalog: response.data });
+      entries.push({ file, catalog: { ...response.data, process_file_id: response.data.process_file_id ?? processFileId.value } });
     }
-    if (ticket.isCurrent()) catalogs.value = entries;
-  } catch (reason) { if (ticket.isCurrent()) error.value = getErrorMessage(reason, "Could not align process records"); }
+    if (ticket.isCurrent()) {
+      catalogs.value = entries;
+      if (props.stagedFiles.length && entries.every(entry => entry.catalog.wafers.some(wafer => !wafer.refusal)))
+        emit("prepared", stagedId(processFileId.value!) ?? null);
+    }
+  } catch (reason) { if (ticket.isCurrent()) error.value = getErrorMessage(reason, "Processing steps are unavailable. Prepare the files in Upload."); }
   finally { if (ticket.isCurrent()) inventoryLoading.value = false; }
 }, { immediate: true });
 function selectFile(entry: CatalogEntry, checked: boolean) {
@@ -145,15 +155,6 @@ function selectFile(entry: CatalogEntry, checked: boolean) {
 }
 function selectAll(checked: boolean) {
   selectedWafers.value = checked ? catalogs.value.flatMap(entry => entry.catalog.wafers.filter(wafer => !wafer.refusal).map(wafer => key(entry.file.id, wafer.asset_id))) : [];
-}
-async function addCompanion(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  uploading.value = true;
-  try { await dataStore.uploadFile(props.experimentId, file, "raw"); }
-  catch (reason) { error.value = getErrorMessage(reason, "Process companion upload failed"); }
-  finally { uploading.value = false; input.value = ""; }
 }
 async function compare() {
   if (selectedPairCount.value > 50) { plotError.value = "Select at most 50 wafer/step groups so every group has a visible trace."; return; }
@@ -169,8 +170,10 @@ async function compare() {
         if (!selectedWafers.value.includes(key(entry.file.id, wafer.asset_id))) continue;
         for (const step of wafer.steps.filter(candidate => selectedSteps.value.includes(candidate.step_id))) {
           const response = await api.post<components["schemas"]["BoschStepPreviewOut"]>(
-            `/experiments/${props.experimentId}/files/${entry.file.id}/bosch-step-preview`,
-            { process_file_id: processFileId.value, asset_id: wafer.asset_id, step_id: step.step_id,
+            props.stagedFiles.length ? "/builder/upload/bosch-step-preview" : `/experiments/${props.experimentId}/files/${entry.file.id}/bosch-step-preview`,
+            { ...(props.stagedFiles.length
+                ? { daily_staging_id: stagedId(entry.file.id), process_staging_id: stagedId(processFileId.value!) }
+                : { process_file_id: entry.catalog.process_file_id }), asset_id: wafer.asset_id, step_id: step.step_id,
               source_sha256: entry.catalog.source_sha256, process_sha256: entry.catalog.process_sha256, max_rows: 4 },
             { signal: ticket.signal });
           if (!ticket.isCurrent()) return;

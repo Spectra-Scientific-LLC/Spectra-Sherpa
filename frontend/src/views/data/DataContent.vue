@@ -611,6 +611,47 @@
                   </div>
                 </div>
               </div>
+              <div class="upload-action">
+                <div class="field upload-name">
+                  <label for="upload-dataset-name">Dataset name</label>
+                  <InputText
+                    id="upload-dataset-name"
+                    v-model="uploadDatasetName"
+                    :placeholder="defaultUploadDatasetName()"
+                    :disabled="dataUploadDisabled"
+                  />
+                </div>
+                <Button
+                  label="Add to My Dataset"
+                  icon="pi pi-plus"
+                  data-action="import_data"
+                  :disabled="dataUploadDisabled || stagedUploadMembers.length === 0"
+                  :loading="uploading"
+                  @click="onUploadFile"
+                />
+              </div>
+                <div
+                  v-if="selectedUploadMember && selectedUploadMember.assets.length > 1"
+                  class="field"
+                >
+                  <label for="upload-scientific-asset">Wafer / scientific result to preview</label>
+                  <Dropdown
+                    inputId="upload-scientific-asset"
+                    v-model="uploadAssetIds[selectedUploadMember.staging_id]"
+                    :options="selectedUploadMember.assets"
+                    optionLabel="title"
+                    optionValue="asset_id"
+                    placeholder="Select a wafer or result to preview"
+                    class="w-full"
+                  >
+                    <template #option="{ option }">
+                      <span
+                        >{{ option.title || option.asset_id }} ·
+                        {{ option.shape.join(" × ") }}</span
+                      >
+                    </template>
+                  </Dropdown>
+                </div>
               <Panel
                 :toggleable="true"
                 :collapsed="uploadOptionsCollapsed"
@@ -679,52 +720,19 @@
                     <small class="field-help">{{ selectedUploadCsvPlan.assignment.training_label }} rows train; {{ selectedUploadCsvPlan.assignment.validation_label }} rows are held out.</small>
                   </div>
                 </div>
-                <div
-                  v-if="selectedUploadMember && selectedUploadMember.assets.length > 1"
-                  class="field"
-                >
-                  <label for="upload-scientific-asset">Scientific result to preview</label>
-                  <Dropdown
-                    inputId="upload-scientific-asset"
-                    v-model="uploadAssetIds[selectedUploadMember.staging_id]"
-                    :options="selectedUploadMember.assets"
-                    optionLabel="title"
-                    optionValue="asset_id"
-                    placeholder="Select the exact result"
-                    class="w-full"
-                  >
-                    <template #option="{ option }">
-                      <span
-                        >{{ option.title || option.asset_id }} ·
-                        {{ option.shape.join(" × ") }}</span
-                      >
-                    </template>
-                  </Dropdown>
-                </div>
                 <small class="field-hint">{{ uploadFormatHint }}</small>
               </Panel>
-              <div class="upload-action">
-                <div class="field upload-name">
-                  <label for="upload-dataset-name">Dataset name</label>
-                  <InputText
-                    id="upload-dataset-name"
-                    v-model="uploadDatasetName"
-                    :placeholder="defaultUploadDatasetName()"
-                    :disabled="dataUploadDisabled"
-                  />
-                </div>
-                <Button
-                  label="Add to My Dataset"
-                  icon="pi pi-plus"
-                  data-action="import_data"
-                  :disabled="dataUploadDisabled || stagedUploadMembers.length === 0"
-                  :loading="uploading"
-                  @click="onUploadFile"
-                />
-              </div>
             </div>
           </div>
-          <KeepAlive>
+          <BoschStepComparison v-if="uploadHasBoschDays" class="source-preview-pane"
+            :staged-files="stagedUploadMembers" @prepared="uploadBoschProcessId = $event" />
+          <div v-else-if="selectedUploadMember && selectedUploadMember.assets.length > 1 && !previewUploadSource"
+            class="source-preview-pane upload-preview-choice" role="status">
+            <i class="pi pi-chart-line" aria-hidden="true" />
+            <p>Select a wafer or scientific result in the selector to preview its spectra.</p>
+            <small>Your files are staged. You can add the entire files to My Dataset without choosing a preview.</small>
+          </div>
+          <KeepAlive v-else>
             <DatasetSourcePreview
               :scope-key="JSON.stringify(dataScopeIdentity())"
               v-if="activeTab === TAB_UPLOAD"
@@ -1203,7 +1211,7 @@
               </div>
 
               <div v-else-if="boschComparisonMode" class="empty-state">
-                Select days, wafers and processing steps in the comparison below. Process_data.nc is required.
+                Select wafers and steps below. Expand a file to review its acquisition ranges.
               </div>
               <div v-else class="file-groups">
                 <div v-for="stage in fileStages" :key="stage.key" class="file-stage">
@@ -1291,9 +1299,11 @@
               </aside>
             </div>
           </div>
-          <BoschStepComparison v-if="boschComparisonMode && dataStore.activeExperimentId"
-            :experiment-id="dataStore.activeExperimentId" :files="dataStore.experimentFiles"
-            @inspect="inspectBoschAcquisitions" />
+          <div v-if="boschComparisonMode && dataStore.activeExperimentId" class="dataset-preview-shell">
+            <BoschStepComparison compact
+              :experiment-id="dataStore.activeExperimentId" :files="dataStore.experimentFiles"
+              @inspect="inspectBoschAcquisitions" />
+          </div>
           <div v-else class="dataset-preview-shell">
             <div
               v-if="pendingInspection && inspectionAssets.length > 1"
@@ -2737,6 +2747,9 @@ const uploadAssignmentColumn = ref("");
 const uploadOptionsCollapsed = ref(true);
 const selectedFile = ref<File | null>(null);
 const stagedUploadMembers = ref<StagedUpload[]>([]);
+const uploadBoschProcessId = ref<string | null>(null);
+const uploadHasBoschDays = computed(() => stagedUploadMembers.value.some(member =>
+  member.format_id === "bosch-netcdf" && /^Day_\d{4}_\d{2}_\d{2}/i.test(member.filename)));
 const stagedUploadErrors = reactive<Record<string, string>>({});
 const uploadRefusals = ref<StagedUploadRefusal[]>([]);
 const selectionHasCsv = computed(() =>
@@ -6570,6 +6583,10 @@ async function onUploadFile() {
     return;
   }
   if (!stagedUploadMembers.value.length) return;
+  if (uploadHasBoschDays.value && !uploadBoschProcessId.value) {
+    toast.add({ severity: "warn", summary: "Prepare processing steps", detail: "Load Process_data.nc and review the processing-step preview before saving.", life: 5000 });
+    return;
+  }
   uploading.value = true;
   try {
     // Synthesis-style flow: each click creates a new My Dataset with the
@@ -6592,6 +6609,7 @@ async function onUploadFile() {
         staging_id: member.staging_id,
         overrides: uploadOverrides[member.staging_id] ?? null,
       })),
+      uploadBoschProcessId.value,
     );
     await fetchQuota();
     toast.add({
@@ -8200,6 +8218,11 @@ function formatDate(dateStr: string): string {
 
 .upload-shape-control {
   width: 100%;
+}
+
+.upload-preview-choice {
+  padding: 2rem;
+  color: var(--text-color-secondary);
 }
 
 .upload-action {

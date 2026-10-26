@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from spectra_sherpa.app.services.dag.nodes.bosch_phases import PHASE_LABELS, phase_projection
+from spectra_sherpa.app.services.dag.nodes.bosch_phases import PHASE_LABELS, apply_phase_labels, phase_projection
 from spectra_sherpa.io.bosch_netcdf import bosch_phase_observations
 from spectra_sherpa.io.registry import builtin_registry
 
@@ -97,10 +97,11 @@ def step_preview(
     source_sha256: str,
     process_sha256: str,
     max_rows: int = 4,
+    retained_catalog: dict | None = None,
 ):
     if not 1 <= max_rows <= 16:
         raise ValueError("Preview supports 1..16 original acquisitions per wafer/step")
-    catalog = phase_catalog(daily_path, process_path)
+    catalog = retained_catalog if retained_catalog is not None else phase_catalog(daily_path, process_path)
     if catalog["source_sha256"] != source_sha256 or catalog["process_sha256"] != process_sha256:
         raise ValueError("Sources changed; refresh the processing-step inventory")
     if builtin_registry.inspect(process_path).source_members[0].sha256 != process_sha256:
@@ -115,15 +116,10 @@ def step_preview(
     result = builtin_registry.ingest(daily_path, asset_id=asset_id, rows=tuple(int(i) for i in selected))
     if result.source_members[0].sha256 != source_sha256:
         raise ValueError("Daily source changed during preview")
-    dataset = result.assets[0].dataset
-    axis = dataset.sample_axis.model_dump()
-    table = dict(axis.get("sample_table") or {})
-    table["processing_step"] = [PHASE_LABELS[step_id]] * len(selected)
-    table["acquisition_number"] = [int(row) + 1 for row in selected]
-    axis["sample_table"] = table
-    from spectra_sherpa.app.lib.axes import SampleAxis
-
-    dataset.sample_axis = SampleAxis(**axis)
+    alignment = next(wafer["alignment"] for wafer in catalog["wafers"] if wafer["asset_id"] == asset_id)
+    dataset = apply_phase_labels(
+        result.assets[0].dataset, group["labels"][selected], alignment, node_id="upload-phase-preview"
+    )
     dataset.set_extra(
         "bosch.phase_selection",
         {
@@ -135,3 +131,58 @@ def step_preview(
         },
     )
     return dataset, len(rows)
+
+
+def save_phase_catalog(root: Path, file_id: int, process_file_id: int, catalog: dict) -> Path:
+    """Retain the upload-time labels; My Dataset never estimates new boundaries."""
+    import hashlib
+    import json
+
+    from spectra_sherpa.app.services.dag.nodes import bosch_phases
+
+    directory = root / ".bosch-phases"
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / f"{file_id}.json"
+    retained = {key: value for key, value in catalog.items() if key != "_private"}
+    retained["process_file_id"] = process_file_id
+    retained["_private"] = {name: {"labels": group["labels"].tolist()} for name, group in catalog["_private"].items()}
+    receipt = {
+        "schema_version": 1,
+        "file_id": file_id,
+        "algorithm_sha256": hashlib.sha256(Path(bosch_phases.__file__).read_bytes()).hexdigest(),
+        "catalog": retained,
+    }
+    from spectra_sherpa.app.lib.dataset_view_receipts import receipt_sha256
+
+    receipt["receipt_sha256"] = receipt_sha256(receipt)
+    encoded = json.dumps(receipt, allow_nan=False)
+    created = False
+    try:
+        with destination.open("x", encoding="utf-8") as stream:
+            created = True
+            stream.write(encoded)
+    except BaseException:
+        if created:
+            destination.unlink(missing_ok=True)
+        raise
+    return destination
+
+
+def load_phase_catalog(root: Path, file_id: int) -> dict:
+    import json
+
+    path = root / ".bosch-phases" / f"{file_id}.json"
+    if not path.is_file():
+        raise ValueError("No saved processing steps. Prepare this daily file with Process_data.nc in Upload first.")
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    if receipt.get("schema_version") != 1 or receipt.get("file_id") != file_id:
+        raise ValueError("Saved processing-step receipt is invalid")
+    from spectra_sherpa.app.lib.dataset_view_receipts import receipt_sha256
+
+    digest = receipt.pop("receipt_sha256", None)
+    if digest != receipt_sha256(receipt):
+        raise ValueError("Saved processing-step receipt changed")
+    catalog = receipt["catalog"]
+    for group in catalog["_private"].values():
+        group["labels"] = np.asarray(group["labels"], dtype=object)
+    return catalog

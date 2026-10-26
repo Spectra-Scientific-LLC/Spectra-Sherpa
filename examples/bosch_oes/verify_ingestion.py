@@ -99,10 +99,7 @@ def verify(directory: Path) -> dict:
         "source_root": str(source_root),
         "interpreter": sys.executable,
         "python": sys.version,
-        "versions": {
-            name: importlib.metadata.version(name)
-            for name in ["numpy", "scipy", "h5py", "netCDF4", "cftime", "scikit-learn"]
-        },
+        "versions": {name: importlib.metadata.version(name) for name in ["numpy", "scipy", "h5py", "scikit-learn"]},
         "files": files,
         "groups": records,
         "limitation": "One real OES day (six wafers), and all process groups; other OES days not downloaded.",

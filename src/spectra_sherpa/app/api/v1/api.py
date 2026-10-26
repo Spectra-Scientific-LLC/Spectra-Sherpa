@@ -31,6 +31,7 @@ from spectra_sherpa.app.api.v1.routes import (
     runs,
     starter,
     synthesis,
+    time_series_portfolios,
     workflow_export,
     workflow_organization,
     workflow_templates,
@@ -83,6 +84,7 @@ def build_api_router(
     router.include_router(logs.router, tags=["logs"])
     router.include_router(experiments.router, tags=["experiments"])
     router.include_router(dataset_views.router, tags=["dataset-views"])
+    router.include_router(time_series_portfolios.router, tags=["time-series-portfolios"])
     router.include_router(experiment_specimens.router, tags=["experiment-specimens"])
     # Register static organization paths before workflows' generic
     # ``/{workflow_id}`` routes so /workflows/tags and /workflows/folders

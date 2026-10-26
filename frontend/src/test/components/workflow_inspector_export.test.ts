@@ -2,7 +2,7 @@ import { shallowMount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 import WorkflowInspector from "@/views/workflow-builder/WorkflowInspector.vue";
 
-const metadata = { label: "Prepare Export", parameters: [
+const metadata = { output_ports: [{ name: "artifact", type_ref: "spectrasherpa://types/ExportArtifact/1.0" }], label: "Prepare Export", parameters: [
   { name: "filename", label: "Filename", param_type: "text", default: "output.csv", required: true },
   { name: "format", label: "Format", param_type: "select", default: "csv", required: true, options: ["csv", "json", "jdx"] },
 ] };
@@ -46,3 +46,18 @@ describe("export format editing", () => {
     wrapper.unmount();
   });
 });
+
+ it("offers verified download for another canonical export-artifact node", async () => {
+  const wrapper = shallowMount(WorkflowInspector, {
+    props: { selectedNode: null, nodeOutput: null, isOpen: true },
+    global: { directives: { tooltip: () => undefined }, stubs: {
+      Button: { props: ["label", "disabled"], template: '<button :disabled="disabled">{{ label }}</button>' },
+      QuickPlotModal: true, DataTableModal: true,
+    } },
+  });
+  await wrapper.setProps({ selectedNode: { id: "csv", type: "output.peak_csv", label: "Peak CSV", x: 0, y: 0, params: {filename: "peaks.csv"} }, nodeOutput: {artifact: {filename: "peaks.csv",format: "csv",shape:[2,600]}} });
+  const download=wrapper.findAll("button").find(button=>button.text()==="Download Prepared File")!;
+  expect(download.exists()).toBe(true);
+  expect(download.attributes("disabled")).toBeUndefined();
+  wrapper.unmount();
+ });
