@@ -110,18 +110,22 @@ export function displayPlot(
     (!String(trace.mode || "").includes("markers") ||
       Array.isArray((trace.meta as Trace | undefined)?.workflow_observation_refs)));
   if (allSpectralLines) {
-    omitted = curves.length - prefs.maxRows;
-    omittedTraces = omitted;
     const priority = curves.flatMap((trace, index) => {
       const meta = trace.meta as Trace | undefined;
       return Array.isArray(meta?.workflow_included) && meta.workflow_included.some(value => value === false)
         ? [index] : [];
     });
-    const chosen = new Set(priority.slice(0, prefs.maxRows));
-    for (let index = 0; index < prefs.maxRows && chosen.size < prefs.maxRows; index += 1)
-      chosen.add(prefs.maxRows === 1 ? 0 : Math.floor(index * (curves.length - 1) / (prefs.maxRows - 1)));
-    // Priority rows can overlap the regular grid. Fill, without duplicating curves.
-    for (let index = 0; chosen.size < prefs.maxRows; index += 1) chosen.add(index);
+    // Excluded observations disclose context; they must not replace the
+    // active population in a capped preview. Reserve at least half for it.
+    const prioritySet = new Set(priority);
+    const active = curves.flatMap((_, index) => prioritySet.has(index) ? [] : [index]);
+    const excludedBudget = Math.min(priority.length, active.length ? Math.floor(prefs.maxRows / 2) : prefs.maxRows);
+    const chosen = new Set(priority.slice(0, excludedBudget));
+    const activeBudget = Math.min(active.length, prefs.maxRows - chosen.size);
+    for (let index = 0; index < activeBudget; index += 1)
+      chosen.add(active[activeBudget === 1 ? 0 : Math.floor(index * (active.length - 1) / (activeBudget - 1))]);
+    omitted = curves.length - chosen.size;
+    omittedTraces = omitted;
     shown = [...chosen].sort((a, b) => a - b).map(index => curves[index]).concat(data.filter(isLegend));
   }
   const markerCounts = shown.map((trace) => trace.type === "scatter" &&

@@ -819,6 +819,28 @@ _WORKFLOW_POPULATION_PREDECESSORS = tuple(
 )
 
 
+# Reviewed display-only input reuse: unchanged fit/application math and arrays.
+# These are direct exact pairs, not transitive admission of arbitrary states.
+_PCA_DISPLAY_INPUT_REUSE_PREDECESSORS = tuple(
+    SavedStateCompatibility(
+        "model.pca",
+        predecessor,
+        "1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f",
+        "spectrasherpa.model-artifact.pca/3",
+    )
+    for predecessor in (
+        "7f5425b11e126eb8c8359dd480e9af00c62a1d852fa372bed41e31c08d5cbf60",
+        *(
+            entry.predecessor_digest
+            for entry in _WORKFLOW_POPULATION_PREDECESSORS
+            if entry.operation_id == "model.pca"
+            and entry.serializer == "spectrasherpa.model-artifact.pca/3"
+            and entry.consumer_digest == "7f5425b11e126eb8c8359dd480e9af00c62a1d852fa372bed41e31c08d5cbf60"
+        ),
+    )
+)
+
+
 def saved_state_predecessor_is_compatible(
     predecessor: object,
     consumer: str,
@@ -850,6 +872,7 @@ def saved_state_predecessor_is_compatible(
             *_DIAGNOSTIC_REFUSAL_PREDECESSORS,
             *_SCIENTIFIC_AUDIT_PREDECESSORS,
             *_WORKFLOW_POPULATION_PREDECESSORS,
+            *_PCA_DISPLAY_INPUT_REUSE_PREDECESSORS,
         )
         if entry.predecessor_digest == predecessor
         and entry.consumer_digest == consumer

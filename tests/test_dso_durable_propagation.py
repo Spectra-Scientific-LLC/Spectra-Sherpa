@@ -260,7 +260,7 @@ def test_json_export_is_complete_for_nd_while_tabular_formats_refuse() -> None:
     assert wire["inner_axes"]["1"]["class_sets"][0]["name"] == "region-1"
     assert wire["source_identity"]["object_unique_id"] == "export"
     with pytest.raises(ValueError, match="two-dimensional"):
-        build_export_artifact(dataset, filename="dataset.csv", format="csv")
+        build_export_artifact(dataset, filename="dataset.csv", format="portable_csv")
     with pytest.raises(ValueError, match="two-dimensional"):
         build_export_artifact(dataset, filename="dataset.jdx", format="jdx")
 

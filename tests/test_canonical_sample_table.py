@@ -485,7 +485,7 @@ async def test_ready_supervised_template_executes_attach_filter_and_export_witho
     assert artifact == build_export_artifact(
         filtered,
         filename="prepared-supervised-data.csv",
-        format="csv",
+        format="portable_csv",
     )
     prepared_path = tmp_path / "prepared.csv"
     prepared_path.write_text(str(artifact["content"]), encoding="utf-8")

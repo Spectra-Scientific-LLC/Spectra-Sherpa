@@ -2047,7 +2047,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
         const sourceParams = (params: UnknownRecord) => Object.fromEntries(
           Object.entries(params).filter(([key]) => key !== "workflow_exclusions"));
         if (executed && (metadata
-          ? !valuesEqual(sourceParams({ ...defaults, ...node.params }), sourceParams(executed))
+          ? !valuesEqual(sourceParams({ ...defaults, ...node.params }), sourceParams({ ...defaults, ...executed }))
           : Object.entries(node.params).some(([key, value]) => key !== "workflow_exclusions" && !valuesEqual(value, executed[key]))
         )) continue;
         const decision = node.params.workflow_exclusions as { source_digest: string; excluded_refs: string[] } | null;

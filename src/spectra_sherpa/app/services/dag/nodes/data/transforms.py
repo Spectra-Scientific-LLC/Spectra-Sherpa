@@ -392,7 +392,11 @@ class FilterSamplesNode(Node):
         # Apply the same row-local branch predicate, including to excluded
         # observations. A class-A branch must never borrow class-B samples.
         mask = np.asarray([ref in kept for ref in refs], dtype=bool)
-        return {"default": source[mask]}
+        from spectra_sherpa.app.services.dag.sample_subset_supervision import rebind_sample_subset_supervision
+
+        subset = source[mask]
+        rebind_sample_subset_supervision(source, subset)
+        return {"default": subset}
 
     async def execute(self, X: Any = None, **kwargs: Any) -> dict[str, Any]:
         """Filter dataset samples by labels or aligned sample metadata."""

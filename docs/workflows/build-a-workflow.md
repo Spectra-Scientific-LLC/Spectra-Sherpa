@@ -154,13 +154,18 @@ curation is unavailable, rather than guessing how to flatten them. Larger
 two-dimensional datasets still load with their saved source
 inclusion applied, without plot-driven workflow curation. An excluded
 projection exceeding the 64 MiB input budget is unavailable, without changing
-the computational result.
+the computational result. Optional projections run in an isolated worker with
+a 60-second limit. SDK callers that disable workers retain active results but
+do not receive an excluded-row overlay. Bounded spectral previews reserve room
+for active spectra; excluded curves cannot crowd them out.
 
 Sherpa Advisor and existing Guidance receive workflow exclusion counts and
 scope through their normal permission-controlled context. Those counts are
 settings, not proof that a rerun succeeded, and do not confer independent
 validation. Neither system receives private navigation references through the
 summary context or changes exclusions automatically.
+Guidance idle summaries may be up to 15 seconds old; action and navigation
+events refresh them. They are suggestions, not execution or admission authority.
 
 ## When Something Refuses to Run
 

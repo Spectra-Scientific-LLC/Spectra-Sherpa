@@ -209,7 +209,10 @@ def source_population_outputs(
                 "source_digest": digest,
                 "source_count": full.n_samples,
                 "active_count": sum(mask),
-                "excluded_source_rows": [i + 1 for i, flag in enumerate(mask) if not flag],
+                "excluded_source_count": len(mask) - sum(mask),
+                "excluded_source_rows_sha256": hashlib.sha256(
+                    json.dumps([i + 1 for i, flag in enumerate(mask) if not flag], separators=(",", ":")).encode()
+                ).hexdigest(),
                 "scope": "workflow_source_before_all_branches",
             },
             input_shape=full.shape,
@@ -252,4 +255,7 @@ def source_population_outputs(
             "workflow_excluded",
         ]
     }
-    return {"default": active, "target": extract_target_like(active), "__source_population": full, "exclusions": state}
+    outputs = {"default": active, "target": extract_target_like(active), "exclusions": state}
+    if not all(mask):
+        outputs["__source_population"] = full
+    return outputs

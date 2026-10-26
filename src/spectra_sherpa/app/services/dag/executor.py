@@ -1049,8 +1049,10 @@ class DAGExecutor:
 
     async def _run_population_projection(self, node: Node, outputs: dict, inputs: dict) -> dict:
         """Display work uses the existing scientific worker and cancellation policy."""
-        if not self._should_offload(node):
-            return await node.project_population(outputs, inputs)
+        if self._process_pool is None or self._process_pool is False:
+            raise ValueError("Excluded display projection requires a worker; active results remain available.")
+        # Projection is pure display application, even for a data-category
+        # node. Never run its synchronous numerical work on the event loop.
         args = (
             node.metadata.node_type,
             node.node_id,

@@ -183,6 +183,72 @@ async def test_branch_projection_keeps_only_excluded_observations_matching_the_b
     assert not bool(display["default"].sample_axis.include_mask[-1])
 
 
+@pytest.mark.asyncio
+async def test_supervised_branch_overlay_has_an_admissible_subset_receipt():
+    from spectra_sherpa.app.services.dag.nodes.data.transforms import FilterSamplesNode
+    from spectra_sherpa.app.services.dag.supervision_binding import (
+        admit_attached_sample_table_supervision,
+        attach_sample_table_supervision,
+    )
+
+    data = _source()
+    axis = data.sample_axis
+    axis.sample_table = {**axis.sample_table, "sample_id": list(axis.labels), "Y": list(range(6))}
+    data.sample_axis = axis
+    data.meta["source_collection"] = {
+        key: "a" * 64 for key in ("manifest_digest", "collection_definition_sha256", "scientific_collection_sha256")
+    }
+    data = attach_sample_table_supervision(data, target_column="Y", target_type="continuous", node_id="attach")
+    loaded = _loaded(data, [4, 5])
+    node = FilterSamplesNode("branch", {"field": "sample_class", "pattern": "A", "match_mode": "equals"})
+    active = await node.execute(X=loaded["default"])
+    display = await node.project_population(active, {"X": loaded["__source_population"]})
+    assert admit_attached_sample_table_supervision(display["default"]) is not None
+    assert display["default"].sample_axis.labels == ["original 0", "original 2", "original 4"]
+    np.testing.assert_array_equal(display["default"].sample_axis.include_mask, [True, True, False])
+
+
+def test_no_full_source_companion_without_any_exclusions_and_provenance_stays_bounded():
+    pristine = source_population_outputs(_source(), node_id="load")
+    assert "__source_population" not in pristine
+    loaded = _loaded(_source(), [1, 3, 5])
+    step = loaded["default"].provenance.to_list()[-1]
+    assert step["parameters"]["excluded_source_count"] == 3
+    assert len(step["parameters"]["excluded_source_rows_sha256"]) == 64
+    assert "excluded_source_rows" not in step["parameters"]
+    assert "excluded_refs" not in step["parameters"]
+
+
+@pytest.mark.asyncio
+async def test_worker_disabled_projection_refuses_without_running_on_the_event_loop():
+    executor = DAGExecutor(process_pool=False)
+    node = SimpleNamespace(project_population=AsyncMock())
+    with pytest.raises(ValueError, match="requires a worker"):
+        await executor._run_population_projection(node, {}, {})
+    node.project_population.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_data_category_display_projection_uses_the_bounded_worker_too():
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool, _run_population_in_worker
+    from spectra_sherpa.app.services.dag.nodes.data.transforms import FilterSamplesNode
+
+    pool = IsolatedWorkerPool(max_workers=1)
+    node = FilterSamplesNode("filter", {"field": "source_inclusion"})
+    node.project_population = AsyncMock(side_effect=AssertionError("must not run on event loop"))
+    pool.run = AsyncMock(return_value={"default": "worker result"})
+    try:
+        executor = DAGExecutor(process_pool=pool)
+        assert not executor._should_offload(node)  # computational data nodes remain in process
+        result = await executor._run_population_projection(node, {}, {"X": _source()})
+        assert result == {"default": "worker result"}
+        assert pool.run.call_args.args[0] is _run_population_in_worker
+        assert pool.run.call_args.kwargs["timeout"] == 60.0
+        node.project_population.assert_not_awaited()
+    finally:
+        pool.shutdown()
+
+
 def test_dispatch_budget_is_bytes_not_an_object_count():
     data = SherpaDataset(
         np.ones((100_000, 2)),

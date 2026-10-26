@@ -3,6 +3,19 @@ import { DEFAULT_DISPLAY_PREFERENCES } from "@/composables/useDisplayPreferences
 import { displayPlot } from "@/utils/displayPlot";
 
 describe("display plot preferences", () => {
+  it("reserves active spectra when excluded curves exceed the entire display limit", () => {
+    const curves = Array.from({ length: 110 }, (_, index) => ({
+      type: "scatter", mode: "lines", x: [1, 2], y: [index, index],
+      meta: { workflow_included: [index >= 100] },
+    }));
+    const result = displayPlot(curves, {}, { ...DEFAULT_DISPLAY_PREFERENCES, maxRows: 20 });
+    expect(result.data.filter(trace => (trace.meta as {workflow_included: boolean[]}).workflow_included[0])).toHaveLength(10);
+    expect(result.data.filter(trace => !(trace.meta as {workflow_included: boolean[]}).workflow_included[0])).toHaveLength(10);
+    expect(result.omitted).toBe(90);
+    const tiny = displayPlot(curves, {}, { ...DEFAULT_DISPLAY_PREFERENCES, maxRows: 1 });
+    expect((tiny.data[0].meta as {workflow_included: boolean[]}).workflow_included[0]).toBe(true);
+    expect(curves).toHaveLength(110);
+  });
   it("never recolors continuous values, status/reference traces or exclusions as categories", () => {
     const traces = [
       { type: "scatter", mode: "markers", x: [1, 2], y: [3, 4], customdata: ["a", "b"],

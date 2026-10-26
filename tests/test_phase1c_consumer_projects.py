@@ -1185,7 +1185,7 @@ async def test_preprocessing_project_executes_the_declared_chain_and_exports_exa
     np.testing.assert_array_equal(transformed.sample_axis.labels, source.sample_axis.labels)
     np.testing.assert_array_equal(transformed.feature_axis.values, source.feature_axis.values)
     assert transformed.target is source.target is None
-    assert artifact["format"] == "csv"
+    assert artifact["format"] == "portable_csv"
     assert artifact["shape"] == [18, 81]
     assert artifact["source_digest"] == transformed.scientific_digest
 

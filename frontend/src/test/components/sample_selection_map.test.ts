@@ -3,6 +3,17 @@ import { describe, expect, it } from "vitest";
 import SampleSelectionMap from "@/components/SampleSelectionMap.vue";
 
 describe("Filter sample map display", () => {
+  it("treats zero as All rather than a zero-sized paginator", async () => {
+    const wrapper = mount(SampleSelectionMap, {
+      props: { count: 2, limit: 0, value: { provenance: [{op_id: "data.filter_samples",
+        parameters: {n_input: 3, n_selected: 2, selected_indices: [0, 2]}}] } },
+      global: { stubs: { DataTable: { name: "DataTable", props: ["rows", "paginator"], template: '<div class="map-grid" />' }, Column: true } },
+    });
+    (wrapper.get("details").element as HTMLDetailsElement).open = true;
+    await wrapper.get("details").trigger("toggle");
+    expect(wrapper.getComponent({name: "DataTable"}).props()).toMatchObject({rows: 3, paginator: false});
+    wrapper.unmount();
+  });
   it("uses only output-bound names and keeps excluded names unavailable", async () => {
     const value = { sample_axis: { labels: ["Original A", "Original C"] }, provenance: [{
       op_id: "data.filter_samples", parameters: { n_input: 3, n_selected: 2, selected_indices: [0, 2] },

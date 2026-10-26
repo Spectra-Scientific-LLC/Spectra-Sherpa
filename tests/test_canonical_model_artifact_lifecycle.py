@@ -98,6 +98,52 @@ def test_registry_has_no_unqualified_model_artifact_lifecycle():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("node_type", ["model.pca", "model.fitted_pls"])
+@pytest.mark.parametrize("curation", ["workflow", "my_dataset"])
+async def test_curated_training_persists_reopens_and_applies_to_all_new_rows(
+    node_type, curation, tmp_path, monkeypatch
+):
+    from spectra_sherpa.app.lib.axes import SampleAxis
+    from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+    from spectra_sherpa.app.lib.workflow_population import WORKFLOW_POPULATION_OPERATION, source_population_outputs
+    from spectra_sherpa.app.services import model_application, model_store
+    from spectra_sherpa.app.services.model_application import apply_model_to_dataset
+
+    data = sample(node_type)
+    data.target_context = TargetContext(target_type="continuous", target_names=["response"], target_name="response")
+    if curation == "my_dataset":
+        data.sample_axis = SampleAxis(count=24, include_mask=[False, False] + [True] * 22)
+    initial = source_population_outputs(data, node_id="load")
+    exclusions = None
+    if curation == "workflow":
+        exclusions = {
+            "source_digest": initial["exclusions"]["source_digest"],
+            "excluded_refs": [row["observation_ref"] for row in initial["exclusions"]["rows"][:2]],
+        }
+    active = source_population_outputs(data, node_id="load", exclusions=exclusions)["default"]
+    assert active.n_samples == 22
+    node = node_registry.create_node(node_type, "fit", MODEL_CASES[node_type])
+    result = await node.execute(active)
+    outputs = result.outputs if isinstance(result, NodeResult) else result
+    store = ModelStore(tmp_path)
+    executor = DAGExecutor(runtime=ExecutionRuntime(model_artifact_writer=store))
+    executor.results["fit"] = outputs
+    executor._process_model_artifact("fit")
+    uid = executor.saved_artifacts[0]["artifact_uid"]
+    reopened = ModelStore(tmp_path)
+    monkeypatch.setattr(model_store, "get_model_store", lambda: reopened)
+    monkeypatch.setattr(model_application, "get_model_store", lambda: reopened)
+    manifest, _ = reopened.load(uid)
+    assert any(step["op_id"] == WORKFLOW_POPULATION_OPERATION for step in manifest["preprocessing_chain"])
+    new_data = sample(node_type)[:7]
+    new_data.target_context = data.target_context.model_copy(deep=True)
+    applied = await apply_model_to_dataset(uid, new_data)
+    assert applied["n_samples"] == 7
+    assert applied["sample_indices"] == list(range(7))
+    assert applied["warnings"] == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("node_type", MODEL_CASES)
 async def test_fit_persist_reopen_list_and_apply(node_type, tmp_path, test_session, test_user, monkeypatch):
     from spectra_sherpa.app.api.v1.routes.deploy import list_applications

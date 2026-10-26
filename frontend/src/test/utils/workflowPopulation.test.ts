@@ -21,6 +21,18 @@ const state: WorkflowPopulation = { schema_version: "spectrasherpa-workflow-popu
 
 describe("source-owned workflow observation curation", () => {
   beforeEach(() => setActivePinia(createPinia()));
+  it("normalizes defaults on both sides without admitting a changed source", () => {
+    const store = useWorkflowStore();
+    store.nodeLibrary.set("data.file_load", { parameters: [
+      {name: "stage", default: "raw"}, {name: "file_id", default: null},
+    ] } as never);
+    store.nodes = [{id: "load", type: "data.file_load", x: 0, y: 0, params: {experiment_id: 1}}];
+    store.lastExecutionParams = {load: {experiment_id: 1, stage: "raw"}};
+    store.lastExecutionResults = {load: {exclusions: state}};
+    expect(store.workflowPopulationActions.resolve(refs[1])).not.toBeNull();
+    store.nodes[0].params.experiment_id = 2;
+    expect(store.workflowPopulationActions.resolve(refs[1])).toBeNull();
+  });
   it("binds projected diagnostic labels to display rows rather than active-result positions", () => {
     const output = buildNodeOutput({ T2: [1, 3], Q: [.1, .3], sample_labels: ["Original 1", "Original 3"] });
     output.presentation_contract = { schema_version: "spectrasherpa-node-presentation/1", digest: "test", payload: {
@@ -165,7 +177,7 @@ describe("source-owned workflow observation curation", () => {
     const plotted = displayPlot(displayObservationTraces(curves), {}, { ...DEFAULT_DISPLAY_PREFERENCES, maxRows: 1 });
     expect(plotted.omitted).toBe(2);
     expect(plotted.data).toHaveLength(2); // one spectrum, one non-data legend marker
-    expect(plotted.data[0].y).toEqual([1, 1, 1]);
+    expect(plotted.data[0].y).toEqual([0, 0, 0]); // a one-row budget reserves the active spectrum
     expect(plotted.data[1].name).toBe("Excluded / not in fit");
   });
   it("remaps the selected point indexes when the display is sampled", () => {

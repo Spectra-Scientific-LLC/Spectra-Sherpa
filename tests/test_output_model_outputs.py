@@ -225,7 +225,7 @@ async def test_plot_and_contour_accept_numeric_transform_result_dicts() -> None:
 
 @pytest.mark.anyio
 async def test_export_rejects_untyped_model_output_dictionaries() -> None:
-    node = ExportNode(node_id="export_labels", parameters={"filename": "labels.csv", "format": "csv"})
+    node = ExportNode(node_id="export_labels", parameters={"filename": "labels.csv", "format": "portable_csv"})
 
     with pytest.raises(ValueError, match="canonical dataset"):
         await node.execute({"labels": ["A", "B", "A"]})

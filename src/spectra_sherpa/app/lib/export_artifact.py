@@ -375,6 +375,12 @@ def build_export_artifact(dataset: SherpaDataset, *, filename: str, format: str)
     parameters = canonicalize_export_parameters({"filename": filename, "format": format})
     safe_filename = parameters["filename"]
     format = parameters["format"]
+    if format == "csv":
+        raise ValueError(
+            "This saved CSV setting is ambiguous. Select plain_csv or portable_csv in Prepare Export, "
+            "then save and run. "
+            "Previously retained files are unchanged."
+        )
     values = np.asarray(dataset.data)
     if values.size > _MAX_EXPORT_NUMERIC_ELEMENTS:
         raise ValueError("export dataset exceeds the decoded-element limit")
@@ -393,8 +399,8 @@ def build_export_artifact(dataset: SherpaDataset, *, filename: str, format: str)
         source_digest = dataset.scientific_digest
         shape = [int(value) for value in matrix.shape]
     if format in {"csv", "plain_csv", "portable_csv"}:
-        # The historical csv spelling means portable CSV. Preserve saved
-        # recipes; new recipes explicitly choose plain_csv instead.
+        # The ambiguous spelling is admitted for editing/retained files, but
+        # cannot prepare new bytes without an explicit scientist choice.
         content = _csv_content(payload, portable=format != "plain_csv")
     elif format == "jdx":
         encoded = _jdx_archive(payload, source_digest)

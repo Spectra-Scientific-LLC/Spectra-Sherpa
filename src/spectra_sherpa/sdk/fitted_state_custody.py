@@ -39,6 +39,17 @@ _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingP
     {
         (
             "spectrasherpa.model-artifact.pca/3",
+            "1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.pca/3",
+            contract_digest="1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale=(
+                "Display projection reuses one input; fitting, application arrays and serializer are unchanged."
+            ),
+        ),
+        (
+            "spectrasherpa.model-artifact.pca/3",
             "7f5425b11e126eb8c8359dd480e9af00c62a1d852fa372bed41e31c08d5cbf60",
         ): FittedStateCustodyCapability(
             serializer="spectrasherpa.model-artifact.pca/3",

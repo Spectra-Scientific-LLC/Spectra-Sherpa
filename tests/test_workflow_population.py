@@ -221,7 +221,7 @@ def test_full_population_is_not_a_connectable_numerical_port():
 def test_axis_free_projection_preserves_lineage_without_copying_fit_receipts():
     from spectra_sherpa.app.services.dag.population_display import applied_dataset
 
-    data = source_population_outputs(source(), node_id="load")["__source_population"]
+    data = source_population_outputs(source(), node_id="load")["default"]
     template = SherpaDataset(np.ones((148, 4)))
     template.provenance.append(op_id="preprocess.scale", parameters={"method": "autoscale"})
     template.meta["supervision_binding"] = {"active_only": True}

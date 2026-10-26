@@ -173,6 +173,7 @@ CSV carries values and labels, not the full unit, role, run, or model contract.
 Use Prepare Export for supported dataset roundtrips.
 
 New Prepare Export nodes default to **CSV (plain)**. Use **CSV (portable)** or
-JSON to retain typed axes, units and metadata for reimport. Existing saved nodes
-with the historical `csv` format keep their portable serialization; select
-**CSV (plain)** explicitly to change that export.
+JSON to retain typed axes, units and metadata for reimport. A saved node with
+the ambiguous historical `csv` setting requires an explicit plain/portable
+choice before preparing a new file. Save that choice with the workflow.
+Previously retained files keep their exact bytes and remain downloadable.

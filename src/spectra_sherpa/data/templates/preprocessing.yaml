@@ -51,7 +51,7 @@ template_data:
     label: Export Preprocessed
     parameters:
       filename: preprocessed.csv
-      format: csv
+      format: portable_csv
     position_x: 175
     position_y: 1300
   edges:

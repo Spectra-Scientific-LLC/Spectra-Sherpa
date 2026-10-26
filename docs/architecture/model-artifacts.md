@@ -55,4 +55,8 @@ A calibration or classifier is useful only if it can be reapplied to compatible 
 
 Before applying a model, confirm spectral axis, preprocessing, feature count, and units match the training data.
 
+Training exclusions select the fitted cohort; they are not replayed as row
+exclusions on new observations. Applying a curated PCA or PLS artifact processes
+the new dataset's eligible rows, not the training dataset's row positions.
+
 For example, a PLS model trained on absorbance spectra from 4000-650 cm^-1 should not be applied blindly to transmittance spectra, truncated axes, different resolution, or spectra preprocessed outside the saved workflow contract.

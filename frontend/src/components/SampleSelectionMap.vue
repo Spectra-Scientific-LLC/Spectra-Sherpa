@@ -2,7 +2,7 @@
   <details v-if="selection" @toggle="open = ($event.target as HTMLDetailsElement).open">
     <summary>Sample map · {{ selection.retainedRows }} retained · {{ selection.inputRows - selection.retainedRows }} excluded</summary>
     <DataTable v-if="open" :value="rows" scrollable scrollHeight="360px" size="small"
-      :paginator="selection.inputRows > limit" :rows="limit">
+      :paginator="limit > 0 && selection.inputRows > limit" :rows="limit || selection.inputRows">
       <Column field="inputRow" header="Input row" />
       <Column field="sample" header="Sample" />
       <Column field="status" header="Status" />

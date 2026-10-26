@@ -468,6 +468,10 @@ artifact, alter thresholds, or copy an active-cohort supervision receipt onto
 the full population. The companion has no connectable output port. Numerical
 ports and ordinary table/export results remain active only. Display application
 uses the existing scientific worker and bounded resource policy.
+Pure display projections use that worker even for data-category nodes whose
+computational execution remains in process. Disabled workers make the optional
+overlay explicitly unavailable; never run blocking projection work on the API
+event loop or treat a timeout as permission to change active results.
 
 An excluded overlay may make total displayed observations exceed the active
 count; in that case distinguish `displayed active <= active` and

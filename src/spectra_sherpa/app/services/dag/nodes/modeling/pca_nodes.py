@@ -1288,14 +1288,15 @@ class PCANode(Node):
         source = inputs.get("default", inputs.get("input_data"))
         if not isinstance(source, SherpaDataset):
             return {}
+        application_source = application_input(source)
         scores = applied_dataset(
-            self.apply_fitted_state(application_input(source), outputs["fitted_state"]), source, outputs["scores"]
+            self.apply_fitted_state(application_source, outputs["fitted_state"]), source, outputs["scores"]
         )
         state = _pca_diagnostic_state(
             model=outputs["fitted_state"],
             scores=application_input(scores),
             eigenvalues=outputs["eigenvalues"],
-            input_data=application_input(source),
+            input_data=application_source,
         )
         state["scores"] = scores
         state["calibration_state"] = outputs["diagnostic_state"]

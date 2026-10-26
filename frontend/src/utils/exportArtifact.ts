@@ -25,7 +25,7 @@ const ARTIFACT_FIELDS = new Set([
 ]);
 
 type ExportFormat = keyof typeof FORMAT_CONTRACT;
-export const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = { plain_csv: "CSV (plain)", csv: "CSV (portable, legacy)", portable_csv: "CSV (portable)", json: "JSON", jdx: "JCAMP-DX (ZIP)" };
+export const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = { plain_csv: "CSV (plain)", csv: "CSV (legacy; choose format)", portable_csv: "CSV (portable)", json: "JSON", jdx: "JCAMP-DX (ZIP)" };
 
 /** Summary only; downloads still verify the complete closed artifact and digest. */
 export function exportArtifactSummary(value: unknown): { label: string; rows: number; cols: number } | null {
