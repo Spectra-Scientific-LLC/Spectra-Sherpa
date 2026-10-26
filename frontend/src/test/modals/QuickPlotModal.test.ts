@@ -12,6 +12,18 @@ import { datasetMetadataGroupingState } from "@/utils/sampleMetadataGrouping";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe("QuickPlotModal", () => {
+  it("keeps typed applied-score row names and PC columns in embedded tables", () => {
+    const wrapper = mount(QuickPlotModal, { props: { embedded: true, tableOnly: true,
+      modelValue: true, nodeType: "model.load_apply", nodeLabel: "Applied PCA",
+      nodeOutput: { data: [[.1, .2], [.3, .4]], metadata: {},
+        presentation_value: { y_axis: { labels: ["Specimen 135", "Specimen 142"] },
+          x_axis: { labels: ["PC1", "PC2"], units: "dimensionless" } } },
+    }, global: { stubs: globalStubs } });
+    const vm = wrapper.vm as any;
+    expect(vm.dataPreview.map((row: any) => row._label_full)).toEqual(["Specimen 135", "Specimen 142"]);
+    expect(vm.dataPreviewColumns.slice(-2).map((column: any) => column.header)).toEqual(["PC1", "PC2"]);
+    wrapper.unmount();
+  });
   it("offers Color by and Symbol by for unlabeled Iris-style categorical responses", async () => {
     const value = { data: [[0, 1], [2, 3], [4, 5]], y_axis: { data: [0, 2, 3] },
       target: [0, 1, 1], target_context: { target_type: "categorical", target_name: "Species" } };

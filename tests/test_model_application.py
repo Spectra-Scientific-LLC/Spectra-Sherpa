@@ -8,6 +8,49 @@ from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_i
 
 
 @pytest.mark.asyncio
+async def test_saved_pca_application_retains_score_axes_and_selected_sample_identity():
+    from spectra_sherpa.app.lib.axes import FeatureAxis, SampleAxis
+    from spectra_sherpa.app.lib.pca import fit_pca
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+    from spectra_sherpa.app.services.model_application import apply_model_to_dataset
+    from spectra_sherpa.app.services.model_store import get_model_store
+
+    rng = np.random.default_rng(904)
+    matrix = rng.normal(size=(8, 4))
+    source = SherpaDataset(
+        X=matrix,
+        feature_axis=FeatureAxis(values=[400, 500, 600, 700], units="nm"),
+        sample_axis=SampleAxis(
+            labels=[f"Specimen {i}" for i in range(8)],
+            sample_table={"sample_id": [f"id-{i}" for i in range(8)]},
+            include_mask=[True, False, True, True, False, True, True, True],
+        ),
+    )
+    fitted = fit_pca(matrix, n_components=3, standardized=False, scaled=False)
+    manifest, arrays = fitted.to_artifact()
+    manifest["input_identity"] = fitted_input_identity(source, features=4)
+    get_model_store().save("pca-axis-authority", manifest, arrays)
+    evidence = {}
+    response = await apply_model_to_dataset("pca-axis-authority", source, execution_evidence=evidence)
+    scores = evidence["outputs"]["application-model-artifact"]["result"]
+    assert isinstance(scores, SherpaDataset)
+    selected = [0, 2, 3, 5, 6, 7]
+    assert scores.sample_axis.labels == [f"Specimen {i}" for i in selected]
+    assert scores.sample_axis.sample_table["sample_id"] == [f"id-{i}" for i in selected]
+    assert scores.feature_axis.labels == ["PC1", "PC2", "PC3"]
+    assert scores.feature_axis.title == "Principal Component"
+    assert scores.units == "dimensionless"
+    assert scores.data_role == "X_features"
+    np.testing.assert_allclose(scores.X, fitted.transform(matrix[selected]), rtol=0, atol=0)
+    # The public numerical transport stays a list of rows, while retained
+    # evidence carries typed coordinates. No labels are invented by renderers.
+    assert response["sample_indices"] == selected
+    np.testing.assert_array_equal(response["transformed"], scores.X)
+    assert source.feature_axis.units == "nm"
+    assert source.sample_axis.labels == [f"Specimen {i}" for i in range(8)]
+
+
+@pytest.mark.asyncio
 async def test_project_dataset_parsing_and_assembly_leave_the_api_event_loop(monkeypatch, tmp_path):
     import threading
     from types import SimpleNamespace

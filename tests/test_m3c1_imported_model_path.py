@@ -123,7 +123,11 @@ def test_model_apply_runs_in_fresh_spawned_worker_with_read_only_context(tmp_pat
     finally:
         pool.shutdown(wait=True)
 
-    np.testing.assert_allclose(result.outputs["result"], [[2.0, 3.0]])
+    scores = result.outputs["result"]
+    assert isinstance(scores, SherpaDataset)
+    assert scores.feature_axis.labels == ["PC1", "PC2"]
+    np.testing.assert_allclose(scores.X, [[2.0, 3.0]])
+    np.testing.assert_array_equal(result.outputs["transformed"], scores.X)
     assert result.outputs["model_id"] == uid
     provenance = result.diagnostics["worker_execution"]
     assert provenance["mode"] == "spawned_worker"

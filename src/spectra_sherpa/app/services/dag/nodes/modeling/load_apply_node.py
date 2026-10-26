@@ -63,7 +63,7 @@ from ...node_base import (
     register_node,
 )
 from ...stable_execution_contract import bind_stable_execution_contract
-from . import saved_native_model
+from . import pca_nodes, saved_native_model
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,17 @@ def _finite_result_matrix(value: Any, *, model_type: str) -> np.ndarray:
     if matrix.ndim != 2 or not np.isfinite(matrix).all():
         raise ValueError(f"{model_type} application did not produce a finite two-dimensional result")
     return matrix
+
+
+def _transform_outputs(source: SherpaDataset, transformed: np.ndarray, model_type: str) -> dict[str, Any]:
+    if model_type != "pca":
+        return {"result": transformed, "transformed": transformed}
+    # Replay preserves the incoming population. Keep its typed sample identity
+    # and the PCA score-axis authority; spectral units do not describe scores.
+    scores = source.with_data(transformed)
+    scores.data_role = "X_features"
+    pca_nodes._set_pca_score_semantics(scores, [f"PC{i + 1}" for i in range(transformed.shape[1])])
+    return {"result": scores, "transformed": transformed}
 
 
 def _apply_model_artifact(
@@ -206,7 +217,7 @@ def _apply_model_artifact(
         metadata["legacy_exploratory_warning"] = legacy_warning
     if model_type in _TRANSFORM_TYPES:
         transformed = _finite_result_matrix(extract.transform(X_data), model_type=model_type)
-        result.update(result=transformed, transformed=transformed)
+        result.update(_transform_outputs(X_new, transformed, model_type))
     elif model_type in {"pls", "pcr", "linear_regression", "svr"}:
         predicted = _finite_result_matrix(extract.predict(X_data), model_type=model_type)
         result.update(result=predicted, y_pred=predicted, predictions=predicted)
@@ -461,6 +472,7 @@ bind_stable_execution_contract(
         model_extract_registry,
         saved_native_model,
         pca_authority,
+        pca_nodes,
         fitted_state,
         classification_application,
         legacy_model_application,

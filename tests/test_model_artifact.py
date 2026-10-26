@@ -1070,7 +1070,13 @@ class TestLoadApplyModelNode:
         # Verify numeric output matches extract.transform()
         X_data = np.asarray(X_ds.data, dtype=np.float64)
         expected = extract.transform(X_data)
-        np.testing.assert_allclose(result["result"], expected, atol=1e-12)
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        assert isinstance(result["result"], SherpaDataset)
+        assert result["result"].feature_axis.labels == [f"PC{i + 1}" for i in range(expected.shape[1])]
+        assert result["result"].units == "dimensionless"
+        np.testing.assert_allclose(result["result"].X, expected, atol=1e-12)
+        np.testing.assert_array_equal(result["transformed"], result["result"].X)
 
     @pytest.mark.asyncio
     async def test_pls_predict(self, pls_uid):

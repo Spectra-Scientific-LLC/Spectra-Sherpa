@@ -2,6 +2,19 @@ import type { NodeOutput } from "./nodeOutput";
 import { isProjectedScientificKind } from "./scientificPresentation";
 import { scientificColumnLabel } from "./scientificDisplay";
 
+/** Labels belong to this result's row axis, not a similarly sized input. */
+export function scientificMatrixRowLabels(output: NodeOutput | null | undefined, rows: number): string[] {
+  const value = output?.presentation_value as Record<string, unknown> | undefined;
+  const axis = (value?.sample_axis ?? value?.y_axis) as Record<string, unknown> | undefined;
+  const metadata = output?.metadata ?? {};
+  const diagnostics = metadata.diagnostics as Record<string, unknown> | undefined;
+  const candidate = output?.descriptor?.dimensions?.[0]?.labels ?? axis?.labels ??
+    metadata.sample_labels ?? metadata.labels ?? diagnostics?.sample_labels;
+  return Array.isArray(candidate) && candidate.length === rows &&
+    candidate.every(label => typeof label === "string" && label.trim().length > 0)
+    ? candidate : [];
+}
+
 /** Column identity shared by full tables, Quick Plot and CSV. Shape validates
  * declared axes; it never establishes a sample, class or component role. */
 export function scientificMatrixColumns(output: NodeOutput | null | undefined, width: number): string[] {

@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { scientificMatrixColumns } from "@/utils/scientificMatrixColumns";
+import { scientificMatrixColumns, scientificMatrixRowLabels } from "@/utils/scientificMatrixColumns";
 import type { NodeOutput } from "@/utils/nodeOutput";
 
 describe("declared scientific matrix columns", () => {
+  it("reads exact row-axis labels without borrowing similarly sized metadata", () => {
+    const output = { data: [[1], [2]], metadata: { sample_labels: ["stale A", "stale B"] },
+      presentation_value: { y_axis: { labels: ["Specimen 135", "Specimen 142"] } } } as NodeOutput;
+    expect(scientificMatrixRowLabels(output, 2)).toEqual(["Specimen 135", "Specimen 142"]);
+    expect(scientificMatrixRowLabels(output, 1)).toEqual([]);
+    expect(scientificMatrixRowLabels({ ...output,
+      presentation_value: { y_axis: { labels: ["", "B"] } } }, 2)).toEqual([]);
+  });
   it("uses the loading variable axis even when component labels have the same length", () => {
     const output = { data: [[1, 2]], metadata: { pc_labels: ["PC1", "PC2"], feature_names: ["stale", "stale"] },
       presentation_value: { feature_axis: { labels: ["sepal length", "petal width"] } },

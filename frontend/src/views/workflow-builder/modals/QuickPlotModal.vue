@@ -291,7 +291,7 @@ v-model:scale-value="selectedFeatureScale"
 import { SCIENTIFIC_COLORS, PLOT_SURFACE } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
-import { scientificMatrixColumns } from "@/utils/scientificMatrixColumns";
+import { scientificMatrixColumns, scientificMatrixRowLabels } from "@/utils/scientificMatrixColumns";
 import { scientificColumnLabel, scientificResponseUnit } from "@/utils/scientificDisplay";
 import DisplaySubsetIndicator from "@/components/DisplaySubsetIndicator.vue";
 import AxisSetControls from "@/components/data/AxisSetControls.vue";
@@ -878,7 +878,7 @@ const dataPreview = computed(() => {
   const isPlsVariance = isProjectedScientificKind(props.nodeOutput, "pls_explained_variance");
   const labelsRaw = isPlsVariance
     ? data.map((_: unknown, index: number) => `LV ${index + 1}`)
-    : metadata.sample_labels || metadata.labels || [];
+    : scientificMatrixRowLabels(props.nodeOutput, data.length);
   const labels = Array.isArray(labelsRaw)
     ? labelsRaw.map((label: any) => normalizeSampleLabel(label))
     : [];
