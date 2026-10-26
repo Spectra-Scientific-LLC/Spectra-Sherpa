@@ -135,7 +135,6 @@ class OwnedModelWriter:
 
 async def reconcile_terminal_publications(session, *, store, uids=None):
     """Reclaim only explicit terminal claims, serializing with account erasure."""
-    from spectra_sherpa.app.models.model_artifact import ModelArtifact
     from spectra_sherpa.app.models.model_publication import ModelPublication
 
     query = select(ModelPublication.artifact_uid, ModelPublication.user_id).where(
@@ -147,42 +146,54 @@ async def reconcile_terminal_publications(session, *, store, uids=None):
     for uid, user_id in candidates:
         await session.rollback()
         try:
-            await lock_storage_owner(session, user_id)
-        except ValueError:
+            await _reclaim_terminal_publication(session, store, uid, user_id)
+        except Exception:
+            # One damaged claim must not stall the batch or the orphan sweep
+            # behind it. The claim stays marked and is retried next pass.
+            logger.exception("Terminal publication cleanup failed: %s", uid)
             await session.rollback()
-            continue  # Committed erasure owns its persisted plan.
-        claim = await session.scalar(
-            select(ModelPublication)
-            .where(
-                ModelPublication.artifact_uid == uid,
-                ModelPublication.cleanup_requested.is_(True),
-            )
-            .with_for_update()
-            .execution_options(populate_existing=True)
+
+
+async def _reclaim_terminal_publication(session, store, uid, user_id):
+    from spectra_sherpa.app.models.model_artifact import ModelArtifact
+    from spectra_sherpa.app.models.model_publication import ModelPublication
+
+    try:
+        await lock_storage_owner(session, user_id)
+    except ValueError:
+        await session.rollback()
+        return  # Committed erasure owns its persisted plan.
+    claim = await session.scalar(
+        select(ModelPublication)
+        .where(
+            ModelPublication.artifact_uid == uid,
+            ModelPublication.cleanup_requested.is_(True),
         )
-        if claim is None:
-            continue
-        if await session.scalar(select(ModelArtifact.artifact_uid).where(ModelArtifact.artifact_uid == uid)):
-            continue  # Never delete a retained model, even after inconsistent recovery.
-        if claim.artifact_dir != store.artifact_directory(uid):
-            raise ValueError("Publication cleanup path disagrees with its owned artifact")
-        owned_path = Path(claim.artifact_dir).resolve()
-        live_paths = list(await session.scalars(select(ModelArtifact.artifact_dir)))
-        live_paths.extend(
-            await session.scalars(select(ModelPublication.artifact_dir).where(ModelPublication.artifact_uid != uid))
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if claim is None:
+        return
+    if await session.scalar(select(ModelArtifact.artifact_uid).where(ModelArtifact.artifact_uid == uid)):
+        return  # Never delete a retained model, even after inconsistent recovery.
+    if claim.artifact_dir != store.artifact_directory(uid):
+        raise ValueError("Publication cleanup path disagrees with its owned artifact")
+    owned_path = Path(claim.artifact_dir).resolve()
+    live_paths = list(await session.scalars(select(ModelArtifact.artifact_dir)))
+    live_paths.extend(
+        await session.scalars(select(ModelPublication.artifact_dir).where(ModelPublication.artifact_uid != uid))
+    )
+    if any(
+        path == owned_path or path in owned_path.parents or owned_path in path.parents
+        for path in (
+            (Path(raw) if Path(raw).is_absolute() else store.models_dir.parent / raw).resolve() for raw in live_paths
         )
-        if any(
-            path == owned_path or path in owned_path.parents or owned_path in path.parents
-            for path in (
-                (Path(raw) if Path(raw).is_absolute() else store.models_dir.parent / raw).resolve()
-                for raw in live_paths
-            )
-        ):
-            logger.warning("Terminal publication cleanup blocked by overlapping retained custody: %s", uid)
-            continue
-        await await_file_writer(store.delete, uid)
-        await session.delete(claim)
-        await session.commit()
+    ):
+        logger.warning("Terminal publication cleanup blocked by overlapping retained custody: %s", uid)
+        return
+    await await_file_writer(store.delete, uid)
+    await session.delete(claim)
+    await session.commit()
 
 
 class LoopBoundModelWriter:

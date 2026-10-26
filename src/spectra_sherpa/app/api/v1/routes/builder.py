@@ -1964,7 +1964,13 @@ async def get_file_info(
                 )
                 loaded = admission.loaded_dataset
             except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+                # Curated trial refusals arrive as HTTPException from the provider.
+                # A loader ValueError can carry storage paths: log it, never echo it.
+                logger.warning("Trial dataset view admission failed: %s", exc)
+                raise HTTPException(
+                    status_code=400,
+                    detail="This dataset view could not be loaded. Reload the dataset or import the reference again.",
+                ) from exc
             result = serialize_result(loaded.dataset, owner_user_id=current_user.id, project_id=loaded.project_id)
             if not isinstance(result, dict):
                 raise HTTPException(status_code=400, detail="Dataset inspection did not produce a typed response")

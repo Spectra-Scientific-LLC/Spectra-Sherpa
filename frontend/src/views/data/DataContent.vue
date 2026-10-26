@@ -4869,6 +4869,13 @@ function activateDataTab(tab: number, tabChoiceCurrent: () => boolean): void {
   persistActiveDataTab();
 }
 
+// A dataset or file the store has committed must reach the URL, so reload and
+// shared links reopen it. A newer subtab choice keeps only the tab parameter.
+function routeTabFor(tab: string, tabChoiceCurrent: () => boolean): { tab?: string } {
+  if (tabChoiceCurrent()) return { tab };
+  return typeof route.query.tab === "string" ? { tab: route.query.tab } : {};
+}
+
 async function applyRouteExploreState(ticket = navigation.route.begin(), tabChoiceCurrent = navigation.captureTabChoice(), query = { ...route.query }) {
   syncGuidedExampleSession();
   const wantsExplore =
@@ -6381,17 +6388,18 @@ async function onExperimentSelect(
   }
   activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
   await showExperimentContents(exp.id);
-  if (!ticket.isCurrent() || !tabChoiceCurrent() || dataStore.activeExperimentId !== exp.id) return;
+  if (!ticket.isCurrent() || dataStore.activeExperimentId !== exp.id) return;
   const queryWithoutFile = { ...route.query };
   delete queryWithoutFile.fileId;
   // Normalize legacy aliases: experimentId would otherwise beat the new experiment.
   delete queryWithoutFile.experimentId;
   delete queryWithoutFile.viewId;
+  delete queryWithoutFile.tab;
   await router.replace({
     path: "/data",
     query: {
       ...queryWithoutFile,
-      tab: "my-dataset",
+      ...routeTabFor("my-dataset", tabChoiceCurrent),
       experiment: String(exp.id),
     },
   });
@@ -6404,12 +6412,11 @@ async function onAcquisitionExperimentSelect(experimentId: number) {
   const ticket = navigation.focus.begin();
   const tabChoiceCurrent = navigation.captureTabChoice();
   await dataStore.selectExperiment(experiment.id);
-  if (!ticket.isCurrent() || !tabChoiceCurrent()) return;
-  activeTab.value = TAB_MULTI_WELL;
-  persistActiveDataTab();
+  if (!ticket.isCurrent()) return;
+  activateDataTab(TAB_MULTI_WELL, tabChoiceCurrent);
   await router.replace({
     path: "/data",
-    query: { tab: "multi-well", experiment: String(experiment.id) },
+    query: { ...routeTabFor("multi-well", tabChoiceCurrent), experiment: String(experiment.id) },
   });
 }
 
@@ -6725,12 +6732,14 @@ async function onInspectFile(file: ExperimentFile, options: { updateRoute?: bool
     }
     void ensureFileSampleLabels(experimentId);
     activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
-    if (updateRoute && tabChoiceCurrent()) {
+    if (updateRoute) {
+      const query = { ...route.query };
+      delete query.tab;
       await router.replace({
         path: "/data",
         query: {
-          ...route.query,
-          tab: "my-dataset",
+          ...query,
+          ...routeTabFor("my-dataset", tabChoiceCurrent),
           experiment: String(experimentId),
           fileId: String(file.id),
         },

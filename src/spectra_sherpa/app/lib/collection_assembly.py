@@ -974,6 +974,14 @@ def source_observations(members: Sequence[CollectionMember]) -> list[dict[str, A
     return rows
 
 
+_INVENTORY_FIELDS = ("file_name", "sha256", "prepared_data_sha256")
+
+
+def _source_inventory(dataset: SherpaDataset) -> object:
+    collection = dataset.meta.get("source_collection")
+    return collection.get("files") if isinstance(collection, dict) else None
+
+
 def verified_source_observations(dataset: SherpaDataset) -> list[dict[str, Any]]:
     """Require captured row custody; never infer member boundaries from labels."""
     rows = dataset.meta.get("source_observations")
@@ -989,7 +997,7 @@ def verified_source_observations(dataset: SherpaDataset) -> list[dict[str, Any]]
         # one exact file at collection assembly; recompute that same identity
         # from the source inventory rather than deriving it from row position
         # alone or mutating the scientific dataset.
-        source_files = dataset.meta.get("source_collection", {}).get("files", [])
+        source_files = _source_inventory(dataset)
         if isinstance(source_files, list) and len(source_files) == 1 and isinstance(source_files[0], dict):
             name = source_files[0].get("file_name")
             if isinstance(name, str):
@@ -1000,7 +1008,13 @@ def verified_source_observations(dataset: SherpaDataset) -> list[dict[str, Any]]
         raise ValueError("Exact unique sample identities are unavailable; re-import or review the source labels.")
     if not isinstance(rows, list) or len(rows) > 5000:
         raise ValueError("Exact source row identity is unavailable; reload or rerun to enable dataset curation.")
-    files = {f["file_name"]: f for f in dataset.meta.get("source_collection", {}).get("files", [])}
+    inventory = _source_inventory(dataset)
+    if not isinstance(inventory, list) or not all(
+        isinstance(f, dict) and all(isinstance(f.get(field), str) for field in _INVENTORY_FIELDS) for f in inventory
+    ):
+        # Legacy or damaged manifests are unavailable custody, not a server error.
+        raise ValueError("Source file inventory is incomplete; reload or rerun to enable dataset curation.")
+    files = {f["file_name"]: f for f in inventory}
     lookup = {}
     keys = set()
     for row in rows:
@@ -1013,18 +1027,22 @@ def verified_source_observations(dataset: SherpaDataset) -> list[dict[str, Any]]
             "source_row",
         }:
             raise ValueError("Source observation identity is incomplete.")
-        source = files.get(row["file_name"])
-        key = (row["file_name"], row["asset_id"], row["source_row"])
         if (
-            not source
-            or row["sha256"] != source["sha256"]
-            or row["prepared_data_sha256"] != source["prepared_data_sha256"]
+            not isinstance(row["file_name"], str)
             or not isinstance(row["asset_id"], str)
             or not row["asset_id"]
             or type(row["source_row"]) is not int
             or row["source_row"] < 0
             or not isinstance(row["sample_id"], str)
             or not row["sample_id"]
+        ):
+            raise ValueError("Source observation identity is ambiguous or changed.")
+        source = files.get(row["file_name"])
+        key = (row["file_name"], row["asset_id"], row["source_row"])
+        if (
+            not source
+            or row["sha256"] != source["sha256"]
+            or row["prepared_data_sha256"] != source["prepared_data_sha256"]
             or row["sample_id"] in lookup
             or key in keys
         ):

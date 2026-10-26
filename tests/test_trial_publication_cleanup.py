@@ -200,8 +200,8 @@ async def test_terminal_cleanup_retries_after_file_failure_without_reaping_unkno
         raise OSError("synthetic deletion interruption")
 
     monkeypatch.setattr(store, "delete", fail)
-    with pytest.raises(OSError, match="interruption"):
-        await terminal.discard_trial()
+    # The failure is logged per claim; the marked claim waits for the next pass.
+    await terminal.discard_trial()
     async with factory() as session:
         assert (await session.get(ModelPublication, a)).cleanup_requested
         assert not (await session.get(ModelPublication, b)).cleanup_requested
@@ -213,3 +213,42 @@ async def test_terminal_cleanup_retries_after_file_failure_without_reaping_unkno
     async with factory() as session:
         assert await session.get(ModelPublication, a) is None
         assert await session.get(ModelPublication, b) is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("damaged_first", [True, False])
+async def test_one_damaged_terminal_claim_does_not_stall_the_batch_or_orphan_sweep(
+    test_session, test_user, tmp_path, damaged_first
+):
+    from sqlalchemy import update
+
+    await test_session.commit()
+    store = ModelStore(tmp_path)
+    factory = async_sessionmaker(test_session.bind, expire_on_commit=False)
+    writer = OwnedModelWriter(store, factory, test_user.id)
+    # Either claim may be processed first; both orders must reach the other.
+    damaged, healthy = sorted(str(uuid4()) for _ in range(2))[:: 1 if damaged_first else -1]
+    await writer.save(damaged, {"model_type": "pca"}, {"scores": np.eye(2)})
+    await writer.save(healthy, {"model_type": "pca"}, {"scores": np.eye(2)})
+    orphan = store.models_dir / str(uuid4())
+    orphan.mkdir()
+    async with factory() as session:
+        await session.execute(
+            update(ModelPublication)
+            .where(ModelPublication.artifact_uid.in_([damaged, healthy]))
+            .values(cleanup_requested=True)
+        )
+        await session.execute(
+            update(ModelPublication)
+            .where(ModelPublication.artifact_uid == damaged)
+            .values(artifact_dir=str(tmp_path / "elsewhere"))
+        )
+        await session.commit()
+    async with factory() as session:
+        removed = await reconcile_orphan_artifacts(session, store=store, grace_seconds=0)
+    assert (store.models_dir / damaged / "arrays.npz").exists()
+    assert not (store.models_dir / healthy).exists()
+    assert orphan.name in removed
+    async with factory() as session:
+        assert (await session.get(ModelPublication, damaged)).cleanup_requested
+        assert await session.get(ModelPublication, healthy) is None

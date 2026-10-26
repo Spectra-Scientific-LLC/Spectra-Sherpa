@@ -1859,6 +1859,43 @@ describe("DataContent file inspection", () => {
     });
   });
 
+  it("records a committed dataset in the URL when another tab was chosen during selection", async () => {
+    const originalStore = mocks.dataStore;
+    mocks.dataStore = reactive(originalStore);
+    mocks.route.query = { tab: "my-dataset" };
+    const second = { ...mocks.dataStore.experiments[0], id: 12, name: "Selected while switching tabs" };
+    mocks.dataStore.experiments.push(second);
+    let finishSelection!: () => void;
+    mocks.dataStore.selectExperiment.mockImplementationOnce(id => new Promise<void>(resolve => {
+      finishSelection = () => { mocks.dataStore.activeExperimentId = id; resolve(); };
+    }));
+    const wrapper = mountDataContent();
+    try {
+      await flushPromises();
+      const vm = wrapper.vm as unknown as DataContentVm;
+      mocks.routerReplace.mockClear();
+      const selecting = vm.onExperimentSelect(second);
+      await flushPromises();
+      wrapper.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", 1);
+      await flushPromises();
+      finishSelection();
+      await selecting;
+      await flushPromises();
+
+      expect(mocks.dataStore.activeExperimentId).toBe(12);
+      // The reload/shared-link identity is the committed dataset; the tab is the user's newer choice.
+      expect(mocks.routerReplace).toHaveBeenLastCalledWith({
+        path: "/data",
+        query: { tab: "synthesis", experiment: "12" },
+      });
+      expect(wrapper.get("[data-testid='data-tabs']").attributes("data-active-index")).toBe("1");
+    } finally {
+      wrapper.unmount();
+      mocks.dataStore.selectExperiment.mockReset().mockResolvedValue(undefined);
+      mocks.dataStore = originalStore;
+    }
+  });
+
   it("removes a superseded registered dataset from the plot without poisoning valid selections", async () => {
     vi.mocked(api.post).mockRejectedValue({
       isAxiosError: true,
@@ -4401,7 +4438,9 @@ describe("DataContent file inspection", () => {
     await selecting;
     await flushPromises();
     expect(wrapper.get("[data-testid='data-tabs']").attributes("data-active-index")).toBe("1");
-    expect(mocks.routerReplace).not.toHaveBeenCalled();
+    // The committed dataset is recorded for reload, but the URL stays on Synthesis.
+    for (const [call] of mocks.routerReplace.mock.calls) expect(call.query.tab).toBe("synthesis");
+    expect(mocks.routerReplace.mock.calls.at(-1)?.[0].query.experiment).toBe(String(mocks.dataStore.experiments[0].id));
     wrapper.unmount();
   });
 
