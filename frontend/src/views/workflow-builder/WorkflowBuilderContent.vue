@@ -379,6 +379,7 @@
 </template>
 
 <script setup lang="ts">
+import { newIdempotencyKey } from "@/utils/idempotency";
 /* eslint-disable @typescript-eslint/no-explicit-any -- builder canvas mixes generic node-library metadata with loose drag/drop payloads. */
 import { ref, computed, provide, watch, onMounted, onUnmounted, nextTick } from "vue";
 import { useConfirmAction } from "@/composables/useConfirmAction";
@@ -1173,9 +1174,9 @@ const createNodeId = (
 
 // Handle BroadcastChannel messages from NodeDetailView.
 // DetailView is send-only for `node_params_updated` (fired on Save and Exit).
-let trialOwnerId = crypto.randomUUID();
+let trialOwnerId = newIdempotencyKey();
 watch([() => authStore.user?.id, () => authStore.sessionRevision], () => {
-  trialOwnerId = crypto.randomUUID();
+  trialOwnerId = newIdempotencyKey();
 }, { flush: "sync" });
 const handleBroadcastMessage = (event: MessageEvent) => {
   if (event.data?.ownerId && event.data.ownerId !== trialOwnerId) return;

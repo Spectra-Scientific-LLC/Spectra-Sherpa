@@ -127,7 +127,7 @@ Conditional visibility describes the editor; execution admission remains node-ow
 | Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | <code>filename</code> | <code>text</code> | <code>true</code> | <code>&quot;output.csv&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Safe basename including the extension required by the selected format |
-| <code>format</code> | <code>select</code> | <code>true</code> | <code>&quot;csv&quot;</code> | <code>[&quot;csv&quot;, &quot;portable_csv&quot;, &quot;json&quot;, &quot;jdx&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Plain CSV, portable CSV with a metadata preamble, JSON, or JDX (ZIP of all input spectra) |
+| <code>format</code> | <code>select</code> | <code>true</code> | <code>&quot;plain_csv&quot;</code> | <code>[&quot;plain_csv&quot;, &quot;portable_csv&quot;, &quot;csv&quot;, &quot;json&quot;, &quot;jdx&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Plain CSV, portable CSV with a metadata preamble, JSON, or JDX (ZIP of all input spectra) |
 
 ### Plot (`output.plot`)
 

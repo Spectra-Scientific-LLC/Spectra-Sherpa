@@ -29,9 +29,10 @@ EXPORT_ARTIFACT_SCHEMA = "spectrasherpa-export-artifact/1"
 ZIP_EXPORT_ARTIFACT_SCHEMA = "spectrasherpa-export-artifact/2"
 _MAX_EXPORT_BYTES = 32 * 1024 * 1024
 _MAX_EXPORT_NUMERIC_ELEMENTS = 1_000_000
-_FORMAT_SUFFIX = {"csv": ".csv", "portable_csv": ".csv", "json": ".json", "jdx": ".zip"}
+_FORMAT_SUFFIX = {"csv": ".csv", "plain_csv": ".csv", "portable_csv": ".csv", "json": ".json", "jdx": ".zip"}
 _FORMAT_MEDIA_TYPE = {
     "csv": "text/csv;charset=utf-8",
+    "plain_csv": "text/csv;charset=utf-8",
     "portable_csv": "text/csv;charset=utf-8",
     "json": "application/json",
     "jdx": "chemical/x-jcamp-dx",
@@ -78,7 +79,7 @@ def canonicalize_export_parameters(raw: Mapping[str, object]) -> dict[str, str]:
     fmt = raw.get("format")
     filename = raw.get("filename")
     if not isinstance(fmt, str) or fmt not in _FORMAT_SUFFIX:
-        raise ValueError("export format must be one of csv, portable_csv, json, or jdx")
+        raise ValueError("export format must be one of plain_csv, portable_csv, csv (legacy), json, or jdx")
     # Existing saved workflows may still name a .jdx file. Admit that basename
     # without mutating the saved graph; the newly prepared artifact is a ZIP.
     legacy_jdx = fmt == "jdx" and isinstance(filename, str) and filename.lower().endswith(".jdx")
@@ -391,8 +392,10 @@ def build_export_artifact(dataset: SherpaDataset, *, filename: str, format: str)
         payload = _dataset_payload(dataset, matrix)
         source_digest = dataset.scientific_digest
         shape = [int(value) for value in matrix.shape]
-    if format in {"csv", "portable_csv"}:
-        content = _csv_content(payload, portable=format == "portable_csv")
+    if format in {"csv", "plain_csv", "portable_csv"}:
+        # The historical csv spelling means portable CSV. Preserve saved
+        # recipes; new recipes explicitly choose plain_csv instead.
+        content = _csv_content(payload, portable=format != "plain_csv")
     elif format == "jdx":
         encoded = _jdx_archive(payload, source_digest)
         content = base64.b64encode(encoded).decode("ascii")

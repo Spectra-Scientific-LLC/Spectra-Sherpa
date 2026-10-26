@@ -71,6 +71,25 @@ def test_selected_response_unit_does_not_qualify_other_targets():
     assert result.diagnostics["unit_context"]["Protein"]["state"] == "missing"
 
 
+@pytest.mark.parametrize(
+    ("context_unit", "expected_state", "expected_unit"), [(None, "recorded", "ppm"), ("wt %", "ambiguous", None)]
+)
+def test_selected_authority_unit_survives_absent_redundant_context(context_unit, expected_state, expected_unit):
+    from spectra_sherpa.core.target_authority import TargetAuthority
+
+    context = _sample_context()
+    context.target_context.target_units = context_unit
+    context.target_context.selected_authority = TargetAuthority(
+        column="response",
+        target_type="continuous",
+        units="ppm",
+        source_digest="a" * 64,
+    )
+    result = evaluate_labeled_regression(context.target, context.target, sample_context=context)
+    assert result.diagnostics["response_identity"]["units"] == [expected_unit]
+    assert result.diagnostics["unit_context"]["response"]["state"] == expected_state
+
+
 @pytest.mark.parametrize("bad", ["rows", "reordered_target", "names", "missing_target", "missing_labels"])
 def test_local_evaluator_refuses_misbound_sample_context(bad):
     context = _sample_context()

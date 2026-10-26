@@ -55,6 +55,32 @@ describe("MultiWellAcquisitionPanel", () => {
     vi.mocked(api.put).mockResolvedValue({ data: plan });
   });
 
+  it("refreshes a conflicting saved revision without replacing the scientist's draft", async () => {
+    const wrapper = shallowMount(MultiWellAcquisitionPanel, {
+      props: { experimentId: 12, experimentOptions: [] },
+    });
+    await flushPromises();
+    wrapper.getComponent("#filename-pattern").vm.$emit("update:modelValue", "draft-{well}.csv");
+    await flushPromises();
+    vi.mocked(api.put).mockRejectedValueOnce({ response: { status: 409, data: { detail: "Plan changed" } } });
+    await wrapper.get('button-stub[label="Save acquisition plan"]').trigger("click");
+    await flushPromises();
+    vi.mocked(api.get).mockResolvedValueOnce({ data: {
+      ...plan, revision: "b".repeat(64), matching: { rules: { filename_pattern: "peer-{well}.csv" }, matches: [] },
+    } });
+    await wrapper.get('button-stub[label="Refresh saved version"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.getComponent("#filename-pattern").attributes("model-value")).toBe("draft-{well}.csv");
+    expect(api.put).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("Your edits are unchanged");
+    await wrapper.get('button-stub[label="Retry save"]').trigger("click");
+    await flushPromises();
+    expect(api.put).toHaveBeenLastCalledWith("/experiments/12/acquisition-plan", expect.objectContaining({
+      expected_revision: "b".repeat(64), wells: plan.wells,
+      matching: { rules: { filename_pattern: "draft-{well}.csv" }, matches: [] },
+    }));
+  });
+
   it("preserves retained match wells when clearing a plate and refuses an incompatible shrink", async () => {
     const match = { sequence_order: 0, well_position: "I01", factor_values: {} };
     vi.mocked(api.get).mockImplementation(async (url: string) => ({

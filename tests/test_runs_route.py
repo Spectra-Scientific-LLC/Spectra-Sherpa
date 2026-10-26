@@ -321,7 +321,9 @@ async def test_batch_run_artifacts_reports_failing_artifact(test_session, test_u
         acknowledge_legacy_input_uncertainty=False,
     ):
         assert scope == "all"
-        raise ValueError("feature-axis values differ from the artifact")
+        from spectra_sherpa.app.services.dag.fitted_input_identity import FittedInputMismatch
+
+        raise FittedInputMismatch(("axis",))
 
     monkeypatch.setattr(runs_route, "load_project_dataset", fake_load_project_dataset)
     monkeypatch.setattr(runs_route, "apply_model_to_dataset", fake_apply_model_to_dataset)
@@ -352,7 +354,9 @@ async def test_batch_run_artifacts_reports_failing_artifact(test_session, test_u
     assert response.results[0].artifact_uid == artifact.artifact_uid
     assert response.results[0].status == "failed"
     assert response.results[0].error is not None
-    assert "feature-axis values differ" in response.results[0].error
+    from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_refusal_reason
+
+    assert response.results[0].error == fitted_input_refusal_reason(("axis",))
 
 
 @pytest.mark.asyncio

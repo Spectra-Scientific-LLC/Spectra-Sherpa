@@ -38,3 +38,49 @@ it('dispatches with a validated renewal without invalidating its actor', async (
   expect(adapter.mock.calls[0]![0].headers.Authorization).toBe('Bearer renewed');
   expect(auth.sessionRevision).toBe(revision);
 });
+
+it('can authenticate again after logout in the same tab', async () => {
+  const auth = useAuthStore();
+  await auth.clearCredentials();
+  const adapter = vi.fn(async config => ({ data: {}, status: 200, statusText: 'OK', headers: {}, config }));
+  await api.post('/auth/login', { username: 'A', password: 'test-only' }, { adapter });
+  expect(adapter).toHaveBeenCalledOnce();
+  await startBrowserSession('new-login');
+  await api.get('/auth/me', { adapter });
+  expect(adapter.mock.calls.at(-1)![0].headers.Authorization).toBe('Bearer new-login');
+});
+
+it('waits for initial identity before loading the node library on reload', async () => {
+  const auth = useAuthStore();
+  auth.user = null;
+  const adapter = vi.fn(async config => ({ data: {}, status: 200, statusText: 'OK', headers: {}, config }));
+  const identity = vi.spyOn(auth, 'initializeActor').mockImplementation(async () => {
+    auth.user = { id: 7, username: 'A' };
+  });
+  await api.get('/workflows/nodes/library', { adapter });
+  expect(identity).toHaveBeenCalledOnce();
+  expect(adapter).toHaveBeenCalledOnce();
+});
+
+it('accepts a concurrent initial identity response during the stored-session check', async () => {
+  const auth = useAuthStore();
+  auth.user = null;
+  vi.spyOn(auth, 'ensureStoredSession').mockImplementation(async () => {
+    auth.user = { id: 7, username: 'A' };
+  });
+  const adapter = vi.fn(async config => ({ data: {}, status: 200, statusText: 'OK', headers: {}, config }));
+  await api.get('/workflows/nodes/library', { adapter });
+  expect(adapter).toHaveBeenCalledOnce();
+});
+
+it('does not bootstrap a private mutation with a newly validated identity', async () => {
+  const auth = useAuthStore();
+  auth.user = null;
+  const identity = vi.spyOn(auth, 'initializeActor').mockImplementation(async () => {
+    auth.user = { id: 8, username: 'B' };
+  });
+  const adapter = vi.fn();
+  await expect(api.post('/projects', { name: 'old private draft' }, { adapter })).rejects.toThrow('session changed');
+  expect(identity).not.toHaveBeenCalled();
+  expect(adapter).not.toHaveBeenCalled();
+});

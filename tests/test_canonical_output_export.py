@@ -94,7 +94,13 @@ def test_export_node_publishes_one_closed_local_contract() -> None:
 
 @pytest.mark.parametrize(
     ("fmt", "filename"),
-    [("csv", "spectra.csv"), ("portable_csv", "spectra.csv"), ("json", "spectra.json"), ("jdx", "spectra.zip")],
+    [
+        ("csv", "spectra.csv"),
+        ("plain_csv", "spectra.csv"),
+        ("portable_csv", "spectra.csv"),
+        ("json", "spectra.json"),
+        ("jdx", "spectra.zip"),
+    ],
 )
 def test_live_and_generated_paths_prepare_identical_verified_bytes(fmt: str, filename: str) -> None:
     dataset = _spectra(rows=2)
@@ -147,12 +153,15 @@ def test_plain_csv_is_default_and_has_no_portable_preamble() -> None:
     dataset = _spectra()
     node = ExportNode("export", {})
     artifact = asyncio.run(node.execute(dataset))["artifact"]
-    assert artifact["format"] == "csv"
+    assert artifact["format"] == "plain_csv"
     assert artifact["content"].startswith("sample,4000,2500,1000\n")
     assert "#spectrasherpa" not in artifact["content"]
     portable = build_export_artifact(dataset, filename="output.csv", format="portable_csv")
     assert portable["content"].split("\n", 1)[1] == artifact["content"]
     assert verify_export_artifact(portable)["format"] == "portable_csv"
+    legacy = asyncio.run(ExportNode("legacy", {"filename": "output.csv", "format": "csv"}).execute(dataset))["artifact"]
+    assert legacy["content"] == portable["content"]
+    assert verify_export_artifact(legacy)["format"] == "csv"
 
 
 def test_res15_repeated_oes_wavelength_blocks_export_with_unique_feature_identity() -> None:

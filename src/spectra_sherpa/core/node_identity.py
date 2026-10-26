@@ -14,7 +14,10 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
-from spectra_sherpa.core.contract_compatibility import saved_state_predecessor_is_compatible
+from spectra_sherpa.core.contract_compatibility import (
+    saved_state_predecessor_is_compatible,
+    stateless_application_predecessor_is_compatible,
+)
 
 SERIALIZED_NODE_TYPE_ALIASES: Mapping[str, str] = {
     "model.fitted_pls_v2": "model.fitted_pls",
@@ -54,6 +57,9 @@ def node_contract_digest_is_compatible(
 
     return (
         serialized_digest == current_digest
+        or stateless_application_predecessor_is_compatible(
+            canonical_node_type(node_type), serialized_digest, current_digest
+        )
         or saved_state_predecessor_is_compatible(
             serialized_digest, current_digest, operation_id=canonical_node_type(node_type)
         )

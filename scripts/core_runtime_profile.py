@@ -662,7 +662,7 @@ def _native_group_journey() -> dict[str, Any]:
             "sample_2.csv": "sample,1000,1100,1200\nB,4,5,6\n",
         }.items():
             (root / name).write_text(payload, encoding="utf-8")
-        grouped = asyncio.run(
+        outputs = asyncio.run(
             loaders.LoadGroupNode(
                 "r1-group",
                 {
@@ -674,6 +674,7 @@ def _native_group_journey() -> dict[str, Any]:
                 },
             ).execute()
         )
+    grouped = outputs["default"]
     if grouped.shape != (2, 3):
         raise RuntimeError(f"native data.load_group returned the wrong shape: {grouped.shape}")
     if _array_digest(grouped.X) != _array_digest([[1, 2, 3], [4, 5, 6]]):

@@ -45,14 +45,14 @@ from spectra_sherpa.app.lib.registered_reference_collection_identity import (
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
 from spectra_sherpa.app.lib.target_authority import verify_target_authority
 from spectra_sherpa.app.lib.workflow_population import canonical_exclusions, source_population_outputs
-from spectra_sherpa.app.services import registered_reference_supervision as registered_supervision_contract
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
+from spectra_sherpa.app.services.dag import registered_reference_supervision as registered_supervision_contract
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
-from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
-from spectra_sherpa.app.services.registered_reference_supervision import (
+from spectra_sherpa.app.services.dag.registered_reference_supervision import (
     capture_registered_supervision,
     restore_registered_supervision,
 )
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.core import spectra_meta as spectra_meta_contract
 from spectra_sherpa.core.execution_runtime import DatasetSourceResolver
 from spectra_sherpa.core.prepared_data import (

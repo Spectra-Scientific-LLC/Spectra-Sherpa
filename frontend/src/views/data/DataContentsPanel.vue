@@ -1564,16 +1564,18 @@ const sourceObservationLabels = computed<string[] | null>(() => {
 function exactSampleLabels(labels: unknown, wirePreview = false): unknown {
   // Curation keys are the captured observation IDs, not editable display labels.
   if (sourceObservationLabels.value) {
-    const ids = sourceObservationLabels.value;
+    // The server strides the original source first. Never stride an already
+    // file-filtered ID list: its positions no longer refer to source rows.
+    const ids = dataStore.fileInfo!.metadata!.curation_sample_ids as string[];
     if (wirePreview && apiSerializationMetadata()?.mode === "bounded_preview") {
       const metadata = dataStore.fileInfo?.metadata;
       const shape = metadata?.preview_shape;
       const rows = Array.isArray(shape) ? shape[0] : null;
       const stride = metadata?.sample_stride;
       if (typeof rows !== "number" || typeof stride !== "number" || !Number.isSafeInteger(rows) || !Number.isSafeInteger(stride) || rows < 1 || stride < 1 || (rows - 1) * stride >= ids.length) return null;
-      return Array.from({ length: rows }, (_, index) => ids[index * stride]);
+      return selectedRows(Array.from({ length: rows }, (_, index) => ids[index * stride]));
     }
-    return ids;
+    return selectedRows(ids);
   }
   // A detached sample table cannot prove its own current row order.
   if (Array.isArray(labels) && labels.length > 0) return selectedRows(labels);

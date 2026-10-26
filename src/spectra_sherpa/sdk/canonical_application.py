@@ -454,7 +454,14 @@ def _admit_application_operation(
     if payload["operation_id"] != application_operation_id:
         raise CanonicalApplicationPlanError("canonical application operation has an invalid execution identity")
     if source_operation_id == application_operation_id:
-        if application_contract.digest != source_contract_digest:
+        from spectra_sherpa.core.contract_compatibility import stateless_application_predecessor_is_compatible
+
+        if (
+            application_contract.digest != source_contract_digest
+            and not stateless_application_predecessor_is_compatible(
+                source_operation_id, source_contract_digest, application_contract.digest
+            )
+        ):
             raise CanonicalApplicationPlanError("stateless application operation differs from its source contract")
         return application_contract.digest
 

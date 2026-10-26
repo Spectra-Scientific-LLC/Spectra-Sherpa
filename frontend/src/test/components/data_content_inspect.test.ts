@@ -3009,7 +3009,7 @@ describe("DataContent file inspection", () => {
     );
   });
 
-  it("admits the Dashboard starter and preserves its template hand-off", async () => {
+  it.each([false, true])("admits the Dashboard starter and preserves its template hand-off (tab interruption=%s)", async interrupted => {
     mocks.dataStore.referenceCatalog.sklearn = [{ source: "sklearn", name: "iris", label: "Iris" }];
     window.sessionStorage.setItem("sherpa:data-entry-mode", "analysis-starter");
     window.sessionStorage.setItem("sherpa:data-entry-project-id", "3");
@@ -3025,7 +3025,17 @@ describe("DataContent file inspection", () => {
         template_slug: "pca",
       }),
     );
+    let release!: () => void;
+    if (interrupted) mocks.dataStore.fetchReferenceCatalog.mockReturnValueOnce(new Promise<void>(resolve => { release = resolve; }));
     const wrapper = mountDataContent();
+    if (interrupted) {
+      await flushPromises();
+      wrapper.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", 1);
+      release();
+      await flushPromises();
+      expect(mocks.dataStore.importReferenceDatasets).not.toHaveBeenCalled();
+      wrapper.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", 0);
+    }
     await flushPromises();
 
     const vm = wrapper.vm as unknown as DataContentVm;
@@ -3049,6 +3059,26 @@ describe("DataContent file inspection", () => {
       template_slug: "pca",
       imported_experiment_id: 33,
     });
+  });
+
+  it("does not bounce an explicit subtab choice after the starter dataset was imported", async () => {
+    const previous = mocks.route;
+    mocks.route = reactive({ ...previous, query: { tab: "my-dataset" } });
+    window.sessionStorage.setItem("sherpa:data-entry-mode", "analysis-starter");
+    window.sessionStorage.setItem("sherpa:data-entry-project-id", "3");
+    window.sessionStorage.setItem("sherpa:data-entry-dataset-intent", JSON.stringify({
+      schema_version: "spectra-analysis-starter-dataset-intent/1", project_id: 3,
+      dataset_id: "sklearn:iris", source: "sklearn", name: "iris", label: "Iris",
+      template_slug: "pca", imported_experiment_id: 11,
+    }));
+    const wrapper = mountDataContent();
+    try {
+      await flushPromises();
+      wrapper.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", 1);
+      await flushPromises();
+      expect(mocks.route.query.tab).toBe("synthesis");
+      expect(wrapper.get("[data-testid='data-tabs']").attributes("data-active-index")).toBe("1");
+    } finally { wrapper.unmount(); mocks.route = previous; }
   });
 
   it.each([false, true])(

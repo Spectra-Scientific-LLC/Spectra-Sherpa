@@ -51,6 +51,28 @@ def preflight_refusal_reason(status_code: int) -> str:
     }[status_code]
 
 
+def application_refusal_reason(exc: Exception) -> str:
+    """Keep scientific recovery advice without disclosing nested exception text."""
+    from spectra_sherpa.app.services.dag.fitted_input_identity import FittedInputMismatch, fitted_input_refusal_reason
+    from spectra_sherpa.app.services.legacy_model_application import (
+        LEGACY_WARNING,
+        LegacyAcknowledgementRequired,
+        LegacyInputRefusal,
+        legacy_refusal_reason,
+    )
+    from spectra_sherpa.core.scientific_refusal import scientific_refusal_reason
+
+    if isinstance(exc, FittedInputMismatch):
+        return fitted_input_refusal_reason(exc.fields)
+    if isinstance(exc, ScientificInputRefusal):
+        return scientific_refusal_reason(exc.code)
+    if isinstance(exc, LegacyAcknowledgementRequired):
+        return LEGACY_WARNING
+    if isinstance(exc, LegacyInputRefusal):
+        return legacy_refusal_reason(exc.code)
+    return preflight_refusal_reason(422)
+
+
 def verification_digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 

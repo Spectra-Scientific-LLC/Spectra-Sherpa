@@ -75,7 +75,7 @@ export const useAuthStore = defineStore('auth', () => {
     let checking: Promise<void> | null = null
     let checkingKey: string | null = null
     /** Receiving tabs verify the exact renewed credential before protected work. */
-    async function ensureStoredSession(): Promise<void> {
+    async function ensureStoredSession(bootstrap = false): Promise<void> {
         const incoming = readBrowserSession()
         if (sameBrowserSession(storedSession, incoming) || acceptingRenewal) return
         const expected = captureSession()
@@ -89,6 +89,9 @@ export const useAuthStore = defineStore('auth', () => {
             sessionRevision.value += 1 // catches same-token explicit re-login
             token.value = incoming.token
             user.value = null
+            // Identity bootstrap carries no previous workspace payload. It
+            // must be able to establish the new login after explicit logout.
+            if (bootstrap) return
             throw new Error('Login session changed. Retry from the current account.')
         }
         checkingKey = key
@@ -173,7 +176,17 @@ export const useAuthStore = defineStore('auth', () => {
      * OSS-compat `/auth/me`. The backend validates any retained credentials;
      * remote callers must not lose the API key needed to authenticate.
      */
-    async function initializeActor() {
+    let actorLookup: { key: string; promise: Promise<void> } | null = null
+    function initializeActor(): Promise<void> {
+        const key = JSON.stringify([token.value, sessionRevision.value])
+        if (actorLookup?.key === key) return actorLookup.promise
+        const promise = loadActor().finally(() => {
+            if (actorLookup?.promise === promise) actorLookup = null
+        })
+        actorLookup = { key, promise }
+        return promise
+    }
+    async function loadActor() {
         const request = actorRequest.begin()
         try {
             const response = await api.get('/auth/me', { signal: request.signal })

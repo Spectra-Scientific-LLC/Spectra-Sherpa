@@ -81,6 +81,23 @@ describe("SampleTableEditor acquisition-plan synchronization", () => {
     );
   });
 
+  it("keeps a new table editable when default preferences cannot be read", async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url === "/acquisition-preferences") throw new Error("Preferences offline; choose a format.");
+      return { data: plan };
+    });
+    const wrapper = shallowMount(SampleTableEditor, {
+      props: { sampleCount: 2, sampleLabels: [], sourceName: "New", sourceFileId: 41, experimentId: 12 },
+      global: { stubs: { Dialog: { template: '<div><slot /><slot name="footer" /></div>' }, DataTable: { template: "<div><slot /></div>" } } },
+    });
+    await wrapper.get('button-stub[label="Edit measured samples"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[role="alert"]').text()).not.toContain("Unable to load measured-sample");
+    expect(wrapper.find('button-stub[label="Retry load"]').exists()).toBe(false);
+    expect(wrapper.get('dropdown-stub[id="plate-format"]').attributes("disabled")).not.toBe("true");
+    wrapper.unmount();
+  });
+
   it("seeds a new measured table from Settings, not the registry or acquisition plan", async () => {
     vi.mocked(api.get).mockImplementation((url: string) => Promise.resolve({ data:
       url === "/acquisition-preferences" ? { default_plate_format_id: "plate-384" } : plan,

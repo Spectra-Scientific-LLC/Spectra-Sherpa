@@ -609,6 +609,8 @@ function formatCell(value: number | null): string {
 
 <style scoped>
 .selected-spectra-panel {
+  min-width: 0;
+  overflow: hidden;
   background: var(--surface-card);
   border: 1px solid var(--surface-border);
   border-radius: 8px;

@@ -859,6 +859,19 @@ def saved_state_predecessor_is_compatible(
     return len(matches) == 1 and (operation_id is not None or serializer is not None)
 
 
+def stateless_application_predecessor_is_compatible(operation: str, predecessor: object, consumer: str) -> bool:
+    """Exact apply-only reader for unchanged stateless smoothing mathematics.
+
+    Source-axis/display helpers changed the implementation closure. This is
+    neither permission to replay historical fits nor a transitive alias.
+    """
+    return (operation, predecessor, consumer) == (
+        "preprocess.smooth",
+        "4d405cdbf887713619a462b33e9c941a62abcd281176f590415c46bf606507b6",
+        "da86321ad34a334b778e3e3632e542fbfb6374f9283bd92c34657f1e79f1b490",
+    )
+
+
 def inspection_predecessor_catalog(profile_digest: str | None = None) -> dict:
     """Pinned read-only campaign profiles; not saved-state application aliases."""
     original = predecessor_catalog()

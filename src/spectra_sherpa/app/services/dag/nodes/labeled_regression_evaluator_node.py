@@ -138,7 +138,11 @@ def evaluate_labeled_regression(
         authority = context.selected_authority
         # A selected-column declaration qualifies that column only. Without
         # one, target_units is the context's common multi-response declaration.
-        declarations = [context.target_units] if authority is None or authority.column == name else []
+        declarations = (
+            [context.target_units]
+            if authority is None or (authority.column == name and context.target_units is not None)
+            else []
+        )
         if authority is not None and authority.column == name:
             declarations.append(authority.units)
         per_response.append(resolve_target_units(declarations))

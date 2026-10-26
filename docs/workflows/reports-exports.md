@@ -171,3 +171,8 @@ CSV table exports contain all active rows and features of the result, regardless
 of preview paging or search filters. Row numbers refer to retained source positions.
 CSV carries values and labels, not the full unit, role, run, or model contract.
 Use Prepare Export for supported dataset roundtrips.
+
+New Prepare Export nodes default to **CSV (plain)**. Use **CSV (portable)** or
+JSON to retain typed axes, units and metadata for reimport. Existing saved nodes
+with the historical `csv` format keep their portable serialization; select
+**CSV (plain)** explicitly to change that export.
