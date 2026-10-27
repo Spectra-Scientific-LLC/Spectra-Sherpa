@@ -87,8 +87,14 @@ joins any surviving file writer and fences its identity before reporting the
 workspace erased; losing a database connection does not prove a writer stopped.
 A failed filesystem durability barrier leaves recovery pending with its files
 protected. Automatic crash reclamation is not yet qualified on Windows, whose
-directory-durability primitive differs; this candidate currently refuses that
-operation rather than treating a best-effort sync as proof.
+directory-durability primitive differs. Background recovery retains those files
+and logs an operator recovery warning. Normal trial cleanup remains available:
+the original execution closes further publication, joins all its file writers,
+and removes only its own unreferenced files under the shared identity lock.
+Its database revocation record remains, without a durable-reclamation timestamp.
+Background recovery never infers this stopped-execution authority from a flag
+or elapsed time. A failed explicit cleanup can be retried by that same stopped
+execution; after process loss, offline reconciliation is required on Windows.
 
 Historical claims without execution ownership remain protected: their age and
 absent model rows cannot prove that deleting them is safe. Account erasure or
@@ -109,7 +115,10 @@ lock/fence directory as one consistent snapshot. A local concurrency test is
 not qualification of a different network filesystem or a production restore.
 
 `tests/test_publication_lease.py` covers admission, renewal, fencing, retry and
-legacy preservation. `tests/test_publication_postgres.py` uses separate real
+legacy preservation. `tests/test_publication_platforms.py` exercises the
+unsupported-platform policy on every runner: preserve crash-left files, join
+cancelled writers, refuse foreign attempts and retain overlapping custody.
+`tests/test_publication_postgres.py` uses separate real
 processes and disposable databases: held COMMIT (commit and abort), terminated
 database connection with a surviving filesystem writer, and hard-killed writer
 scratch. Run with `PUBLICATION_TEST_POSTGRES_URL` pointing at a disposable

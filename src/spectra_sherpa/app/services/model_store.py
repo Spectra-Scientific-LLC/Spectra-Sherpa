@@ -490,6 +490,18 @@ class ModelStore:
         Caller must already hold committed DB revocation and owner custody.
         The persistent storage fence also stops writers whose DB connection died.
         """
+        self._remove_publication(artifact_uid, protected_paths, durable=True)
+
+    def discard_stopped_trial(self, artifact_uid: str, protected_paths: list[Path]) -> None:
+        """Remove a joined trial's files without claiming crash-durable erasure.
+
+        Only its stopped execution owner may call this fallback. Background
+        recovery cannot infer that authority from an expired lease or DB flag.
+        The caller retains the DB tombstone and does not set reclaimed_at.
+        """
+        self._remove_publication(artifact_uid, protected_paths, durable=False)
+
+    def _remove_publication(self, artifact_uid: str, protected_paths: list[Path], *, durable: bool) -> None:
         if str(_uuid.UUID(artifact_uid)) != artifact_uid:
             raise ValueError("Publication reclamation requires an allocated UUID")
         with self._publication_claim(artifact_uid):
@@ -510,12 +522,13 @@ class ModelStore:
                 os.close(fd)
             # Reclamation cannot use the older best-effort publication helper:
             # a failed barrier must preserve bytes and leave the receipt pending.
-            _fsync_directory_required(fence.parent)
-            _fsync_directory_required(fence.parent.parent)
+            if durable:
+                _fsync_directory_required(fence.parent)
+                _fsync_directory_required(fence.parent.parent)
             for target in targets:
                 if target.exists():
                     shutil.rmtree(target)
-            if self.models_dir.exists():
+            if durable and self.models_dir.exists():
                 _fsync_directory_required(self.models_dir)
 
     # ── List ─────────────────────────────────────────────────────────
@@ -565,9 +578,14 @@ def _fsync_dir(path: Path) -> None:
         logger.debug("fsync dir(%s) skipped: %s", path, exc)
 
 
+def durable_publication_recovery_supported() -> bool:
+    """Platform primitive availability, not qualification of arbitrary storage."""
+    return os.name == "posix" and hasattr(os, "O_DIRECTORY")
+
+
 def _fsync_directory_required(path: Path) -> None:
     """Failure is not evidence of durable deletion; callers must retain custody."""
-    if not hasattr(os, "O_DIRECTORY"):
+    if not durable_publication_recovery_supported():
         raise OSError(errno.ENOTSUP, "Durable publication reclamation requires directory synchronization")
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:

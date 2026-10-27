@@ -16,6 +16,7 @@ from spectra_sherpa.app.services import storage_custody as custody
 from spectra_sherpa.app.services.model_store import (
     ModelArtifactCollisionError,
     ModelStore,
+    durable_publication_recovery_supported,
     persist_model_artifact_records,
 )
 
@@ -49,6 +50,10 @@ async def publication(session, user, root):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    not durable_publication_recovery_supported(),
+    reason="Automatic crash recovery requires directory durability; unsupported platforms retain custody",
+)
 async def test_expired_owned_claim_reclaims_scratch_and_permanently_fences_identity(test_session, test_user, tmp_path):
     store, writer, uid, artifact = await publication(test_session, test_user, tmp_path)
     scratch = store.models_dir / f".staging-{uid}-crashed"
@@ -157,7 +162,8 @@ async def test_renewal_is_scoped_to_execution_and_never_revives_fenced_claim(
         assert (store.models_dir / uid).exists()
         await writer.discard_trial()
         await asyncio.wait_for(renewal, 2)
-        assert (await test_session.get(ModelPublication, uid, populate_existing=True)).reclaimed_at is not None
+        claim = await test_session.get(ModelPublication, uid, populate_existing=True)
+        assert (claim.reclaimed_at is not None) == durable_publication_recovery_supported()
     finally:
         owner.cancel()
         renewal.cancel()
@@ -215,6 +221,10 @@ async def test_missing_claim_cannot_downgrade_owned_registration_to_legacy(test_
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    not durable_publication_recovery_supported(),
+    reason="Directory-fsync injection requires the native primitive; unsupported recovery has separate tests",
+)
 @pytest.mark.parametrize("failed_barrier", [1, 3])
 async def test_cleanup_after_storage_fence_failure_is_retryable(
     test_session, test_user, tmp_path, monkeypatch, failed_barrier
@@ -309,7 +319,7 @@ async def test_standalone_headless_lifecycle_recovers_without_workbench(test_ses
     )
     monkeypatch.delenv("HEADLESS_WORKFLOW_ID", raising=False)
     async with headless_app.lifespan(headless_app.app):
-        assert not (store.models_dir / uid).exists()
+        assert (store.models_dir / uid).exists() == (not durable_publication_recovery_supported())
         tasks = [task for task in asyncio.all_tasks() if task.get_name() == "model-publication-recovery"]
         assert len(tasks) == 1 and not tasks[0].done()
     assert tasks[0].done()

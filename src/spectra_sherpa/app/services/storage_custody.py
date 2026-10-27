@@ -195,6 +195,10 @@ class OwnedModelWriter:
         self.attempt_id = str(uuid4())
         self._execution_task = None
         self._renewal_task = None
+        self._trial_stopped = False
+        self._active_saves = 0
+        self._writers_idle = asyncio.Event()
+        self._writers_idle.set()
 
     def bind_execution_task(self, task):
         """A cross-loop adapter binds the task that owns the complete execution."""
@@ -214,6 +218,18 @@ class OwnedModelWriter:
         return self.store.artifact_directory(artifact_uid)
 
     async def save(self, artifact_uid, manifest, arrays):
+        if self._trial_stopped:
+            raise ValueError("Trial execution has stopped; create a new execution to publish models")
+        self._active_saves += 1
+        self._writers_idle.clear()
+        try:
+            return await self._save_owned(artifact_uid, manifest, arrays)
+        finally:
+            self._active_saves -= 1
+            if not self._active_saves:
+                self._writers_idle.set()
+
+    async def _save_owned(self, artifact_uid, manifest, arrays):
         from spectra_sherpa.app.models.model_artifact import ModelArtifact
         from spectra_sherpa.app.models.model_publication import ModelPublication
 
@@ -260,6 +276,8 @@ class OwnedModelWriter:
         from spectra_sherpa.app.models.model_artifact import ModelArtifact
         from spectra_sherpa.app.models.model_publication import ModelPublication
 
+        self._trial_stopped = True
+        await self._writers_idle.wait()
         async with self.factory() as session:
             await lock_storage_owner(session, self.user_id)
             for uid in self.claimed_uids:
@@ -275,7 +293,20 @@ class OwnedModelWriter:
                     .values(cleanup_requested=True)
                 )
             await session.commit()
-            await reconcile_terminal_publications(session, store=self.store, uids=self.claimed_uids)
+            from spectra_sherpa.app.services.model_store import durable_publication_recovery_supported
+
+            if durable_publication_recovery_supported():
+                await reconcile_terminal_publications(session, store=self.store, uids=self.claimed_uids)
+            else:
+                for uid in self.claimed_uids:
+                    await session.rollback()
+                    try:
+                        await _reclaim_terminal_publication(
+                            session, self.store, uid, self.user_id, stopped_attempt=self.attempt_id
+                        )
+                    except Exception:
+                        logger.exception("Stopped trial cleanup failed; retained custody: %s", uid)
+                        await session.rollback()
 
 
 async def reconcile_terminal_publications(session, *, store, uids=None):
@@ -300,9 +331,10 @@ async def reconcile_terminal_publications(session, *, store, uids=None):
             await session.rollback()
 
 
-async def _reclaim_terminal_publication(session, store, uid, user_id):
+async def _reclaim_terminal_publication(session, store, uid, user_id, *, stopped_attempt=None):
     from spectra_sherpa.app.models.model_artifact import ModelArtifact
     from spectra_sherpa.app.models.model_publication import ModelPublication
+    from spectra_sherpa.app.services.model_store import durable_publication_recovery_supported
 
     try:
         await lock_storage_owner(session, user_id)
@@ -320,6 +352,16 @@ async def _reclaim_terminal_publication(session, store, uid, user_id):
         .execution_options(populate_existing=True)
     )
     if claim is None:
+        return
+    if stopped_attempt is not None and claim.attempt_id != stopped_attempt:
+        raise ValueError("Stopped trial does not own this publication")
+    durable = durable_publication_recovery_supported()
+    if claim.attempt_id is not None and not durable and stopped_attempt is None:
+        logger.warning(
+            "Automatic publication recovery is unavailable on this platform; "
+            "custody retained for offline reconciliation: %s",
+            uid,
+        )
         return
     if await session.scalar(select(ModelArtifact.artifact_uid).where(ModelArtifact.artifact_uid == uid)):
         return  # Never delete a retained model, even after inconsistent recovery.
@@ -343,11 +385,13 @@ async def _reclaim_terminal_publication(session, store, uid, user_id):
     ]
     if claim.attempt_id is None:
         await await_file_writer(store.delete, uid)
-    else:
+    elif durable:
         await await_file_writer(store.reclaim_publication, uid, protected_paths)
+    else:
+        await await_file_writer(store.discard_stopped_trial, uid, protected_paths)
     if claim.attempt_id is None:
         await session.delete(claim)
-    else:
+    elif durable:
         claim.reclaimed_at = await session.scalar(select(func.current_timestamp()))
     await session.commit()
 
