@@ -100,9 +100,10 @@ independent validation of the algorithms or optimal component counts.
 
 Focused table and component screenshots are compared across reopen on the same
 browser, allowing only one 8-bit channel level of SVG rasterization rounding.
-Plot capture waits for layout/fonts/animation and gives the actual canvas a
+Plot and table capture wait for layout/fonts/animation and give the actual surface a
 temporary stable compositor layer and antialiasing mode. It does not resize or
-clone plots. The same capture helper's negative tests reject changed text,
+clone content. Tables retain both before/reopened images alongside component
+images, so a failed comparison can be inspected directly. The same capture helper's negative tests reject changed text,
 colors and one-pixel geometry; raster differences are not waived by tolerance.
 Geometry measurements also wait for finite transitions on the containing
 surface and its ancestors: a visible Plotly SVG can still be scaled by its

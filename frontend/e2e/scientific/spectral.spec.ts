@@ -6,6 +6,7 @@ import {
   assertDefaultDisplayMatrix,
   assertSameScreenshot,
   settledPlotScreenshot,
+  settledTableScreenshot,
   closeDialog,
   downloadTable,
   plotData,
@@ -86,7 +87,7 @@ for (const name of ["mixture-ir", "moisture-nir"]) {
       values.map((row: number[]) => row.slice(0, 8)),
     );
     const csv = await downloadTable(page, dialog);
-    const tableImage = await dialog.locator(".p-datatable-wrapper").screenshot();
+    const tableImage = await settledTableScreenshot(page, test.info().outputPath("table-before.png"));
     assertIdentity(
       csv.slice(1).map((row) => row[1]),
       labels,
@@ -152,7 +153,7 @@ for (const name of ["mixture-ir", "moisture-nir"]) {
     await assertSameScreenshot(
       page,
       tableImage,
-      await page.getByRole("dialog").locator(".p-datatable-wrapper").screenshot(),
+      await settledTableScreenshot(page, test.info().outputPath("table-reopened.png")),
     );
     await closeDialog(page);
     await page.locator(".workflow-node").filter({ hasText: "Fit PCA Transform" }).first().click();
