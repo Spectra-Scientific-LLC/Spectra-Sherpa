@@ -1,5 +1,23 @@
 import { test, expect } from "@playwright/test";
-import { assertDefaultDisplayMatrix, assertIdentity, assertMatrix, assertReportedNumber, assertSameScreenshot, parseCsv, settledPlotScreenshot } from "./assertions";
+import { assertDefaultDisplayMatrix, assertIdentity, assertMatrix, assertReportedNumber, assertSameScreenshot, parseCsv, settledPlotScreenshot, settledTableScreenshot } from "./assertions";
+
+test("table capture preserves exact content across text raster modes @smoke", async ({ page }) => {
+  await page.setContent('<div role="dialog"><div class="p-datatable-wrapper" style="width:300px;height:80px;background:#0f172a;color:white;font:12px monospace;-webkit-font-smoothing:subpixel-antialiased"><table><tbody><tr><td>moisture-nir-01</td><td>0.369612</td></tr></tbody></table></div></div>');
+  const capture = (name: string) => settledTableScreenshot(page, test.info().outputPath(`table-${name}.png`));
+  const before = await capture("before");
+  await page.locator(".p-datatable-wrapper").evaluate(el => {
+    (el as HTMLElement).style.setProperty("-webkit-font-smoothing", "antialiased");
+  });
+  await assertSameScreenshot(page, before, await capture("reopened"));
+  for (const change of ["text", "color", "position"]) {
+    await page.locator("td").first().evaluate((el, change) => {
+      el.textContent = change === "text" ? "moisture-nir-02" : "moisture-nir-01";
+      (el as HTMLElement).style.color = change === "color" ? "red" : "white";
+      (el as HTMLElement).style.transform = change === "position" ? "translateX(1px)" : "none";
+    }, change);
+    await expect(assertSameScreenshot(page, before, await capture(change))).rejects.toThrow(/Scientific surface pixels/);
+  }
+});
 
 test("visual parity still rejects changed text, color and geometry @smoke", async ({ page }) => {
   await page.setContent('<div role="dialog"><div class="plotly-canvas" style="width:240px;height:80px"><svg class="main-svg" width="240" height="80" style="background:white"><text x="10" y="35" fill="black">PC 1 · Wavelength (nm)</text><path d="M10 65L80 45L150 60" stroke="blue" fill="none"/></svg></div></div>');

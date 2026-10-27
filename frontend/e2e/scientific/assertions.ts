@@ -176,23 +176,38 @@ export async function settledPlotScreenshot(page: Page, path: string): Promise<B
       }),
     )
     .toBeLessThanOrEqual(1);
-  await settledSurfaceLayout(canvas);
+  return settledScientificScreenshot(page, canvas, path);
+}
+
+/** Tables need the same settled compositor/font capture as plots. */
+export async function settledTableScreenshot(page: Page, path: string): Promise<Buffer> {
+  return settledScientificScreenshot(
+    page, page.getByRole("dialog").locator(".p-datatable-wrapper"), path,
+  );
+}
+
+async function settledScientificScreenshot(page: Page, surface: Locator, path: string): Promise<Buffer> {
+  await settledSurfaceLayout(surface);
   await page.mouse.move(0, 0);
   // Dialogs can leave the same SVG in different compositor tiles after reopen.
   // Retained Ubuntu artifacts show edge-coverage differences of 2–7 channel
   // levels confined to an upper strip, consistent with compositor tiling,
   // despite identical trace coordinates.
-  // Give the real rendered canvas one stable layer, not a cloned/exported plot.
+  // Main run 40424579695 also retained a macOS table pair with identical
+  // dimensions/header/values but 28,656 differing body-text pixels. Tables
+  // must not bypass the same deterministic text-raster capture discipline.
+  // Give the real rendered surface one stable layer, not a clone/export.
   // This changes neither content nor layout; retain the exact pixel assertion.
   const captureStyle = await page.addStyleTag({
-    content: ".plotly-canvas { will-change: transform !important; } " +
-      ".plotly-canvas, .plotly-canvas * { -webkit-font-smoothing: antialiased !important; }",
+    content: ".plotly-canvas, .p-datatable-wrapper { will-change: transform !important; } " +
+      ".plotly-canvas, .plotly-canvas *, .p-datatable-wrapper, .p-datatable-wrapper * " +
+      "{ -webkit-font-smoothing: antialiased !important; }",
   });
   try {
-    await canvas.evaluate(() => new Promise<void>(resolve => {
+    await surface.evaluate(() => new Promise<void>(resolve => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     }));
-    return await canvas.screenshot({ animations: "disabled", path });
+    return await surface.screenshot({ animations: "disabled", path });
   } finally {
     await captureStyle.evaluate(el => { el.parentNode?.removeChild(el); });
   }
