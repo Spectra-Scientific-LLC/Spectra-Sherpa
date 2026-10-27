@@ -26,6 +26,7 @@ const state = useProcessingStepSelection(
 );
 watch(() => [props.scopeKey, props.experimentId, props.files, props.fileSelections] as const,
   async () => { await state.load(Object.keys(props.fileSelections ?? {}).map(Number), props.files, props.experimentId, props.fileSelections); emit("sources", state.sourceExperimentIds.value); }, { immediate: true });
+defineExpose(state);
 watch(state.selections, () => { void state.compare(); });
 watch([state.preview, state.groupColors], () => emit('preview', state.preview.value), { immediate: true });
 watch(state.previewLoading, value => emit('loading', value), { immediate: true });

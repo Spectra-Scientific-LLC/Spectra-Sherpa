@@ -1297,14 +1297,14 @@
             </div>
           </div>
           <div class="dataset-preview-shell">
-            <ProcessingStepFilter v-if="selectedStepFiles.length && dataStore.activeExperimentId"
+            <ProcessingStepFilter ref="stepFilter" v-if="stepMode && dataStore.activeExperimentId"
               :experiment-id="dataStore.activeExperimentId" :project-id="projectStore.currentProjectId"
               :files="selectedStepFiles" :file-selections="plotFileSelections" @sources="onStepFilterSources" :scope-key="JSON.stringify(dataScopeIdentity())"
               @preview="stepFilterPreview = $event" @loading="stepFilterLoading = $event" @error="stepFilterError = $event" />
             <SelectedSpectraPlotPanel
               :plot-datasets="[...plotDatasetSources, ...stepFilterPreview]"
-              :plot-dataset-count="selectedStepFiles.length ? new Set([...plotDatasetSources, ...stepFilterPreview].map(s => s.experimentId)).size : plottedExperimentIds.length"
-              :plot-file-count="selectedStepFiles.length ? [...plotDatasetSources, ...stepFilterPreview].reduce((n, s) => n + s.selectedFileCount, 0) : plottedFileCount"
+              :plot-dataset-count="stepMode ? new Set([...plotDatasetSources, ...stepFilterPreview].map(s => s.experimentId)).size : plottedExperimentIds.length"
+              :plot-file-count="stepMode ? [...plotDatasetSources, ...stepFilterPreview].reduce((n, s) => n + s.selectedFileCount, 0) : plottedFileCount"
               :plot-datasets-loading="plotDatasetsLoading || stepFilterLoading"
               :plot-datasets-error="plotDatasetsError || stepFilterError"
               :active-experiment-id="dataStore.activeExperimentId"
@@ -1319,7 +1319,8 @@
             :scope-key="JSON.stringify(dataScopeIdentity())"
             :show-data-story="false"
             display-settings-target="#active-dataset-display-settings"
-            :active-dataset-name="selectedExperimentName"
+            :selection-summary="stepMode ? stepDatasetSummary : null"
+            :active-dataset-name="stepMode ? dataPortfolioName : selectedExperimentName"
             :selected-file-count="activeSelectedFileCount"
             :selected-file-names="activeSelectedFileNames"
             :sample-inclusion-enabled="Boolean(datasetCurationSource)"
@@ -1337,7 +1338,7 @@
           >
             <template #source-collection>
               <CollectionDefinitionPanel
-                v-if="dataStore.activeExperimentId"
+                v-if="dataStore.activeExperimentId && !stepMode"
                 embedded
                 :experiment-id="dataStore.activeExperimentId"
                 :refresh-key="collectionDefinitionRefreshKey"
@@ -1349,7 +1350,7 @@
             </template>
             <template #sample-curation>
               <DatasetCurationPanel
-                v-if="datasetCurationSource"
+                v-if="datasetCurationSource && !stepMode"
                 ref="curationPanel"
                 embedded
                 controls-only
@@ -1368,6 +1369,7 @@
                 class="dataset-view-registry"
                 aria-label="Saved datasets"
               >
+                <div v-if="stepMode && stepFilter?.error" role="alert">{{ stepFilter.error }}</div>
                 <div v-if="datasetViewError" role="alert">{{ datasetViewError }}</div>
                 <div class="dataset-view-actions">
                   <Button
@@ -1393,22 +1395,21 @@
                   <Button
                     label="Save portfolio"
                     class="p-button-sm"
-                    :loading="datasetViewBusy"
-                    :disabled="
-                      !newDatasetViewName.trim() ||
-                      !analysisSelectionHydrated ||
-                      dataStore.fileInfoLoading ||
-                      curationAction === 'mixed' ||
-                      (!!curationAction && !curationReason.trim()) ||
-                      (!curationAction &&
-                        currentPortfolioView?.selection.schema_version ===
-                          'spectrasherpa-dataset-view/2')
-                    "
+                    :loading="stepMode ? stepFilter?.busy : datasetViewBusy"
+                    :disabled="!newDatasetViewName.trim() || (stepMode
+                      ? (!stepFilter?.selections.length || stepFilter.busy)
+                      : (!analysisSelectionHydrated || dataStore.fileInfoLoading || curationAction === 'mixed' ||
+                         (!!curationAction && !curationReason.trim()) ||
+                         (!curationAction && currentPortfolioView?.selection.schema_version === 'spectrasherpa-dataset-view/2')))"
                     @click="savePortfolio"
                   />
                 </div>
                 <ul class="dataset-view-list">
-                  <li v-for="view in datasetViews" :key="view.id">
+                  <li v-for="portfolio in (stepMode ? stepFilter?.portfolios || [] : [])" :key="`steps-${portfolio.id}`">
+                    <span>{{ portfolio.name }}</span>
+                    <Button label="Show" class="p-button-sm p-button-text" :disabled="stepFilter?.busy" @click="stepFilter?.show(portfolio)" />
+                  </li>
+                  <li v-for="view in (stepMode ? [] : datasetViews)" :key="view.id">
                     <span>{{ view.name }}</span>
                     <Button
                       label="Show"
@@ -1502,6 +1503,8 @@
     <!-- ======================== DIALOGS ======================== -->
 
     <!-- Edit Dataset -->
+    <PortfolioWorkflowDialog v-if="stepWorkflowVisible && stepFilter?.selectedPortfolio"
+      :portfolio="stepFilter.selectedPortfolio" @close="stepWorkflowVisible = false" />
     <Dialog
       v-model:visible="showEditDatasetDialog"
       header="Edit Dataset"
@@ -1614,6 +1617,9 @@ import Checkbox from "primevue/checkbox";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import Dialog from "primevue/dialog";
+import PortfolioWorkflowDialog from "./PortfolioWorkflowDialog.vue";
+import { processingStepDatasetSummary } from "./composables/processingStepDatasetSummary";
+const stepWorkflowVisible = ref(false);
 import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
 import Dropdown from "primevue/dropdown";
@@ -1856,6 +1862,8 @@ const currentPortfolioView = computed(() => {
 });
 const dataPortfolioName = computed(
   () =>
+    stepFilter.value?.selectedPortfolio?.name ||
+    (stepMode.value ? "Unsaved step selection" : null) ||
     currentPortfolioView.value?.name ||
     (selectedDatasetView.value ||
     Array.isArray(plotFileSelections.value[dataStore.activeExperimentId ?? -1])
@@ -1863,7 +1871,7 @@ const dataPortfolioName = computed(
       : "Default selection"),
 );
 const dataPortfolioDetail = computed(() =>
-  portfolioDetail(
+  stepMode.value ? `${stepFilter.value?.selections.length || 0} selected groups · Full time series` : portfolioDetail(
     activeSelectedFileCount.value,
     analysisChoice.value.target,
     analysisChoice.value.group,
@@ -1983,6 +1991,10 @@ async function prepareDatasetCurationSource(): Promise<void> {
   }
 }
 async function savePortfolio(): Promise<void> {
+  if (stepMode.value) {
+    if (await stepFilter.value?.save(newDatasetViewName.value.trim())) newDatasetViewName.value = "";
+    return;
+  }
   if (curationAction.value === "mixed") return;
   if (curationAction.value) {
     if (!curationReason.value.trim() || !newDatasetViewName.value.trim()) return;
@@ -2184,6 +2196,7 @@ async function showDatasetView(view: DatasetView): Promise<void> {
 }
 
 async function showDefaultDatasetView(): Promise<void> {
+  if (stepMode.value) { stepFilter.value?.clear(); return; }
   const experimentId = dataStore.activeExperimentId;
   const projectId = projectStore.currentProjectId;
   if (experimentId == null) return;
@@ -2245,7 +2258,7 @@ const workflowHandoffBusy = computed(
   () =>
     activeTab.value === TAB_MY_DATASET &&
     dataStore.activeExperimentId != null &&
-    (dataStore.fileInfoLoading || analysisChoice.value.readiness === null),
+    (stepMode.value ? Boolean(stepFilter.value?.busy) : (dataStore.fileInfoLoading || analysisChoice.value.readiness === null)),
 );
 const workflowHandoffTitle = computed(() =>
   workflowHandoffBusy.value
@@ -2261,6 +2274,14 @@ const plottedExperimentIds = computed(() =>
     .map((experiment) => experiment.id),
 );
 const plotDatasetSources = ref<DatasetPlotSource[]>([]);
+const stepFilter = ref<InstanceType<typeof ProcessingStepFilter> | null>(null);
+const explicitlySelectedStepSources = computed(() => Object.entries(plotFileSelections.value)
+  .filter(([, files]) => files?.some(file => /day_\d{4}_\d{2}_\d{2}.*\.nc$/i.test(file.file_path)))
+  .map(([id]) => Number(id)));
+const stepMode = computed(() => selectedStepFiles.value.length > 0 || explicitlySelectedStepSources.value.length > 0);
+const stepDatasetSummary = computed(() => processingStepDatasetSummary(
+  stepFilter.value?.entries || [], stepFilter.value?.selections || [], stepFilter.value?.selectedPortfolio || null,
+));
 const stepFilterPreview = ref<DatasetPlotSource[]>([]);
 const stepFilterSourceIds = ref<number[]>([]);
 function onStepFilterSources(ids: number[]) {
@@ -5332,6 +5353,14 @@ function workflowSelectionForExperiment(experimentId: number): PlotFileSelection
 }
 
 async function goToWorkflow(addNode?: string) {
+  if (stepMode.value) {
+    if (!stepFilter.value?.selectedPortfolio) {
+      toast.add({severity:"warn", summary:"Save portfolio first", detail:"Name and save the selected steps in Active dataset below the graph.", life:6000});
+      return;
+    }
+    stepWorkflowVisible.value = true;
+    return;
+  }
   if (projectStore.currentProjectId == null) {
     toast.add({ severity: "warn", summary: "Select a project", detail: "Choose a project before opening this dataset in Workflow. Your current selection has not been changed.", life: 6000 });
     return;
@@ -5840,7 +5869,7 @@ async function loadPlottedDatasets(
     return;
   }
   const selected = plottedExperimentIds.value
-    .filter(id => !(selectedStepFiles.value.length && (id === dataStore.activeExperimentId || stepFilterSourceIds.value.includes(id))))
+    .filter(id => !explicitlySelectedStepSources.value.includes(id) && !(stepMode.value && (stepFilterSourceIds.value.includes(id) || (id === dataStore.activeExperimentId && selectedStepFiles.value.length))))
     .map((id) => dataStore.experiments.find((experiment) => experiment.id === id))
     .filter((experiment): experiment is ExperimentSummary => Boolean(experiment));
   if (plottedExperimentIds.value.some(id => !dataStore.experiments.some(e => e.id === id))) {

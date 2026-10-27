@@ -1426,11 +1426,16 @@ const boundPortfolios = computed(() =>
   nodes.value
     .filter(
       (node) =>
+        node.type === "data.portfolio_load" ||
         node.type === "data.collection_load" ||
         (node.type === "data.load_group" && node.params.source_mode === "experiment_collection"),
     )
     .map((node) => {
       const params = node.params;
+      if (node.type === "data.portfolio_load") return {
+        name: String(node.label || "Saved time-series portfolio"),
+        detail: `Immutable portfolio #${params.portfolio_id} · ${String(params.selection_sha256 || '').slice(0, 12)}`,
+      };
       const authority = params.target_authority as { column?: string } | null;
       const files = Array.isArray(params.selected_file_ids) ? params.selected_file_ids : [];
       return {

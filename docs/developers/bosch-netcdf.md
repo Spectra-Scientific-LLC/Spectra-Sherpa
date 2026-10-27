@@ -124,8 +124,10 @@ is inferred from its duration. The legacy phase preview does not retain cycle in
 
 ## v0.6.5 portfolio review workflow
 
-This feature is isolated to the v0.6.5 integration branch. The development-only
-`/preview/oes-v065` matrix saves named, immutable selections. Saving binds exact
+This feature is isolated to the v0.6.5 integration branch. The Steps Selection
+matrix in My Dataset filters the selected daily datasets. The original Active
+Dataset review layout and existing Save portfolio and Workflow controls save
+named, immutable selections. Process-file loading and segmentation stay in Upload. Saving binds exact
 acquisition intervals, source and process hashes, both decoding dictionary hashes,
 and segmentation identity. Names cannot be overwritten; save a new portfolio to
 change membership. Every execution re-admits access and verifies these bindings.
@@ -137,7 +139,8 @@ Find peaks · Partitioned → Combine peak columns → Export wide peak CSV.
 Reference wavelengths and matching tolerance are explicit user settings, shared
 initially but independently editable on each branch.
 
-Averaging uses equal acquisition weights and never combines wafers:
+Reduction offers an arithmetic mean or an exact per-wavelength median in all
+three modes. Acquisitions have equal weight and wafers remain independent:
 
 - **Step:** one spectrum per day × wafer × selected step.
 - **Phase across cycles:** one spectrum per day × wafer × step × phase.
@@ -145,11 +148,22 @@ Averaging uses equal acquisition weights and never combines wafers:
 
 Cycle indices derive from aligned process etch onsets. Transition acquisitions
 and intervals without an assigned cycle remain explicit; they are not silently
-dropped. The default includes all acquisitions. Optional transition trimming
+dropped. The default includes all acquisitions admitted to the saved selection. Etch and
+passivation selections exclude the same uncertain boundary acquisitions shown by
+the matrix, whether or not cycle membership is requested. Both retains the whole
+production step. Optional transition trimming
 removes a declared duration from each retained interval's ends; it is relative
 to the OES interval timestamps, not a calibrated gas transport delay.
 
-Raw decoding uses h5py in bounded acquisition batches, without netCDF4. Averaged
+Raw decoding uses h5py in bounded acquisition batches, without netCDF4. Exact
+median reduction spools encoded values in a temporary directory, bounded to
+512 MiB per wafer partition, and decodes wavelength blocks of at most 16 MiB.
+It never substitutes a median of batch medians. Temporary files are cleaned up
+on success and failure; oversized requests fail explicitly. Mean retains the
+streaming sum path. Statistic and grouping are recorded with the output identity.
+Quick Plot displays the reduced spectra; the partitioned input descriptor is not
+presented as an original spectral matrix. Smooth and Normalize retain their
+normal before/after comparisons. Averaged
 outputs have a 16-million-value bound; peak detection runs in bounded batches.
 The combined table retains independent measurement columns, with peak references
 as rows and date/wafer/step/phase/cycle identity in column labels. Missing peaks

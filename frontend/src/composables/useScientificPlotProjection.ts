@@ -1136,6 +1136,11 @@ export function useQuickPlotProjection(
   });
 
   const isPreprocessNode = computed(() => {
+    // A partitioned source is a canonical loading descriptor, not a retained
+    // spectral matrix. Reductions of it have an output plot, no before panel.
+    // Keep absent matrix inputs on the normal refusal path.
+    const input = resolvePortPayload(primaryInput.value);
+    if (input?.schema_version === "spectrasherpa-partitioned-source/1") return false;
     const nt = nodeType.value;
     return nt === "data.filter_samples" || nt.startsWith("preprocess.") || nt.startsWith("baseline.") ||
       nt.startsWith("normalize.") || nt.startsWith("smooth.") || nt.startsWith("time_series.") ||

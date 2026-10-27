@@ -151,9 +151,8 @@ def phase_projection(times, signal, process, *, minimum_correlation=0.8, retain_
     # Preserve uncertain DAQ-resolution transition edges rather than claiming
     # sub-sample precision from the much faster optical acquisition clock.
     boundary = pt[np.flatnonzero(labels[1:] != labels[:-1]) + 1]
-    if not retain_cycle_membership:
-        for edge in boundary:
-            mapped[np.abs(mapped_times - edge) <= cadence] = "transition"
+    for edge in boundary:
+        mapped[np.abs(mapped_times - edge) <= cadence] = "transition"
     # Cycle identity comes from process etch onsets, never optical recording gaps.
     onsets = (labels == "etch") & np.r_[True, labels[:-1] != "etch"]
     cycles = np.cumsum(onsets)[safe]

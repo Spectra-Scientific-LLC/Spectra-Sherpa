@@ -144,7 +144,7 @@
       <DataStorySection v-if="showDataStory" />
     </div>
 
-    <div v-else-if="!dataStore.fileInfo" class="explore-empty">
+    <div v-else-if="!dataStore.fileInfo && !selectionSummary" class="explore-empty">
       <i class="pi pi-table"></i>
       <h3>No contents selected</h3>
       <p>
@@ -153,7 +153,7 @@
     </div>
 
     <details
-      v-if="dataStore.fileInfo && !dataStore.catalogDatasetInfo"
+      v-if="(selectionSummary || dataStore.fileInfo) && !dataStore.catalogDatasetInfo"
       class="focused-dataset-details"
     >
       <summary>
@@ -162,10 +162,10 @@
         </span>
       </summary>
       <div class="explore-content">
-        <p v-if="dataStore.fileInfoLoading" class="plot-display-notice" role="status">
+        <p v-if="!selectionSummary && dataStore.fileInfoLoading" class="plot-display-notice" role="status">
           Refreshing the exact dataset selection…
         </p>
-        <p v-else-if="dataStore.fileInfoError" class="sample-table-retrieval-error" role="alert">
+        <p v-else-if="!selectionSummary && dataStore.fileInfoError" class="sample-table-retrieval-error" role="alert">
           {{ dataStore.fileInfoError }}
         </p>
         <section class="dataset-step" aria-label="Loaded files">
@@ -183,14 +183,14 @@
               />
             </div>
           </div>
-          <details v-if="selectedFileNames.length" class="selected-files-details">
+          <details v-if="reviewFileNames.length" class="selected-files-details">
             <summary>
-              {{ selectedFileNames.length }} selected file{{
-                selectedFileNames.length === 1 ? "" : "s"
+              {{ reviewFileNames.length }} selected file{{
+                reviewFileNames.length === 1 ? "" : "s"
               }}
             </summary>
             <ul>
-              <li v-for="fileName in selectedFileNames" :key="fileName">{{ fileName }}</li>
+              <li v-for="fileName in reviewFileNames" :key="fileName">{{ fileName }}</li>
             </ul>
           </details>
           <slot name="source-collection" />
@@ -213,14 +213,14 @@
             No acquisition settings were retained for these files.
           </p>
           <section
-            v-if="requiresDimensionProjection"
+            v-if="!selectionSummary && requiresDimensionProjection"
             class="dimension-projection-notice"
             role="status"
           >
             <i class="pi pi-clone" aria-hidden="true"></i>
             <div>
               <strong
-                >{{ dataStore.fileInfo.ndim || dataStore.fileInfo.shape?.length }}-D dataset
+                >{{ dataStore.fileInfo?.ndim || dataStore.fileInfo?.shape?.length }}-D dataset
                 retained</strong
               >
               <p>
@@ -239,6 +239,14 @@
               <h4>Sample details</h4>
             </div>
           </div>
+          <section v-if="selectionSummary" class="collection-sample-table" aria-label="Collection sample table">
+            <div class="collection-sample-table-header"><h5 class="panel-title">Sample metadata</h5><Tag :value="`${selectionSummary.samples.length} groups`" severity="info" /></div>
+            <div class="collection-sample-table-scroll"><table>
+              <thead><tr><th v-for="column in selectionSummary.columns" :key="column">{{ column }}</th></tr></thead>
+              <tbody><tr v-for="(row, index) in selectionSummary.samples" :key="index"><td v-for="column in selectionSummary.columns" :key="column">{{ row[column] }}</td></tr></tbody>
+            </table></div>
+          </section>
+          <template v-else-if="dataStore.fileInfo">
           <DatasetAnalysisReadinessCard
             v-if="displayedAnalysisReadiness"
             :readiness="displayedAnalysisReadiness"
@@ -453,6 +461,7 @@
               @click="sampleLabelsExpanded = !sampleLabelsExpanded"
             />
           </div>
+          </template>
         </section>
 
         <section class="dataset-step" aria-label="Dataset metadata and quality">
@@ -460,6 +469,12 @@
             <span class="essential-card-number">4</span>
             <h4 class="panel-title">Dataset metadata and quality</h4>
           </div>
+          <div v-if="selectionSummary" class="dataset-summary-grid"><div class="metadata-table">
+            <div v-for="fact in selectionSummary.metadata" :key="fact.label" class="meta-row">
+              <span class="meta-key">{{ fact.label }}</span><span class="meta-val" :title="fact.detail || fact.value">{{ fact.value }}</span>
+            </div>
+          </div></div>
+          <template v-else-if="dataStore.fileInfo">
           <div v-if="boxPlotData.length" class="explore-table">
             <div class="table-summary">
               <Tag value="Properties" severity="info" />
@@ -505,6 +520,7 @@
               :show-header="false"
             />
           </div>
+          </template>
         </section>
 
         <section class="dataset-step" aria-label="Save dataset">
@@ -517,7 +533,7 @@
           <slot name="portfolio-definitions" />
         </section>
 
-        <details class="technical-details">
+        <details v-if="!selectionSummary" class="technical-details">
           <summary>
             <i class="pi pi-shield" aria-hidden="true"></i> Technical details and provenance
           </summary>
@@ -638,6 +654,7 @@
 </template>
 
 <script setup lang="ts">
+import type { DatasetSelectionSummary } from "@/utils/datasetSelectionSummary";
 import { useScopedRequest } from "@/composables/useScopedRequest";
 import { useDatasetReadinessPreview } from "./composables/useDatasetReadinessPreview";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
@@ -712,6 +729,7 @@ function clearSampleTableSaveError(): void {
 
 const props = withDefaults(
   defineProps<{
+    selectionSummary?: DatasetSelectionSummary | null;
     scopeKey?: string;
     activeDatasetName?: string | null;
     selectedFileCount?: number | null;
@@ -871,7 +889,9 @@ const xUnitsOptions = computed(() => {
   return [];
 });
 
+const reviewFileNames = computed(() => props.selectionSummary?.files ?? props.selectedFileNames);
 const contentsFileCount = computed(() => {
+  if (props.selectionSummary) return props.selectionSummary.files?.length ?? 0;
   if (props.selectedFileCount != null) return props.selectedFileCount;
   const metadata = dataStore.fileInfo?.metadata as Record<string, unknown> | undefined;
   const count = metadata?.contents_file_count;
@@ -926,6 +946,7 @@ function formatAxisCoordinate(value: unknown): string {
 }
 
 const acquisitionSettings = computed<AcquisitionSetting[]>(() => {
+  if (props.selectionSummary) return props.selectionSummary.acquisition;
   const fileInfo = dataStore.fileInfo;
   if (!fileInfo) return [];
   const metadata = isRecord(fileInfo.metadata) ? fileInfo.metadata : {};

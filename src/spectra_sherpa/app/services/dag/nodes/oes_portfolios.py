@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 from importlib.resources import files
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import h5py
 import numpy as np
@@ -97,13 +99,14 @@ class PortfolioAverageNode(Node):
         label="Average · Portfolio",
         description=(
             "Stream equally weighted acquisitions by step, phase across cycles, or cycle and phase; "
-            "wafers remain independent."
+            "choose mean or per-wavelength median. Wafers remain independent."
         ),
         parameters=PIN
         + [
             NodeParameter(
                 "mode", "Average by", "select", default="step", options=["step", "phase_across_cycles", "cycle_phase"]
             ),
+            NodeParameter("statistic", "Statistic", "select", default="mean", options=["mean", "median"]),
             NodeParameter("transition_trim_seconds", "Trim each phase boundary (s)", "number", default=0, min_value=0),
         ],
         input_types=["Any"],
@@ -122,6 +125,7 @@ class PortfolioAverageNode(Node):
         if receipt.sha256() != pin["selection_sha256"]:
             raise ValueError("Portfolio changed")
         params = AveragingParameters(
+            statistic=self.parameters.get("statistic", "mean"),
             mode=self.parameters.get("mode", "step"),
             transition_trim_seconds=self.parameters.get("transition_trim_seconds", 0),
         )
@@ -172,7 +176,14 @@ class PortfolioAverageNode(Node):
                 sums = {}
                 counts = {}
                 times = {}
-                with h5py.File(resolved[0], "r", rdcc_nbytes=64 * 1024 * 1024) as source:
+                # Exact median cannot be computed from batch medians. Retain encoded
+                # values on temporary disk, then decode bounded wavelength blocks.
+                spool_paths = {}
+                spool_bytes = 0
+                with (
+                    TemporaryDirectory(prefix="sherpa-portfolio-median-") as scratch,
+                    h5py.File(resolved[0], "r", rdcc_nbytes=64 * 1024 * 1024) as source,
+                ):
                     group = source[partition.asset_id]
                     encoded_data = group["data"]
                     clock_data = group["times"]
@@ -186,6 +197,7 @@ class PortfolioAverageNode(Node):
                             sums[key] = np.zeros(template.n_features)
                             counts[key] = 0
                             times[key] = []
+                            spool_paths[key] = Path(scratch) / str(len(spool_paths))
                         clock = np.asarray(clock_data[batch], dtype=float)
                         keep = np.ones(len(clock), dtype=bool)
                         if params.transition_trim_seconds:
@@ -199,13 +211,47 @@ class PortfolioAverageNode(Node):
                         if not np.isfinite(values).all():
                             raise ValueError("Averaging requires finite decoded intensities")
                         if len(values):
-                            sums[key] += values.sum(axis=0)
+                            if params.statistic == "median":
+                                spool_bytes += encoded.nbytes
+                                if spool_bytes > 512 * 1024 * 1024:
+                                    raise ValueError(
+                                        "Median temporary storage exceeds 512 MiB per wafer; partition the selection"
+                                    )
+                                with spool_paths[key].open("ab") as stream:
+                                    encoded.tofile(stream)
+                            else:
+                                sums[key] += values.sum(axis=0)
                             counts[key] += len(values)
                             times[key].extend([float(clock[keep][0]), float(clock[keep][-1])])
                     for key, total in sums.items():
                         if not counts[key]:
                             raise ValueError("Transition trim removed an entire averaging unit")
-                        means.append(total / counts[key])
+                        if params.statistic == "median":
+                            # Keep each decoded block at most 16 MiB, leaving room
+                            # for NumPy's exact order-statistic workspace.
+                            block_columns = (16 * 1024 * 1024) // (counts[key] * 8)
+                            if block_columns < 1:
+                                raise ValueError(
+                                    "Median group exceeds the bounded column workspace; partition the selection"
+                                )
+                            encoded_rows = np.memmap(
+                                spool_paths[key],
+                                mode="r",
+                                dtype=encoded_data.dtype,
+                                shape=(counts[key], template.n_features),
+                            )
+                            reduced = np.empty(template.n_features)
+                            try:
+                                for first in range(0, template.n_features, block_columns):
+                                    last = min(template.n_features, first + block_columns)
+                                    block = np.asarray(decoder[encoded_rows[:, first:last]], dtype=float)
+                                    reduced[first:last] = np.median(block, axis=0, overwrite_input=True)
+                            finally:
+                                encoded_rows._mmap.close()
+                            spool_paths[key].unlink()
+                            means.append(reduced)
+                        else:
+                            means.append(total / counts[key])
                         rows.append(
                             {
                                 "sample_id": hashlib.sha256(
@@ -217,6 +263,7 @@ class PortfolioAverageNode(Node):
                                 "phase": key[-1] if params.mode.value != "step" else "all",
                                 "cycle": key[-2] if params.mode.value == "cycle_phase" else None,
                                 "acquisition_count": counts[key],
+                                "statistic": params.statistic,
                                 "start_time": min(times[key]),
                                 "end_time": max(times[key]),
                                 "source_sha256": partition.source_sha256,
@@ -235,7 +282,7 @@ class PortfolioAverageNode(Node):
                 sample_table={key: [row[key] for row in rows] for key in rows[0]},
             ),
             data_role="X_spectra",
-            title="Portfolio averages",
+            title=f"Portfolio {params.statistic} spectra",
             domain=template.domain.model_copy(deep=True),
             units=template.units,
         )
@@ -312,7 +359,9 @@ class WidePeakTableNode(Node):
                 columns.append(out)
                 names.append(
                     " | ".join(
-                        f"{k}={table[k][sample]}" for k in ("date", "wafer", "step", "phase", "cycle") if k in table
+                        f"{k}={table[k][sample]}"
+                        for k in ("date", "wafer", "step", "phase", "cycle", "statistic")
+                        if k in table
                     )
                     + f" | id={identity}"
                 )
@@ -471,7 +520,7 @@ class PartitionedPeaksNode(Node):
         category="exploratory",
         label="Find peaks · Partitioned",
         description=(
-            "Run canonical peak detection in bounded batches; " "combine observations with explicit reference peaks."
+            "Run canonical peak detection in bounded batches; combine observations with explicit reference peaks."
         ),
         parameters=_Detector.metadata.parameters
         + [

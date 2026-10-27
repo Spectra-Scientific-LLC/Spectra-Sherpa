@@ -36,6 +36,10 @@ def process_and_spectra():
 def test_phase_alignment_labels_by_gas_and_keeps_uncertain_edges():
     ot, signal, process = process_and_spectra()
     labels, alignment = phase_projection(ot, signal, process)
+    receipt_labels, receipt_alignment = phase_projection(ot, signal, process, retain_cycle_membership=True)
+    # Asking for cycle identity must never broaden the selected gas phase at switches.
+    np.testing.assert_array_equal(receipt_labels, labels)
+    assert len(receipt_alignment["cycle_indices"]) == len(labels)
     assert alignment["correlation"] > 0.95
     assert abs(alignment["process_time_at_first_oes_s"] - 80) < 0.25
     assert alignment["chemical_mapping_confirmed"] is False

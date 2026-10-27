@@ -180,6 +180,19 @@ describe("DataContentsPanel", () => {
     resetDataStore();
   });
 
+  it("keeps Active dataset and portfolio actions visible for partitioned sources without decoding a matrix", () => {
+    const wrapper = mount(DataContentsPanel, {
+      props: { selectionSummary: {files:["Day_01.nc"], acquisition: [{label:"Technique",value:"OES"}], columns:["Group"], samples:[{Group:"Four full time-series groups"}], metadata:[{label:"Acquisitions",value:"400"}]}, activeDatasetName: "Etch days" },
+      slots: { "partitioned-selection": "Four full time-series groups", "portfolio-definitions": '<button>Save portfolio</button>' },
+    });
+    expect(wrapper.get('.focused-dataset-details summary').text()).toBe('Active dataset: Etch days');
+    expect(wrapper.text()).toContain('Four full time-series groups');
+    expect(wrapper.text()).toContain('Save portfolio');
+    expect(wrapper.text()).not.toContain('No contents selected');
+    expect(wrapper.findAll(".dataset-step").map(s => s.attributes("aria-label"))).toEqual(["Loaded files", "Acquisition settings", "Sample details", "Dataset metadata and quality", "Save dataset"]);
+    wrapper.unmount();
+  });
+
   it("keeps source, sample correction, quality and portfolio actions in the active dataset sequence", () => {
     mocks.dataStore.fileInfo = {
       n_samples: 3,

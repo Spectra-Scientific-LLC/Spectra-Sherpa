@@ -95,6 +95,7 @@ class AveragingParameters(FrozenContract):
     """Explicit downstream operation, deliberately outside the source receipt."""
 
     mode: AveragingMode
+    statistic: Literal["mean", "median"] = "mean"
     weighting: Literal["equal_acquisition"] = "equal_acquisition"
     transition_trim_seconds: float = Field(default=0, ge=0, allow_inf_nan=False)
 

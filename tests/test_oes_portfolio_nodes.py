@@ -18,8 +18,9 @@ from spectra_sherpa.core.time_series_portfolio import AcquisitionInterval, StepP
 from tests.test_bosch_netcdf import files as native_files
 
 
+@pytest.mark.parametrize("statistic", ["mean", "median"])
 @pytest.mark.asyncio
-async def test_streamed_three_modes_equal_acquisition_weights_and_independent_wafers(tmp_path):
+async def test_streamed_three_modes_equal_acquisition_weights_and_independent_wafers(tmp_path, statistic):
     path, _, codes, _, _ = native_files(tmp_path)
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     intervals = (
@@ -63,15 +64,20 @@ async def test_streamed_three_modes_equal_acquisition_weights_and_independent_wa
     with h5py.File(str(files("spectra_sherpa").joinpath("data", "bosch_netcdf", "Dictionary_OES.nc"))) as f:
         expected = f["data"][:][codes]
     for mode, count in [("step", 2), ("phase_across_cycles", 4), ("cycle_phase", 6)]:
-        node = PortfolioAverageNode("average", pin | dict(mode=mode))
+        node = PortfolioAverageNode("average", pin | dict(mode=mode, statistic=statistic))
         node.bind_execution_runtime(runtime)
         result = (await node.execute(default=descriptor)).outputs["default"]
         assert result.shape == (count, 3)
         assert len(set(result.sample_axis.sample_table["sample_id"])) == count
         if mode == "step":
-            np.testing.assert_allclose(result.X[0], expected.mean(axis=0))
+            np.testing.assert_allclose(
+                result.X[0], (np.median(expected, axis=0) if statistic == "median" else expected.mean(axis=0))
+            )
         if mode == "phase_across_cycles":
-            np.testing.assert_allclose(result.X[0], expected[[0, 1, 3]].mean(axis=0))
+            np.testing.assert_allclose(
+                result.X[0],
+                (np.median(expected[[0, 1, 3]], axis=0) if statistic == "median" else expected[[0, 1, 3]].mean(axis=0)),
+            )
     # Exercise the same canonical graph as the GUI, including retained export bytes.
     import csv
     import io
@@ -82,7 +88,7 @@ async def test_streamed_three_modes_equal_acquisition_weights_and_independent_wa
         graph = DAGExecutor(runtime=runtime)
         nodes = [
             ("load", "data.portfolio_load", pin),
-            ("average", "preprocess.portfolio_average", pin | {"mode": mode}),
+            ("average", "preprocess.portfolio_average", pin | {"mode": mode, "statistic": statistic}),
             ("smooth", "preprocess.smooth", {"method": "savitzky_golay", "size": 3, "order": 1}),
             ("normalize", "preprocess.normalize", {}),
             ("peaks", "analysis.partitioned_peaks", {"reference_positions": ["500"], "matching_tolerance": 1}),

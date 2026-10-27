@@ -300,6 +300,24 @@ describe("QuickPlotModal", () => {
     wrapper.unmount();
   });
 
+  it.each([false, true])("plots reduced spectra without a matrix comparison for a partitioned source (wrapped=%s)", (wrapped) => {
+    const source = { schema_version: "spectrasherpa-partitioned-source/1", project_id: 6, portfolio_id: 5, selection_sha256: "a".repeat(64) };
+    const wrapper = mount(QuickPlotModal, {
+      props: { modelValue: true, nodeType: "preprocess.portfolio_average", nodeLabel: "Average · Portfolio",
+        nodeInputs: { default: wrapped ? { value: source } : source },
+        nodeOutput: { data: [[1, 2], [3, 4]], metadata: {
+          scientific_presentation: scientificPresentation("spectral_dataset"),
+          wavenumbers: [510, 511], sample_labels: ["Aug 5 · Wafer 01 · etch", "Aug 7 · Wafer 02 · etch"],
+        } } }, global: { stubs: globalStubs },
+    });
+    const vm = wrapper.vm as any;
+    expect(wrapper.text()).not.toContain("Comparison unavailable");
+    expect(vm.displayPlotData.map((trace: any) => trace.y)).toEqual([[1, 2], [3, 4]]);
+    expect(vm.displayPlotData.map((trace: any) => trace.name)).toEqual(["Aug 5 · Wafer 01 · etch", "Aug 7 · Wafer 02 · etch"]);
+    expect(vm.displayPlotData.every((trace: any) => trace.xaxis !== "x2")).toBe(true);
+    wrapper.unmount();
+  });
+
   it("does not substitute reference data or output for an unavailable immediate X input", async () => {
     const wrapper = mount(QuickPlotModal, { props: { modelValue: true, nodeType: "preprocess.align", nodeLabel: "Align",
       nodeInput: { data: [[999]] }, nodeInputs: { X: null, reference: { data: [[999]] } },

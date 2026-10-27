@@ -609,6 +609,7 @@ No input ports (source node).
 | <code>portfolio_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
 | <code>selection_sha256</code> | <code>text</code> | <code>true</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
 | <code>mode</code> | <code>select</code> | <code>true</code> | <code>&quot;step&quot;</code> | <code>[&quot;step&quot;, &quot;phase_across_cycles&quot;, &quot;cycle_phase&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+| <code>statistic</code> | <code>select</code> | <code>true</code> | <code>&quot;mean&quot;</code> | <code>[&quot;mean&quot;, &quot;median&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
 | <code>transition_trim_seconds</code> | <code>number</code> | <code>true</code> | <code>0</code> | — | <code>{&quot;min_value&quot;: 0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
 
 ### Bilinear Mixture (`synthesis.blend`)
