@@ -25,6 +25,28 @@ def redact_message(message: str) -> str:
     return message
 
 
+class AccessPathFilter(logging.Filter):
+    """Keep HTTP access diagnostics without recording query-string credentials.
+
+    Uvicorn's access formatter consumes this five-element tuple itself. Keep
+    its shape (and status/method/path) rather than flattening the log message.
+    This also covers Gunicorn's Uvicorn worker, which uses uvicorn.access.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and len(record.args) == 5:
+            address, method, target, version, status = record.args
+            if isinstance(target, str):
+                record.args = (address, method, target.partition("?")[0], version, status)
+        return True
+
+
+def configure_access_logging() -> None:
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(item, AccessPathFilter) for item in access_logger.filters):
+        access_logger.addFilter(AccessPathFilter())
+
+
 class BufferHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -50,6 +72,7 @@ def configure_logging(level: int = logging.INFO) -> None:
     # formatters that reference ``%(request_id)s`` always find the
     # attribute even for records that propagate up from child loggers.
     install_request_id_log_factory()
+    configure_access_logging()
 
     root_logger = logging.getLogger()
     root_logger.setLevel(level)

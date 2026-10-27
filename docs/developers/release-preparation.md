@@ -42,5 +42,9 @@ Obtain explicit maintainer approval before tagging or publishing. PyPI
 publication does not imply a native installer is available; desktop packaging
 has its own authorization and qualification gates.
 
+The private release map is a publication receipt, not a preparation checklist.
+Its new entry is written by the publication workflow only after the exact public
+and upstream revisions exist. Do not invent a 0.6.4 entry during release prep.
+
 See [Testing and release](testing-release.md) and
 [Repository governance](repository-governance.md).
