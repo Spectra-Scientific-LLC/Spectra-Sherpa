@@ -82,6 +82,15 @@ retries; the fence is not a claim that deletion finished. Imports allocate a new
 identity rather than reusing a reserved identity. Referenced paths and recovery
 backups remain protected. Never delete lock files or revocation markers manually.
 
+**Known retention limit:** each reclaimed identity leaves its lock/fence files,
+including after normal temporary-trial cleanup and account erasure. These small
+files currently accumulate in one directory. Bounded fence compaction is a
+follow-up; a missing database tombstone alone cannot authorize removal because
+a disconnected or paused writer may still hold that identity. A safe compactor
+must prove all writers for a retired ownership epoch are stopped and preserve
+the same protection across recovery snapshots. Until that protocol is qualified,
+retain the markers and include their inode usage in storage capacity monitoring.
+
 Hosted account-erasure plans also retain publication identities. Completion
 joins any surviving file writer and fences its identity before reporting the
 workspace erased; losing a database connection does not prove a writer stopped.

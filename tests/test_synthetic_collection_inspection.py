@@ -165,15 +165,60 @@ def test_selected_response_unit_is_not_borrowed_by_other_columns(monkeypatch):
     assert "Water" in table["columns"]
 
 
-def test_response_width_refuses_before_scalar_conversion(monkeypatch):
+def test_response_width_omits_optional_values_before_scalar_conversion(monkeypatch):
     _admit_collection(monkeypatch)
     dataset = load_synthetic_reference_as_sherpa("Synthetic_atmospheric-6")
     monkeypatch.setattr(datasets, "_COLLECTION_SAMPLE_TABLE_MAX_COLUMNS", 6)
 
-    def unexpected_scalar(_):
-        pytest.fail("over-wide response must refuse before converting cells")
+    original = datasets._sample_table_scalar
 
-    monkeypatch.setattr(datasets, "_sample_table_scalar", unexpected_scalar)
+    def identity_only_scalar(value):
+        assert isinstance(value, str), "over-wide optional response must not convert numeric cells"
+        return original(value)
+
+    monkeypatch.setattr(datasets, "_sample_table_scalar", identity_only_scalar)
+    table = datasets._complete_collection_sample_table(dataset)
+    assert table["columns"] == ["sample_id"]
+    assert table["sample_table"]["sample_id"] == dataset.sample_axis.labels
+    assert "6-column inspection limit" in table["response_projection_warnings"][0]
+
+
+@pytest.mark.parametrize("annotation_count,omitted", [(57, False), (58, True), (63, True)])
+def test_response_width_preserves_complete_annotations_at_real_column_boundary(monkeypatch, annotation_count, omitted):
+    _admit_collection(monkeypatch)
+    dataset = load_synthetic_reference_as_sherpa("Synthetic_atmospheric-6")
+    annotations = {f"annotation_{index}": [index] * 50 for index in range(annotation_count)}
+    axis = dataset.sample_axis
+    axis.sample_table = annotations
+    dataset.sample_axis = axis
+    before = dataset.scientific_digest
+
+    table = datasets._complete_collection_sample_table(dataset)
+
+    assert table["complete"] is True
+    assert table["sample_table"]["sample_id"] == dataset.sample_axis.labels
+    assert all(table["sample_table"][name] == values for name, values in annotations.items())
+    if omitted:
+        assert table["columns"] == ["sample_id", *annotations]
+        assert "64-column inspection limit" in table["response_projection_warnings"][0]
+        assert not table.get("column_units")
+    else:
+        assert len(table["columns"]) == 64
+        assert not table.get("response_projection_warnings")
+        for index, name in enumerate(dataset.target_context.target_names):
+            np.testing.assert_array_equal(table["sample_table"][name], dataset.target[:, index])
+            assert table["column_units"][name] == "ppm"
+    assert dataset.scientific_digest == before
+    assert dataset.sample_axis.sample_table == annotations
+
+
+def test_overwide_retained_table_still_refuses(monkeypatch):
+    _admit_collection(monkeypatch)
+    dataset = load_synthetic_reference_as_sherpa("Synthetic_atmospheric-6")
+    axis = dataset.sample_axis
+    axis.sample_table = {f"annotation_{index}": [index] * 50 for index in range(6)}
+    dataset.sample_axis = axis
+    monkeypatch.setattr(datasets, "_COLLECTION_SAMPLE_TABLE_MAX_COLUMNS", 6)
     with pytest.raises(ValueError, match="1-6 columns"):
         datasets._complete_collection_sample_table(dataset)
 

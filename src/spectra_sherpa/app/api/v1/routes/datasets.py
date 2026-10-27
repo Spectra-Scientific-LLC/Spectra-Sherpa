@@ -399,7 +399,11 @@ def _complete_collection_sample_table(dataset) -> dict[str, object]:
             response_warnings.append("Native responses unavailable: rows and declared column names do not match.")
             names = []
         if len(set(table).union(names)) > _COLLECTION_SAMPLE_TABLE_MAX_COLUMNS:
-            raise ValueError(f"collection sample table must contain 1-{_COLLECTION_SAMPLE_TABLE_MAX_COLUMNS} columns")
+            response_warnings.append(
+                "Native responses unavailable: adding them would exceed the "
+                f"{_COLLECTION_SAMPLE_TABLE_MAX_COLUMNS}-column inspection limit."
+            )
+            names = []
         for index, name in enumerate(names):
             values = target[:, index]
             if values.dtype.kind not in "fiu" or np.isinf(values).any():
