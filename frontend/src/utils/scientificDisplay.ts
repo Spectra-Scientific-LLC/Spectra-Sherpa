@@ -40,6 +40,9 @@ export function formatMeasurement(value: unknown, decimals: number): string {
     if (!Number.isFinite(value)) return "";
     if (Number.isInteger(value) && decimals === 0) return String(value);
     const text = value.toFixed(decimals);
+    // A common column scale must not turn a small nonzero measurement or
+    // residual into an apparent exact zero. Retained/exported values are untouched.
+    if (value !== 0 && Number(text) === 0) return value.toExponential(3);
     return /^-0(\.0*)?$/.test(text) ? text.slice(1) : text;
   }
   if (typeof value === "boolean") return value ? "Yes" : "No";

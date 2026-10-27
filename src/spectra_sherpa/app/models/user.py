@@ -30,6 +30,9 @@ class User(Base):
     """
 
     __tablename__ = "user"
+    # A delayed request must never acquire a replacement principal merely
+    # because SQLite reused the deleted highest ROWID.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)

@@ -36,4 +36,11 @@ A common FTIR/Raman starting point is:
 
 ## Leakage Awareness
 
-Some preprocessing choices are harmless for exploration but risky for validation if fitted using all samples. When validating calibration performance, prefer split-aware workflows and treat metrics as optimistic when preprocessing was fit on the full matrix before cross-validation.
+Sample-wise Normalize (SNV, max, area or min–max) may precede a split with fixed
+settings. Scale / Center learns column statistics: split first, fit on training
+rows and apply the same fitted state to test rows. Within CV, fit inside each
+training fold. Whole-cohort fitting can bias validation in either direction;
+it does not prove that a particular score is optimistic.
+
+See [Scientific References: Preprocessing and Validation](../scientific-references/preprocessing-validation.md)
+for examples, limitations, the published evidence and contract **PREPROCESS-SCOPE-1**.

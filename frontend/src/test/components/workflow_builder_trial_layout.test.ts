@@ -1,6 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, h, nextTick, onUnmounted, reactive } from "vue";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { WorkflowValidationError } from "@/utils/errors";
 import {
   dataSelectionReceiptStorageKey,
   storeDataSelectionReceipt,
@@ -66,7 +67,7 @@ const workflowStore = reactive({
   workflowId: 101,
   workflowName: "PCA Sheet",
   workflowHash: null,
-  workflowWarnings: [],
+  workflowWarnings: [] as string[],
   hasFoldValidationPlan: false,
   hasUnsavedChanges: false,
   isWorkflowStale: false,
@@ -249,6 +250,7 @@ const WorkflowToolbarStub = defineComponent({
   },
 });
 
+const inspectorExecute = vi.fn();
 const WorkflowInspectorStub = defineComponent({
   name: "WorkflowInspector",
   props: {
@@ -256,7 +258,8 @@ const WorkflowInspectorStub = defineComponent({
     executionDisabledReason: { type: String, default: "" },
   },
   emits: ["open-trial", "close"],
-  setup(props, { attrs }) {
+  setup(props, { attrs, expose }) {
+    expose({ executeNode: inspectorExecute });
     onUnmounted(() => {
       lifecycleCounts.inspectorUnmounts += 1;
     });
@@ -326,6 +329,46 @@ async function mountBuilder() {
 }
 
 describe("WorkflowBuilderContent trial/detail layout", () => {
+  it("notifies a preflight refusal once, without a second Execution Failed toast", async () => {
+    workbookStore.activeIndex = 0;
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    toastAdd.mockClear();
+    const message = "Scale / Center: fit after Train/Test Split, using training rows only.";
+    workflowStore.executeWorkflow.mockImplementationOnce(async () => {
+      workflowStore.workflowWarnings = [message];
+      await nextTick();
+      throw new WorkflowValidationError([message]);
+    });
+    await wrapper.findAll("button").find(button => button.text() === "Run")!.trigger("click");
+    await flushPromises();
+    expect(toastAdd).toHaveBeenCalledTimes(1);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+      summary: "Workflow needs attention", severity: "warn", detail: message,
+    }));
+    wrapper.unmount();
+  });
+
+  it("sends new warnings to notifications once without inserting header prose", async () => {
+    workbookStore.activeIndex = 0;
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    toastAdd.mockClear();
+    workflowStore.workflowWarnings = ["Input Spectra is not connected"];
+    await nextTick();
+    expect(wrapper.find('[aria-label="Workflow warnings"]').exists()).toBe(false);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: "warn", detail: "Input Spectra is not connected" }));
+    toastAdd.mockClear();
+    workflowStore.workflowWarnings = ["Input Spectra is not connected"];
+    await nextTick();
+    expect(toastAdd).not.toHaveBeenCalled();
+    workflowStore.workflowWarnings = [];
+    await nextTick();
+    workflowStore.workflowWarnings = ["Input Spectra is not connected"];
+    await nextTick();
+    expect(toastAdd).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
   it("shows an interrupted load instead of an empty successful workbook", async () => {
     workbookStore.activeIndex = 0;
     workbookStore.loadSheets.mockImplementationOnce(async () => { workbookStore.projectId = null as unknown as number; });
@@ -373,6 +416,25 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
       wrapper.unmount();
     }
   });
+  it("routes the canvas Run Node command through the selected Inspector's validation", async () => {
+    workbookStore.activeIndex = 0;
+    workflowStore.nodes = [{ id: "pca_1", type: "model.pca", x: 0, y: 0, params: { n_components: 3 } }];
+    const wrapper = await mountBuilder();
+    try {
+      await flushPromises();
+      inspectorExecute.mockClear();
+      workflowStore.executeNode.mockClear();
+      wrapper.getComponent({ name: "WorkflowCanvas" }).vm.$emit("run-node", "pca_1");
+      await flushPromises();
+      expect(inspectorExecute).toHaveBeenCalledOnce();
+      expect(workflowStore.executeNode).not.toHaveBeenCalled();
+      wrapper.getComponent({ name: "WorkflowCanvas" }).vm.$emit("run-node", "missing-node");
+      await flushPromises();
+      expect(inspectorExecute).toHaveBeenCalledOnce();
+    } finally {
+      wrapper.unmount();
+    }
+  });
   // Compile the builder once up front: its cold transform takes seconds and
   // otherwise counts against the first test's timeout under a loaded run.
   beforeAll(async () => {
@@ -395,6 +457,8 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     confirmAction.mockReset();
     confirmAction.mockResolvedValue(false);
     workflowStore.workflowId = 101;
+    workflowStore.workflowWarnings = [];
+    toastAdd.mockClear();
     workflowStore.workflowHash = null;
     workflowStore.hasUnsavedChanges = false;
     workflowStore.hasFoldValidationPlan = false;

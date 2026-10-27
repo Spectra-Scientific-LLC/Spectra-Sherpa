@@ -8,6 +8,19 @@ import {
 } from "@/utils/idempotency";
 
 describe("newIdempotencyKey", () => {
+  it.each([0, 0.25, 0.5, 0.75])("encodes every insecure-context variant as hex (%s)", (random) => {
+    vi.stubGlobal("crypto", {});
+    const draw = vi.spyOn(Math, "random").mockReturnValue(random);
+    try {
+      expect(newIdempotencyKey()).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+    } finally {
+      draw.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("produces RFC-4122 v4 shaped strings", () => {
     const key = newIdempotencyKey();
     expect(key).toMatch(

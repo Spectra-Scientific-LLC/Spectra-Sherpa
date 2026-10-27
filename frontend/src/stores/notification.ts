@@ -1,5 +1,7 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { useAuthStore } from "./auth";
+import { newIdempotencyKey } from "@/utils/idempotency";
 
 export interface AppNotification {
   id: string;
@@ -23,6 +25,10 @@ const DEDUPE_WINDOW_MS = 5000;
 
 export const useNotificationStore = defineStore("notification", () => {
   const notifications = ref<AppNotification[]>([]);
+  const auth = useAuthStore();
+  watch([() => auth.user?.id, () => auth.sessionRevision], () => {
+    notifications.value = [];
+  }, { flush: "sync" });
 
   const unreadCount = computed(
     () => notifications.value.filter((n) => n.readAt === null).length
@@ -72,7 +78,7 @@ export const useNotificationStore = defineStore("notification", () => {
 
     const notification: AppNotification = {
       ...input,
-      id: crypto.randomUUID(),
+      id: newIdempotencyKey(),
       timestamp: now,
       readAt: null,
     };

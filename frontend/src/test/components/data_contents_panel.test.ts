@@ -502,6 +502,39 @@ describe("DataContentsPanel", () => {
     wrapper.unmount();
   });
 
+  it("never applies source-row file selection to strided bounded-preview IDs", async () => {
+    // Six source rows from two files; the server returns every second row.
+    const ids = Array.from({ length: 6 }, (_, index) => `row-${index}`);
+    const members = ["source-1.spa", "source-1.spa", "source-1.spa", "source-2.spa", "source-2.spa", "source-2.spa"]
+      .map(source_file => ({ metadata: { source_file } }));
+    const inclusion = { loading: false, rows: ids.map(sampleId => ({ sampleId, included: true, editable: true })) };
+    mocks.dataStore.fileInfo = { n_samples: 6, n_features: 1, data: [[1], [3], [5]],
+      y_axis: { labels: ["display 1", "display 3", "display 5"], sample_table: { target: [1, 3, 5] } },
+      metadata: { source_collection: sourceCollection(2), curation_sample_ids: ids, source_member_metadata: members,
+        preview_shape: [3, 1], sample_stride: 2, api_serialization: { mode: "bounded_preview" } },
+    };
+    const bounded = mount(DataContentsPanel, { props: { sampleInclusionEnabled: true, sampleInclusion: inclusion,
+      selectedFileNames: ["raw/source-2.spa"] } });
+    const strided = bounded.get("[aria-label='Collection sample table']").findAll('input[type="checkbox"]');
+    expect(strided.map(item => item.attributes("aria-label")))
+      .toEqual(["Include sample row-0", "Include sample row-2", "Include sample row-4"]);
+    bounded.unmount();
+
+    // A complete response may be narrowed: positions then are source rows.
+    mocks.dataStore.fileInfo = { n_samples: 6, n_features: 1, data: ids.map((_, index) => [index]),
+      y_axis: { labels: ids.map(id => `display ${id}`), sample_table: { target: [0, 1, 2, 3, 4, 5] } },
+      metadata: { source_collection: sourceCollection(2), curation_sample_ids: ids, source_member_metadata: members },
+    };
+    const complete = mount(DataContentsPanel, { props: { sampleInclusionEnabled: true, sampleInclusion: inclusion,
+      selectedFileNames: ["raw/source-2.spa"] } });
+    const narrowed = complete.get("[aria-label='Collection sample table']").findAll('input[type="checkbox"]');
+    expect(narrowed.map(item => item.attributes("aria-label")))
+      .toEqual(["Include sample row-3", "Include sample row-4", "Include sample row-5"]);
+    await narrowed[0].setValue(false);
+    expect(complete.emitted("toggleSample")?.at(-1)).toEqual(["row-3"]);
+    complete.unmount();
+  });
+
   it("keeps later sample metadata rows available on the next page", async () => {
     const labels = Array.from({ length: 301 }, (_, i) => `sample-${i + 1}`);
     mocks.dataStore.fileInfo = {

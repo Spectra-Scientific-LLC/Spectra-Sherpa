@@ -146,7 +146,7 @@ describe('WorkflowCanvas Selection & Multi-Drag', () => {
     expect(wrapper.find('.rubber-band').exists()).toBe(true);
 
     // Move over nodes (0,0) to (500,500)
-    await wrapper.trigger('mousemove', { clientX: 500, clientY: 500 });
+    await wrapper.trigger('mousemove', { clientX: 500, clientY: 500, buttons: 1 });
     
     // Finish drag
     await wrapper.trigger('mouseup');
@@ -168,7 +168,7 @@ describe('WorkflowCanvas Selection & Multi-Drag', () => {
     await nodes[1].trigger('mousedown', { clientX: 300, clientY: 100, shiftKey: true });
 
     await nodes[0].trigger('mousedown', { clientX: 100, clientY: 100 });
-    await wrapper.trigger('mousemove', { clientX: 140, clientY: 130 });
+    await wrapper.trigger('mousemove', { clientX: 140, clientY: 130, buttons: 1 });
 
     const emitted = wrapper.emitted('update:nodes');
     expect(emitted).toBeTruthy();

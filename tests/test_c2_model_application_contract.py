@@ -71,6 +71,7 @@ def test_saved_model_application_has_one_exact_local_contract() -> None:
         "spectra_sherpa.app.services.dag.classification_application",
         "spectra_sherpa.app.services.dag.nodes.classification.plsda_state",
         "spectra_sherpa.app.services.dag.nodes.modeling.load_apply_node",
+        "spectra_sherpa.app.services.dag.nodes.modeling.pca_nodes",
         "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
         "spectra_sherpa.app.services.dag.nodes.preprocessing._shared",
         "spectra_sherpa.app.services.dag.nodes.preprocessing.derivative_node",

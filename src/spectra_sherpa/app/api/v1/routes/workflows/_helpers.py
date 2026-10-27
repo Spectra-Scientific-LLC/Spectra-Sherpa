@@ -764,6 +764,13 @@ async def _auto_persist_run(
     Either mode emits the same audit event and returns the row id.
     """
     try:
+        from spectra_sherpa.app.services.storage_custody import await_file_writer, lock_storage_owner
+
+        # Execution releases its admission transaction while computing. Before
+        # publishing any plaintext or durable artifact, rejoin account custody:
+        # erasure must either wait for this publication or finish first and
+        # cause this stale writer to refuse without recreating a directory.
+        await lock_storage_owner(session, user_id)
         # Dedup produced artifacts while preserving order — a single workflow run may
         # save the same artifact_uid twice (e.g. the same model registered
         # from two ports) which would otherwise inflate audit counts and
@@ -840,7 +847,9 @@ async def _auto_persist_run(
                         unavailable_reason=review_unavailable_reason,
                     ),
                 }
-            evidence = await to_thread(retain_run_outputs, user_id, retained_outputs, diagnostics_for_retention or {})
+            evidence = await await_file_writer(
+                retain_run_outputs, user_id, retained_outputs, diagnostics_for_retention or {}
+            )
             logger.info(
                 "workflow_retention_timing workflow=%s seconds=%.3f", workflow_id, perf_counter() - retention_started
             )

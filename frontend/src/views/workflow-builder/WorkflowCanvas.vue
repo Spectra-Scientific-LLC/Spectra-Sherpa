@@ -4,7 +4,6 @@
     class="workflow-canvas"
     @mousemove="handleMouseMove"
     @mouseup="handleCanvasMouseUp"
-    @mouseleave="handleCanvasMouseUp"
     @mousedown="handleCanvasMouseDown"
     @contextmenu="handleCanvasContextMenu"
   >
@@ -215,6 +214,11 @@
             v-for="(port, idx) in getNodeInputPorts(node.type)"
             :key="`input-${port.name}`"
             class="port port-input"
+            role="button"
+            tabindex="0"
+            :aria-label="`${node.label || getNodeLabel(node.type)}: ${port.label} input`"
+            :data-node-id="node.id"
+            :data-port-name="port.name"
             :class="{
               'port-compatible': isConnecting && isPortCompatible(node.id, port.name),
               'port-incompatible': isConnecting && !isPortCompatible(node.id, port.name),
@@ -230,6 +234,9 @@
                 : `${port.label} (${getTypeName(port.type_ref)})`
             "
             @click.stop="onInputPortClick(node.id, port.name)"
+            @mousedown.stop.prevent
+            @keydown.enter.stop.prevent="onInputPortClick(node.id, port.name)"
+            @keydown.space.stop.prevent="onInputPortClick(node.id, port.name)"
           >
             <span
               v-if="isConnecting"
@@ -258,12 +265,18 @@
             v-for="(port, idx) in getNodeOutputPorts(node.type)"
             :key="`output-${port.name}`"
             class="port port-output"
+            role="button"
+            tabindex="0"
+            :aria-label="`${node.label || getNodeLabel(node.type)}: ${port.label} output`"
             :style="{
               left: `${30 + idx * 20}px`,
               backgroundColor: getPortColor(getPortCategory(port.type_ref)),
             }"
-            :title="`${port.label} (${getTypeName(port.type_ref)}) — click to start a connection`"
-            @click.stop="startConnect(node.id, port.name)"
+            :title="`${port.label} (${getTypeName(port.type_ref)}) — drag or click to connect`"
+            @mousedown.stop.prevent="startPortDrag($event, node.id, port.name)"
+            @click.stop="onOutputPortClick($event, node.id, port.name)"
+            @keydown.enter.stop.prevent="startConnect(node.id, port.name)"
+            @keydown.space.stop.prevent="startConnect(node.id, port.name)"
           >
             <div class="port-tooltip">
               <div class="port-tooltip-label">{{ port.label }}</div>
@@ -342,7 +355,7 @@
       <div v-if="nodes.length === 0" class="empty-state">
         <i class="pi pi-share-alt empty-icon" aria-hidden="true"></i>
         <h3 class="empty-title">Start your workflow</h3>
-        <p>Drag a node from the toolbar on the left, or pick a starter from the Actions menu.</p>
+        <p>Click a node in Add Nodes, or choose Analysis Starter.</p>
         <div class="empty-pointer">
           <i class="pi pi-arrow-left"></i>
           <span>Pick a node category to begin</span>
@@ -354,7 +367,7 @@
 
 <script setup lang="ts">
 import { themeToken } from "@/theme/interfaceTheme";
-import { ref, computed, watch, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { routeEdges } from "@/utils/edgeRouting";
 import { saveCanvasPng } from "@/utils/canvasPng";
 import { useWorkflowStore } from "@/stores/workflow";
@@ -579,6 +592,17 @@ const isNodeCompatibleTarget = (nodeId: string): boolean => {
 // Mouse event handlers
 const hasDragged = ref(false);
 const DRAG_THRESHOLD = 5; // Pixels before considering it a drag
+let portDragOrigin: { x: number; y: number } | null = null;
+
+// Coordinates belong to the scrollable surface, not the browser viewport.
+// This also preserves the grab offset when opening an inspector changes layout.
+const surfacePoint = (event: MouseEvent) => {
+  const surface = surfaceRef.value;
+  const rect = surface?.getBoundingClientRect();
+  const scale = surface?.offsetWidth && rect ? rect.width / surface.offsetWidth : 1;
+  return { x: (event.clientX - (rect?.left ?? 0)) / (scale || 1),
+    y: (event.clientY - (rect?.top ?? 0)) / (scale || 1) };
+};
 
 const handleNodeMouseDown = (event: MouseEvent, nodeId: string) => {
   if (event.button !== 0) {
@@ -626,7 +650,7 @@ const handleNodeMouseDown = (event: MouseEvent, nodeId: string) => {
   // Prepare for potential dragging of all selected nodes
   isDragging.value = true;
   hasDragged.value = false;
-  dragOrigin.value = { x: event.clientX, y: event.clientY };
+  dragOrigin.value = surfacePoint(event);
 
   dragStartPositions.value.clear();
   selectedNodeIds.value.forEach((id) => {
@@ -638,11 +662,14 @@ const handleNodeMouseDown = (event: MouseEvent, nodeId: string) => {
 };
 
 const handleMouseMove = (event: MouseEvent) => {
+  if (event.buttons === 0 && (isDragging.value || isRubberBanding.value || portDragOrigin)) {
+    cancelGesture();
+    return;
+  }
   const rect = canvasRef.value?.getBoundingClientRect();
   if (!rect) return;
 
-  const localX = event.clientX - rect.left + (canvasRef.value?.scrollLeft || 0);
-  const localY = event.clientY - rect.top + (canvasRef.value?.scrollTop || 0);
+  const { x: localX, y: localY } = surfacePoint(event);
   mousePos.value = { x: localX, y: localY };
 
   if (isRubberBanding.value) {
@@ -676,8 +703,8 @@ const handleMouseMove = (event: MouseEvent) => {
 
   if (!isDragging.value || !dragOrigin.value) return;
 
-  const dx = event.clientX - dragOrigin.value.x;
-  const dy = event.clientY - dragOrigin.value.y;
+  const dx = localX - dragOrigin.value.x;
+  const dy = localY - dragOrigin.value.y;
 
   if (!hasDragged.value && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
     hasDragged.value = true;
@@ -713,8 +740,7 @@ const handleCanvasMouseDown = (event: MouseEvent) => {
   const rect = canvasRef.value?.getBoundingClientRect();
   if (!rect) return;
 
-  const localX = event.clientX - rect.left + (canvasRef.value?.scrollLeft || 0);
-  const localY = event.clientY - rect.top + (canvasRef.value?.scrollTop || 0);
+  const { x: localX, y: localY } = surfacePoint(event);
 
   isRubberBanding.value = true;
   rubberBandStart.value = { x: localX, y: localY };
@@ -729,7 +755,18 @@ const handleCanvasMouseDown = (event: MouseEvent) => {
   }
 };
 
-const handleCanvasMouseUp = () => {
+const handleCanvasMouseUp = (event: MouseEvent) => {
+  if (portDragOrigin) {
+    const moved = Math.hypot(event.clientX - portDragOrigin.x, event.clientY - portDragOrigin.y) > DRAG_THRESHOLD;
+    portDragOrigin = null;
+    if (moved) {
+      const input = (event.target as Element | null)?.closest?.<HTMLElement>(".port-input");
+      if (input && canvasRef.value?.contains(input)) {
+        onInputPortClick(input.dataset.nodeId!, input.dataset.portName!);
+      }
+      cancelConnect();
+    }
+  }
   if (isRubberBanding.value) {
     isRubberBanding.value = false;
 
@@ -756,10 +793,57 @@ const startConnect = (nodeId: string, fromPort?: string) => {
   connectingFromPort.value = fromPort || null;
 };
 
+const startPortDrag = (event: MouseEvent, nodeId: string, portName: string) => {
+  if (event.button !== 0) return;
+  portDragOrigin = { x: event.clientX, y: event.clientY };
+  mousePos.value = surfacePoint(event);
+  startConnect(nodeId, portName);
+};
+
+const onOutputPortClick = (event: MouseEvent, nodeId: string, portName: string) => {
+  // Assistive activation can emit click without a preceding mousedown.
+  // Pointer clicks were handled on press; do not rearm after a completed drag.
+  if (event.detail === 0) startConnect(nodeId, portName);
+};
+
 const cancelConnect = () => {
   connecting.value = null;
   connectingFromPort.value = null;
 };
+
+const cancelGesture = () => {
+  isDragging.value = false;
+  isRubberBanding.value = false;
+  hasDragged.value = false;
+  dragOrigin.value = null;
+  dragStartPositions.value.clear();
+  portDragOrigin = null;
+  cancelConnect();
+};
+
+// Keep dragging coherent when the pointer briefly leaves the canvas, and
+// always finish a gesture released outside it. In-canvas events use the template.
+const outsideMove = (event: MouseEvent) => {
+  if (isDragging.value && !canvasRef.value?.contains(event.target as Node)) handleMouseMove(event);
+};
+const outsideUp = (event: MouseEvent) => {
+  if (!canvasRef.value?.contains(event.target as Node)) handleCanvasMouseUp(event);
+};
+const escapeConnection = (event: KeyboardEvent) => {
+  if (event.key === "Escape") { portDragOrigin = null; cancelConnect(); }
+};
+onMounted(() => {
+  window.addEventListener("blur", cancelGesture);
+  window.addEventListener("mousemove", outsideMove);
+  window.addEventListener("mouseup", outsideUp);
+  window.addEventListener("keydown", escapeConnection);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("blur", cancelGesture);
+  window.removeEventListener("mousemove", outsideMove);
+  window.removeEventListener("mouseup", outsideUp);
+  window.removeEventListener("keydown", escapeConnection);
+});
 
 // Input-port click: only meaningful while a connection is in flight from another
 // node. No-op otherwise (input ports aren't a connection start point).
@@ -1059,7 +1143,7 @@ const centerNode = (nodeId: string) => {
   canvas.scrollTo({
     left: targetLeft,
     top: targetTop,
-    behavior: "smooth",
+    behavior: "instant",
   });
 };
 

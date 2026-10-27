@@ -12,6 +12,7 @@ import fnmatch
 import logging
 import time
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -202,7 +203,11 @@ def load_single_file(file_path: Path, *, asset_id: str | None = None) -> Any:
 
 
 def build_executor_from_workflow(
-    workflow: Workflow, *, canonical_read_grant: Any = None, uncertainty_provider: Any = None
+    workflow: Workflow,
+    *,
+    canonical_read_grant: Any = None,
+    uncertainty_provider: Any = None,
+    model_artifact_writer: Any = None,
 ) -> Any:
     """
     Build a DAGExecutor from a saved workflow's nodes and edges.
@@ -221,6 +226,7 @@ def build_executor_from_workflow(
         runtime=replace(
             build_application_execution_runtime(canonical_artifact_read_grant=canonical_read_grant),
             prediction_uncertainty=uncertainty_provider,
+            model_artifact_writer=model_artifact_writer,
         )
     )
 
@@ -252,6 +258,7 @@ def _execute_workflow_dataset_blocking(
     owner_user_id: int,
     canonical_read_grant: Any = None,
     uncertainty_provider: Any = None,
+    model_artifact_writer: Any = None,
 ) -> WorkflowDatasetExecution:
     """Execute and serialize one dataset in a worker thread.
 
@@ -263,7 +270,10 @@ def _execute_workflow_dataset_blocking(
     from spectra_sherpa.app.services.serialization import serialize_result
 
     executor = build_executor_from_workflow(
-        workflow, canonical_read_grant=canonical_read_grant, uncertainty_provider=uncertainty_provider
+        workflow,
+        canonical_read_grant=canonical_read_grant,
+        uncertainty_provider=uncertainty_provider,
+        model_artifact_writer=model_artifact_writer,
     )
     entry_nodes = executor.find_prediction_entry_nodes()
     for node_id in entry_nodes:
@@ -306,21 +316,28 @@ async def execute_workflow_dataset(
     folder-watch lease is not released while that execution still has side
     effects in the background.
     """
-    worker = asyncio.create_task(
-        asyncio.to_thread(
+    from spectra_sherpa.app.db.session import async_session
+    from spectra_sherpa.app.services.model_store import get_model_store
+    from spectra_sherpa.app.services.storage_custody import (
+        LoopBoundModelWriter,
+        OwnedModelWriter,
+        await_thread_completion,
+    )
+
+    writer = LoopBoundModelWriter(
+        OwnedModelWriter(get_model_store(), async_session, owner_user_id), asyncio.get_running_loop()
+    )
+    return await await_thread_completion(
+        partial(
             _execute_workflow_dataset_blocking,
             workflow,
             dataset,
             owner_user_id=owner_user_id,
             canonical_read_grant=canonical_read_grant,
             uncertainty_provider=uncertainty_provider,
+            model_artifact_writer=writer,
         )
     )
-    try:
-        return await asyncio.shield(worker)
-    except asyncio.CancelledError:
-        await asyncio.shield(worker)
-        raise
 
 
 async def run_batch_prediction(

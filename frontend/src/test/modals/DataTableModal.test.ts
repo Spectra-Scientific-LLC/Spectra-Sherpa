@@ -107,6 +107,17 @@ describe("DataTableModal", () => {
       .toEqual(["peak_position_1 (cm-1)", "magnitude_at_peak_1 (absorbance)"]);
     wrapper.unmount();
   });
+  it("keeps applied-score names from the result's own row axis", () => {
+    const wrapper = factory({ nodeType: "model.load_apply", nodeOutput: {
+      data: [[.1, .2], [.3, .4]], metadata: {},
+      presentation_value: { y_axis: { labels: ["Specimen 135", "Specimen 142"] },
+        x_axis: { labels: ["PC1", "PC2"] } },
+    } });
+    const vm = wrapper.vm as any;
+    expect(vm.tableData.map((row: any) => row._label_full)).toEqual(["Specimen 135", "Specimen 142"]);
+    expect(vm.tableColumns.slice(-2).map((column: any) => column.header)).toEqual(["PC1", "PC2"]);
+    wrapper.unmount();
+  });
   it("preserves the selected component matrix's own axes even when its role is X_features", () => {
     const wrapper = factory({ nodeOutput: {
       data: [[.1, .2, .3], [.4, .5, .6]],

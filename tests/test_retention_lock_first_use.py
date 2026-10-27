@@ -4,16 +4,30 @@ import errno
 import os
 import sys
 from types import SimpleNamespace
+from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 
 from spectra_sherpa.app.services import run_output_retention as retention
+from spectra_sherpa.app.services.model_store import ModelStore
 
 
 @pytest.mark.parametrize("existing_byte", [b"", b"0"])
 @pytest.mark.parametrize("body_fails", [False, True])
-def test_windows_lock_never_initializes_a_byte_before_ownership(tmp_path, monkeypatch, existing_byte, body_fails):
-    lock_path = tmp_path / ".lock"
+@pytest.mark.parametrize("kind", ["retention", "model"])
+def test_windows_lock_never_initializes_a_byte_before_ownership(tmp_path, monkeypatch, existing_byte, body_fails, kind):
+    if kind == "model":
+        lock_root = tmp_path / ".model-publication-locks"
+        lock_root.mkdir(mode=0o700)
+        lock_path = lock_root / (uuid5(NAMESPACE_URL, "spectrasherpa:model:synthetic").hex + ".lock")
+    else:
+        lock_path = tmp_path / ".lock"
+
+    def storage_lock():
+        if kind == "model":
+            return ModelStore(tmp_path)._publication_claim("synthetic")
+        return retention._storage_lock(tmp_path)
+
     lock_path.write_bytes(existing_byte)
     calls = []
     descriptors = []
@@ -35,7 +49,7 @@ def test_windows_lock_never_initializes_a_byte_before_ownership(tmp_path, monkey
     monkeypatch.setattr(retention.os, "write", competing_writer)
 
     def exercise():
-        with retention._storage_lock(tmp_path):
+        with storage_lock():
             assert calls == [1]
             if body_fails:
                 raise RuntimeError("body failed")

@@ -398,8 +398,11 @@ class TestApplyPathContract:
 
         # PCA transform: (10 samples, 50 features) @ (50, 3).T → (10, 3)
         scores = outputs["result"]
-        assert isinstance(scores, np.ndarray)
+        assert isinstance(scores, SherpaDataset)
         assert scores.shape == (10, 3)
+        assert scores.feature_axis.labels == ["PC1", "PC2", "PC3"]
+        assert scores.units == "dimensionless"
+        np.testing.assert_array_equal(outputs["transformed"], scores.X)
 
     @pytest.mark.asyncio
     async def test_load_apply_rejects_missing_model(self, model_store):

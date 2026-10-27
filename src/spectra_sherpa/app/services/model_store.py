@@ -327,8 +327,9 @@ class ModelStore:
                         import msvcrt
                     except ImportError as exc:  # pragma: no cover - unsupported platform
                         raise RuntimeError("No safe model publication lock is available") from exc
-                    if os.fstat(fd).st_size == 0:
-                        os.write(fd, b"0")
+                    # As with retained-output locking, Windows can lock byte
+                    # zero beyond EOF. Writing before ownership races another
+                    # process that already locked the initially empty file.
                     os.lseek(fd, 0, os.SEEK_SET)
                     msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
 
@@ -585,7 +586,11 @@ async def persist_model_artifact_records(
     from sqlalchemy import select as sa_select
 
     from spectra_sherpa.app.models.model_artifact import ModelArtifact
+    from spectra_sherpa.app.models.model_publication import ModelPublication
     from spectra_sherpa.app.services.audit import audit_emitter
+    from spectra_sherpa.app.services.storage_custody import lock_storage_owner
+
+    await lock_storage_owner(session, user_id)
 
     # Check which artifact_uids already exist (idempotency guard)
     uids = [a["artifact_uid"] for a in saved_artifacts]
@@ -679,6 +684,17 @@ async def persist_model_artifact_records(
             },
         )
 
+    # Transfer custody only in the same transaction as completed model records.
+    # A rollback leaves the pre-publication claim available for account erasure.
+    from sqlalchemy import delete
+
+    await session.flush()
+    await session.execute(
+        delete(ModelPublication).where(
+            ModelPublication.user_id == user_id,
+            ModelPublication.artifact_uid.in_(uids),
+        )
+    )
     return rows
 
 
@@ -747,20 +763,33 @@ async def reconcile_orphan_artifacts(
     from spectra_sherpa.app.models.model_artifact import ModelArtifact
 
     store = store or get_model_store()
+    from spectra_sherpa.app.services.storage_custody import reconcile_terminal_publications
+
+    await reconcile_terminal_publications(session, store=store)
     models_dir = store.models_dir
     if not models_dir.exists():
         return []
 
+    from spectra_sherpa.app.models.model_publication import ModelPublication
+
+    # Snapshot paths before claims: a writer claims before creating its files,
+    # so newly published paths cannot enter this sweep after the custody read.
+    children = tuple(models_dir.iterdir())
+    pending_uids = set(await session.scalars(sa_select(ModelPublication.artifact_uid)))
     db_rows = (await session.execute(sa_select(ModelArtifact.artifact_uid, ModelArtifact.is_active))).all()
     db_active_by_uid = {artifact_uid: bool(is_active) for artifact_uid, is_active in db_rows}
     now = time.time()
     removed: list[str] = []
     recovered: list[str] = []
 
-    for child in models_dir.iterdir():
+    for child in children:
         if not child.is_dir():
             continue
         name = child.name
+        # Claims remain authoritative even after a failed run or long fit.
+        # Age cannot establish that an account-owned publication is abandoned.
+        if name in pending_uids or (name.startswith(".staging-") and name[9:45] in pending_uids and name[45:46] == "-"):
+            continue
 
         # ``<uid>.old-<hex>`` is a re-save backup, NOT scratch: during
         # ``_promote`` it is the *only* complete copy between the two

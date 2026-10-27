@@ -148,7 +148,16 @@ class TestStructuralValidation:
         )
         result = executor.validate_full()
         assert not result.is_valid
-        assert any("no input" in e.message.lower() for e in result.errors)
+        input_issues = [e for e in result.errors if "input" in e.message.lower()]
+        assert len(input_issues) == 1
+        assert "Required input port" in input_issues[0].message
+
+    def test_legacy_disconnected_node_still_refuses(self):
+        executor = _build_executor(
+            WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}),
+        )
+        with patch.object(executor.nodes["snv1"], "uses_named_ports", return_value=False):
+            assert any("no input" in e.message.lower() for e in executor.validate_full().errors)
 
     def test_source_node_needs_no_input(self):
         executor = _build_executor(
@@ -181,17 +190,14 @@ class TestStructuralValidation:
         result = executor.validate_full(include_port_type_validation=False)
 
         assert not result.is_valid
-        assert any(
-            issue.node_id == "nested" and "execute that operation on all rows before cross-validation" in issue.message
-            for issue in result.errors
-        )
+        assert any(issue.node_id == "nested" and issue.code == "preprocessing_fit_scope" for issue in result.errors)
 
     def test_nested_cv_accepts_contract_declared_stateless_preprocessing(self):
         executor = _nested_cv_executor("preprocess.normalize", {"method": "snv"})
 
         result = executor.validate_full(include_port_type_validation=False)
 
-        assert not any("before cross-validation" in issue.message for issue in result.errors)
+        assert not any(issue.code == "preprocessing_fit_scope" for issue in result.errors)
 
     def test_nested_cv_accepts_stateless_target_attachment(self):
         executor = _build_executor(
@@ -219,7 +225,7 @@ class TestStructuralValidation:
 
         result = executor.validate_full(include_port_type_validation=False)
 
-        assert not any("before cross-validation" in issue.message for issue in result.errors)
+        assert not any(issue.code == "preprocessing_fit_scope" for issue in result.errors)
 
     def test_nested_cv_rejects_target_fitted_osc_before_outer_folds(self):
         executor = _nested_cv_executor("preprocess.osc", {})
@@ -227,7 +233,7 @@ class TestStructuralValidation:
         result = executor.validate_full(include_port_type_validation=False)
 
         assert not result.is_valid
-        assert any("declares lifecycle_kind=fitted_transform" in issue.message for issue in result.errors)
+        assert any(issue.code == "preprocessing_fit_scope" for issue in result.errors)
 
     def test_nested_cv_accepts_contract_bound_group_source_as_fold_safe(self):
         import spectra_sherpa.app.services.dag.nodes.selection  # noqa: F401
@@ -246,7 +252,7 @@ class TestStructuralValidation:
         result = executor.validate_full(include_port_type_validation=False)
 
         assert result.is_valid
-        assert not any("before cross-validation" in issue.message for issue in result.errors)
+        assert not any(issue.code == "preprocessing_fit_scope" for issue in result.errors)
 
     def test_nested_cv_rejects_target_fitted_selector_before_outer_folds(self):
         executor = _nested_cv_after_fitted_selector()
@@ -254,15 +260,13 @@ class TestStructuralValidation:
         result = executor.validate_full(include_port_type_validation=False)
 
         assert not result.is_valid
-        assert any(
-            issue.node_id == "nested" and "lifecycle_kind=fitted_transform" in issue.message for issue in result.errors
-        )
+        assert any(issue.node_id == "nested" and issue.code == "preprocessing_fit_scope" for issue in result.errors)
 
     @pytest.mark.asyncio
     async def test_canvas_execution_cannot_bypass_nested_cv_ancestor_safety(self):
         executor = _nested_cv_after_fitted_selector()
 
-        with pytest.raises(ValueError, match="Nested CV cannot consume upstream operation"):
+        with pytest.raises(ValueError, match="fit within each cross-validation training fold"):
             await executor.execute()
 
 
@@ -296,7 +300,7 @@ class TestHoldoutAncestorSafety:
     def test_refuses_supervised_and_unsupervised_fitting_before_holdout(self, node_type, parameters):
         result = self.graph(node_type, parameters).validate_full()
         assert not result.is_valid
-        assert any("Train/test split cannot consume" in issue.message for issue in result.errors)
+        assert any(issue.code == "preprocessing_fit_scope" for issue in result.errors)
 
     @pytest.mark.parametrize("node_type", [None, "preprocess.normalize"])
     def test_accepts_raw_and_stateless_inputs(self, node_type):
@@ -312,7 +316,7 @@ class TestHoldoutAncestorSafety:
 
     @pytest.mark.asyncio
     async def test_execution_cannot_bypass_holdout_safety(self):
-        with pytest.raises(ValueError, match="Train/test split cannot consume upstream operation"):
+        with pytest.raises(ValueError, match="fit after Train/Test Split"):
             await self.graph("preprocess.osc", {"n_components": 1}).execute()
 
     def test_shared_preflight_refuses_complete_pls_graph_with_osc_before_split(self):
@@ -336,7 +340,7 @@ class TestHoldoutAncestorSafety:
         )
         result = validate_workflow(graph["nodes"], graph["edges"])
         assert not result["valid"]
-        assert any("Train/test split cannot consume" in issue["message"] for issue in result["issues"])
+        assert any(issue["code"] == "preprocessing_fit_scope" for issue in result["issues"])
 
 
 class TestParameterValidation:

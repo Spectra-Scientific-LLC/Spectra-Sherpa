@@ -61,12 +61,12 @@ export const downloadJson = (data: unknown, filename: string): void => {
   downloadText(content, filename, "application/json");
 };
 
-const escapeCsvValue = (value: string | number | null | undefined): string => {
+export const escapeCsvValue = (value: string | number | boolean | null | undefined): string => {
   if (value === null || value === undefined) {
     return "";
   }
   const raw = String(value);
-  if (raw.includes(",") || raw.includes("\n") || raw.includes('"')) {
+  if (/[",\r\n]/.test(raw)) {
     return `"${raw.replace(/"/g, '""')}"`;
   }
   return raw;

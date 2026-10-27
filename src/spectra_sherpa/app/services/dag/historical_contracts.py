@@ -108,9 +108,9 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
-        # Reviewed typed public refusals preserve every legacy admission check.
-        # This pair permits historical inspection only, never old execution.
-        "e5b31488bd88dd6e39380f533fed6c560afe9de17f4e68860d2aea23c8fad0e1",
+        # Typed PCA result axes and awaitable publication capability preserve
+        # archived declarations. Inspection only, never historical execution.
+        "272022dfaa41de8e593ed606612f4a3fd00d8fed2b0e8ca7080d33786bc43ee2",
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",

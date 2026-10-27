@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -119,7 +120,7 @@ class DAGExecutor:
         # Restore reference to global process pool
         self._process_pool = get_default_pool()
 
-    def _process_model_artifact(
+    async def _process_model_artifact(
         self, node_id: str, positional_inputs: List[Any] | None = None, named_inputs: Dict[str, Any] | None = None
     ) -> None:
         """Save model artifact to disk if the node produced one.
@@ -153,6 +154,8 @@ class DAGExecutor:
                     source = positional_inputs[0]
                 retain_pls_training_specimens(artifact, source)
             integrity_hash = store.save(artifact_uid, metadata, arrays)
+            if inspect.isawaitable(integrity_hash):
+                integrity_hash = await integrity_hash
 
             # Only pop after successful save — avoid losing data on failure
             result.pop("_model_artifact")
@@ -470,10 +473,15 @@ class DAGExecutor:
         # rather than catalog categories: fitted variable selectors leak just
         # as surely as fitted preprocessing.  Target access alone is not a
         # proxy for fitting—a stateless target-attachment operation is safe.
-        issues.extend(self._validate_nested_cv_ancestor_fold_safety())
+        boundary_issues = self._validate_nested_cv_ancestor_fold_safety()
+        issues.extend(boundary_issues)
         from .population_authority import analyze_populations
 
-        population_issues, _ = analyze_populations(self.nodes, self.edges)
+        # A refused boundary cannot establish a held-out claim. Deduplicate
+        # its upstream-fit consequence, retaining independent fit violations.
+        population_issues, _ = analyze_populations(
+            self.nodes, self.edges, invalid_boundaries=frozenset(i.node_id for i in boundary_issues if i.node_id)
+        )
         issues.extend(population_issues)
 
         return ValidationResult(issues)
@@ -494,11 +502,10 @@ class DAGExecutor:
                 continue
             is_holdout = nested_node.metadata.node_type == "data.train_test_split"
             boundary = "Train/test split" if is_holdout else "Nested CV"
-            evaluation = "the holdout split" if is_holdout else "cross-validation"
             remedy = (
-                "Split raw data first, fit on the training branch, and apply that frozen state to the test branch."
+                "fit after Train/Test Split, using training rows only; apply the fitted state to test rows."
                 if is_holdout
-                else "Run fitted operations through the canonical fold lifecycle."
+                else "fit within each cross-validation training fold, not before Nested CV."
             )
             ancestors: set[str] = set()
             stack = list(incoming.get(nested_id, ()))
@@ -518,34 +525,32 @@ class DAGExecutor:
                             "error",
                             nested_id,
                             "X",
-                            f"{boundary} cannot consume upstream operation '{ancestor_id}' because its "
-                            "metadata is unavailable. The canvas would execute that operation on all "
-                            f"rows before {evaluation}.",
+                            f"{ancestor_id}: preprocessing safety is unknown before {boundary}. "
+                            "Use an operation with a declared execution contract.",
+                            "preprocessing_contract_unavailable",
                         )
                     )
                     continue
                 contract = metadata.resolved_execution_contract()
 
-                if contract is None:
-                    reason = "has no canonical execution contract"
-                else:
-                    payload = contract.payload
-                    lifecycle = payload.get("lifecycle_kind")
-                    unsafe: list[str] = []
-                    if lifecycle not in {"data_source", "stateless_transform"}:
-                        unsafe.append(f"lifecycle_kind={lifecycle}")
-                    if not unsafe:
-                        continue
-                    reason = "declares " + ", ".join(unsafe)
+                if contract is not None and contract.payload.get("lifecycle_kind") in {
+                    "data_source",
+                    "stateless_transform",
+                }:
+                    continue
+                message = (
+                    f"{metadata.label} ({ancestor_id}): {remedy}"
+                    if contract is not None
+                    else f"{metadata.label} ({ancestor_id}): preprocessing safety is unknown before {boundary}. "
+                    "Use an operation with a declared execution contract."
+                )
                 issues.append(
                     ValidationIssue(
                         "error",
                         nested_id,
                         "X",
-                        f"{boundary} cannot consume upstream operation '{ancestor_id}' "
-                        f"({metadata.label}) because it {reason}. The canvas would execute that "
-                        f"operation on all rows before {evaluation}. Use only a raw data source "
-                        f"or a contract-declared stateless transform here. {remedy}",
+                        message,
+                        "preprocessing_fit_scope" if contract is not None else "preprocessing_contract_unavailable",
                     )
                 )
         return issues
@@ -613,6 +618,10 @@ class DAGExecutor:
             )
             if not is_source and len(dep_list) == 0:
                 assert node.metadata is not None
+                # Named required ports already provide the precise refusal.
+                # Retain the generic guard only for legacy/optional-port nodes.
+                if node.uses_named_ports() and any(port.required for port in node.metadata.input_ports or []):
+                    continue
                 issues.append(
                     ValidationIssue(
                         "error",
@@ -1379,7 +1388,7 @@ class DAGExecutor:
                 await retain_population_display(self, node_id)
 
                 # Persist model artifact if present
-                self._process_model_artifact(node_id, positional_inputs, named_inputs)
+                await self._process_model_artifact(node_id, positional_inputs, named_inputs)
 
                 self._param_hashes[node_id] = self._compute_param_hash(node_id)
                 # Pool workers mutate their own copy's status; the main-process
@@ -1521,7 +1530,7 @@ class DAGExecutor:
             await retain_population_display(self, dep_node_id)
 
             # Persist model artifact if present
-            self._process_model_artifact(dep_node_id, positional_inputs, named_inputs)
+            await self._process_model_artifact(dep_node_id, positional_inputs, named_inputs)
 
             self._param_hashes[dep_node_id] = self._compute_param_hash(dep_node_id)
             # Main-process status update: pool worker's status never flows back,

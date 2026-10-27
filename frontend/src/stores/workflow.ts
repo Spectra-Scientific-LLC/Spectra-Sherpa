@@ -6,7 +6,7 @@ import api from "@/api/client";
 import type { components } from "@/types/api/v1";
 import { workflowCreate, workflowEdge, workflowListItem, workflowNode, workflowPreflight as adaptWorkflowPreflight } from "@/api/adapters/workflows";
 import type { NodeTypeMetadata, NodeLibraryResponse, NodeExecutionStatus } from "@/types";
-import { getErrorMessage, isRequestCanceled } from "@/utils/errors";
+import { getErrorMessage, isRequestCanceled, WorkflowValidationError } from "@/utils/errors";
 import { useProjectStore } from "@/stores/project";
 import { useProjectProvenanceStore } from "@/stores/projectProvenance";
 import { useAuthStore } from "@/stores/auth";
@@ -1127,8 +1127,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       workflowDescription: workflowDescription.value, nodes: nodes.value, edges: edges.value });
     const preflight = await refreshPersistedPreflight();
     if (preflight?.is_valid === false) {
-      throw new Error(preflight.issues.filter(issue => issue.level === "error").map(issue => issue.message).join("; ")
-        || "Connect required inputs before running this workflow.");
+      throw new WorkflowValidationError(preflight.issues.filter(issue => issue.level === "error").map(issue => issue.message));
     }
     if (!preparation.isCurrent() || reviewedSignature !== workflowDraftSignature({
       workflowName: workflowName.value, workflowDescription: workflowDescription.value,

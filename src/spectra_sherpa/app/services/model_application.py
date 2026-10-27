@@ -521,7 +521,8 @@ async def apply_model_to_dataset(
                     ],
                 },
             )
-    result_matrix = np.asarray(applied["result"])
+    applied_result = applied["result"]
+    result_matrix = np.asarray(applied_result.X if isinstance(applied_result, SherpaDataset) else applied_result)
     from spectra_sherpa.app.services.dag.presentation_limits import require_bounded_presentation
 
     # Scientific inputs are not browser output. Check the selected application

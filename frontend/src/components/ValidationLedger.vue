@@ -57,7 +57,9 @@ const decimalsByTarget = computed(() => {
   const groups = new Map<string, unknown[]>();
   for (const row of props.rows) {
     const key = row.target ?? "";
-    groups.set(key, [...(groups.get(key) ?? []), row.reference, row.predicted]);
+    const values = groups.get(key) ?? [];
+    values.push(row.reference, row.predicted);
+    groups.set(key, values);
   }
   return new Map([...groups].map(([key, values]) => [key, columnDecimals(values)]));
 });

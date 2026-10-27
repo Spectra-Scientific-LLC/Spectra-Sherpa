@@ -36,14 +36,15 @@ parameters · 4 Run.*
    then **click the node's card**. It appears on the canvas. (Clicking, not
    dragging, is how nodes are added.)
 4. **Connect two nodes:** input ports sit on a node's top edge and output
-   ports on its bottom edge. **Click an output port** of the upstream node
-   (hover shows its name and data type), then **click a compatible input
-   port** of the downstream node. A connection line appears; click a line to
-   delete it.
+   ports on its bottom edge. **Drag an output port onto a compatible input
+   port**, or click the output then the input. Hover shows each port's name
+   and data type; keyboard users can focus ports and press Enter or Space.
+   Press Escape to cancel a pending connection. Click a connection line to
+   delete it. Drag a node's body to reposition it.
 5. **Set parameters:** click a node to select it, then use the **Inspector**
    on the right. Every parameter has a default; the **?** next to the node
-   name opens its help page. If the Inspector warns that an input is missing,
-   the connection in step 4 is what fixes it. To remove the node, click
+   name opens its help page. Missing-input warnings appear in Notifications;
+   the connection in step 4 resolves them. To remove the node, click
    **Delete** in the Inspector, press <kbd>Delete</kbd>, or right-click it and
    choose **Delete Node**. An **Undo** banner appears right after a delete.
 6. **Click Run.** Changes are saved automatically (the top bar shows

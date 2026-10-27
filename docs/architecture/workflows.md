@@ -57,6 +57,26 @@ Nodes declare input and output ports. Good workflow behavior depends on these de
 
 For example, a PLS node's `X` input expects spectra or feature data, while its `y` input expects target values. Both may be arrays at runtime, but they are not scientifically interchangeable. Port contracts are what let the UI reject dangerous wiring before a user trains a model on the wrong thing.
 
+## Preprocessing and validation boundaries
+
+**PREPROCESS-SCOPE-1**: before Train/Test Split or Nested CV, the ordinary
+canvas admits ancestors whose canonical `lifecycle_kind` is `data_source` or
+`stateless_transform`. It refuses fitted and undeclared ancestors. A sample-wise
+transform does not make an earlier fitted ancestor safe. Fitted preprocessing
+must use the appropriate training population; held-out evaluation must trace
+every fitted state to that same split's training branch.
+
+The distinction is about where parameters are learned, not whether a method is
+named scaling or normalization. Normalize's SNV and sample-wise scaling are
+stateless; Scale / Center's column statistics are fitted. Exploration without
+an independent-test claim is not prohibited.
+
+The executor enforces lifecycle admission and the population authority enforces
+branch lineage. A boundary already refused by the former cannot supply a
+qualified evaluation to the latter; duplicate consequences are not separate
+user actions. [Scientific rationale, limits and regression mapping](../scientific-references/preprocessing-validation.md)
+link this rule to **SR-001** (Moscovich & Rosset) and **SR-002** (Eigenvector).
+
 ## Reproducibility
 
 Workflow runs capture parameters and outputs so results can be revisited. Model artifacts store fitted model state separately from the interactive run.

@@ -280,8 +280,8 @@ _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
         ("SherpaPLSDAArtifact.from_fitted_state", 490, 11),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/load_apply_node.py": (
-        ("extract_cls.from_artifact", 193, 14),
-        ("extract.to_fitted_state", 436, 8),
+        ("extract_cls.from_artifact", 204, 14),
+        ("extract.to_fitted_state", 447, 8),
     ),
 }
 

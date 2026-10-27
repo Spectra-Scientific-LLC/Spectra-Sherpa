@@ -3,6 +3,12 @@ import { extractValidationLedgerRows, validationLedgerCsv, validationLedgerUnava
 import regressionPlot from "../fixtures/regression-comparison-plot.json";
 
 describe("validation ledger", () => {
+  it("preserves carriage returns inside sample identity fields", () => {
+    const csv = validationLedgerCsv([
+      { sample: "Specimen\rReplicate", reference: 1, predicted: 2, role: "held_out_test" },
+    ]);
+    expect(csv).toContain('\n"Specimen\rReplicate",,1,2,,,held_out_test');
+  });
   it("extracts classification truth and prediction rows", () => {
     const rows = extractValidationLedgerRows({
       presentation_value: {

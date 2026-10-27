@@ -260,6 +260,56 @@ def test_unlabeled_singleton_feature_table_uses_exact_source_observation_identit
     assert rows[0]["sample_id"] == "sklearn_iris 001"
 
 
+def _malformed(dataset, change):
+    meta = dataset.meta
+    files, rows = meta["source_collection"]["files"], meta["source_observations"]
+    if change == "no_collection":
+        meta["source_collection"] = None
+    elif change == "files_not_list":
+        meta["source_collection"]["files"] = {"raw/file0.csv": files[0]}
+    elif change == "file_not_dict":
+        files[0] = "raw/file0.csv"
+    elif change == "file_missing_digest":
+        del files[0]["prepared_data_sha256"]
+    elif change == "file_name_not_str":
+        files[0]["file_name"] = ["raw/file0.csv"]
+    elif change == "row_file_name_unhashable":
+        rows[0]["file_name"] = ["raw/file0.csv"]
+    elif change == "row_asset_unhashable":
+        rows[0]["asset_id"] = {"id": rows[0]["asset_id"]}
+    elif change == "row_source_row_not_int":
+        rows[0]["source_row"] = [0]
+    elif change == "row_source_row_bool":
+        rows[0]["source_row"] = False
+    elif change == "row_sample_id_empty":
+        rows[0]["sample_id"] = ""
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "no_collection",
+        "files_not_list",
+        "file_not_dict",
+        "file_missing_digest",
+        "file_name_not_str",
+        "row_file_name_unhashable",
+        "row_asset_unhashable",
+        "row_source_row_not_int",
+        "row_source_row_bool",
+        "row_sample_id_empty",
+    ],
+)
+def test_malformed_source_custody_is_unavailable_not_a_server_error(change) -> None:
+    # Damaged or legacy manifests must refuse with the documented ValueError,
+    # never a KeyError/TypeError/AttributeError that surfaces as HTTP 500.
+    dataset = deepcopy(loaded_dataset().dataset)
+    verified_source_observations(dataset)
+    _malformed(dataset, change)
+    with pytest.raises(ValueError):
+        verified_source_observations(dataset)
+
+
 def loaded_dataset(experiment_id=1, project_id=1, *, typed_ids=False):
     members = []
     for number in range(2):

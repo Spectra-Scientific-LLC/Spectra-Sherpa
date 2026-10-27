@@ -25,6 +25,7 @@ from spectra_sherpa.app.models.experiment_specimen import ExperimentSpecimen
 from spectra_sherpa.app.models.folder_watch import FolderWatch
 from spectra_sherpa.app.models.instrument_qc import InstrumentQCRecord
 from spectra_sherpa.app.models.model_artifact import ModelArtifact
+from spectra_sherpa.app.models.model_publication import ModelPublication
 from spectra_sherpa.app.models.nist_library import NistLibrary
 from spectra_sherpa.app.models.project import Project, ProjectVersion
 from spectra_sherpa.app.models.project_choice_event import ProjectChoiceEvent
@@ -43,6 +44,7 @@ from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
 from spectra_sherpa.app.models.workflow_version import WorkflowVersion
 
 __all__ = [
+    "ModelPublication",
     "APIKey",
     "AnalyticalQualificationRecord",
     "InstrumentQCRecord",

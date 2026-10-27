@@ -165,10 +165,6 @@
       <template v-else>For an application, import an available signed Model package from Dashboard.</template>
       Standalone Python, notebook, and ZIP exports cannot preserve this validation plan.
     </p>
-    <aside v-if="!workflowContextLoading && workflowStore.workflowWarnings.length" role="status" aria-label="Workflow warnings">
-      <p v-for="warning in workflowStore.workflowWarnings" :key="warning">{{ warning }}</p>
-    </aside>
-
     <section
       v-if="!workflowContextLoading && pendingDataSelection && !dataSelectionReceipt"
       id="workflow-selection-unavailable"
@@ -355,6 +351,7 @@
            third-row that appeared with the old v-show="!isTrialTabActive" approach. -->
       <ResizableInspectorPanel v-show="inspectorOpen && !isTrialTabActive" v-model="inspectorScale">
       <WorkflowInspector
+        ref="inspectorRef"
         v-show="inspectorOpen && !isTrialTabActive"
         :class="{ 'trial-hidden': isTrialTabActive }"
         :selected-node="selectedNode"
@@ -417,7 +414,7 @@ import ResizableInspectorPanel from "@/components/ResizableInspectorPanel.vue";
 import NodeDetailView from "./NodeDetailView.vue";
 import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
 import { downloadText } from "@/utils/download";
-import { getErrorMessage } from "@/utils/errors";
+import { getErrorMessage, WorkflowValidationError } from "@/utils/errors";
 import { activeWorkflowQuery } from "@/utils/workflowDeepLink";
 import {
   editableWorkflowGraph,
@@ -526,6 +523,30 @@ const workbookContextReady = ref(false);
 const workbookLoadError = ref("");
 const workflowContextLoading = computed(() =>
   !workbookContextReady.value || workbookStore.isLoading || workflowStore.isLoading,
+);
+// Warn once per current issue, via the canonical toast → notification centre
+// path. Autosave preflight must not turn the workspace header into an error log.
+let notifiedWorkflow: number | null = null;
+let notifiedWarnings = new Set<string>();
+const notifyWorkflowWarnings = (warnings: readonly string[]) => {
+  if (workflowStore.workflowId !== notifiedWorkflow) notifiedWarnings.clear();
+  notifiedWorkflow = workflowStore.workflowId;
+  const current = new Set(warnings);
+  const added = [...current].filter(message => !notifiedWarnings.has(message));
+  notifiedWarnings = current;
+  if (added.length) toast.add({
+    severity: "warn",
+    summary: "Workflow needs attention",
+    detail: added.join("\n"),
+    life: 6000,
+  });
+};
+watch(
+  () => [workflowContextLoading.value, workflowStore.workflowId, [...workflowStore.workflowWarnings]] as const,
+  ([loading, , warnings]) => {
+    if (loading) return;
+    notifyWorkflowWarnings(warnings);
+  },
 );
 const preferredAnalysisStarterSlug = ref<string | null>(null);
 const dataSelectionFileCount = computed(() =>
@@ -961,8 +982,14 @@ const onDuplicateSelection = () => {
   executePaste(temporaryPayload, true);
 };
 
-const onRunNode = async (_nodeId: string) => {
-  // Single-node execution via context menu — not yet wired to API
+const inspectorRef = ref<InstanceType<typeof WorkflowInspector> | null>(null);
+const onRunNode = async (nodeId: string) => {
+  const node = workflowStore.nodes.find((candidate) => candidate.id === nodeId);
+  if (!node) return;
+  onNodeSelect(node);
+  await nextTick();
+  // Use the Inspector's draft and contextual validation, not a second runner.
+  if (selectedNode.value?.id === nodeId) inspectorRef.value?.executeNode();
 };
 
 const onViewOutput = (nodeId: string) => {
@@ -1803,17 +1830,6 @@ const initializeWorkbook = async (respectDeepLink = true) => {
     resetCanvasUi();
     restoreNodeOutputsForActiveSheet();
 
-    if (workflowStore.workflowWarnings.length > 0) {
-      for (const warning of workflowStore.workflowWarnings) {
-        toast.add({
-          severity: "warn",
-          summary: "Workflow Warning",
-          detail: warning,
-          life: 6000,
-        });
-      }
-    }
-
     toast.add({
       severity: "info",
       summary: "Workbook Loaded",
@@ -2542,6 +2558,12 @@ const executeWorkflow = async () => {
     }
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === "AbortError") return;
+    if (error instanceof WorkflowValidationError) {
+      // The preflight watcher may already have delivered this same refusal.
+      // Keep one notification and do not label an unstarted run as failed.
+      notifyWorkflowWarnings([...workflowStore.workflowWarnings, ...error.messages]);
+      return;
+    }
     const message = getErrorMessage(error);
     toast.add({
       severity: "error",
@@ -2598,22 +2620,8 @@ const onCloseInspector = () => {
   inspectorOpen.value = false;
 };
 
-watch(
-  () => [selectedNode.value?.id || null, inspectorOpen.value] as const,
-  ([nodeId, isOpen]) => {
-    if (!nodeId || !isOpen) {
-      return;
-    }
-
-    setTimeout(() => {
-      canvasRef.value?.centerNode?.(nodeId);
-    }, 0);
-
-    setTimeout(() => {
-      canvasRef.value?.centerNode?.(nodeId);
-    }, 320);
-  },
-);
+// Pointer selection must not recenter the canvas under an active drag.
+// Adding a node explicitly reveals it through onAddNode instead.
 
 const onNodeConnect = (connection: {
   from: string;

@@ -561,8 +561,7 @@ def test_width_execution_record_tracks_only_samples_with_detections(monkeypatch,
 
 
 @pytest.mark.asyncio
-async def test_trial_response_preserves_target_scipy_execution_evidence(monkeypatch) -> None:
-    from types import SimpleNamespace
+async def test_trial_response_preserves_target_scipy_execution_evidence(monkeypatch, test_session, test_user) -> None:
     from unittest.mock import AsyncMock
 
     from spectra_sherpa.app.api.v1.routes.workflows import execute as route
@@ -593,8 +592,8 @@ async def test_trial_response_preserves_target_scipy_execution_evidence(monkeypa
             trial_params={"height": None, "distance": None, "prominence": 0.5},
             nodes=[{"node_id": "peaks", "node_type": "analysis.peak_finding", "parameters": {}}],
         ),
-        session=SimpleNamespace(),
-        current_user=SimpleNamespace(id=1),
+        session=test_session,
+        current_user=test_user,
     )
     assert response.status == "completed", response.error
     restored = TrialExecuteResponse.model_validate_json(response.model_dump_json())

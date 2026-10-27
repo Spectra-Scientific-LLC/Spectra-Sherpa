@@ -149,6 +149,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { newIdempotencyKey } from "@/utils/idempotency";
 import { computed, ref, watch } from "vue";
 import api from "@/api/client";
 import type {
@@ -468,7 +469,7 @@ async function apply(item: Dependent) {
         source_node_id: item.source_node_id,
         expected_revision: item.expected_revision,
         expected_graph_digest: item.expected_graph_digest,
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: newIdempotencyKey(),
       },
     );
     if (ticket !== generation) return;

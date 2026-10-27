@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
+import { useAuthStore } from "./auth";
 import type { WorkflowNode, WorkflowEdge } from "./workflow";
 
 export interface ClipboardPayload {
@@ -10,6 +11,10 @@ export interface ClipboardPayload {
 
 export const useClipboardStore = defineStore("clipboard", () => {
   const payload = ref<ClipboardPayload | null>(null);
+  const auth = useAuthStore();
+  watch([() => auth.user?.id, () => auth.sessionRevision], () => {
+    payload.value = null;
+  }, { flush: "sync" });
 
   const set = (newPayload: ClipboardPayload) => {
     // Deep clone to prevent mutations

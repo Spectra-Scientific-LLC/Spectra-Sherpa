@@ -17,6 +17,7 @@ from .node_base import Node
 
 # Population is an exact source or split branch, never a sample count.
 Population = tuple[str, str]
+FitOrigin = tuple[str, Population]
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class Lineage:
     fits: frozenset[Population] = frozenset()
     qualified: bool = False
     exposures: frozenset[Population] = frozenset()
+    fit_origins: frozenset[FitOrigin] = frozenset()
 
 
 def _variable_selection_lineage(
@@ -35,6 +37,7 @@ def _variable_selection_lineage(
     fits: frozenset[Population],
     qualified: bool,
     exposures: frozenset[Population],
+    fit_origins: frozenset[FitOrigin],
 ) -> Lineage:
     """Carry a training-derived feature mask across its test application."""
 
@@ -45,32 +48,34 @@ def _variable_selection_lineage(
         # is therefore fitted preprocessing state even though the numerical
         # node remains a stateless transform.
         mask_fits = fits | primary.exposures
+        mask_origins = fit_origins | frozenset((node.node_id, pop) for pop in primary.exposures)
         if output == "mask":
-            return Lineage(None, mask_fits, primary.qualified, primary.exposures)
+            return Lineage(None, mask_fits, primary.qualified, primary.exposures, mask_origins)
         if selected_data_output:
-            return Lineage(primary.population, mask_fits, primary.qualified, primary.exposures)
-        return Lineage(None, mask_fits, False, primary.exposures)
+            return Lineage(primary.population, mask_fits, primary.qualified, primary.exposures, mask_origins)
+        return Lineage(None, mask_fits, False, primary.exposures, mask_origins)
     if method == "apply_mask":
         mask = inputs.get("mask", Lineage())
         mask_fits = fits | mask.fits
         mask_exposures = primary.exposures | mask.exposures
         mask_qualified = primary.qualified and mask.qualified
+        mask_origins = fit_origins | mask.fit_origins
         if output == "mask":
-            return Lineage(None, mask_fits, mask_qualified, mask_exposures)
+            return Lineage(None, mask_fits, mask_qualified, mask_exposures, mask_origins)
         if selected_data_output:
-            return Lineage(primary.population, mask_fits, mask_qualified, mask_exposures)
-        return Lineage(None, mask_fits, False, mask_exposures)
+            return Lineage(primary.population, mask_fits, mask_qualified, mask_exposures, mask_origins)
+        return Lineage(None, mask_fits, False, mask_exposures, mask_origins)
     if output == "mask":
-        return Lineage(None, fits, qualified, exposures)
+        return Lineage(None, fits, qualified, exposures, fit_origins)
     if selected_data_output:
-        return Lineage(primary.population, fits, qualified, exposures)
-    return Lineage(None, fits, False, exposures)
+        return Lineage(primary.population, fits, qualified, exposures, fit_origins)
+    return Lineage(None, fits, False, exposures, fit_origins)
 
 
 def _output_lineage(metadata: Any, output: str, lineage: Lineage) -> Lineage:
     """Separate feature evidence from row populations without erasing fit ancestry."""
     if metadata.node_type == "model.fitted_pls" and output == "vip_scores":
-        return Lineage(None, lineage.fits, lineage.qualified, lineage.exposures)
+        return Lineage(None, lineage.fits, lineage.qualified, lineage.exposures, lineage.fit_origins)
     if not metadata.output_ports or output not in {
         metadata.output_ports[0].name,
         "predictions",
@@ -79,14 +84,20 @@ def _output_lineage(metadata: Any, output: str, lineage: Lineage) -> Lineage:
         "fitted_state",
         "model",
     }:
-        return Lineage(None, lineage.fits, False, lineage.exposures)
+        return Lineage(None, lineage.fits, False, lineage.exposures, lineage.fit_origins)
     return lineage
 
 
 def analyze_populations(
-    nodes: dict[str, Node], edges: list[WorkflowEdge]
+    nodes: dict[str, Node], edges: list[WorkflowEdge], *, invalid_boundaries: frozenset[str] = frozenset()
 ) -> tuple[list[ValidationIssue], dict[str, dict[str, Any]]]:
-    """Return refusals and evaluation receipts without reading matrices."""
+    """Return refusals and evaluation receipts without reading matrices.
+
+    Admission may supply boundaries already refused by lifecycle validation.
+    Only the resulting upstream-fit violation is deduplicated; lineage remains
+    available to detect independent cross-split errors. Evaluation through a
+    refused boundary stays unqualified. Direct callers retain all checks.
+    """
     incoming: dict[str, list[tuple[str, str, str]]] = {key: [] for key in nodes}
     for edge in edges:
         try:
@@ -133,6 +144,7 @@ def analyze_populations(
             primary_name = "X_new" if "X_new" in inputs else metadata.input_ports[0].name
             primary = inputs.get(primary_name, Lineage())
             fits = frozenset(pop for _, item in resolved_inputs for pop in item.fits)
+            fit_origins = frozenset(origin for _, item in resolved_inputs for origin in item.fit_origins)
             qualified = (
                 bool(inputs) and len(inputs) == len(resolved_inputs) and all(item.qualified for item in inputs.values())
             )
@@ -148,6 +160,7 @@ def analyze_populations(
                     fits,
                     qualified and population is not None,
                     frozenset({population}) if population else frozenset(),
+                    fit_origins,
                 )
             elif metadata.node_type == "selection.variable_select":
                 result = _variable_selection_lineage(
@@ -158,6 +171,7 @@ def analyze_populations(
                     fits,
                     qualified,
                     exposures,
+                    fit_origins,
                 )
             else:
                 if lifecycle in {"fitted_model", "fitted_transform"}:
@@ -170,6 +184,7 @@ def analyze_populations(
                             for pop in item.exposures
                         )
                         fits = fits | fit_exposures
+                        fit_origins = fit_origins | frozenset((node_id, pop) for pop in fit_exposures)
                         if any(pop[1] == "test" for pop in fit_exposures):
                             refuse(
                                 node_id,
@@ -204,14 +219,26 @@ def analyze_populations(
                     aligned = qualified and population is not None and population == truth.population
                     if aligned and population[1] == "test":
                         expected = (population[0], "train")
-                        if not fits or fits != frozenset({expected}):
+                        # Deduplicate only the already-refused upstream
+                        # fitting. Independent fits on the same source or a
+                        # different split must remain separate errors.
+                        upstream_origins = trace(population[0], "X_test").fit_origins
+                        offending_origins = frozenset(origin for origin in fit_origins if origin[1] != expected)
+                        already_refused = (
+                            population[0] in invalid_boundaries
+                            and expected in fits
+                            and bool(offending_origins)
+                            and offending_origins <= upstream_origins
+                        )
+                        fits_match = fits == frozenset({expected})
+                        if not fits_match and not already_refused:
                             refuse(
                                 node_id,
                                 primary_name,
                                 "held-out evaluation requires every fitted state "
                                 "to use the same split's training branch.",
                             )
-                        else:
+                        elif fits_match and population[0] not in invalid_boundaries:
                             role = "held_out_test"
                     elif aligned and fits == frozenset({population}):
                         role = "calibration"
@@ -228,7 +255,7 @@ def analyze_populations(
                 # Auxiliary outputs such as loadings are not sample rows.
                 # State edges still carry fitted-population evidence, but must
                 # not impersonate row-preserving predictor data.
-                result = _output_lineage(metadata, output, Lineage(population, fits, qualified, exposures))
+                result = _output_lineage(metadata, output, Lineage(population, fits, qualified, exposures, fit_origins))
         visiting.remove(key)
         cache[key] = result
         return result

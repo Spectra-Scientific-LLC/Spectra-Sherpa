@@ -37,7 +37,7 @@ async def test_native_saved_model_assessment_requires_exact_external_identity(tm
     store = ModelStore(tmp_path)
     executor = DAGExecutor(runtime=SimpleNamespace(require_model_artifact_writer=lambda: store))
     executor.results["fit"] = output
-    executor._process_model_artifact("fit", named_inputs={"default": train})
+    await executor._process_model_artifact("fit", named_inputs={"default": train})
     uid = executor.saved_artifacts[0]["artifact_uid"]
     integrity = executor.saved_artifacts[0]["integrity_hash"]
     monkeypatch.setattr(model_store, "get_model_store", lambda: store)

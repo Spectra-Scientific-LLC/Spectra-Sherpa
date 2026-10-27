@@ -4869,6 +4869,31 @@ function activateDataTab(tab: number, tabChoiceCurrent: () => boolean): void {
   persistActiveDataTab();
 }
 
+// A dataset or file the store has committed must reach the URL, so reload and
+// shared links reopen it. A newer subtab choice keeps only the tab parameter.
+function routeTabFor(tab: string, tabChoiceCurrent: () => boolean): { tab?: string } {
+  if (tabChoiceCurrent()) return { tab };
+  // The visible selection changes immediately; Vue Router may still be
+  // awaiting a guard. Copying the settled route would undo the newer choice.
+  return { tab: activeTabId.value };
+}
+
+// Keep only an in-flight URL write, not another dataset selection. A tab click
+// can supersede its tab while preserving the admitted dataset/file in that URL.
+const dataRouteWrites = useScopedRequest(() => [
+  authStore.user?.id, projectStore.currentProjectId, route.fullPath,
+]);
+let pendingDataRoute: { query: typeof route.query; isCurrent: () => boolean } | null = null;
+async function replaceDataRoute(location: { path: string; query: typeof route.query }) {
+  const pending = { query: location.query, isCurrent: dataRouteWrites.begin().isCurrent };
+  pendingDataRoute = pending;
+  try {
+    return await router.replace(location);
+  } finally {
+    if (pendingDataRoute === pending) pendingDataRoute = null;
+  }
+}
+
 async function applyRouteExploreState(ticket = navigation.route.begin(), tabChoiceCurrent = navigation.captureTabChoice(), query = { ...route.query }) {
   syncGuidedExampleSession();
   const wantsExplore =
@@ -5646,7 +5671,9 @@ function onDataTabSelected(tabIndex: number) {
   navigation.chooseTab();
   dataTabSelection.invalidate();
   const tab = DATA_TAB_IDS[tabIndex];
-  if (tab && route.query.tab !== tab) void router.replace({ path: route.path, query: { ...route.query, tab } });
+  // Even choosing the committed tab must cancel a conflicting pending move.
+  const query = pendingDataRoute?.isCurrent() ? pendingDataRoute.query : route.query;
+  if (tab) void replaceDataRoute({ path: route.path, query: { ...query, tab } });
   if (tabIndex === TAB_MY_DATASET) void ensureInitialContentsSelection();
   if (tabIndex === TAB_IMPORT) void resumeStarterImport();
 }
@@ -6381,17 +6408,18 @@ async function onExperimentSelect(
   }
   activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
   await showExperimentContents(exp.id);
-  if (!ticket.isCurrent() || !tabChoiceCurrent() || dataStore.activeExperimentId !== exp.id) return;
+  if (!ticket.isCurrent() || dataStore.activeExperimentId !== exp.id) return;
   const queryWithoutFile = { ...route.query };
   delete queryWithoutFile.fileId;
   // Normalize legacy aliases: experimentId would otherwise beat the new experiment.
   delete queryWithoutFile.experimentId;
   delete queryWithoutFile.viewId;
-  await router.replace({
+  delete queryWithoutFile.tab;
+  await replaceDataRoute({
     path: "/data",
     query: {
       ...queryWithoutFile,
-      tab: "my-dataset",
+      ...routeTabFor("my-dataset", tabChoiceCurrent),
       experiment: String(exp.id),
     },
   });
@@ -6404,12 +6432,11 @@ async function onAcquisitionExperimentSelect(experimentId: number) {
   const ticket = navigation.focus.begin();
   const tabChoiceCurrent = navigation.captureTabChoice();
   await dataStore.selectExperiment(experiment.id);
-  if (!ticket.isCurrent() || !tabChoiceCurrent()) return;
-  activeTab.value = TAB_MULTI_WELL;
-  persistActiveDataTab();
-  await router.replace({
+  if (!ticket.isCurrent()) return;
+  activateDataTab(TAB_MULTI_WELL, tabChoiceCurrent);
+  await replaceDataRoute({
     path: "/data",
-    query: { tab: "multi-well", experiment: String(experiment.id) },
+    query: { ...routeTabFor("multi-well", tabChoiceCurrent), experiment: String(experiment.id) },
   });
 }
 
@@ -6725,12 +6752,14 @@ async function onInspectFile(file: ExperimentFile, options: { updateRoute?: bool
     }
     void ensureFileSampleLabels(experimentId);
     activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
-    if (updateRoute && tabChoiceCurrent()) {
-      await router.replace({
+    if (updateRoute) {
+      const query = { ...route.query };
+      delete query.tab;
+      await replaceDataRoute({
         path: "/data",
         query: {
-          ...route.query,
-          tab: "my-dataset",
+          ...query,
+          ...routeTabFor("my-dataset", tabChoiceCurrent),
           experiment: String(experimentId),
           fileId: String(file.id),
         },

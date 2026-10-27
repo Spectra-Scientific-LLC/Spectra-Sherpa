@@ -191,7 +191,7 @@ import { isAuditField, scientificMetadata, scientificColumnLabel, scientificResp
 import { isProjectedScientificKind } from "@/utils/scientificPresentation";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";
 import { classificationMetricRows } from "@/utils/scientificMetricRows";
-import { scientificMatrixColumns } from "@/utils/scientificMatrixColumns";
+import { scientificMatrixColumns, scientificMatrixRowLabels } from "@/utils/scientificMatrixColumns";
 import {
   compactSampleLabel,
   detectLabelDelimiter,
@@ -549,7 +549,7 @@ function semanticLabelInfo(output: any, data: any[]) {
       const axis = output?.presentation_value?.sample_axis ?? output?.presentation_value?.y_axis;
       return getLabelInfo({ sample_labels: exactStringLabels(axis?.labels, data.length) });
     }
-    const ownLabels = exactStringLabels(metadata.sample_labels ?? metadata.labels ?? metadata.diagnostics?.sample_labels, data.length);
+    const ownLabels = scientificMatrixRowLabels(output, data.length);
     return getLabelInfo({ sample_labels: ownLabels });
   }
   return getLabelInfo({ sample_labels: labels });

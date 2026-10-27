@@ -128,7 +128,7 @@ async def test_curated_training_persists_reopens_and_applies_to_all_new_rows(
     store = ModelStore(tmp_path)
     executor = DAGExecutor(runtime=ExecutionRuntime(model_artifact_writer=store))
     executor.results["fit"] = outputs
-    executor._process_model_artifact("fit")
+    await executor._process_model_artifact("fit")
     uid = executor.saved_artifacts[0]["artifact_uid"]
     reopened = ModelStore(tmp_path)
     monkeypatch.setattr(model_store, "get_model_store", lambda: reopened)
@@ -178,7 +178,7 @@ async def test_fit_persist_reopen_list_and_apply(node_type, tmp_path, test_sessi
     assert "_model_artifact" in outputs, f"{node_type} finished but did not produce a persistent model"
     executor = DAGExecutor(runtime=ExecutionRuntime(model_artifact_writer=store))
     executor.results["fit"] = outputs
-    executor._process_model_artifact("fit")
+    await executor._process_model_artifact("fit")
     assert len(executor.saved_artifacts) == 1
     uid = executor.saved_artifacts[0]["artifact_uid"]
     assert outputs["model_id"] == uid
@@ -277,7 +277,13 @@ async def test_fit_persist_reopen_list_and_apply(node_type, tmp_path, test_sessi
 
     monkeypatch.setattr(type(node), "fit_fitted_state", no_refit)
     replay = _apply_model_artifact(manifest, arrays, incoming, model_id=uid, replay=ApplicationModelArtifactReplay())
-    assert np.isfinite(np.asarray(replay["result"])).all()
+    applied = replay["result"]
+    assert np.isfinite(np.asarray(applied.X if isinstance(applied, SherpaDataset) else applied)).all()
+    if node_type == "model.pca":
+        assert isinstance(applied, SherpaDataset)
+        assert applied.feature_axis.labels == [f"PC{i + 1}" for i in range(applied.shape[1])]
+        assert applied.units == "dimensionless"
+        np.testing.assert_array_equal(applied.X, replay["transformed"])
     expected = outputs.get("default")
     if node_type.startswith("model.fitted_"):
         np.testing.assert_allclose(replay["result"], expected, rtol=1e-12, atol=1e-12)
@@ -300,7 +306,10 @@ async def test_fit_persist_reopen_list_and_apply(node_type, tmp_path, test_sessi
         assert "classification_output_semantics" not in applied
         assert applied["metrics"] is None
     elif replay["metadata"]["output_type"] == "decomposition":
-        np.testing.assert_allclose(applied["transformed"], replay["result"], atol=1e-12)
+        scores = replay["result"]
+        np.testing.assert_allclose(
+            applied["transformed"], scores.X if isinstance(scores, SherpaDataset) else scores, atol=1e-12
+        )
     elif replay["metadata"]["output_type"] == "regression":
         np.testing.assert_allclose(applied["predictions"], replay["result"], atol=1e-12)
     else:
@@ -497,7 +506,7 @@ async def test_artifact_write_failure_cannot_become_successful_model_registratio
     executor = DAGExecutor(runtime=ExecutionRuntime(model_artifact_writer=store))
     executor.results["fit"] = outputs
     with pytest.raises(OSError, match="disk full"):
-        executor._process_model_artifact("fit")
+        await executor._process_model_artifact("fit")
     assert executor.saved_artifacts == []
     assert "model_id" not in outputs
     assert "_model_artifact" in outputs
