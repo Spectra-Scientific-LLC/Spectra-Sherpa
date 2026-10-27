@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.contracts.application_execution_runtime import ApplicationExecutionRuntime
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.services.dag.nodes.classification.plsda_state import (
     canonical_model_validation_required,
@@ -121,7 +122,7 @@ def build_application_execution_runtime(
             allowed_artifact_digests=(canonical_artifact_read_grant.artifact_digest,),
             artifact_root=canonical_artifact_read_grant.artifact_dir.parent,
         )
-    return ExecutionRuntime(
+    return ApplicationExecutionRuntime(
         node_timeout_seconds=float(settings.max_job_duration_sec),
         spectral_peak_interpreter=spectral_peak_interpreter,
         model_artifact_reader=reader,

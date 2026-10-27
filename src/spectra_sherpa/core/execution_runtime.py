@@ -18,16 +18,6 @@ class ExecutionCapabilityError(PermissionError):
     """A workflow requested authority that its runtime does not carry."""
 
 
-class SpectralInterpretationUnavailable(RuntimeError):
-    """Safe, user-facing reason an authorized interpreter cannot serve a request."""
-
-
-class SpectralPeakInterpreter(Protocol):
-    """Application-authorized AI interpretation; no network authority in nodes."""
-
-    async def interpret(self, request: dict[str, Any]) -> dict[str, Any]: ...
-
-
 class PredictionUncertaintyProvider(Protocol):
     """Apply one selected sidecar already bound to the complete canonical pipeline."""
 
@@ -161,7 +151,6 @@ class ExecutionRuntime:
     canonical_artifact_reader: CanonicalArtifactReader | None = None
     dataset_source_resolver: DatasetSourceResolver | None = None
     prediction_uncertainty: PredictionUncertaintyProvider | None = None
-    spectral_peak_interpreter: SpectralPeakInterpreter | None = None
 
     def __post_init__(self) -> None:
         if self.node_timeout_seconds <= 0:
