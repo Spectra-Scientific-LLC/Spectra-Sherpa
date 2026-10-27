@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 
+from spectra_sherpa.app.api.error_details import has_storage_cause, validation_or_storage_detail
 from spectra_sherpa.app.core.mode_policy import is_loopback
 from spectra_sherpa.app.core.security import get_client_host
 from spectra_sherpa.app.db.session import async_session
@@ -29,6 +30,32 @@ logger = logging.getLogger(__name__)
 _executor = None
 _executor_workflow_id: int | None = None
 _executor_workflow_user_id: int | None = None
+
+
+def _prediction_failure(exc: Exception) -> tuple[int, str]:
+    """Project classified refusals through the executor's explicit cause chain."""
+    from spectra_sherpa.app.services.batch_verification import application_refusal_reason
+    from spectra_sherpa.app.services.dag.fitted_input_identity import FittedInputMismatch
+    from spectra_sherpa.app.services.legacy_model_application import LegacyAcknowledgementRequired, LegacyInputRefusal
+    from spectra_sherpa.core.scientific_refusal import ScientificInputRefusal
+
+    unavailable = (500, "Prediction failed. Contact the operator with the time of this request.")
+    if has_storage_cause(exc):
+        return unavailable
+    current: BaseException = exc
+    seen: set[int] = set()
+    while id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(
+            current, (FittedInputMismatch, ScientificInputRefusal, LegacyAcknowledgementRequired, LegacyInputRefusal)
+        ):
+            return 422, application_refusal_reason(current)
+        if current.__cause__ is None:
+            # An unclassified validation failure gets safe generic advice, never
+            # the executor's interpolated node/exception message.
+            return (422, application_refusal_reason(current)) if isinstance(current, ValueError) else unavailable
+        current = current.__cause__
+    return unavailable
 
 
 def _env_truthy(*names: str) -> bool:
@@ -82,7 +109,7 @@ def _require_headless_access(request: Request) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _workflow_lifespan(app: FastAPI):
     """Load the workflow into memory on startup."""
     global _executor, _executor_workflow_id, _executor_workflow_user_id
 
@@ -140,9 +167,20 @@ async def lifespan(app: FastAPI):
         _executor_workflow_id = workflow_id
         _executor_workflow_user_id = workflow.user_id
 
-    yield
-    # Cleanup on shutdown
-    _executor = None
+    try:
+        yield
+    finally:
+        _executor = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from spectra_sherpa.app.services.model_store import get_model_store
+    from spectra_sherpa.app.services.storage_custody import publication_recovery_service
+
+    async with _workflow_lifespan(app):
+        async with publication_recovery_service(async_session, get_model_store()):
+            yield
 
 
 app = FastAPI(
@@ -217,14 +255,24 @@ async def predict(request: Request) -> Response:
         try:
             executor.inject_deployment_input(node.node_id, payload[stream_name], stream_name=stream_name)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Error parsing data for stream '{stream_name}': {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=validation_or_storage_detail(
+                    e,
+                    fallback=(
+                        "Prediction input could not be read. Check the input and contact the operator if it persists."
+                    ),
+                    logger=logger,
+                ),
+            ) from e
 
     # Process workflow
     try:
         results = await executor.execute()
     except Exception as e:
         logger.exception("Graph execution failed")
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+        status_code, detail = _prediction_failure(e)
+        raise HTTPException(status_code=status_code, detail=detail) from e
 
     # Persist model artifact DB records (prevent orphaned files on disk)
     saved_artifacts = getattr(executor, "saved_artifacts", [])

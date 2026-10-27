@@ -186,21 +186,32 @@ async def load_project_dataset(
         for file_path in source_paths:
             path = base_dir / file_path
             if not path.exists():
-                raise ValueError(f"Dataset file is missing from storage: {file_path}")
+                logger.warning("Dataset source missing from storage: %s", path)
+                raise ValueError(
+                    "Dataset file is missing from storage. Re-import the source or ask the operator to restore it."
+                )
             if prepared_overrides_by_file is not None:
                 prepared = prepared_overrides_by_file[file_path]
             elif strict_prepared_data:
                 prepared = load_prepared_data_overrides_strict(file_path=str(path))
             else:
                 prepared = load_prepared_data_overrides(file_path=str(path))
-            loaded.append(
-                helper._load_file(
+            try:
+                result = helper._load_file(
                     str(path),
                     file_name=file_path,
                     asset_id=asset_id,
                     prepared_overrides=prepared.to_sidecar_dict(),
                 )
-            )
+            except ValueError as exc:
+                # Normalize the reader's exact legacy missing-file refusal at
+                # this transport boundary. It can race the existence check
+                # above. Do not classify other scientific refusals by prose or
+                # change the qualified ingestion implementation for an HTTP fix.
+                if exc.args == (f"File not found: {path}",):
+                    raise FileNotFoundError(2, "Dataset source is missing from storage", str(path)) from exc
+                raise
+            loaded.append(result)
         return loaded
 
     # Parsing and scientific projection are synchronous; keep them off the API

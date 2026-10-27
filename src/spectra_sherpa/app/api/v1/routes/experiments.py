@@ -25,6 +25,7 @@ from spectra_sherpa.app.api.deps import (
     release_demo_upload_quota_reservation_if_needed,
     reserve_demo_upload_quota_or_429,
 )
+from spectra_sherpa.app.api.error_details import has_storage_cause, validation_or_storage_detail
 from spectra_sherpa.app.api.v1.routes._http_utils import scientific_asset_warnings
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access, scientific_project_ids
 from spectra_sherpa.app.core.config import app_config, settings
@@ -537,12 +538,13 @@ async def get_collection_definition_endpoint(
     experiment = await _require_experiment(session, experiment_id, current_user.id)
     from spectra_sherpa.app.contracts.demo_policy import require_trial_dataset_access
 
+    stage = await preferred_experiment_stage(session, experiment_id) or "raw"
     admission = await require_trial_dataset_access(
         session=session,
         user_id=current_user.id,
         workflow_project_id=experiment.project_id,
         experiment_id=experiment_id,
-        stage="raw",
+        stage=stage,
         file_id=None,
         asset_id=None,
     )
@@ -570,7 +572,7 @@ async def get_collection_definition_endpoint(
                 session,
                 user_id=current_user.id,
                 experiment_id=experiment_id,
-                stage="raw",
+                stage=stage,
                 definition_override=definition,
             )
         )
@@ -611,17 +613,25 @@ async def preview_collection_definition_endpoint(
     """Validate a prospective definition against exact current sources without saving it."""
 
     await _require_experiment(session, experiment_id, current_user.id)
+    stage = await preferred_experiment_stage(session, experiment_id) or "raw"
     try:
         definition = await _uploaded_collection_definition(file)
         loaded = await load_project_dataset(
             session,
             user_id=current_user.id,
             experiment_id=experiment_id,
-            stage="raw",
+            stage=stage,
             definition_override=definition,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=503 if isinstance(exc, OSError) else 422,
+            detail=validation_or_storage_detail(
+                exc,
+                fallback="Collection sources could not be read. Ask the operator to check storage access.",
+                logger=logger,
+            ),
+        ) from exc
     return _definition_receipt(
         experiment_id=experiment_id,
         status="preview",
@@ -645,28 +655,39 @@ async def attach_collection_definition_endpoint(
     """Attach only a definition that exactly re-admits the current owned collection."""
 
     await _require_experiment(session, experiment_id, current_user.id)
+    stage = await preferred_experiment_stage(session, experiment_id) or "raw"
     try:
         definition = await _uploaded_collection_definition(file)
         await load_project_dataset(
             session,
             user_id=current_user.id,
             experiment_id=experiment_id,
-            stage="raw",
+            stage=stage,
             definition_override=definition,
         )
         await asyncio.to_thread(write_collection_definition, experiment_id, definition.payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=503 if isinstance(exc, OSError) else 422,
+            detail=validation_or_storage_detail(
+                exc,
+                fallback="Collection definition could not be saved. Ask the operator to check storage access.",
+                logger=logger,
+            ),
+        ) from exc
 
     # Re-admit the persisted definition and current source inventory after the
     # atomic write. A source may have changed while the prospective definition
     # was being checked; never return an "attached" receipt for that stale state.
     try:
+        current_stage = await preferred_experiment_stage(session, experiment_id) or "raw"
+        if current_stage != stage:
+            raise ValueError("The current collection stage changed during verification.")
         loaded = await load_project_dataset(
             session,
             user_id=current_user.id,
             experiment_id=experiment_id,
-            stage="raw",
+            stage=stage,
             definition_override=definition,
         )
     except ValueError:
@@ -707,8 +728,15 @@ async def remove_collection_definition_endpoint(
     await _require_experiment(session, experiment_id, current_user.id)
     try:
         await asyncio.to_thread(remove_collection_definition, experiment_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=503 if isinstance(exc, OSError) else 422,
+            detail=validation_or_storage_detail(
+                exc,
+                fallback="Collection definition could not be removed. Ask the operator to check storage access.",
+                logger=logger,
+            ),
+        ) from exc
     return _definition_receipt(
         experiment_id=experiment_id,
         status="absent",
@@ -946,9 +974,17 @@ async def import_registered_reference_endpoint(
     except ReferenceArtifactRegistryError as exc:
         for upload in files:
             await upload.close()
+        storage_failure = has_storage_cause(exc)
         raise HTTPException(
-            status_code=404,
-            detail={"code": "registered_reference_unknown", "message": str(exc)},
+            status_code=503 if storage_failure else 404,
+            detail={
+                "code": "registered_reference_unavailable" if storage_failure else "registered_reference_unknown",
+                "message": validation_or_storage_detail(
+                    exc,
+                    fallback="Reference catalog could not be read. Ask the operator to check the installation.",
+                    logger=logger,
+                ),
+            },
         ) from exc
     if len(files) != len(artifacts):
         for upload in files:
@@ -1397,11 +1433,25 @@ async def import_reference_datasets_endpoint(
     except ValueError as exc:
         await session.rollback()
         _cleanup_orphan_files()
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=validation_or_storage_detail(
+                exc,
+                fallback="Reference files could not be read. Ask the operator to check storage access.",
+                logger=logger,
+            ),
+        ) from exc
+    except OSError as exc:
         await session.rollback()
         _cleanup_orphan_files()
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        logger.warning("Reference dataset import storage failure", exc_info=True)
+        raise HTTPException(
+            status_code=404 if isinstance(exc, FileNotFoundError) else 503,
+            detail=(
+                "Reference files are unavailable. "
+                "Ask the operator to check the dataset installation and storage access."
+            ),
+        ) from exc
     except Exception:
         await session.rollback()
         _cleanup_orphan_files()
@@ -1474,7 +1524,22 @@ async def inspect_experiment_file_assets_endpoint(
     from spectra_sherpa.io import ingest
 
     source_path = experiment_dir(experiment_id) / experiment_file.file_path
-    registered_reference = read_registered_reference_sidecar(source_path)
+    try:
+        registered_reference = read_registered_reference_sidecar(source_path)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=validation_or_storage_detail(
+                exc,
+                fallback="Source authority could not be read. Ask the operator to check storage access.",
+                logger=logger,
+            ),
+        ) from exc
+    except OSError as exc:
+        logger.warning("Scientific asset authority storage failure", exc_info=True)
+        raise HTTPException(
+            status_code=503, detail="Source authority could not be read. Ask the operator to check storage access."
+        ) from exc
     if registered_reference is not None:
         # The sidecar is the reviewed scientific projection authority. Do not
         # expose unrelated MATLAB variables from the provider container as if
@@ -1487,9 +1552,19 @@ async def inspect_experiment_file_assets_endpoint(
                 str(registered_reference["projection_id"]),
             )
         except ValueError as exc:
+            detail = validation_or_storage_detail(
+                exc,
+                fallback="Source files could not be read. Ask the operator to check storage access.",
+                logger=logger,
+            )
             raise HTTPException(
                 status_code=409,
-                detail=f"Registered scientific projection could not be reproduced: {exc}",
+                detail=f"Registered scientific projection could not be reproduced: {detail}",
+            ) from exc
+        except OSError as exc:
+            logger.warning("Scientific reference inspection storage failure", exc_info=True)
+            raise HTTPException(
+                status_code=503, detail="Source files could not be read. Ask the operator to check storage access."
             ) from exc
         dataset = materialized.dataset
         role = str(dataset.data_role)
@@ -1519,7 +1594,17 @@ async def inspect_experiment_file_assets_endpoint(
     try:
         result = await asyncio.to_thread(ingest, source_path)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Could not inspect scientific assets: {exc}") from exc
+        detail = validation_or_storage_detail(
+            exc,
+            fallback="Source files could not be read. Ask the operator to check storage access.",
+            logger=logger,
+        )
+        raise HTTPException(status_code=400, detail=f"Could not inspect scientific assets: {detail}") from exc
+    except OSError as exc:
+        logger.warning("Scientific asset inspection storage failure", exc_info=True)
+        raise HTTPException(
+            status_code=503, detail="Source files could not be read. Ask the operator to check storage access."
+        ) from exc
 
     member = result.source_members[0]
     return ExperimentFileAssetsOut(
@@ -1739,6 +1824,16 @@ async def restore_version_endpoint(
     try:
         restored_count = storage.restore_version(version_name, overwrite=overwrite)
     except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        logger.warning("Version restore refused an overwrite", exc_info=True)
+        raise HTTPException(
+            status_code=409,
+            detail="Restoring this version would overwrite existing files. Confirm overwrite to continue.",
+        ) from exc
+    except OSError as exc:
+        logger.warning("Version restore storage failure", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Restore did not finish. Ask the operator to check storage and verify the files before retrying.",
+        ) from exc
 
     return {"restored_files": restored_count}

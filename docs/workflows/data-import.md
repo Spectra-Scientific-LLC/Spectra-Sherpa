@@ -87,6 +87,13 @@ honored. No PARAFAC analysis starter is included in 0.6.0.
 
 Select one or more entries, give the dataset a name, and add it to My Dataset.
 
+For synthetic references with native concentration targets, **My Dataset >
+Sample details** shows the row-aligned concentrations and their recorded units.
+Choose a concentration in **Target** to enable supervised analysis; a separate
+sample-table upload is not required. These values are synthetic ground truth,
+not independent laboratory measurements. Viewing them does not alter the
+source dataset or its scientific identity.
+
 ## Generate Synthetic Spectra
 
 **Data > Synthesis** builds synthetic FTIR datasets from line-by-line or reference data, which is useful for method development and benchmarking when ground truth is known. You choose components, define concentration profiles, and set acquisition parameters:

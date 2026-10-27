@@ -1,4 +1,5 @@
 import { attentionSnapshot, type ActiveAttention } from "@/lib/sherpaAttention";
+import { guidanceReadyActions } from "@/lib/guidanceReadyActions";
 import { onBeforeUnmount, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useAppConfig } from "@/composables/useAppConfig";
@@ -21,6 +22,7 @@ interface ActivityPayload {
   occurred_at: string;
   active_attention?: ActiveAttention;
   workflow_id?: number;
+  ready_actions?: string[];
 }
 
 export function useActivityTracker() {
@@ -57,6 +59,7 @@ export function useActivityTracker() {
     const payload: ActivityPayload = {
       kind,
       active_attention: attentionSnapshot(),
+      ready_actions: guidanceReadyActions(),
       route: route.path,
       project_id: projectId,
       scope_node_id: scopeNodeId,

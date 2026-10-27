@@ -8,6 +8,8 @@ skip the integrity check.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pytest
 
@@ -85,3 +87,45 @@ async def test_inspect_returns_422_when_arrays_file_is_corrupt(auth_client, test
     assert resp.status_code == 422, resp.text
     detail = resp.json().get("detail", "")
     assert "corrupt" in detail.lower() or "hash" in detail.lower()
+    assert str(npz_path) not in detail
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["missing_manifest", "missing_arrays", "permission", "runtime", "integrity"])
+async def test_inspection_storage_errors_do_not_disclose_paths(
+    auth_client, test_session, test_user, tmp_path, monkeypatch, caplog, kind
+):
+    from spectra_sherpa.app.services.model_store import ModelArtifactIntegrityError
+
+    caplog.set_level(logging.WARNING)
+    uid, store = await _seed_artifact_with_files(test_session, test_user, tmp_path)
+    path = str(store._artifact_dir(uid) / "arrays.npz")
+    if kind.startswith("missing_"):
+        # Exercise the actual store's missing-file error, not a mocked message.
+        filename = "manifest.json" if kind == "missing_manifest" else "arrays.npz"
+        (store._artifact_dir(uid) / filename).unlink()
+    else:
+        error_type = {"permission": PermissionError, "runtime": RuntimeError, "integrity": ModelArtifactIntegrityError}[
+            kind
+        ]
+
+        def fail_load(*args, **kwargs):
+            raise error_type(f"Cannot read {path}")
+
+        monkeypatch.setattr(store, "load", fail_load)
+    response = await auth_client.get(f"/api/v1/models/{uid}/inspect")
+    assert (
+        response.status_code
+        == {
+            "missing_manifest": 404,
+            "missing_arrays": 422,
+            "permission": 503,
+            "runtime": 404,
+            "integrity": 422,
+        }[kind]
+    )
+    assert path not in response.text
+    assert str(tmp_path) not in response.text
+    assert (uid if kind.startswith("missing_") else path) in caplog.text
+    if kind in {"integrity", "missing_arrays"}:
+        assert "corrupt" in response.json()["detail"]

@@ -663,9 +663,9 @@ async def reconcile_orphan_model_artifacts() -> None:
     pod eviction / SIGKILL) between the two leaves an orphan file with
     no DB row and no exception handler.  This leader-only, idempotent
     sweep (a sibling of :func:`reconcile_stale_jobs`) removes such
-    orphans and abandoned promote scratch dirs, but only those older
-    than the grace window so an in-flight concurrent save is never
-    reaped.
+    unclaimed orphans after a grace window. Execution-owned publications use
+    separately committed revocation fences and storage locks, never age alone.
+    Historical claims without execution ownership remain protected.
     """
     try:
         from spectra_sherpa.app.services.model_store import reconcile_orphan_artifacts

@@ -35,6 +35,33 @@ export interface StarterStartRequest {
   dataset: StarterDatasetOption | null;
 }
 
+/** Editable display name, not a scientific revision or an LLM-generated goal. */
+export function starterProjectName(
+  plan: StarterPlan,
+  dataset: StarterDatasetOption | null,
+  existingNames: readonly string[] = [],
+): string {
+  const words = (value: string, limit: number) => value
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\bv\d+(?:\.\d+)*\b/gi, " ")
+    .replace(/[—–:;|]/g, " ")
+    .trim().split(/\s+/).filter(Boolean).slice(0, limit).join(" ");
+  const subject = Array.from(words(dataset?.label ?? "", 4)).slice(0, 64).join("").trim();
+  // Display-name vocabulary only: model identity/execution still belongs to
+  // the selected template. Keep its leading acronym rather than inferring a
+  // model from the user's free-text goal. Non-model starters omit this part.
+  const model = (plan.template_name?.match(/^([A-Z][A-Z0-9]+(?:-[A-Z0-9]+)*)(?=\s|$)/)?.[1] ?? "").slice(0, 32);
+  const purpose = ({
+    explore: "Exploration", calibrate: "Regression", classify: "Classification",
+    preprocess: "Preprocessing", peaks: "Peak analysis", cluster: "Clustering", resolve: "Decomposition",
+  } as Record<string, string>)[plan.intent] ?? "Analysis";
+  const base = [subject, model, purpose].filter(Boolean).join(" — ");
+  const names = new Set(existingNames.map(name => name.trim().toLocaleLowerCase()));
+  let version = 1;
+  while (names.has(`${base} — v${version}`.toLocaleLowerCase())) version += 1;
+  return `${base} — v${version}`;
+}
+
 export async function fetchStarterOverview(): Promise<StarterOverview> {
   const { data } = await api.get<StarterOverview>("/starter");
   return data;

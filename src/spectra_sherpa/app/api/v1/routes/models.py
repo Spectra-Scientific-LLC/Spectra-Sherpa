@@ -1419,12 +1419,21 @@ async def inspect_model(
         # MUST come before the RuntimeError catch below: integrity error
         # inherits from RuntimeError, so a broader catch would swallow it
         # as a 404 and hide the corruption from the caller.
+        logger.warning("Model inspection integrity check failed", exc_info=True)
         raise HTTPException(
             status_code=422,
-            detail=f"Model artifact is corrupt and cannot be inspected: {e}",
+            detail="Model artifact is corrupt and cannot be inspected. Restore a verified copy or retrain the model.",
         ) from e
     except (RuntimeError, FileNotFoundError) as e:
-        raise HTTPException(status_code=404, detail=f"Model files not found: {e}") from e
+        logger.warning("Model inspection files unavailable", exc_info=True)
+        raise HTTPException(
+            status_code=404, detail="Model files are unavailable. Restore the saved artifact or retrain the model."
+        ) from e
+    except OSError as e:
+        logger.warning("Model inspection storage failure", exc_info=True)
+        raise HTTPException(
+            status_code=503, detail="Model files could not be read. Ask the operator to check storage access."
+        ) from e
 
     # Build array stats
     array_info: dict[str, dict[str, Any]] = {}

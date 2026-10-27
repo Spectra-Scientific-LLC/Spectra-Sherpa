@@ -3046,7 +3046,7 @@ describe("DataContent file inspection", () => {
     );
   });
 
-  it.each([false, true])("admits the Dashboard starter and preserves its template hand-off (tab interruption=%s)", async interrupted => {
+  it.each([false, true])("preselects the Dashboard source but waits for explicit import (tab interruption=%s)", async interrupted => {
     mocks.dataStore.referenceCatalog.sklearn = [{ source: "sklearn", name: "iris", label: "Iris" }];
     window.sessionStorage.setItem("sherpa:data-entry-mode", "analysis-starter");
     window.sessionStorage.setItem("sherpa:data-entry-project-id", "3");
@@ -3076,9 +3076,12 @@ describe("DataContent file inspection", () => {
     await flushPromises();
 
     const vm = wrapper.vm as unknown as DataContentVm;
-    // Entering Data from New Analysis admits bundled/catalog data instead of
-    // leaving the project with a zero-file placeholder. The intent remains
-    // available to Workflow, but records the admitted experiment.
+    expect(mocks.dataStore.createExperiment).not.toHaveBeenCalled();
+    expect(mocks.dataStore.importReferenceDatasets).not.toHaveBeenCalled();
+    expect(Array.from(vm.selectedRefDatasets)).toEqual(["sklearn::iris"]);
+    await vm.onImportSelectedDatasets();
+    await flushPromises();
+    // Explicit import records the admitted experiment for the later handoff.
     expect(Array.from(vm.selectedRefDatasets)).toEqual([]);
     expect(mocks.dataStore.createExperiment).toHaveBeenCalledWith("Iris", undefined, 3, {
       source_kind: "catalog_reference",
@@ -3096,6 +3099,45 @@ describe("DataContent file inspection", () => {
       template_slug: "pca",
       imported_experiment_id: 33,
     });
+  });
+
+  it("keeps the edited Starter import basket and name on a Data subtab round trip", async () => {
+    mocks.dataStore.referenceCatalog.sklearn = [
+      { source: "sklearn", name: "iris", label: "Iris" },
+      { source: "sklearn", name: "wine", label: "Wine" },
+    ];
+    const intent = {
+      schema_version: "spectra-analysis-starter-dataset-intent/1", project_id: 3,
+      dataset_id: "sklearn:iris", source: "sklearn", name: "iris", label: "Iris",
+      template_slug: "pca",
+    };
+    window.sessionStorage.setItem("sherpa:data-entry-mode", "analysis-starter");
+    window.sessionStorage.setItem("sherpa:data-entry-project-id", "3");
+    window.sessionStorage.setItem("sherpa:data-entry-dataset-intent", JSON.stringify(intent));
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    expect([...vm.selectedRefDatasets]).toEqual(["sklearn::iris"]);
+    vm.selectedRefDatasets.clear();
+    vm.selectedRefDatasets.add("sklearn::wine");
+    vm.importDatasetName = "Wine — PCA — Exploration — v2";
+    const tabs = wrapper.getComponent({ name: "TabView" });
+    tabs.vm.$emit("update:activeIndex", 1);
+    await flushPromises();
+    tabs.vm.$emit("update:activeIndex", 0);
+    await flushPromises();
+    expect([...vm.selectedRefDatasets]).toEqual(["sklearn::wine"]);
+    expect(vm.importDatasetName).toBe("Wine — PCA — Exploration — v2");
+    expect(mocks.dataStore.importReferenceDatasets).not.toHaveBeenCalled();
+    // A genuinely new Starter intent is still applied.
+    window.sessionStorage.setItem("sherpa:data-entry-dataset-intent", JSON.stringify({ ...intent, label: "New Iris intent", template_slug: "classification" }));
+    tabs.vm.$emit("update:activeIndex", 1);
+    await flushPromises();
+    tabs.vm.$emit("update:activeIndex", 0);
+    await flushPromises();
+    expect([...vm.selectedRefDatasets]).toEqual(["sklearn::iris"]);
+    expect(vm.importDatasetName).toBe("New Iris intent");
+    wrapper.unmount();
   });
 
   it("does not bounce an explicit subtab choice after the starter dataset was imported", async () => {

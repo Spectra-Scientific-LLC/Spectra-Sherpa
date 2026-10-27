@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { useGuidanceStore, type GuidanceEvent } from "@/stores/guidance";
 import {
@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   project: { currentProjectId: 7 as number | null },
   workflow: { workflowId: 9 as number | null, restoredRunId: 31 as number | null },
   notify: vi.fn(),
-  currentRoute: { value: { path: "/dashboard" } },
+  currentRoute: { value: { path: "/dashboard", query: {} as Record<string, string> } },
   wsSend: vi.fn(),
   ws: {
     readyState: WebSocket.OPEN,
@@ -76,11 +76,14 @@ function makeEvent(overrides: Partial<GuidanceEvent> = {}): GuidanceEvent {
 }
 
 describe("guidance store", () => {
+  afterEach(() => { vi.restoreAllMocks(); });
   beforeEach(() => {
     document.body.replaceChildren();
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([{}] as unknown as DOMRectList);
     mocks.currentRoute.value.path = "/dashboard";
+    mocks.currentRoute.value.query = {};
     mocks.project.currentProjectId = 7;
     mocks.advisorActiveNode.value = null;
     mocks.routerPush.mockImplementation(async (route: { path: string }) => { mocks.currentRoute.value.path = route.path; });
@@ -133,7 +136,39 @@ describe("guidance store", () => {
     expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/workflow", query: { project_id: "7", workflow_id: "9" }, hash: undefined });
   });
 
-  it.each(Object.values(GUIDANCE_ACTIONS))("keeps the project for $actionId without submitting scientific work", async (action) => {
+  it("opens Analysis Starter without replacing its exact dataset-selection receipt", async () => {
+    mocks.currentRoute.value.path = "/workflow";
+    mocks.currentRoute.value.query = { project_id: "7", fromDataSelection: "1", selection: "exact-subset-receipt" };
+    const before = { ...mocks.currentRoute.value.query };
+    const target = document.createElement("button");
+    target.dataset.action = "open_analysis_starters";
+    const disabledToolbar = document.createElement("button");
+    disabledToolbar.dataset.action = "open_analysis_starters";
+    disabledToolbar.disabled = true;
+    document.body.append(disabledToolbar);
+    const clicked = vi.fn();
+    target.onclick = clicked;
+    document.body.append(target);
+    expect(await useGuidanceStore().runAction("open_analysis_starters")).toBe(true);
+    expect(clicked).toHaveBeenCalledOnce();
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+    expect(mocks.currentRoute.value.query).toEqual(before);
+  });
+
+  it.each(["wrong-page", "disabled", "missing"])("refuses a %s Analysis Starter action without discarding its context", async state => {
+    mocks.currentRoute.value.path = state === "wrong-page" ? "/data" : "/workflow";
+    const target = document.createElement("button");
+    target.dataset.action = "open_analysis_starters";
+    target.disabled = state === "disabled";
+    const clicked = vi.fn();
+    target.onclick = clicked;
+    if (state !== "missing") document.body.append(target);
+    expect(await useGuidanceStore().runAction("open_analysis_starters")).toBe(false);
+    expect(clicked).not.toHaveBeenCalled();
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+  });
+
+  it.each(Object.values(GUIDANCE_ACTIONS).filter(action => action.actionId !== "open_analysis_starters"))("keeps the project for $actionId without submitting scientific work", async (action) => {
     if (action.expectedScope) mocks.advisorActiveNode.value = { id: 1, project_id: 7, tab_key: action.expectedScope.tabKey, subscope_key: action.expectedScope.subscopeKey ?? "" };
     const target = document.createElement("button");
     target.dataset.action = action.clickTarget ?? "import_data";

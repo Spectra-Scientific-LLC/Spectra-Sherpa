@@ -190,6 +190,7 @@ class DAGExecutor:
                     ),
                     "integrity_hash": integrity_hash,
                     "artifact_dir": store.artifact_directory(artifact_uid),
+                    "publication_attempt_id": getattr(store, "attempt_id", None),
                 }
             )
 

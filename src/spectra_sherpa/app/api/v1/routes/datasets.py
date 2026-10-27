@@ -377,6 +377,54 @@ def _complete_collection_sample_table(dataset) -> dict[str, object]:
         "sample_id": retained_table.get("sample_id", labels),
         **{key: values for key, values in retained_table.items() if key != "sample_id"},
     }
+    # Native responses (e.g. synthetic concentrations) are already typed and
+    # row-aligned on the retained dataset. Expose them in this read-only view,
+    # not by modifying SampleAxis or the scientific digest used by saved grants.
+    column_units: dict[str, str] = {}
+    response_columns: set[str] = set()
+    response_warnings: list[str] = []
+    context = dataset.target_context
+    if dataset.target is not None and context.target_type == "continuous":
+        target = np.asarray(dataset.target)
+        if target.ndim == 1:
+            target = target[:, None]
+        names = list(context.target_names or ([context.target_name] if context.target_name else []))
+        if (
+            target.ndim != 2
+            or target.shape != (row_count, len(names))
+            or not names
+            or any(not isinstance(name, str) or not name or name == "sample_id" for name in names)
+            or len(set(names)) != len(names)
+        ):
+            response_warnings.append("Native responses unavailable: rows and declared column names do not match.")
+            names = []
+        if len(set(table).union(names)) > _COLLECTION_SAMPLE_TABLE_MAX_COLUMNS:
+            response_warnings.append(
+                "Native responses unavailable: adding them would exceed the "
+                f"{_COLLECTION_SAMPLE_TABLE_MAX_COLUMNS}-column inspection limit."
+            )
+            names = []
+        for index, name in enumerate(names):
+            values = target[:, index]
+            if values.dtype.kind not in "fiu" or np.isinf(values).any():
+                response_warnings.append(f"Native response {name!r} unavailable: invalid numeric values.")
+                continue
+            if name in table and not _response_annotation_matches(table[name], values):
+                # A native target is optional inspection enrichment, not a
+                # license to overwrite conflicting source annotations or hide
+                # every other valid column in the original table.
+                response_warnings.append(f"Native response {name!r} unavailable: sample-table values disagree.")
+                continue
+            # Keep a view until the bounded projection loop; do not materialize
+            # all response cells before checking the aggregate response budget.
+            table[name] = values
+            response_columns.add(name)
+            # With selected authority, target_units describes only that
+            # response. Without it, the native matrix retains a shared unit.
+            if context.target_units and (
+                context.selected_authority is None or context.selected_authority.column == name
+            ):
+                column_units[name] = context.target_units
     columns = list(table)
     if len(columns) > _COLLECTION_SAMPLE_TABLE_MAX_COLUMNS:
         raise ValueError(f"collection sample table must contain 1-{_COLLECTION_SAMPLE_TABLE_MAX_COLUMNS} columns")
@@ -396,13 +444,20 @@ def _complete_collection_sample_table(dataset) -> dict[str, object]:
             raise ValueError("collection sample table exceeds the 4 MiB retrieval limit")
 
     projected: dict[str, list[str | int | float | bool | None]] = {}
+
+    def response_cell(value):
+        # Missing native responses are valid; infinity is still refused.
+        if isinstance(value, (float, np.floating)) and np.isnan(value):
+            return None
+        return _sample_table_scalar(value)
+
     for column in columns:
         values = table[column]
         if len(values) != row_count:
             raise ValueError(f"collection sample-table column {column!r} does not match its retained rows")
         projected_values: list[str | int | float | bool | None] = []
         for index, value in enumerate(values):
-            scalar = _sample_table_scalar(value)
+            scalar = response_cell(value) if column in response_columns else _sample_table_scalar(value)
             if column == "sample_id" and (not isinstance(scalar, str) or scalar != labels[index]):
                 raise ValueError(f"collection sample identity at row {index + 1} does not match its label")
             # Grouping columns are optional for a generic scientific
@@ -431,10 +486,47 @@ def _complete_collection_sample_table(dataset) -> dict[str, object]:
             **scientific_identity,
         },
     }
+    if column_units:
+        payload["column_units"] = column_units
+    if response_warnings:
+        payload["response_projection_warnings"] = response_warnings
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if len(encoded) > _COLLECTION_SAMPLE_TABLE_MAX_JSON_BYTES:
         raise ValueError("collection sample table exceeds the 4 MiB retrieval limit")
     return payload
+
+
+def _response_annotation_matches(annotation, target: np.ndarray) -> bool:
+    """Compare numeric encodings at the retained target's precision, not a tolerance.
+
+    In particular CSV 0.1 and a float32 0.1 describe the same stored value.
+    Do not coerce arbitrary text, booleans, infinities or fractional integers.
+    Missing native responses may match null/NaN annotations.
+    """
+    if not isinstance(annotation, (list, tuple, np.ndarray)) or len(annotation) != len(target):
+        return False
+    for original, retained in zip(annotation, target):
+        if original is None:
+            if target.dtype.kind != "f" or not np.isnan(retained):
+                return False
+            continue
+        if isinstance(original, (bool, np.bool_)):
+            return False
+        try:
+            numeric = float(original)
+            if np.isnan(numeric) and target.dtype.kind == "f" and np.isnan(retained):
+                continue
+            if not np.isfinite(numeric):
+                return False
+            if target.dtype.kind in "iu" and (not numeric.is_integer() or numeric != int(retained)):
+                return False
+            with np.errstate(over="ignore", invalid="ignore"):
+                represented = np.asarray(original, dtype=target.dtype).item()
+            if represented != retained:
+                return False
+        except (ValueError, TypeError, OverflowError):
+            return False
+    return True
 
 
 MAX_NIST_LIBRARY_IMPORT_COUNT = 500

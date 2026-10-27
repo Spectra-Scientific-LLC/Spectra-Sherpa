@@ -1,12 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { findActionTarget, waitForActionTarget } from "@/lib/actionTargets";
 
 describe("actionTargets", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    // DOM emulators have no layout engine; model a rendered button explicitly.
+    vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([{}] as unknown as DOMRectList);
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     document.body.innerHTML = "";
   });
 
@@ -52,6 +55,17 @@ describe("actionTargets", () => {
 
       const found = findActionTarget("import_data");
       expect(found?.id).toBe("first");
+    });
+
+    it.each(["disabled", "hidden", "busy", "inert", "no-layout"])("skips a %s toolbar duplicate", (state) => {
+      document.body.innerHTML = '<button data-action="open_analysis_starters" id="toolbar"></button><button data-action="open_analysis_starters" id="selection"></button>';
+      const toolbar = document.getElementById("toolbar") as HTMLButtonElement;
+      if (state === "disabled") toolbar.disabled = true;
+      if (state === "hidden") toolbar.hidden = true;
+      if (state === "busy") toolbar.setAttribute("aria-busy", "true");
+      if (state === "inert") toolbar.setAttribute("inert", "");
+      if (state === "no-layout") Object.defineProperty(toolbar, "getClientRects", { value: () => [] });
+      expect(findActionTarget("open_analysis_starters")?.id).toBe("selection");
     });
   });
 

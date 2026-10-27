@@ -200,6 +200,18 @@ class ModelStore:
         *,
         replace_existing: bool,
     ) -> str:
+        # Hold storage custody for the entire write, not just promotion. A
+        # database disconnect cannot release this lock underneath a live writer.
+        with self._publication_claim(artifact_uid):
+            if os.path.lexists(self._publication_fence(artifact_uid)):
+                raise ModelArtifactCollisionError("Model artifact identity has been reclaimed")
+            return self._save_locked(artifact_uid, manifest, arrays, replace_existing=replace_existing)
+
+    def _publication_fence(self, artifact_uid: str) -> Path:
+        identity = _uuid.uuid5(_uuid.NAMESPACE_URL, f"spectrasherpa:model:{artifact_uid}").hex
+        return self.models_dir.parent / ".model-publication-locks" / f"{identity}.fenced"
+
+    def _save_locked(self, artifact_uid, manifest, arrays, *, replace_existing):
         artifact_dir = self._artifact_dir(artifact_uid)
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
@@ -242,24 +254,18 @@ class ModelStore:
             # claim.  In particular, create-only must not observe the brief
             # absent-target window while replacement has moved the old
             # generation aside for its crash-recoverable promotion.
-            with self._publication_claim(artifact_uid):
-                try:
-                    if replace_existing:
-                        self._promote(staging, artifact_dir)
-                    else:
-                        self._promote_new(staging, artifact_dir)
+            try:
+                if replace_existing:
+                    self._promote(staging, artifact_dir)
+                else:
+                    self._promote_new(staging, artifact_dir)
+                _fsync_dir(self.models_dir)
+            except Exception:
+                # A collision retains staging and must never delete the winner.
+                if not replace_existing and not staging.exists() and artifact_dir.exists():
+                    shutil.rmtree(artifact_dir)
                     _fsync_dir(self.models_dir)
-                except Exception:
-                    # A create-only promotion can fail after the rename (for
-                    # example while fsyncing the parent).  If staging has
-                    # disappeared, this invocation owns the newly promoted
-                    # target; remove it while the same UID claim is held.  A
-                    # collision leaves staging present and must never delete
-                    # the pre-existing winner.
-                    if not replace_existing and not staging.exists() and artifact_dir.exists():
-                        shutil.rmtree(artifact_dir)
-                        _fsync_dir(self.models_dir)
-                    raise
+                raise
         finally:
             # On the happy path ``staging`` was renamed away and no
             # longer exists; this only fires if promotion failed.
@@ -478,6 +484,53 @@ class ModelStore:
             shutil.rmtree(artifact_dir)
             logger.info("Deleted model artifact %s from disk", artifact_uid)
 
+    def reclaim_publication(self, artifact_uid: str, protected_paths: list[Path]) -> None:
+        """Fence an expired publication and remove its attributable scratch.
+
+        Caller must already hold committed DB revocation and owner custody.
+        The persistent storage fence also stops writers whose DB connection died.
+        """
+        self._remove_publication(artifact_uid, protected_paths, durable=True)
+
+    def discard_stopped_trial(self, artifact_uid: str, protected_paths: list[Path]) -> None:
+        """Remove a joined trial's files without claiming crash-durable erasure.
+
+        Only its stopped execution owner may call this fallback. Background
+        recovery cannot infer that authority from an expired lease or DB flag.
+        The caller retains the DB tombstone and does not set reclaimed_at.
+        """
+        self._remove_publication(artifact_uid, protected_paths, durable=False)
+
+    def _remove_publication(self, artifact_uid: str, protected_paths: list[Path], *, durable: bool) -> None:
+        if str(_uuid.UUID(artifact_uid)) != artifact_uid:
+            raise ValueError("Publication reclamation requires an allocated UUID")
+        with self._publication_claim(artifact_uid):
+            targets = [self._artifact_dir(artifact_uid)]
+            targets.extend(self.models_dir.glob(f".staging-{artifact_uid}-*"))
+            for target in targets:
+                resolved = target.resolve()
+                if target.is_symlink() or any(
+                    path == resolved or path in resolved.parents or resolved in path.parents for path in protected_paths
+                ):
+                    raise ValueError("Publication cleanup overlaps protected storage")
+            fence = self._publication_fence(artifact_uid)
+            fd = os.open(fence, os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            try:
+                restrict_file_descriptor(fd)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            # Reclamation cannot use the older best-effort publication helper:
+            # a failed barrier must preserve bytes and leave the receipt pending.
+            if durable:
+                _fsync_directory_required(fence.parent)
+                _fsync_directory_required(fence.parent.parent)
+            for target in targets:
+                if target.exists():
+                    shutil.rmtree(target)
+            if durable and self.models_dir.exists():
+                _fsync_directory_required(self.models_dir)
+
     # ── List ─────────────────────────────────────────────────────────
 
     def list_artifacts(self) -> list[str]:
@@ -523,6 +576,22 @@ def _fsync_dir(path: Path) -> None:
             os.close(fd)
     except (OSError, AttributeError) as exc:  # pragma: no cover - platform dependent
         logger.debug("fsync dir(%s) skipped: %s", path, exc)
+
+
+def durable_publication_recovery_supported() -> bool:
+    """Platform primitive availability, not qualification of arbitrary storage."""
+    return os.name == "posix" and hasattr(os, "O_DIRECTORY")
+
+
+def _fsync_directory_required(path: Path) -> None:
+    """Failure is not evidence of durable deletion; callers must retain custody."""
+    if not durable_publication_recovery_supported():
+        raise OSError(errno.ENOTSUP, "Durable publication reclamation requires directory synchronization")
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def _json_default(obj: Any) -> Any:
@@ -598,6 +667,35 @@ async def persist_model_artifact_records(
         sa_select(ModelArtifact.artifact_uid).where(ModelArtifact.artifact_uid.in_(uids))
     )
     existing_uids = set(existing_result.scalars().all())
+
+    # Reclamation and registration serialize under the same owner-row lock.
+    # Keep the fence check before durability side effects and check every claim
+    # before adding any row, so a delayed caller cannot resurrect reaped files.
+    claims = list(
+        await session.scalars(
+            sa_select(ModelPublication)
+            .where(ModelPublication.artifact_uid.in_(uids))
+            .execution_options(populate_existing=True)
+        )
+    )
+    if any(claim.user_id != user_id or claim.cleanup_requested for claim in claims):
+        raise ValueError("Model publication ownership expired; run the workflow again")
+    by_uid = {art["artifact_uid"]: art for art in saved_artifacts}
+    if any(
+        claim.attempt_id is not None
+        and (
+            by_uid[claim.artifact_uid].get("publication_attempt_id") != claim.attempt_id
+            or by_uid[claim.artifact_uid].get("artifact_dir") != claim.artifact_dir
+        )
+        for claim in claims
+    ):
+        raise ValueError("Model publication does not match its execution ownership")
+    claimed_uids = {claim.artifact_uid for claim in claims}
+    if any(
+        art.get("publication_attempt_id") and art["artifact_uid"] not in claimed_uids | existing_uids
+        for art in saved_artifacts
+    ):
+        raise ValueError("Model publication ownership is missing; run the workflow again")
 
     rows = []
     for art in saved_artifacts:
@@ -749,10 +847,12 @@ async def reconcile_orphan_artifacts(
     ``store.delete()`` at the call site, but a hard process kill (OOM /
     pod eviction) between ``store.save()`` and the DB commit raises no
     exception and leaves an orphan file with no DB row, never GC'd.
-    This idempotent sweep — safe to run at startup — removes disk
-    artifacts that (a) have no DB row and (b) are older than
-    ``grace_seconds`` (so an in-flight concurrent save is never reaped),
-    plus leftover ``.staging-*`` scratch.  A ``<uid>.old-<hex>`` re-save
+    This idempotent sweep removes unclaimed disk artifacts older than
+    ``grace_seconds``, plus leftover ``.staging-*`` scratch. Durable
+    publication claims and active artifact paths protect their complete path
+    trees, even when a historical row's UID differs from its directory name.
+    Grace alone never proves that a claimed publication is abandoned.
+    A ``<uid>.old-<hex>`` re-save
     backup is *recovered* (renamed back to the canonical uid) when the
     canonical dir is missing — a crash mid-``_promote`` — and only
     deleted as stale once the canonical artifact is present again.
@@ -775,9 +875,20 @@ async def reconcile_orphan_artifacts(
     # Snapshot paths before claims: a writer claims before creating its files,
     # so newly published paths cannot enter this sweep after the custody read.
     children = tuple(models_dir.iterdir())
-    pending_uids = set(await session.scalars(sa_select(ModelPublication.artifact_uid)))
-    db_rows = (await session.execute(sa_select(ModelArtifact.artifact_uid, ModelArtifact.is_active))).all()
-    db_active_by_uid = {artifact_uid: bool(is_active) for artifact_uid, is_active in db_rows}
+    publications = (
+        await session.execute(sa_select(ModelPublication.artifact_uid, ModelPublication.artifact_dir))
+    ).all()
+    pending_uids = {uid for uid, _ in publications}
+    db_rows = (
+        await session.execute(
+            sa_select(ModelArtifact.artifact_uid, ModelArtifact.is_active, ModelArtifact.artifact_dir)
+        )
+    ).all()
+    db_active_by_uid = {uid: bool(active) for uid, active, _ in db_rows}
+    protected_paths = {
+        (Path(raw) if Path(raw).is_absolute() else models_dir.parent / raw).resolve()
+        for raw in ([path for _, path in publications] + [path for _, active, path in db_rows if active])
+    }
     now = time.time()
     removed: list[str] = []
     recovered: list[str] = []
@@ -789,6 +900,15 @@ async def reconcile_orphan_artifacts(
         # Claims remain authoritative even after a failed run or long fit.
         # Age cannot establish that an account-owned publication is abandoned.
         if name in pending_uids or (name.startswith(".staging-") and name[9:45] in pending_uids and name[45:46] == "-"):
+            continue
+        # Check before either recovery or deletion: renaming a referenced backup
+        # would also invalidate its retained path. This includes other owners and
+        # legacy relative paths, not only the candidate directory's apparent UID.
+        resolved_child = child.resolve()
+        if any(
+            path == resolved_child or path in resolved_child.parents or resolved_child in path.parents
+            for path in protected_paths
+        ):
             continue
 
         # ``<uid>.old-<hex>`` is a re-save backup, NOT scratch: during
@@ -804,9 +924,15 @@ async def reconcile_orphan_artifacts(
         if ".old-" in name:
             base_uid = name.rsplit(".old-", 1)[0]
             canonical = models_dir / base_uid
+            if base_uid in pending_uids or os.path.lexists(store._publication_fence(base_uid)):
+                continue
             if not canonical.exists():
                 try:
-                    os.replace(child, canonical)
+                    with store._publication_claim(base_uid):
+                        if os.path.lexists(store._publication_fence(base_uid)) or canonical.exists():
+                            continue
+                        os.replace(child, canonical)
+                        _fsync_dir(models_dir)
                     logger.warning(
                         "Recovered model artifact %s from an interrupted re-save backup (%s)",
                         base_uid,

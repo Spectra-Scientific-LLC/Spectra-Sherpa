@@ -98,7 +98,12 @@ async def test_model_claim_transfers_only_with_committed_registration(test_sessi
     assert await reconcile_orphan_artifacts(test_session, store=store, grace_seconds=0) == []
     assert staging.exists()
     assert await test_session.scalar(select(ModelArtifact).where(ModelArtifact.artifact_uid == uid)) is None
-    artifact = {"artifact_uid": uid, "artifact_dir": writer.artifact_directory(uid), "integrity_hash": digest}
+    artifact = {
+        "artifact_uid": uid,
+        "artifact_dir": writer.artifact_directory(uid),
+        "integrity_hash": digest,
+        "publication_attempt_id": writer.attempt_id,
+    }
     await persist_model_artifact_records(test_session, [artifact], user_id)
     await test_session.rollback()
     assert await test_session.get(ModelPublication, uid) is not None

@@ -5269,6 +5269,13 @@ async def import_project(
                     select(ModelArtifact.artifact_uid).where(ModelArtifact.artifact_uid.in_(candidate_uids))
                 )
                 existing_db_uids = set(_dup_res.scalars().all())
+                from spectra_sherpa.app.models.model_publication import ModelPublication
+
+                existing_db_uids.update(
+                    await session.scalars(
+                        select(ModelPublication.artifact_uid).where(ModelPublication.artifact_uid.in_(candidate_uids))
+                    )
+                )
 
             # Extract and import validated models
             for uid, m_data, old_model_project_id, manifest, arrays in model_entries:

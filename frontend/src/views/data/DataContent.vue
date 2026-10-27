@@ -461,6 +461,7 @@
               </div>
               <Button
                 label="Add to My Dataset"
+                data-guidance-ready="import_data"
                 icon="pi pi-plus"
                 data-action="import_data"
                 class="p-button-sm"
@@ -4748,11 +4749,21 @@ function clearImportedAnalysisStarterMarker(intent: AnalysisStarterDatasetIntent
   }
 }
 
+let appliedAnalysisStarterIntent: string | null = null;
+
 function applyAnalysisStarterIntent(): boolean {
   const intent = pendingAnalysisStarterIntent();
   // A goal started with the user's own files names no catalog source; it
   // only carries the planned starter template to the Workflow builder.
-  if (!intent || intent.source === "upload") return false;
+  if (!intent || intent.source === "upload") {
+    appliedAnalysisStarterIntent = null;
+    return false;
+  }
+
+  const identity = JSON.stringify(intent);
+  // Preselection is a starting suggestion, not a recurring authority over the
+  // user's import basket or edited name when switching Data subtabs.
+  if (identity === appliedAnalysisStarterIntent) return true;
 
   const intentKey = `${intent.source}::${intent.name}`;
   const registeredSource = (dataStore.referenceCatalog?.registered ?? []).find(
@@ -4766,12 +4777,13 @@ function applyAnalysisStarterIntent(): boolean {
         null)
       : null);
 
-  selectedRefDatasets.clear();
   if (!dataset) {
     previewRefKey.value = null;
     return true;
   }
 
+  appliedAnalysisStarterIntent = identity;
+  selectedRefDatasets.clear();
   const key = dsKey(dataset);
   previewRefKey.value = key;
   if (registeredSource || dataset.source === "registered" || dataset.source === "eigenvector") {
@@ -5550,7 +5562,8 @@ async function resumeStarterImport(): Promise<void> {
   if (!current() || !scope.isCurrent() || activeTab.value !== TAB_IMPORT || !intent
     || intent.imported_experiment_id != null || importing.value) return;
   applyAnalysisStarterIntent();
-  if (selectedRefDatasets.size > 0) await onImportSelectedDatasets();
+  // A Starter recommendation preselects data; only the user's Import action
+  // may persist it. Keep this page stable so its next step is inspectable.
 }
 
 onMounted(async () => {
@@ -5590,9 +5603,7 @@ onMounted(async () => {
   syncGuidedExampleSession();
   await applyRouteDataState(tabChoiceCurrent, entryQuery);
   if (!ticket.isCurrent()) return;
-  // New Analysis carries a reference choice, rather than merely suggesting
-  // one. Admit bundled/catalog sources automatically. Provider packages stay
-  // manual because they require the exact user-acquired archive.
+  // Restore the Starter recommendation without importing or navigating again.
   if (activeTab.value === TAB_IMPORT && pendingAnalysisStarterIntent()) {
     await resumeStarterImport();
     if (!ticket.isCurrent()) return;
