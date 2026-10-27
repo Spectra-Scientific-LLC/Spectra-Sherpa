@@ -537,12 +537,13 @@ async def get_collection_definition_endpoint(
     experiment = await _require_experiment(session, experiment_id, current_user.id)
     from spectra_sherpa.app.contracts.demo_policy import require_trial_dataset_access
 
+    stage = await preferred_experiment_stage(session, experiment_id) or "raw"
     admission = await require_trial_dataset_access(
         session=session,
         user_id=current_user.id,
         workflow_project_id=experiment.project_id,
         experiment_id=experiment_id,
-        stage="raw",
+        stage=stage,
         file_id=None,
         asset_id=None,
     )
@@ -570,7 +571,7 @@ async def get_collection_definition_endpoint(
                 session,
                 user_id=current_user.id,
                 experiment_id=experiment_id,
-                stage="raw",
+                stage=stage,
                 definition_override=definition,
             )
         )

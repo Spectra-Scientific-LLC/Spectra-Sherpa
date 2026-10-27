@@ -14,6 +14,18 @@ for one study, method-development effort, or demo evaluation. An Experiment is
 an internal import/source container for files, specimens, metadata, and versions.
 It can belong to a Project; it is not another name for the Project workspace.
 
+Dashboard Starter suggests **Data — Model — Purpose — Version**, for example
+**Lavender FTIR — PCA — Exploration — v1** or **Corn — PLS — Regression — v1**.
+For preprocessing or other starters without a named model, the model part is omitted.
+You can edit it before choosing **Ready to Start**. The `v1` suffix is a naming
+aid, not a scientific revision or a claim about saved results.
+
+Starter opens the next relevant page without importing data or adding a template
+automatically. On Import, review the suggested dataset and choose **Add to My
+Dataset**. On Workflow, choose **Analysis Starter**, then the suggested template.
+Where hosted Guidance is available and enabled, its task-specific buttons point
+to these same controls; they do not perform the import or run an analysis.
+
 ## Dataset
 
 A dataset is a named selection of data, views, target, and optional groups that

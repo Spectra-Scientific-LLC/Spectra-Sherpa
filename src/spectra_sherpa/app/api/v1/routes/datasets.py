@@ -377,6 +377,37 @@ def _complete_collection_sample_table(dataset) -> dict[str, object]:
         "sample_id": retained_table.get("sample_id", labels),
         **{key: values for key, values in retained_table.items() if key != "sample_id"},
     }
+    # Native responses (e.g. synthetic concentrations) are already typed and
+    # row-aligned on the retained dataset. Expose them in this read-only view,
+    # not by modifying SampleAxis or the scientific digest used by saved grants.
+    column_units: dict[str, str] = {}
+    response_columns: set[str] = set()
+    response_annotations: dict[str, object] = {}
+    context = dataset.target_context
+    if dataset.target is not None and context.target_type == "continuous":
+        target = np.asarray(dataset.target)
+        if target.ndim == 1:
+            target = target[:, None]
+        names = list(context.target_names or ([context.target_name] if context.target_name else []))
+        if (
+            target.ndim != 2
+            or target.shape != (row_count, len(names))
+            or not names
+            or any(not isinstance(name, str) or not name or name == "sample_id" for name in names)
+            or len(set(names)) != len(names)
+        ):
+            raise ValueError("retained response columns do not match the sample rows and declared names")
+        if len(set(table).union(names)) > _COLLECTION_SAMPLE_TABLE_MAX_COLUMNS:
+            raise ValueError(f"collection sample table must contain 1-{_COLLECTION_SAMPLE_TABLE_MAX_COLUMNS} columns")
+        response_columns = set(names)
+        for index, name in enumerate(names):
+            if name in table:
+                response_annotations[name] = table[name]
+            # Keep a view until the bounded projection loop; do not materialize
+            # all response cells before checking the aggregate response budget.
+            table[name] = target[:, index]
+            if context.target_units:
+                column_units[name] = context.target_units
     columns = list(table)
     if len(columns) > _COLLECTION_SAMPLE_TABLE_MAX_COLUMNS:
         raise ValueError(f"collection sample table must contain 1-{_COLLECTION_SAMPLE_TABLE_MAX_COLUMNS} columns")
@@ -396,13 +427,25 @@ def _complete_collection_sample_table(dataset) -> dict[str, object]:
             raise ValueError("collection sample table exceeds the 4 MiB retrieval limit")
 
     projected: dict[str, list[str | int | float | bool | None]] = {}
+
+    def response_cell(value):
+        # Missing native responses are valid; infinity is still refused.
+        if isinstance(value, (float, np.floating)) and np.isnan(value):
+            return None
+        return _sample_table_scalar(value)
+
     for column in columns:
         values = table[column]
         if len(values) != row_count:
             raise ValueError(f"collection sample-table column {column!r} does not match its retained rows")
         projected_values: list[str | int | float | bool | None] = []
+        annotation = response_annotations.get(column)
+        if annotation is not None and len(annotation) != row_count:
+            raise ValueError("retained response conflicts with its sample-table column")
         for index, value in enumerate(values):
-            scalar = _sample_table_scalar(value)
+            scalar = response_cell(value) if column in response_columns else _sample_table_scalar(value)
+            if annotation is not None and response_cell(annotation[index]) != scalar:
+                raise ValueError("retained response conflicts with its sample-table column")
             if column == "sample_id" and (not isinstance(scalar, str) or scalar != labels[index]):
                 raise ValueError(f"collection sample identity at row {index + 1} does not match its label")
             # Grouping columns are optional for a generic scientific
@@ -431,6 +474,8 @@ def _complete_collection_sample_table(dataset) -> dict[str, object]:
             **scientific_identity,
         },
     }
+    if column_units:
+        payload["column_units"] = column_units
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if len(encoded) > _COLLECTION_SAMPLE_TABLE_MAX_JSON_BYTES:
         raise ValueError("collection sample table exceeds the 4 MiB retrieval limit")

@@ -255,6 +255,17 @@ export const useGuidanceStore = defineStore("guidance", () => {
     const projectId = useProjectStore().currentProjectId;
     if (sourceProject != null && sourceProject !== projectId) return unavailable("This suggestion belongs to another project. Reopen that project first.");
     const sameProject = () => useProjectStore().currentProjectId === projectId;
+    if (action.actionId === "open_analysis_starters") {
+      // The Workflow route owns an exact, receipt-bound dataset selection.
+      // Even a push to the same pathname can discard that query and broaden it
+      // to the project collection. Invoke only the current page's guarded action.
+      const target = findActionTarget("open_analysis_starters");
+      if (router.currentRoute.value.path !== "/workflow" || !target || target.matches(":disabled, [aria-disabled='true']")) {
+        return unavailable("Open the selected dataset in Workflow before choosing an Analysis Starter.");
+      }
+      target.click();
+      return true;
+    }
     if (["open_workflow", "add_preprocessing", "pick_template"].includes(action.actionId) && router.currentRoute.value.path === "/data") {
       // My Dataset owns selection, target authority and readiness. Invoke its
       // existing handoff rather than bypassing those guards with a bare route.

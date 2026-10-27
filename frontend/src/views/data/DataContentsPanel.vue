@@ -1070,6 +1070,7 @@ type CompleteSampleTablePayload = {
   columns: string[];
   labels: string[];
   sample_table: Record<string, unknown[]>;
+  column_units?: Record<string, string>;
   source_collection: {
     schema_version: string;
     file_count: number;
@@ -1385,7 +1386,11 @@ watch(
     completeSampleTablePayload.value = null;
     completeSampleTableError.value = null;
     completeSampleTableLoading.value = false;
-    if (!fileInfo || apiSerializationMetadata()?.mode !== "bounded_preview") return;
+    if (!fileInfo) return;
+    const nativeTable = fileInfo.y_axis?.sample_table;
+    const missingResponses = (fileInfo.analysis_readiness?.profile?.target_fields ?? [])
+      .some((name) => !nativeTable || !(name in nativeTable));
+    if (apiSerializationMetadata()?.mode !== "bounded_preview" && nativeTable && !missingResponses) return;
     if (collectionState.value.kind !== "valid") return;
     const handle = retainedDatasetHandle(fileInfo as unknown as Record<string, unknown>);
     if (!handle) {
@@ -1423,8 +1428,8 @@ function buildSampleTableState(
   complete: boolean,
 ): SampleTableState {
   if (raw == null) {
-    return collectionState.value.kind === "valid"
-      ? { kind: "invalid", message: "The project collection has no typed sample table." }
+    return completeSampleTableError.value
+      ? { kind: "invalid", message: completeSampleTableError.value }
       : { kind: "absent" };
   }
   if (!isRecord(raw) || Object.keys(raw).length === 0) {
@@ -2198,7 +2203,9 @@ function commitAnalysisGroup(value: string): void {
 }
 
 function formatSampleColumn(value: string): string {
-  return value.split("_").join(" ");
+  const label = value.split("_").join(" ");
+  const unit = completeSampleTablePayload.value?.column_units?.[value];
+  return unit ? `${label} (${unit})` : label;
 }
 
 function formatSampleValue(value: unknown): string {
@@ -3550,7 +3557,7 @@ const DataStorySection = defineComponent({
   background: var(--ss-surface-subtle);
   color: var(--ss-text-secondary);
   font-weight: 650;
-  text-transform: capitalize;
+  text-transform: none; /* Preserve case-sensitive scientific units. */
 }
 
 .collection-sample-table tbody tr:last-child td {

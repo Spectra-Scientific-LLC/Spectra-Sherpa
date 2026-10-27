@@ -49,53 +49,64 @@ class DatasetRegistryCapacityError(RuntimeError):
     """Raised before copying when a typed dataset exceeds handle memory policy."""
 
 
-def estimate_retained_bytes(value: object, *, _seen: set[int] | None = None) -> int:
-    """Conservatively estimate unique retained memory with stable container costs.
+def estimate_retained_bytes(value: object, *, max_bytes: int | None = None) -> int:
+    """Conservatively estimate snapshot memory with stable container costs.
 
     Python container allocation capacity can differ between an original object
     and its deep copy even when their logical structures are identical. Stable,
     deliberately generous per-entry costs make the admission estimate
     reproducible across the source and retained snapshot while ndarray buffers
-    remain accounted from their exact ``nbytes``.
+    remain accounted from their exact ``nbytes``. Metadata normalization can
+    duplicate aliased list/dict containers during snapshotting, so charge each
+    occurrence of those containers while still breaking recursive cycles.
     """
 
-    seen = _seen if _seen is not None else set()
-    identity = id(value)
-    if identity in seen:
-        return 0
-    seen.add(identity)
-    if value is None:
-        return 0
-    if isinstance(value, np.ndarray):
-        size = int(value.nbytes) + _ARRAY_HEADER_BYTES
-        if value.dtype.hasobject:
-            size += sum(estimate_retained_bytes(item, _seen=seen) for item in value.flat)
-        return size
-    if isinstance(value, dict):
-        return (
-            _MAPPING_BASE_BYTES
-            + (_MAPPING_ENTRY_BYTES * len(value))
-            + sum(
-                estimate_retained_bytes(key, _seen=seen) + estimate_retained_bytes(item, _seen=seen)
-                for key, item in value.items()
-            )
-        )
-    if isinstance(value, (list, tuple)):
-        return (
-            _SEQUENCE_BASE_BYTES
-            + (_SEQUENCE_ENTRY_BYTES * len(value))
-            + sum(estimate_retained_bytes(item, _seen=seen) for item in value)
-        )
-    if isinstance(value, (set, frozenset)):
-        return (
-            _SET_BASE_BYTES
-            + (_SET_ENTRY_BYTES * len(value))
-            + sum(estimate_retained_bytes(item, _seen=seen) for item in value)
-        )
-    instance_dict = getattr(value, "__dict__", None)
-    if isinstance(instance_dict, dict):
-        return _OBJECT_BASE_BYTES + estimate_retained_bytes(instance_dict, _seen=seen)
-    return sys.getsizeof(value)
+    seen: set[int] = set()
+    total = 0
+
+    def charge(size: int) -> None:
+        nonlocal total
+        total += size
+        if max_bytes is not None and total > max_bytes:
+            raise DatasetRegistryCapacityError("dataset exceeds the in-memory handle per-dataset byte limit")
+
+    def visit(item: object) -> None:
+        identity = id(item)
+        if identity in seen:
+            return
+        seen.add(identity)
+        if item is None:
+            return
+        if isinstance(item, np.ndarray):
+            charge(int(item.nbytes) + _ARRAY_HEADER_BYTES)
+            if item.dtype.hasobject:
+                for child in item.flat:
+                    visit(child)
+        elif isinstance(item, dict):
+            charge(_MAPPING_BASE_BYTES + _MAPPING_ENTRY_BYTES * len(item))
+            for key, child in item.items():
+                visit(key)
+                visit(child)
+            seen.remove(identity)
+        elif isinstance(item, (list, tuple)):
+            charge(_SEQUENCE_BASE_BYTES + _SEQUENCE_ENTRY_BYTES * len(item))
+            for child in item:
+                visit(child)
+            seen.remove(identity)
+        elif isinstance(item, (set, frozenset)):
+            charge(_SET_BASE_BYTES + _SET_ENTRY_BYTES * len(item))
+            for child in item:
+                visit(child)
+        else:
+            instance_dict = getattr(item, "__dict__", None)
+            if isinstance(instance_dict, dict):
+                charge(_OBJECT_BASE_BYTES)
+                visit(instance_dict)
+            else:
+                charge(sys.getsizeof(item))
+
+    visit(value)
+    return total
 
 
 class DatasetRegistry:
@@ -126,7 +137,7 @@ class DatasetRegistry:
     ) -> str:
         """Store a defensive snapshot and return ``dataset_id``."""
         now = time.time()
-        retained_bytes = estimate_retained_bytes(dataset)
+        retained_bytes = estimate_retained_bytes(dataset, max_bytes=self._max_dataset_bytes)
         if retained_bytes > self._max_dataset_bytes:
             raise DatasetRegistryCapacityError(
                 "dataset exceeds the in-memory handle per-dataset byte limit "
@@ -142,7 +153,7 @@ class DatasetRegistry:
                 self._retained_bytes -= existing.retained_bytes
             self._evict_for_bytes_locked(retained_bytes)
             snapshot = dataset.snapshot()
-            snapshot_bytes = estimate_retained_bytes(snapshot)
+            snapshot_bytes = estimate_retained_bytes(snapshot, max_bytes=self._max_dataset_bytes)
             if snapshot_bytes > retained_bytes:
                 raise DatasetRegistryCapacityError(
                     "dataset snapshot exceeds its pre-copy retained-byte estimate "

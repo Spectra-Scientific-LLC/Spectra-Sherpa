@@ -2213,6 +2213,34 @@ describe("DataContentsPanel", () => {
     returned.unmount();
   });
 
+  it("retrieves native concentrations for a full preview with no annotation table", async () => {
+    const labels = ["S001", "S002", "S003", "S004"];
+    mocks.dataStore.fileInfo = {
+      dataset_id: "native-response-handle", n_samples: 4, n_features: 3,
+      y_axis: { labels, sample_table: null },
+      metadata: {
+        source_collection: sourceCollection(4),
+        api_serialization: { mode: "full", full_dataset_handle: "native-response-handle" },
+      },
+    };
+    mocks.apiGet.mockResolvedValueOnce({ data: {
+      schema_version: "spectrasherpa-collection-sample-table/1",
+      complete: true, row_count: 4, columns: ["sample_id", "Carbon dioxide"], labels,
+      sample_table: { sample_id: labels, "Carbon dioxide": [1, 2, 3, 4] },
+      column_units: { "Carbon dioxide": "ppm" },
+      source_collection: sourceCollection(4),
+    } });
+    const wrapper = mount(DataContentsPanel);
+    expect(wrapper.text()).not.toContain("no typed sample table");
+    await flushPromises();
+    expect(mocks.apiGet).toHaveBeenCalledWith("/datasets/native-response-handle/sample-table");
+    const table = wrapper.get("[aria-label='Collection sample table']");
+    expect(table.text()).toContain("Carbon dioxide (ppm)");
+    expect(table.text()).toContain("S004");
+    expect(table.text()).toContain("Complete · 4 rows · 2 columns");
+    wrapper.unmount();
+  });
+
   it("refuses a complete table whose scientific identity differs from its preview", async () => {
     const scientificIdentity = {
       scientific_collection_schema_version: "spectrasherpa-scientific-collection/2",

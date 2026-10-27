@@ -16,6 +16,8 @@ const GUIDANCE_RULE_LABELS: Record<string, string> = {
   report_idle_with_runs: "Reporting",
   // Goal-aware rules follow the project's Starter plan.
   goal_add_data: "Your goal",
+  goal_load_data: "Your goal",
+  goal_choose_starter: "Your goal",
   goal_open_workflow: "Your goal",
   goal_configure: "Your goal",
   goal_recover_run: "Your goal",

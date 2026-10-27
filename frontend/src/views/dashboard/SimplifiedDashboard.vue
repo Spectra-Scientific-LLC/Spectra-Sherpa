@@ -628,14 +628,14 @@ async function createAnalysisStarter(template?: WorkflowTemplate, goalStart?: An
     templateGalleryVisible.value = false;
     toast.add({
       severity: "success",
-      summary: "Analysis Started",
+      summary: "Project ready",
       detail: template
         ? `${project.name} is ready for data import and target selection.`
         : `${project.name} is ready for data import.`,
       life: 3500,
     });
     // A selected reference is part of the starter contract, so land on the
-    // import surface where it can be admitted into this project immediately.
+    // import surface where the user can inspect and load it explicitly.
     // The user's own dataset opens in My Dataset, ready to send to Workflow;
     // a local goal without data opens Upload; hosted goals open Import.
     // Other blank projects open the

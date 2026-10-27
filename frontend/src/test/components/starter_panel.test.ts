@@ -185,9 +185,20 @@ describe("StarterPanel", () => {
     await wrapper.get('[data-test="starter-ready"]').trigger("click");
     expect(wrapper.emitted("start")?.[0]?.[0]).toEqual({
       plan: PLAN,
-      name: "Predict moisture in my corn NIR spectra",
+      name: "Grain batch — PLS — Regression — v1",
       dataset: PLAN.dataset_options[1],
     });
+  });
+
+  it("keeps a manually edited project name when the dataset suggestion changes", async () => {
+    const wrapper = mountPanel();
+    await flushPromises();
+    await wrapper.get('[data-test="starter-plan"]').trigger("click");
+    await flushPromises();
+    await wrapper.get('#goal-starter-name').setValue('Oil stability v2');
+    await wrapper.get('[data-test="starter-plan-result"] select').setValue('experiment:7');
+    await wrapper.get('[data-test="starter-ready"]').trigger('click');
+    expect(wrapper.emitted('start')?.[0]?.[0]).toMatchObject({ name: 'Oil stability v2' });
   });
 
   it("allows choosing data later outside local mode", async () => {

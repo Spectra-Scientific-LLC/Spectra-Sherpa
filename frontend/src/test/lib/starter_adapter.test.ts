@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { initialGoalText, starterStepStates, type StarterOverview } from "@/lib/starterAdapter";
-import type { StarterPlan } from "@/types";
+import { initialGoalText, starterProjectName, starterStepStates, type StarterOverview } from "@/lib/starterAdapter";
+import type { StarterDatasetOption, StarterPlan } from "@/types";
 
 const plan = (completions: Array<StarterPlan["steps"][number]["completion"]>): StarterPlan => ({
   schema_version: "spectra-starter-plan/1",
@@ -67,5 +67,39 @@ describe("initialGoalText", () => {
     expect(initialGoalText(overview({ is_first_run: true, last_goal: "Find peaks" }))).toBe("Find peaks");
     expect(initialGoalText(overview({}))).toBe("");
     expect(initialGoalText(null)).toBe("");
+  });
+});
+
+describe("starterProjectName", () => {
+  const dataset = (label: string) => ({ label } as StarterDatasetOption);
+
+  it("uses dataset and method keywords, not the goal sentence or sample-count prose", () => {
+    const proposed = { ...plan([]), intent: "explore", template_name: "PCA Exploration & Outlier Diagnostics" };
+    expect(starterProjectName(proposed, dataset("Lavender FTIR (50 samples, 5401 variables)")))
+      .toBe("Lavender FTIR — PCA — Exploration — v1");
+  });
+
+  it("increments the editable name suffix against existing project names", () => {
+    expect(starterProjectName(plan([]), dataset("Corn v3"), ["Corn — Preprocessing — v1", "corn — preprocessing — v2"]))
+      .toBe("Corn — Preprocessing — v3");
+  });
+
+  it("does not invent a dataset for own-file plans and preserves non-English keywords", () => {
+    expect(starterProjectName(plan([]), null)).toBe("Preprocessing — v1");
+    expect(starterProjectName(plan([]), dataset("薰衣草 FTIR"))).toBe("薰衣草 FTIR — Preprocessing — v1");
+  });
+
+  it("separates model and purpose for regression and classification", () => {
+    expect(starterProjectName({ ...plan([]), intent: "calibrate", template_name: "PLS Calibration" }, dataset("Corn")))
+      .toBe("Corn — PLS — Regression — v1");
+    expect(starterProjectName({ ...plan([]), intent: "classify", template_name: "PLS-DA Classification" }, dataset("Oil")))
+      .toBe("Oil — PLS-DA — Classification — v1");
+  });
+
+  it("bounds long unbroken names while preserving model, purpose and version", () => {
+    const name = starterProjectName({ ...plan([]), intent: "explore", template_name: "PCA Exploration" }, dataset("x".repeat(240)));
+    expect(name.length).toBeLessThanOrEqual(255);
+    expect(name).toBe(`${"x".repeat(64)} — PCA — Exploration — v1`);
+    expect(starterProjectName({ ...plan([]), template_name: "A preprocessing workflow" }, null)).toBe("Preprocessing — v1");
   });
 });

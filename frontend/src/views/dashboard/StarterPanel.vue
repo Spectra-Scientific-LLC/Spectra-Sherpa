@@ -221,6 +221,7 @@ import {
   planStarterGoal,
   setStarterStepDone,
   starterStepStates,
+  starterProjectName,
   UNSUCCESSFUL_RUN_STATUSES,
   type StarterOverview,
   type StarterProgress,
@@ -255,6 +256,7 @@ const planError = ref<string | null>(null);
 const expandedStep = ref<string | null>(null);
 const selectedDatasetKey = ref<string | null>(null);
 const projectName = ref("");
+const suggestedProjectName = ref("");
 const progress = ref<StarterProgress | null>(null);
 const markingStep = ref<string | null>(null);
 const stepError = ref<string | null>(null);
@@ -290,10 +292,14 @@ const canStart = computed(
   () => !!plan.value && !!selectedDatasetKey.value && !!projectName.value.trim() && !props.starting,
 );
 
-function defaultProjectName(goal: string): string {
-  const trimmed = goal.trim();
-  return trimmed.length > 60 ? `${trimmed.slice(0, 57).trimEnd()}…` : trimmed;
+function updateSuggestedProjectName(): void {
+  if (!plan.value) return;
+  const suggestion = starterProjectName(plan.value, selectedOption.value, projectStore.projects.map(p => p.name));
+  if (!projectName.value || projectName.value === suggestedProjectName.value) projectName.value = suggestion;
+  suggestedProjectName.value = suggestion;
 }
+
+watch(selectedOption, updateSuggestedProjectName);
 
 function useExample(goal: string): void {
   goalText.value = goal;
@@ -310,7 +316,8 @@ async function requestPlan(): Promise<void> {
     plan.value = result;
     expandedStep.value = result.steps[0]?.key ?? null;
     selectedDatasetKey.value = result.dataset?.key ?? OWN_FILES;
-    projectName.value = defaultProjectName(result.goal);
+    projectName.value = "";
+    updateSuggestedProjectName();
   } catch (error: unknown) {
     plan.value = null;
     planError.value = getErrorMessage(error) || "Could not plan this goal.";

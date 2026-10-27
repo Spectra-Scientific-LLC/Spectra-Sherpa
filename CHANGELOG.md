@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Staging GUI corrections
 
+- Starter proposes editable Data — Model — Purpose — Version project names.
+  Suggested reference data and analysis templates now wait for explicit user
+  actions instead of briefly opening and automatically advancing pages. Returning
+  to Import preserves edits; the Workflow handoff retains the exact selection.
+- My Dataset exposes native synthetic-FTIR concentration responses as a complete
+  typed sample table, with recorded units and missing-value handling. Inspection
+  uses the source's canonical stage for trial admission, without changing grants
+  or scientific records.
 - Workflow plot selections can exclude or partially restore observations at
   Load Data before every branch, with an inspectable Exclusion State map and
   Restore all action. Supported overlays apply the current fit to excluded

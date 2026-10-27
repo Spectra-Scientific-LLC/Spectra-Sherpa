@@ -118,7 +118,7 @@ describe("TemplatePickerDialog", () => {
     });
   });
 
-  it("auto-starts the Dashboard-selected compatible starter with current data", async () => {
+  it("keeps the suggested starter visible until the user chooses current data", async () => {
     mocks.openTemplateAsSheet.mockResolvedValue({ name: "PCA" });
     mocks.apiGet.mockResolvedValue({
       data: {
@@ -209,6 +209,11 @@ describe("TemplatePickerDialog", () => {
     await wrapper.setProps({ visible: true });
     await flushPromises();
 
+    expect(mocks.openTemplateAsSheet).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("Suggested");
+    expect(wrapper.emitted("sheet-opened")).toBeUndefined();
+    await wrapper.findAll("button").find(button => button.text() === "Use Current Data")!.trigger("click");
+    await flushPromises();
     expect(mocks.openTemplateAsSheet).toHaveBeenCalledWith(1, "PCA", {
       launchMode: "user",
       dataBindings: {

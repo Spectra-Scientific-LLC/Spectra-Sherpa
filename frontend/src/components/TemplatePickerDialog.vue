@@ -52,6 +52,7 @@
             <div class="tp-row-main">
               <div class="tp-row-title">
                 {{ tpl.name }}
+                <span v-if="tpl.slug === preferredTemplateSlug" class="tp-needs-data">Suggested</span>
                 <span
                   v-if="!templateRuntimeReady(tpl)"
                   class="tp-needs-data"
@@ -252,7 +253,6 @@ const loading = ref(false);
 const loadError = ref<string | null>(null);
 const instantiating = ref<number | null>(null);
 const selectedExperimentId = ref<number | null>(null);
-const autoStartedSlug = ref<string | null>(null);
 const effectiveDataSelection = ref<DataSelectionReceipt | null>(props.dataSelection ?? null);
 const activeBindingReadiness = ref<DatasetAnalysisReadiness | null>(null);
 const activeProjectDataset = ref<ActiveProjectDataset | null>(null);
@@ -822,39 +822,17 @@ const loadTemplates = async () => {
   }
 };
 
-const maybeAutoStartPreferredTemplate = () => {
-  const slug = props.preferredTemplateSlug;
-  if (!visible.value || !slug || autoStartedSlug.value === slug || loading.value || projectDatasetChoiceError.value) return;
-  const tpl = templates.value.find((candidate) => candidate.slug === slug);
-  if (!tpl) return;
-  if (crossBlockCandidate(tpl)) return;
-  const launchMode = canUseCurrentData(tpl)
-    ? "current"
-    : !hasCurrentData.value && templateRuntimeReady(tpl) && supportsExample(tpl)
-      ? "example"
-      : null;
-  if (!launchMode) return;
-  autoStartedSlug.value = slug;
-  void onUse(tpl, launchMode);
-};
-
 watch(visible, (next) => {
   if (next) {
     crossBlockRequested.value = false;
     heldOutBlock.value = "";
     selectedExperimentId.value = props.dataSelection?.datasets[0]?.experiment_id ?? null;
-    autoStartedSlug.value = null;
     void loadTemplates();
   } else {
     activeProjectDataset.value = null;
     projectDatasetChoiceError.value = null;
   }
 });
-
-watch(
-  () => [templates.value, props.preferredTemplateSlug, visible.value, loading.value] as const,
-  () => maybeAutoStartPreferredTemplate(),
-);
 
 const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
   if (!projectAvailable.value) return;
@@ -939,9 +917,6 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
     });
   } finally {
     instantiating.value = null;
-    if (autoStartedSlug.value === tpl.slug) {
-      autoStartedSlug.value = null;
-    }
   }
 };
 </script>

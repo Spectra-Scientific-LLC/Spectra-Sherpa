@@ -20,6 +20,8 @@
             data-action="restore_workflow_observations" @click="workflowStore.restoreWorkflowObservations()" />
           <Button
             label="Analysis Starter"
+            data-action="open_analysis_starters"
+            :data-guidance-ready="!templatePickerVisible ? 'open_analysis_starters' : undefined"
             icon="pi pi-sparkles"
             class="p-button-outlined p-button-sm"
             :disabled="isTrialTabActive || (pendingDataSelection && !dataSelectionReceipt)"
@@ -214,6 +216,8 @@
       </div>
       <Button
         label="Analysis Starter"
+        data-action="open_analysis_starters"
+        :data-guidance-ready="!templatePickerVisible ? 'open_analysis_starters' : undefined"
         icon="pi pi-sparkles"
         class="p-button-sm p-button-outlined"
         @click="openTemplatePicker"
@@ -558,9 +562,8 @@ const dataSelectionFileCount = computed(() =>
 const pendingDataSelection = computed(() => route.query.fromDataSelection === "1");
 
 // A project started from a Starter goal names its planned starter template.
-// The picker auto-starts a preferred template, so the plan stands in for the
-// session handoff only on a data handoff and only until a sheet has been
-// created from a template. Opening the picker by hand never auto-starts it.
+// Keep that recommendation until a template sheet exists. Recommendations
+// never instantiate: the user opens the picker and chooses the data action.
 const goalPlanTemplateSlug = computed(() => {
   const project = projectStore.currentProject;
   const slug = project?.goal_plan?.template_slug ?? null;
@@ -569,7 +572,7 @@ const goalPlanTemplateSlug = computed(() => {
 });
 
 const openTemplatePicker = () => {
-  preferredAnalysisStarterSlug.value = null;
+  preferredAnalysisStarterSlug.value = readAnalysisStarterIntent()?.template_slug ?? goalPlanTemplateSlug.value;
   dataSelectionReceipt.value = readDataSelectionReceipt({
     requireRouteFlag: pendingDataSelection.value,
   });
@@ -1273,7 +1276,9 @@ onMounted(async () => {
   if (dataSelectionReceipt.value && route.query.fromDataSelection === "1") {
     const starterIntent = readAnalysisStarterIntent();
     preferredAnalysisStarterSlug.value = starterIntent?.template_slug ?? goalPlanTemplateSlug.value;
-    templatePickerVisible.value = starterIntent?.template_slug !== null;
+    // A known recommendation stays behind the Analysis Starter button;
+    // canonical Guidance can point to it without a transient modal.
+    templatePickerVisible.value = !preferredAnalysisStarterSlug.value && starterIntent?.template_slug !== null;
     if (starterIntent?.template_slug === null) {
       clearAnalysisStarterIntent();
     }

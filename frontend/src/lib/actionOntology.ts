@@ -33,6 +33,14 @@ export interface GuidanceActionMeta {
 }
 
 export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
+  open_analysis_starters: {
+    actionId: "open_analysis_starters",
+    actionVersion: 1,
+    label: "Analysis Starter",
+    // Context-bound: preserve the current Workflow dataset-selection receipt.
+    // Opens the chooser only; creating a sheet requires a separate user click.
+    clickTarget: "open_analysis_starters",
+  },
   import_data: {
     actionId: "import_data",
     actionVersion: 1,

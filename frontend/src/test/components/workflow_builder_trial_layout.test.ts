@@ -830,7 +830,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     wrapper.unmount();
   });
 
-  it("auto-targets the Dashboard-selected starter after My Dataset handoff", async () => {
+  it("keeps the Dashboard recommendation behind an explicit starter action", async () => {
     routeQuery.fromDataSelection = "1";
     routeQuery.selection = "selection-test-3";
     workbookStore.activeIndex = 0;
@@ -874,6 +874,10 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     await flushPromises();
 
     const picker = wrapper.get('[data-testid="template-picker"]');
+    expect(picker.attributes("data-visible")).toBe("false");
+    expect(picker.attributes("data-preferred-template-slug")).toBe("pca");
+    await wrapper.get('[data-testid="tab-analysis-starter"]').trigger("click");
+    await nextTick();
     expect(picker.attributes("data-visible")).toBe("true");
     expect(picker.attributes("data-preferred-template-slug")).toBe("pca");
 
@@ -927,11 +931,11 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
       let wrapper = await mountBuilder();
       await flushPromises();
       let picker = wrapper.get('[data-testid="template-picker"]');
-      expect(picker.attributes("data-visible")).toBe("true");
+      expect(picker.attributes("data-visible")).toBe("false");
       expect(picker.attributes("data-preferred-template-slug")).toBe("classification_plsda");
       wrapper.unmount();
 
-      // Opening the picker by hand never auto-starts the planned template.
+      // Opening the picker keeps the suggestion, but does not instantiate it.
       delete routeQuery.fromDataSelection;
       delete routeQuery.selection;
       wrapper = await mountBuilder();
@@ -939,7 +943,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
       await wrapper.get('[data-testid="tab-analysis-starter"]').trigger("click");
       await nextTick();
       picker = wrapper.get('[data-testid="template-picker"]');
-      expect(picker.attributes("data-preferred-template-slug")).toBe("");
+      expect(picker.attributes("data-preferred-template-slug")).toBe("classification_plsda");
       wrapper.unmount();
 
       // Once a sheet came from a template, the plan stops standing in.

@@ -25,6 +25,53 @@ def test_register_and_get_roundtrip():
     assert fetched.title == "registry-test"
 
 
+def test_native_ftir_snapshot_admits_normalized_metadata_aliases():
+    from spectra_sherpa.app.lib.synthetic_references import load_synthetic_reference_as_sherpa
+
+    dataset = load_synthetic_reference_as_sherpa("Synthetic_atmospheric-6")
+    admitted = estimate_retained_bytes(dataset)
+    registry = DatasetRegistry(max_dataset_bytes=admitted, max_retained_bytes=admitted * 2)
+    handle = registry.register(dataset, owner_user_id=7)
+    retained = registry.get(handle, user_id=7)
+    assert retained.scientific_digest == dataset.scientific_digest
+    np.testing.assert_array_equal(retained.target, dataset.target)
+    assert estimate_retained_bytes(retained) <= admitted
+    assert registry.retained_bytes <= admitted
+
+
+def test_container_alias_budget_is_conservative_and_cycles_terminate():
+    shared = ["ppm", "ppm"]
+    assert estimate_retained_bytes({"a": shared, "b": shared}) == estimate_retained_bytes(
+        {"a": list(shared), "b": list(shared)}
+    )
+    recursive = []
+    recursive.append(recursive)
+    assert estimate_retained_bytes(recursive) > 0
+
+
+def test_nested_alias_admission_stops_before_expansion_or_snapshot(monkeypatch):
+    visits = []
+
+    class CountedList(list):
+        def __iter__(self):
+            visits.append(1)
+            assert len(visits) < 200, "must stop at the byte budget, not traverse exponentially"
+            return super().__iter__()
+
+    nested = CountedList(["ppm"])
+    for _ in range(30):
+        nested = CountedList([nested, nested])
+    dataset = _make_dataset()
+    # Inject the adversarial graph directly: the metadata setter itself
+    # normalizes containers, before the registry boundary under test.
+    dataset._extra["nested"] = nested
+    monkeypatch.setattr(dataset, "snapshot", lambda: pytest.fail("must refuse before snapshot"))
+    registry = DatasetRegistry(max_dataset_bytes=16384, max_retained_bytes=32768)
+    with pytest.raises(DatasetRegistryCapacityError, match="byte limit"):
+        registry.register(dataset, owner_user_id=7)
+    assert registry.retained_bytes == 0
+
+
 def test_register_snapshot_never_uses_json_projection(monkeypatch):
     registry = DatasetRegistry(ttl_seconds=3600, max_entries=10)
     dataset = _make_dataset()
