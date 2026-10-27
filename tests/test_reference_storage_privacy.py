@@ -25,7 +25,9 @@ async def test_registered_reference_registry_privacy_and_upload_closure(
     caplog.set_level(logging.WARNING)
     created = await auth_client.post("/api/v1/experiments", json={"name": "Registry privacy"})
     assert created.status_code == 201
-    registry_path = tmp_path / "private-registry" / "reference-artifacts.json"
+    # Exercise traceback escaping on POSIX too; Windows treats this as nested
+    # directories, while POSIX retains the backslash in the missing name.
+    registry_path = tmp_path / "private-registry" / r"operator\source" / "reference-artifacts.json"
     load_registry = reference_artifacts.load_reference_artifact_registry
     read_text = Path.read_text
     closed_uploads = []
@@ -58,9 +60,15 @@ async def test_registered_reference_registry_privacy_and_upload_closure(
         assert "unknown qualified reference projection" in response.json()["detail"]["message"]
     else:
         assert response.status_code == 503
-        assert response.json()["detail"]["code"] == "registered_reference_unavailable"
-        assert "check the installation" in response.json()["detail"]["message"]
-        assert str(registry_path) in caplog.text
+        assert response.json()["detail"] == {
+            "code": "registered_reference_unavailable",
+            "message": "Reference catalog could not be read. Ask the operator to check the installation.",
+        }
+        # OSError renders filenames with repr(), escaping Windows backslashes.
+        # The logged cause must retain the exact private filename for operators.
+        error_type = FileNotFoundError if kind == "missing" else PermissionError
+        causes = [record.exc_info[1].__cause__ for record in caplog.records if record.exc_info]
+        assert any(isinstance(cause, error_type) and cause.filename == str(registry_path) for cause in causes)
 
 
 def _import_error(kind):

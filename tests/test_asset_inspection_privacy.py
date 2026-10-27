@@ -110,9 +110,14 @@ async def test_real_missing_source_refuses_with_storage_remedy(auth_client, test
     assert not source.exists()
     response = await auth_client.get(f"/api/v1/experiments/{experiment_id}/files/{file_id}/scientific-assets")
     assert response.status_code == 400, response.text
-    assert "check storage access" in response.json()["detail"]
-    assert str(source) not in response.text
-    assert str(source) in caplog.text
+    assert response.json()["detail"] == (
+        "Could not inspect scientific assets: "
+        "Source files could not be read. Ask the operator to check storage access."
+    )
+    # Traceback rendering escapes Windows backslashes. Assert the original
+    # logged exception's filename, not an OS-dependent formatted substring.
+    causes = [record.exc_info[1].__cause__ for record in caplog.records if record.exc_info]
+    assert any(isinstance(cause, FileNotFoundError) and cause.filename == str(source) for cause in causes)
 
 
 @pytest.mark.asyncio
