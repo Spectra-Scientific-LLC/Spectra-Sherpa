@@ -749,10 +749,12 @@ async def reconcile_orphan_artifacts(
     ``store.delete()`` at the call site, but a hard process kill (OOM /
     pod eviction) between ``store.save()`` and the DB commit raises no
     exception and leaves an orphan file with no DB row, never GC'd.
-    This idempotent sweep — safe to run at startup — removes disk
-    artifacts that (a) have no DB row and (b) are older than
-    ``grace_seconds`` (so an in-flight concurrent save is never reaped),
-    plus leftover ``.staging-*`` scratch.  A ``<uid>.old-<hex>`` re-save
+    This idempotent sweep removes unclaimed disk artifacts older than
+    ``grace_seconds``, plus leftover ``.staging-*`` scratch. Durable
+    publication claims and active artifact paths protect their complete path
+    trees, even when a historical row's UID differs from its directory name.
+    Grace alone never proves that a claimed publication is abandoned.
+    A ``<uid>.old-<hex>`` re-save
     backup is *recovered* (renamed back to the canonical uid) when the
     canonical dir is missing — a crash mid-``_promote`` — and only
     deleted as stale once the canonical artifact is present again.
@@ -775,9 +777,20 @@ async def reconcile_orphan_artifacts(
     # Snapshot paths before claims: a writer claims before creating its files,
     # so newly published paths cannot enter this sweep after the custody read.
     children = tuple(models_dir.iterdir())
-    pending_uids = set(await session.scalars(sa_select(ModelPublication.artifact_uid)))
-    db_rows = (await session.execute(sa_select(ModelArtifact.artifact_uid, ModelArtifact.is_active))).all()
-    db_active_by_uid = {artifact_uid: bool(is_active) for artifact_uid, is_active in db_rows}
+    publications = (
+        await session.execute(sa_select(ModelPublication.artifact_uid, ModelPublication.artifact_dir))
+    ).all()
+    pending_uids = {uid for uid, _ in publications}
+    db_rows = (
+        await session.execute(
+            sa_select(ModelArtifact.artifact_uid, ModelArtifact.is_active, ModelArtifact.artifact_dir)
+        )
+    ).all()
+    db_active_by_uid = {uid: bool(active) for uid, active, _ in db_rows}
+    protected_paths = {
+        (Path(raw) if Path(raw).is_absolute() else models_dir.parent / raw).resolve()
+        for raw in ([path for _, path in publications] + [path for _, active, path in db_rows if active])
+    }
     now = time.time()
     removed: list[str] = []
     recovered: list[str] = []
@@ -789,6 +802,15 @@ async def reconcile_orphan_artifacts(
         # Claims remain authoritative even after a failed run or long fit.
         # Age cannot establish that an account-owned publication is abandoned.
         if name in pending_uids or (name.startswith(".staging-") and name[9:45] in pending_uids and name[45:46] == "-"):
+            continue
+        # Check before either recovery or deletion: renaming a referenced backup
+        # would also invalidate its retained path. This includes other owners and
+        # legacy relative paths, not only the candidate directory's apparent UID.
+        resolved_child = child.resolve()
+        if any(
+            path == resolved_child or path in resolved_child.parents or resolved_child in path.parents
+            for path in protected_paths
+        ):
             continue
 
         # ``<uid>.old-<hex>`` is a re-save backup, NOT scratch: during

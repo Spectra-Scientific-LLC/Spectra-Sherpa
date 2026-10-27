@@ -342,6 +342,9 @@
             </template>
           </section>
           <slot name="sample-curation" />
+          <p v-if="completeSampleTableLoading" class="sample-table-omission-note" role="status">
+            Loading sample metadata and native responses…
+          </p>
           <section
             v-if="sampleTableState.kind === 'valid'"
             class="collection-sample-table"
@@ -427,8 +430,13 @@
             <p v-if="sampleTableState.omissionNote" class="sample-table-omission-note">
               {{ sampleTableState.omissionNote }}
             </p>
-            <p v-if="completeSampleTableLoading" class="sample-table-omission-note" role="status">
-              Loading the complete owner-scoped sample table…
+            <p
+              v-for="warning in sampleTableResponseWarnings"
+              :key="warning"
+              role="status"
+              class="sample-table-omission-note"
+            >
+              {{ warning }}
             </p>
             <p v-if="completeSampleTableError" class="sample-table-retrieval-error" role="alert">
               {{ completeSampleTableError }}
@@ -1071,6 +1079,7 @@ type CompleteSampleTablePayload = {
   labels: string[];
   sample_table: Record<string, unknown[]>;
   column_units?: Record<string, string>;
+  response_projection_warnings?: string[];
   source_collection: {
     schema_version: string;
     file_count: number;
@@ -1393,9 +1402,11 @@ watch(
     if (apiSerializationMetadata()?.mode !== "bounded_preview" && nativeTable && !missingResponses) return;
     if (collectionState.value.kind !== "valid") return;
     const handle = retainedDatasetHandle(fileInfo as unknown as Record<string, unknown>);
+    const isPreview = apiSerializationMetadata()?.mode === "bounded_preview";
     if (!handle) {
-      completeSampleTableError.value =
-        "Only an aligned API preview is available; the complete table handle was not retained.";
+      completeSampleTableError.value = isPreview
+        ? "Only an aligned API preview is available; the complete table handle was not retained."
+        : "Native sample metadata and responses could not be retrieved: the dataset handle was not retained. Reload the source.";
       return;
     }
     completeSampleTableLoading.value = true;
@@ -1410,8 +1421,9 @@ watch(
       }
     } catch {
       if (ticket.isCurrent()) {
-        completeSampleTableError.value =
-          "Only an aligned API preview is shown. The complete owner-scoped table could not be retrieved within its 10,000-row and 4 MiB limits.";
+        completeSampleTableError.value = isPreview
+          ? "Only an aligned API preview is shown. The complete owner-scoped table could not be retrieved within its 10,000-row and 4 MiB limits."
+          : "Native sample metadata and responses could not be retrieved. Retained source data are unchanged; reload the source to retry.";
       }
     } finally {
       if (ticket.isCurrent()) completeSampleTableLoading.value = false;
@@ -1672,6 +1684,11 @@ const sampleTableState = computed<SampleTableState>(() => {
 });
 
 const sampleMetadataPage = ref(0);
+const sampleTableResponseWarnings = computed(() => {
+  if (sampleTableState.value.kind !== "valid") return [];
+  const warnings = completeSampleTablePayload.value?.response_projection_warnings;
+  return Array.isArray(warnings) ? warnings.filter((value): value is string => typeof value === "string") : [];
+});
 watch(MAX_SAMPLE_TABLE_ROWS, () => { sampleMetadataPage.value = 0; });
 watch(
   () => [dataStore.fileInfo, props.selectedFileNames] as const,

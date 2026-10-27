@@ -1,11 +1,14 @@
 /* eslint-disable vue/one-component-per-file */
-import { flushPromises, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, h, nextTick, reactive } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import DataContentsPanel from "@/views/data/DataContentsPanel.vue";
 import DatasetCurationPanel from "@/components/DatasetCurationPanel.vue";
 import api from "@/api/client";
+
+// Every case owns its mounted watchers and DOM, including assertion failures.
+enableAutoUnmount(afterEach);
 
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
@@ -2228,17 +2231,33 @@ describe("DataContentsPanel", () => {
       complete: true, row_count: 4, columns: ["sample_id", "Carbon dioxide"], labels,
       sample_table: { sample_id: labels, "Carbon dioxide": [1, 2, 3, 4] },
       column_units: { "Carbon dioxide": "ppm" },
+      response_projection_warnings: ["Native response Water is unavailable; sample annotations are preserved."],
       source_collection: sourceCollection(4),
     } });
     const wrapper = mount(DataContentsPanel);
     expect(wrapper.text()).not.toContain("no typed sample table");
+    expect(wrapper.text()).toContain("Loading sample metadata and native responses");
     await flushPromises();
     expect(mocks.apiGet).toHaveBeenCalledWith("/datasets/native-response-handle/sample-table");
     const table = wrapper.get("[aria-label='Collection sample table']");
     expect(table.text()).toContain("Carbon dioxide (ppm)");
     expect(table.text()).toContain("S004");
     expect(table.text()).toContain("Complete · 4 rows · 2 columns");
+    expect(wrapper.text()).toContain("Native response Water is unavailable");
+    expect(wrapper.text()).not.toContain("Loading sample metadata and native responses");
     wrapper.unmount();
+  });
+
+  it("does not describe a complete collection without a table handle as a bounded preview", async () => {
+    mocks.dataStore.fileInfo = {
+      n_samples: 4, n_features: 3, y_axis: { labels: ["S001", "S002", "S003", "S004"] },
+      metadata: { source_collection: sourceCollection(4), api_serialization: { mode: "full" } },
+    };
+    const wrapper = mount(DataContentsPanel);
+    await flushPromises();
+    expect(wrapper.text()).toContain("dataset handle was not retained");
+    expect(wrapper.text()).not.toContain("Only an aligned API preview");
+    expect(mocks.apiGet).not.toHaveBeenCalled();
   });
 
   it("refuses a complete table whose scientific identity differs from its preview", async () => {

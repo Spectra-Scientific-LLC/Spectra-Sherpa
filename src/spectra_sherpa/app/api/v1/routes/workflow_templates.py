@@ -24,6 +24,7 @@ from spectra_sherpa.app.api.deps import (
     get_current_user,
     get_session,
 )
+from spectra_sherpa.app.api.error_details import validation_or_storage_detail
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
 from spectra_sherpa.app.lib.data_formats import CANONICAL_FILE_LOAD_EXTENSIONS
 from spectra_sherpa.app.lib.data_roles import normalize_modalities
@@ -918,9 +919,23 @@ async def _materialize_example_bindings(
             try:
                 files = await import_reference_dataset(session, experiment.id, source, dataset_name)
             except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-            except FileNotFoundError as exc:
-                raise HTTPException(status_code=404, detail=str(exc)) from exc
+                raise HTTPException(
+                    status_code=400,
+                    detail=validation_or_storage_detail(
+                        exc,
+                        fallback="Example files could not be read. Ask the operator to check storage access.",
+                        logger=logger,
+                    ),
+                ) from exc
+            except OSError as exc:
+                logger.warning("Template example import storage failure", exc_info=True)
+                raise HTTPException(
+                    status_code=404 if isinstance(exc, FileNotFoundError) else 503,
+                    detail=(
+                        "Example files are unavailable. "
+                        "Ask the operator to check the dataset installation and storage access."
+                    ),
+                ) from exc
 
             if len(files) != 1:
                 raise HTTPException(
@@ -992,11 +1007,23 @@ async def _issue_file_target_authority(
     source_path = experiment_dir(experiment_file.experiment_id) / experiment_file.file_path
     from spectra_sherpa.io import ingest, select_asset
 
-    source_digest = await asyncio.to_thread(_sha256_path, source_path)
+    try:
+        source_digest = await asyncio.to_thread(_sha256_path, source_path)
+    except OSError as exc:
+        logger.warning("Target authority source digest storage failure", exc_info=True)
+        raise HTTPException(
+            status_code=503, detail="Target source could not be read. Ask the operator to check storage access."
+        ) from exc
     try:
         reference = read_registered_reference_sidecar(source_path)
     except ValueError as exc:
+        logger.warning("Target authority reference sidecar is invalid", exc_info=True)
         raise HTTPException(status_code=400, detail="Registered reference source authority is invalid") from exc
+    except OSError as exc:
+        logger.warning("Target authority reference sidecar storage failure", exc_info=True)
+        raise HTTPException(
+            status_code=503, detail="Target source could not be read. Ask the operator to check storage access."
+        ) from exc
     asset_id = binding.asset_id
     if reference is not None:
         if source_digest != reference["member_sha256"]:
@@ -1007,16 +1034,41 @@ async def _issue_file_target_authority(
         try:
             materialized = await asyncio.to_thread(materialize_reference_member, source_path, projection_id)
         except ValueError as exc:
+            detail = validation_or_storage_detail(
+                exc,
+                fallback="Target source could not be read. Ask the operator to check storage access.",
+                logger=logger,
+            )
             raise HTTPException(
                 status_code=400,
-                detail=f"Registered reference projection could not be reproduced: {exc}",
+                detail=f"Registered reference projection could not be reproduced: {detail}",
+            ) from exc
+        except OSError as exc:
+            logger.warning("Target authority reference projection storage failure", exc_info=True)
+            raise HTTPException(
+                status_code=503, detail="Target source could not be read. Ask the operator to check storage access."
             ) from exc
         if dict(materialized.portable_reference) != dict(reference):
             raise HTTPException(status_code=400, detail="Registered reference identity changed after import")
         dataset = materialized.dataset
         asset_id = projection_id
     else:
-        parsed = await asyncio.to_thread(ingest, source_path)
+        try:
+            parsed = await asyncio.to_thread(ingest, source_path)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=validation_or_storage_detail(
+                    exc,
+                    fallback="Target source could not be read. Ask the operator to check storage access.",
+                    logger=logger,
+                ),
+            ) from exc
+        except OSError as exc:
+            logger.warning("Target authority source inspection storage failure", exc_info=True)
+            raise HTTPException(
+                status_code=503, detail="Target source could not be read. Ask the operator to check storage access."
+            ) from exc
         try:
             dataset = select_asset(parsed, asset_id=asset_id).dataset
         except ValueError as exc:
@@ -1217,7 +1269,17 @@ async def _validate_binding(
                 binding.file_ids,
                 exc_info=True,
             )
-            raise HTTPException(status_code=400, detail=f"Dataset binding could not be admitted: {exc}") from exc
+            detail = validation_or_storage_detail(
+                exc,
+                fallback="Source files could not be read. Ask the operator to check storage access.",
+                logger=logger,
+            )
+            raise HTTPException(status_code=400, detail=f"Dataset binding could not be admitted: {detail}") from exc
+        except OSError as exc:
+            logger.warning("Scientific collection binding storage failure", exc_info=True)
+            raise HTTPException(
+                status_code=503, detail="Source files could not be read. Ask the operator to check storage access."
+            ) from exc
         target_binding = None
         if binding.target_binding is not None:
             target_binding, _ = await _validate_binding(session, user_id, binding.target_binding, project_id)

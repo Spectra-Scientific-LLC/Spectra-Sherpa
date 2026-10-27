@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import logging
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -299,6 +300,55 @@ def test_predict_rejects_inexact_or_malformed_stream_payload(test_client):
     assert "unexpected: undeclared" in unexpected.text
     assert one_dimensional.status_code == 400
     assert "two-dimensional matrix" in one_dimensional.text
+
+
+@pytest.mark.parametrize("stage", ["input", "execution"])
+def test_prediction_hides_unexpected_storage_diagnostics(test_client, monkeypatch, caplog, stage):
+    caplog.set_level(logging.WARNING)
+    import spectra_sherpa.app.api.headless_app as headless_app
+
+    executor = DAGExecutor(process_pool=None)
+    executor.add_node(WorkflowNode(node_id="deploy_in", node_type="deploy.input", parameters={"stream_name": "sample"}))
+    monkeypatch.setattr(headless_app, "_executor", executor)
+    private_path = "/private/operator-data/model.npz"
+    error = OSError(13, "Permission denied", private_path)
+    if stage == "input":
+        monkeypatch.setattr(DAGExecutor, "inject_deployment_input", MagicMock(side_effect=error))
+    else:
+        monkeypatch.setattr(DAGExecutor, "execute", AsyncMock(side_effect=error))
+    response = test_client.post("/predict", json={"sample": [[1.0, 2.0]]})
+    assert response.status_code == (400 if stage == "input" else 500)
+    assert private_path not in response.text
+    assert private_path in caplog.text
+
+
+@pytest.mark.parametrize("kind", ["scientific", "storage", "unexpected"])
+def test_prediction_classifies_real_executor_wrapping(test_client, monkeypatch, kind):
+    import spectra_sherpa.app.api.headless_app as headless_app
+    from spectra_sherpa.core.scientific_refusal import ScientificInputRefusal, scientific_refusal_reason
+
+    executor = DAGExecutor(process_pool=None)
+    executor.add_node(WorkflowNode(node_id="deploy_in", node_type="deploy.input", parameters={"stream_name": "sample"}))
+    executor.add_node(
+        WorkflowNode(node_id="deploy_out", node_type="deploy.output", parameters={"output_format": "json"})
+    )
+    executor.add_edge(WorkflowEdge(from_node="deploy_in", to_node="deploy_out"))
+    monkeypatch.setattr(headless_app, "_executor", executor)
+    error = ScientificInputRefusal("target_mismatch", detail="target from /private/operator-data/model.npz")
+    if kind == "storage":
+        error = OSError(13, "Permission denied", "/private/operator-data/model.npz")
+    elif kind == "unexpected":
+        error = RuntimeError("failed reading /private/operator-data/model.npz")
+    # Use real DAGExecutor.execute() and its ValueError wrapping, not a stub
+    # that bypasses the boundary under review.
+    run_node = AsyncMock(side_effect=error)
+    monkeypatch.setattr(DAGExecutor, "_run_one_node", run_node)
+    response = test_client.post("/predict", json={"sample": [[1.0, 2.0]]})
+    run_node.assert_awaited_once()
+    assert response.status_code == (422 if kind == "scientific" else 500)
+    if kind == "scientific":
+        assert response.json()["detail"] == scientific_refusal_reason("target_mismatch")
+    assert "/private/operator-data" not in response.text
 
 
 def test_predict_rejects_duplicate_stream_contract_before_execution(test_client):

@@ -23,6 +23,7 @@ from spectra_sherpa.app.api.deps import (
     get_session,
     require_project,
 )
+from spectra_sherpa.app.api.error_details import validation_or_storage_detail
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
 from spectra_sherpa.app.models.application_release import ApplicationRelease
 from spectra_sherpa.app.models.batch_prediction import BatchPrediction
@@ -50,6 +51,25 @@ from spectra_sherpa.app.services.model_promotion_review import PromotionReviewDe
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/deploy")
+
+
+def _watch_error_detail(exc: Exception) -> str:
+    return validation_or_storage_detail(
+        exc,
+        fallback="Watch data could not be accessed. Check source and model availability, then retry.",
+        logger=logger,
+    )
+
+
+def _watch_folder_error_detail() -> str:
+    from spectra_sherpa.app.core.mode_policy import is_multi_user
+
+    # Path validators may include a resolved private root even in ValueError.
+    # Keep the containment remedy, not either the raw or resolved path.
+    logger.warning("Folder-watch path refused", exc_info=True)
+    if is_multi_user():
+        return "Choose an existing folder under one of your experiment data directories."
+    return "Choose an existing folder you can access."
 
 
 async def _resolve_application_handle(
@@ -315,8 +335,8 @@ async def create_watch(
     # Validate folder path (prevents traversal in multi-user modes)
     try:
         folder_path = await validate_user_folder_path(session, payload.folder_path, current_user.id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=422, detail=_watch_folder_error_detail()) from exc
 
     artifact_uid = payload.artifact_uid
     canonical_artifact_id = payload.canonical_artifact_id
@@ -424,7 +444,7 @@ async def update_watch(
         try:
             folder_path = await validate_user_folder_path(session, payload.folder_path, current_user.id)
         except (ValueError, OSError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
+            raise HTTPException(status_code=422, detail=_watch_folder_error_detail()) from exc
 
     update_data = payload.model_dump(exclude_unset=True)
     application_handle = update_data.pop("application_handle", None)
@@ -437,7 +457,7 @@ async def update_watch(
                 workflow_id=watch.workflow_id,
             )
         except (ValueError, OSError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise HTTPException(status_code=422, detail=_watch_error_detail(exc)) from exc
         update_data["artifact_uid"] = handle_artifact_uid
         update_data["canonical_artifact_id"] = handle_canonical_id
     artifact_changed = any(
@@ -479,7 +499,7 @@ async def update_watch(
                 uncertainty_population=update_data.get("uncertainty_population", watch.uncertainty_population),
             )
         except (ValueError, OSError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise HTTPException(status_code=422, detail=_watch_error_detail(exc)) from exc
         update_data["workflow_version_id"] = binding.workflow_version_id
         update_data["canonical_plan_digest"] = binding.canonical_plan_digest
     if payload.folder_path is not None:
@@ -501,7 +521,7 @@ async def update_watch(
     try:
         await lock_unchanged_watch(session, original_watch)
     except (ValueError, OSError) as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=_watch_error_detail(exc)) from exc
     if not is_local() and watch.is_enabled and update_data.get("asset_id", watch.asset_id) != watch.asset_id:
         raise HTTPException(
             status_code=409, detail="Disable the folder watch before changing its scientific asset identity."
@@ -583,13 +603,13 @@ async def enable_watch(
             uncertainty_population=watch.uncertainty_population,
         )
     except (ValueError, OSError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=_watch_error_detail(exc)) from exc
     if watch.is_enabled:
         return FolderWatchOut.model_validate(watch)
     try:
         await lock_unchanged_watch(session, original_watch)
     except (ValueError, OSError) as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(status_code=409, detail=_watch_error_detail(exc)) from exc
     watch.is_enabled = True
     if watch.active_poll_token is None:
         watch.last_poll_at = None
@@ -618,7 +638,7 @@ async def dry_run_watch(
     try:
         return await run_dry_run(session, watch, payload.file_name)
     except (ValueError, OSError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=_watch_error_detail(exc)) from exc
 
 
 @router.get("/watches/{watch_id}/dry-run")

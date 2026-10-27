@@ -3945,3 +3945,57 @@ def test_reference_dataset_info_missing_bundled_file_returns_404(
 
     assert response.status_code == 404
     assert response.json()["detail"] == f"Dataset '{name}' not found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["missing", "permission", "wrapped", "validation"])
+async def test_example_import_error_privacy_and_cleanup(auth_client, test_session, test_user, caplog, kind):
+    import logging
+
+    caplog.set_level(logging.WARNING)
+    template = WorkflowTemplate(
+        slug="privacy-example",
+        name="Privacy example",
+        description="Bundled example",
+        category="calibration",
+        template_data={**_make_template_data(), "status": "ready"},
+        is_active=True,
+    )
+    project = Project(user_id=test_user.id, name="Privacy example project")
+    test_session.add_all([template, project])
+    await test_session.commit()
+    template_id, project_id = template.id, project.id
+    created = Experiment(id=777, user_id=test_user.id, project_id=project_id, name="Example", metadata_path="{}")
+    private_path = "/private/operator-data/example.csv"
+    if kind == "validation":
+        error = ValueError("The source size does not match its manifest")
+    elif kind == "wrapped":
+        try:
+            raise PermissionError(13, "Permission denied", private_path)
+        except OSError as cause:
+            error = ValueError(f"Example unavailable: {cause}")
+            error.__cause__ = cause
+    else:
+        error_type = FileNotFoundError if kind == "missing" else PermissionError
+        error = error_type(13, "Cannot read", private_path)
+    imported = AsyncMock(side_effect=error)
+    with (
+        patch(
+            "spectra_sherpa.app.api.v1.routes.workflow_templates._create_example_experiment",
+            new=AsyncMock(return_value=created),
+        ),
+        patch("spectra_sherpa.app.api.v1.routes.workflow_templates.import_reference_dataset", new=imported),
+        patch("spectra_sherpa.app.api.v1.routes.workflow_templates.delete_experiment_files") as cleanup,
+    ):
+        response = await auth_client.post(
+            f"/api/v1/workflow-templates/{template_id}/instantiate",
+            json={"workflow_name": "Should refuse", "project_id": project_id, "launch_mode": "example"},
+        )
+    imported.assert_awaited_once()
+    cleanup.assert_called_once_with(created.id)
+    assert response.status_code == {"missing": 404, "permission": 503, "wrapped": 400, "validation": 400}[kind]
+    assert private_path not in response.text
+    if kind == "validation":
+        assert response.json()["detail"] == str(error)
+    else:
+        assert private_path in caplog.text

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { useGuidanceStore, type GuidanceEvent } from "@/stores/guidance";
 import {
@@ -76,10 +76,12 @@ function makeEvent(overrides: Partial<GuidanceEvent> = {}): GuidanceEvent {
 }
 
 describe("guidance store", () => {
+  afterEach(() => { vi.restoreAllMocks(); });
   beforeEach(() => {
     document.body.replaceChildren();
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([{}] as unknown as DOMRectList);
     mocks.currentRoute.value.path = "/dashboard";
     mocks.currentRoute.value.query = {};
     mocks.project.currentProjectId = 7;
@@ -140,6 +142,10 @@ describe("guidance store", () => {
     const before = { ...mocks.currentRoute.value.query };
     const target = document.createElement("button");
     target.dataset.action = "open_analysis_starters";
+    const disabledToolbar = document.createElement("button");
+    disabledToolbar.dataset.action = "open_analysis_starters";
+    disabledToolbar.disabled = true;
+    document.body.append(disabledToolbar);
     const clicked = vi.fn();
     target.onclick = clicked;
     document.body.append(target);

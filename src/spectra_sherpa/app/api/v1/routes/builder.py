@@ -29,6 +29,7 @@ from spectra_sherpa.app.api.deps import (
     release_demo_upload_quota_reservation_if_needed,
     reserve_demo_upload_quota_or_429,
 )
+from spectra_sherpa.app.api.error_details import validation_or_storage_detail
 from spectra_sherpa.app.api.v1.routes._http_utils import scientific_asset_warnings
 from spectra_sherpa.app.contracts.hot_storage import get_hot_storage_checker
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
@@ -354,7 +355,17 @@ async def _staged_upload_response(
             parser_options=parser_options_for_prepared_data(saved_path.name, suggested_overrides),
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Could not inspect scientific assets: {exc}") from exc
+        detail = validation_or_storage_detail(
+            exc,
+            fallback="Source files could not be read. Ask the operator to check storage access.",
+            logger=logger,
+        )
+        raise HTTPException(status_code=400, detail=f"Could not inspect scientific assets: {detail}") from exc
+    except OSError as exc:
+        logger.warning("Staged source inspection storage failure", exc_info=True)
+        raise HTTPException(
+            status_code=503, detail="Source files could not be read. Ask the operator to check storage access."
+        ) from exc
 
     return {
         "staging_id": staging_id,
@@ -911,8 +922,21 @@ def _builtin_reference_dataset_as_sherpa(name: str) -> SherpaDataset:
             return apply_collection_definition(loaded, definition)
     except zipfile.BadZipFile as exc:
         raise HTTPException(status_code=400, detail="Lavender reference archive is not a valid ZIP file") from exc
-    except (FileNotFoundError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=validation_or_storage_detail(
+                exc,
+                fallback="Lavender source files could not be read. Ask the operator to check the archive installation.",
+                logger=logger,
+            ),
+        ) from exc
+    except OSError as exc:
+        logger.warning("Lavender reference preview storage failure", exc_info=True)
+        raise HTTPException(
+            status_code=400 if isinstance(exc, FileNotFoundError) else 503,
+            detail="Lavender source files could not be read. Ask the operator to check the archive installation.",
+        ) from exc
 
 
 async def _experiment_file_as_sherpa(

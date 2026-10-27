@@ -32,7 +32,7 @@ def test_native_synthetic_response_table_preserves_values_units_and_scientific_i
 
 
 @pytest.mark.parametrize("damage", ["names", "duplicate", "conflict"])
-def test_response_table_refuses_ambiguous_columns(monkeypatch, damage):
+def test_optional_response_refusal_preserves_native_sample_table(monkeypatch, damage):
     _admit_collection(monkeypatch)
     dataset = load_synthetic_reference_as_sherpa("Synthetic_atmospheric-6")
     if damage == "names":
@@ -43,8 +43,14 @@ def test_response_table_refuses_ambiguous_columns(monkeypatch, damage):
         axis = dataset.sample_axis
         axis.sample_table = {"Carbon dioxide": [999.0] * 50}
         dataset.sample_axis = axis
-    with pytest.raises(ValueError, match="response"):
-        datasets._complete_collection_sample_table(dataset)
+    table = datasets._complete_collection_sample_table(dataset)
+    assert table["sample_table"]["sample_id"] == dataset.sample_axis.labels
+    assert table["response_projection_warnings"]
+    if damage == "conflict":
+        assert table["sample_table"]["Carbon dioxide"] == [999.0] * 50
+        assert "Carbon dioxide" not in table.get("column_units", {})
+    else:
+        assert table["columns"] == ["sample_id"]
 
 
 @pytest.mark.asyncio
@@ -69,6 +75,42 @@ async def test_collection_definition_admits_the_inventory_stage(monkeypatch, sta
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["raw", "synthetic", "preprocessed"])
+@pytest.mark.parametrize("operation", ["preview", "attach"])
+async def test_definition_authoring_uses_the_same_inventory_stage(monkeypatch, stage, operation):
+    definition = SimpleNamespace(sha256="b" * 64, payload={})
+    monkeypatch.setattr(experiments, "_require_experiment", AsyncMock())
+    monkeypatch.setattr(experiments, "preferred_experiment_stage", AsyncMock(return_value=stage))
+    monkeypatch.setattr(experiments, "_uploaded_collection_definition", AsyncMock(return_value=definition))
+    monkeypatch.setattr(experiments, "write_collection_definition", lambda *_: None)
+    monkeypatch.setattr(experiments, "_require_persisted_definition_revision", AsyncMock())
+    monkeypatch.setattr(experiments, "_definition_receipt", lambda **kwargs: SimpleNamespace(**kwargs))
+    loader = AsyncMock(return_value=SimpleNamespace(collection_definition_sha256=definition.sha256))
+    monkeypatch.setattr(experiments, "load_project_dataset", loader)
+    endpoint = getattr(experiments, f"{operation}_collection_definition_endpoint")
+    receipt = await endpoint(201, object(), object(), SimpleNamespace(id=11))
+    assert receipt.status == ("attached" if operation == "attach" else "preview")
+    assert len(loader.await_args_list) == (2 if operation == "attach" else 1)
+    assert all(call.kwargs["stage"] == stage for call in loader.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_definition_attach_does_not_certify_a_changed_preferred_stage(monkeypatch):
+    definition = SimpleNamespace(sha256="b" * 64, payload={})
+    monkeypatch.setattr(experiments, "_require_experiment", AsyncMock())
+    monkeypatch.setattr(experiments, "preferred_experiment_stage", AsyncMock(side_effect=["synthetic", "raw"]))
+    monkeypatch.setattr(experiments, "_uploaded_collection_definition", AsyncMock(return_value=definition))
+    monkeypatch.setattr(experiments, "write_collection_definition", lambda *_: None)
+    monkeypatch.setattr(experiments, "_require_persisted_definition_revision", AsyncMock())
+    monkeypatch.setattr(experiments, "_definition_receipt", lambda **kwargs: SimpleNamespace(**kwargs))
+    loader = AsyncMock(return_value=SimpleNamespace(collection_definition_sha256=definition.sha256))
+    monkeypatch.setattr(experiments, "load_project_dataset", loader)
+    receipt = await experiments.attach_collection_definition_endpoint(201, object(), object(), SimpleNamespace(id=11))
+    assert receipt.status == "stale"
+    assert loader.await_count == 1
+
+
 @pytest.mark.parametrize("annotations", [False, True])
 def test_missing_native_responses_stay_null_without_changing_science(monkeypatch, annotations):
     _admit_collection(monkeypatch)
@@ -91,8 +133,36 @@ def test_infinite_native_response_is_not_treated_as_missing(monkeypatch):
     _admit_collection(monkeypatch)
     dataset = load_synthetic_reference_as_sherpa("Synthetic_atmospheric-6")
     dataset.target[1, 0] = np.inf
-    with pytest.raises(ValueError):
-        datasets._complete_collection_sample_table(dataset)
+    table = datasets._complete_collection_sample_table(dataset)
+    assert "Carbon dioxide" not in table["columns"]
+    assert "invalid numeric values" in table["response_projection_warnings"][0]
+    assert table["sample_table"]["sample_id"] == dataset.sample_axis.labels
+
+
+@pytest.mark.parametrize("annotation", [[0.1, 0.2], ["0.1", "0.2"]])
+def test_response_annotation_compares_at_retained_precision(annotation):
+    target = np.array([0.1, 0.2], dtype=np.float32)
+    assert datasets._response_annotation_matches(annotation, target)
+    assert not datasets._response_annotation_matches([0.11, 0.2], target)
+    assert not datasets._response_annotation_matches([True, 0.2], target)
+    assert not datasets._response_annotation_matches([float("inf"), 0.2], target)
+
+
+def test_selected_response_unit_is_not_borrowed_by_other_columns(monkeypatch):
+    _admit_collection(monkeypatch)
+    dataset = load_synthetic_reference_as_sherpa("Synthetic_atmospheric-6")
+    # Bypass construction only for this isolated inspection-boundary fixture;
+    # the real selected-authority contract is separately source/digest checked.
+    context = dataset.target_context.model_copy(
+        update={
+            "selected_authority": SimpleNamespace(column="Carbon dioxide"),
+            "target_units": "ppm",
+        }
+    )
+    monkeypatch.setattr(type(dataset), "target_context", property(lambda _: context))
+    table = datasets._complete_collection_sample_table(dataset)
+    assert table["column_units"] == {"Carbon dioxide": "ppm"}
+    assert "Water" in table["columns"]
 
 
 def test_response_width_refuses_before_scalar_conversion(monkeypatch):

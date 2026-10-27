@@ -10,6 +10,13 @@
  * posture of the activity tracker and keeps the surface auditable.
  */
 
+export function isAvailableActionTarget(element: HTMLElement): boolean {
+  return !element.matches(':disabled, [aria-disabled="true"], [aria-busy="true"]')
+    && !element.closest('[hidden], [inert], [aria-hidden="true"]')
+    && element.getClientRects().length > 0
+    && getComputedStyle(element).visibility !== "hidden";
+}
+
 export function findActionTarget(actionId?: string | null): HTMLElement | null {
   if (!actionId) return null;
   // Iterate over ``[data-action]`` elements and compare the
@@ -21,7 +28,7 @@ export function findActionTarget(actionId?: string | null): HTMLElement | null {
   // tagged buttons per page the iteration cost is negligible.
   const candidates = document.querySelectorAll<HTMLElement>("[data-action]");
   for (const candidate of candidates) {
-    if (candidate.getAttribute("data-action") === actionId) {
+    if (candidate.getAttribute("data-action") === actionId && isAvailableActionTarget(candidate)) {
       return candidate;
     }
   }

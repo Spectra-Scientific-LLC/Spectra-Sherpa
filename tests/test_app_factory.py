@@ -123,6 +123,20 @@ def test_create_app_accepts_extra_router_prefix_string():
         extra_routers=[(extra, "/x")],
     )
     assert "/x/ping" in _paths(app.routes)
+
+
+@pytest.mark.parametrize("mode", ["local", "enterprise"])
+@pytest.mark.parametrize("include_api_docs", [True, False])
+def test_api_documentation_is_local_only(monkeypatch, mode, include_api_docs):
+    monkeypatch.setattr(app_main.app_config, "mode", mode)
+    app = app_main.create_app(include_server_routers=False, include_frontend=False, include_api_docs=include_api_docs)
+    documentation = {"/api/docs", "/api/redoc", "/api/openapi.json", "/docs/oauth2-redirect"}
+    if mode == "local" and include_api_docs:
+        assert documentation <= _paths(app.routes)
+    else:
+        assert not documentation.intersection(_paths(app.routes))
+    # The offline generator still sees the transport contract, not HTTP docs.
+    assert "/api/v1/health" in app.openapi()["paths"]
     assert "/ws" in _paths(app.routes)
     assert "/api/ready" in _paths(app.routes)
     assert app.state.ws_action_registry.names() == (LLM_CHAT,)

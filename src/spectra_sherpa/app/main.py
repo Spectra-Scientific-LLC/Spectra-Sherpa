@@ -768,6 +768,7 @@ def create_app(
     include_actor_compat_route: bool = True,
     include_websocket: bool = True,
     include_frontend: bool = True,
+    include_api_docs: bool = True,
 ) -> FastAPI:
     """Build and return the FastAPI application.
 
@@ -784,11 +785,17 @@ def create_app(
 
     mounts = _normalize_router_mounts(extra_routers)
 
+    from spectra_sherpa.app.core.mode_policy import allows_implicit_loopback_identity, is_local
+
+    # Schema generation remains available in-process for contract tooling.
+    # Hosted applications must not publish their admin-route inventory.
+    publish_api_docs = include_api_docs and (is_local() or allows_implicit_loopback_identity())
+
     _app = FastAPI(
         title=settings.app_name,
-        openapi_url="/api/openapi.json",
-        docs_url="/api/docs",
-        redoc_url="/api/redoc",
+        openapi_url="/api/openapi.json" if publish_api_docs else None,
+        docs_url="/api/docs" if publish_api_docs else None,
+        redoc_url="/api/redoc" if publish_api_docs else None,
         lifespan=compose_lifespan(_make_lifespan(extra_startup, extra_shutdown), extra_lifespans or ()),
     )
     from spectra_sherpa.app.services.ws_action_registry import build_default_ws_action_registry

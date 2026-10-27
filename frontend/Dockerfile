@@ -19,6 +19,13 @@ RUN npm run build
 # Production Stage
 FROM nginx:stable-alpine AS production-stage
 
+# nginx's native error records contain raw request URLs. Sanitize the private
+# stderr pipe before anything reaches Docker logs; keep lifecycle forwarding.
+RUN apk add --no-cache python3 \
+    && sed -i 's|^[[:space:]]*error_log[[:space:]].*|error_log stderr warn;|' /etc/nginx/nginx.conf \
+    && grep -q '^error_log stderr warn;' /etc/nginx/nginx.conf
+COPY frontend/nginx_safe_logs.py /usr/local/bin/nginx_safe_logs.py
+
 COPY --from=build-stage /build/spectra-sherpa/src/spectra_sherpa/static /usr/share/nginx/html
 
 # Copy custom nginx config
@@ -26,4 +33,6 @@ COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+STOPSIGNAL SIGQUIT
+ENTRYPOINT ["python3", "/usr/local/bin/nginx_safe_logs.py", "/docker-entrypoint.sh"]
+CMD ["nginx", "-e", "stderr", "-g", "daemon off;"]

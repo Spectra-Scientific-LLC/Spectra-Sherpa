@@ -63,7 +63,7 @@ def test_access_filter_installed_once_before_existing_handler():
 def test_public_proxy_access_format_omits_query_and_referrer():
     config = (Path(__file__).resolve().parents[1] / "frontend/nginx.conf").read_text()
     format_body = config.split("log_format sherpa_access ", 1)[1].split(";", 1)[0]
-    assert "$request_method $uri $server_protocol" in format_body
+    assert "$request_method $sherpa_request_path $server_protocol" in format_body
     assert "$status" in format_body
     for forbidden in ("$request'", '$request"', "$request_uri", "$args", "$query_string", "$http_referer"):
         assert forbidden not in format_body
