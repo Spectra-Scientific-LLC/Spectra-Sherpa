@@ -336,3 +336,14 @@ describe("persisted T2/Q diagnostic labels", () => {
     expect(plot.data[1].text).toEqual(["sample-b", "sample-d"]);
   });
 });
+
+it("renders retained Assign Peaks chemistry and escapes model text", () => {
+  const plot = buildPeakTablePlot({
+    data: [{median_pos: 702.476, median_height: 10, chemical_species: "F I",
+      chemistry_origin: "SF6 <unverified>", assignment_status: "tentative"}],
+    metadata: {schema_version: "spectral-peak-assignment/1", x_units: "nm"},
+  });
+  expect(plot.data[0]).toMatchObject({type: "bar", orientation: "h", x: [10]});
+  expect((plot.data[0] as any).y[0]).toContain("702.476 nm");
+  expect((plot.data[0] as any).y[0]).toContain("F I<br>SF6 &lt;unverified&gt;");
+});

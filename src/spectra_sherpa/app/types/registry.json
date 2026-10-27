@@ -2,6 +2,18 @@
   "version": "1.1",
   "description": "SpectraSherpa type registry — canonical data types for graph node ports",
   "types": {
+    "PeakAssignmentDictionary": {
+      "uri": "spectrasherpa://types/PeakAssignmentDictionary/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Retained tentative chemical hypotheses keyed by immutable input peak identity"
+    },
+    "DataStory": {
+      "uri": "spectrasherpa://types/DataStory/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "User-declared or generated scientific narrative; context, not verified measurement evidence"
+    },
     "PartitionedSource": {
       "uri": "spectrasherpa://types/PartitionedSource/1.0",
       "category": "config",
@@ -279,6 +291,30 @@
     }
   },
   "scientific_semantics": {
+    "PeakAssignmentDictionary": {
+      "scientific_kind": "structured_record",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": [
+        "record"
+      ],
+      "content_categories": [
+        "provenance_and_evidence"
+      ]
+    },
+    "DataStory": {
+      "scientific_kind": "structured_record",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": [
+        "record"
+      ],
+      "content_categories": [
+        "provenance_and_evidence"
+      ]
+    },
     "PartitionedSource": {
       "scientific_kind": "structured_record",
       "view_kind": "structured_record",

@@ -103,6 +103,7 @@ def build_application_execution_runtime(
     preloaded_datasets: dict[str, Any] | None = None,
     allowed_model_artifact_uids: tuple[str, ...] | None = None,
     pin_preloaded_members: bool = False,
+    spectral_peak_interpreter: Any = None,
 ) -> ExecutionRuntime:
     """Project app configuration and durable custody into one closed runtime."""
 
@@ -122,6 +123,7 @@ def build_application_execution_runtime(
         )
     return ExecutionRuntime(
         node_timeout_seconds=float(settings.max_job_duration_sec),
+        spectral_peak_interpreter=spectral_peak_interpreter,
         model_artifact_reader=reader,
         model_artifact_writer=store,
         worker_model_artifact_reader=worker_reader,

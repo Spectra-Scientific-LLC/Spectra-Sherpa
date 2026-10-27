@@ -1098,6 +1098,33 @@ export function buildPeakTablePlot(value: unknown): ScientificPlot {
   if (points.length !== retainedCount)
     return refusedScientificPlot(`Peak projection refused: ${retainedCount - points.length} of ${retainedCount} records are invalid or missing; no partial-exclusion policy is declared.`, SCIENTIFIC_PLOT_LAYOUT);
   if (points.length === 0) return refusedScientificPlot("Peak projection has no finite position and height pairs.", SCIENTIFIC_PLOT_LAYOUT);
+  const metadata = (retained as { metadata?: Record<string, unknown> })?.metadata;
+  const assigned = metadata?.schema_version === "spectral-peak-assignment/1";
+  const escapeText = (text: unknown): string => String(text ?? "Unknown")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  if (assigned) {
+    const labels = rows.map(row => {
+      const position = `${Number(row.median_pos).toFixed(3)} ${escapeText(metadata?.x_units ?? "")}`;
+      if (row.assignment_status === "unassigned") return `${position} · Unassigned`;
+      const origin = String(row.chemistry_origin ?? "Unknown");
+      return `${position} · ${escapeText(row.chemical_species)}<br>` +
+        escapeText(origin.length > 72 ? origin.slice(0, 69) + "…" : origin);
+    });
+    return {
+      data: [{type: "bar", orientation: "h", x: points.map(point => point.y), y: labels,
+        marker: {color: SCIENTIFIC_COLORS.threshold},
+        customdata: rows.map(row => `${escapeText(row.chemical_species)} · ${escapeText(row.chemistry_origin)}` +
+          `<br>${escapeText(row.assignment_status)}: ${escapeText(row.assignment_reason)}`),
+        hovertemplate: "%{y}<br>Height: %{x:.6g}<br>%{customdata}<extra></extra>"}],
+      layout: presentationReadyLayout({...SCIENTIFIC_PLOT_LAYOUT,
+        height: Math.max(500, rows.length * 42 + 120),
+        margin: {l: 320, r: 30, t: 50, b: 55},
+        title: {text: "Peak Chemistry", font: {size: 14, color: SCIENTIFIC_COLORS.ink}},
+        xaxis: {...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Peak height (input response units)"},
+        yaxis: {...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), type: "category", autorange: "reversed", title: ""},
+        showlegend: false}, false),
+    };
+  }
   return {
     data: [
       {
@@ -1112,7 +1139,7 @@ export function buildPeakTablePlot(value: unknown): ScientificPlot {
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
       title: { text: "Detected Peaks", font: { size: 14, color: SCIENTIFIC_COLORS.ink } },
-      xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Spectral position" },
+      xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: metadata?.x_units ? `Spectral position (${metadata.x_units})` : "Spectral position" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Peak height" },
       showlegend: false,
     }, false),

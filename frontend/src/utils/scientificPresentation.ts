@@ -278,6 +278,10 @@ export const scientificEvidenceShape = (
   output: NodeOutput | null | undefined,
 ): ScientificEvidenceShape | null => {
   const identity = projectedPresentationIdentity(output);
+  if (identity?.kind === "peak_table") {
+    const value = output?.presentation_value as {data?: unknown} | undefined;
+    if (Array.isArray(value?.data)) return {rows: value.data.length, cols: 0, rowLabel: "peaks", colLabel: ""};
+  }
   if (identity?.kind === "t2_q_diagnostics") {
     const rows = t2QDiagnosticRows(output?.presentation_value, output?.metadata || {});
     return { rows: rows.length, cols: rows.length > 0 ? 2 : 0,

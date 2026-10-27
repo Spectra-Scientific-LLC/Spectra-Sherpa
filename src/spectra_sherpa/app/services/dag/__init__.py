@@ -21,6 +21,8 @@ from .presentation_contract import NodePresentationContract, ScientificPresentat
 if os.environ.get("SPECTRA_DAG_SKIP_BUILTIN_REGISTRATION") != "1":
     # Import ALL node modules to trigger @register_node side effects.
     # Order matters: data and blend depend on other modules.
+    from spectra_sherpa.app.contracts.workflow_extension import load_workflow_extension
+
     from .nodes import (  # noqa: F401
         blend,
         classification,
@@ -31,6 +33,8 @@ if os.environ.get("SPECTRA_DAG_SKIP_BUILTIN_REGISTRATION") != "1":
         preprocessing,
         time_series,
     )
+
+    load_workflow_extension(node_registry)
 
     # Lock the exact installed operation vocabulary for this process.
     node_registry.freeze_builtins()

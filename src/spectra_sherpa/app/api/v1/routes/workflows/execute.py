@@ -378,10 +378,12 @@ async def execute_trial(
     )
     try:
         # Build a fresh DAG executor for this trial (no caching)
+        from spectra_sherpa.app.contracts.workflow_extension import build_peak_interpreter
         from spectra_sherpa.app.services.execution_runtime import build_application_execution_runtime
 
         executor = DAGExecutor(
             runtime=build_application_execution_runtime(
+                spectral_peak_interpreter=build_peak_interpreter(current_user.id, payload.project_id),
                 preloaded_datasets=preloaded_datasets,
                 allowed_model_artifact_uids=admitted_model_artifact_ids(effective_nodes, payload.initial_data),
             )
@@ -1143,10 +1145,12 @@ async def execute_saved_workflow(
 
     try:
         # Build DAG executor
+        from spectra_sherpa.app.contracts.workflow_extension import build_peak_interpreter
         from spectra_sherpa.app.services.execution_runtime import build_application_execution_runtime
 
         executor = DAGExecutor(
             runtime=build_application_execution_runtime(
+                spectral_peak_interpreter=build_peak_interpreter(current_user.id, wf_project_id),
                 canonical_artifact_read_grant=canonical_artifact_read_grant,
                 preloaded_datasets=preloaded_datasets,
                 allowed_model_artifact_uids=allowed_model_artifact_uids,
