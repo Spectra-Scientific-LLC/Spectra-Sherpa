@@ -623,8 +623,15 @@ async def preview_collection_definition_endpoint(
             stage=stage,
             definition_override=definition,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=503 if isinstance(exc, OSError) else 422,
+            detail=validation_or_storage_detail(
+                exc,
+                fallback="Collection sources could not be read. Ask the operator to check storage access.",
+                logger=logger,
+            ),
+        ) from exc
     return _definition_receipt(
         experiment_id=experiment_id,
         status="preview",
@@ -659,8 +666,15 @@ async def attach_collection_definition_endpoint(
             definition_override=definition,
         )
         await asyncio.to_thread(write_collection_definition, experiment_id, definition.payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=503 if isinstance(exc, OSError) else 422,
+            detail=validation_or_storage_detail(
+                exc,
+                fallback="Collection definition could not be saved. Ask the operator to check storage access.",
+                logger=logger,
+            ),
+        ) from exc
 
     # Re-admit the persisted definition and current source inventory after the
     # atomic write. A source may have changed while the prospective definition
@@ -714,8 +728,15 @@ async def remove_collection_definition_endpoint(
     await _require_experiment(session, experiment_id, current_user.id)
     try:
         await asyncio.to_thread(remove_collection_definition, experiment_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=503 if isinstance(exc, OSError) else 422,
+            detail=validation_or_storage_detail(
+                exc,
+                fallback="Collection definition could not be removed. Ask the operator to check storage access.",
+                logger=logger,
+            ),
+        ) from exc
     return _definition_receipt(
         experiment_id=experiment_id,
         status="absent",

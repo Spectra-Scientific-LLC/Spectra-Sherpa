@@ -3,16 +3,21 @@
 import asyncio
 import contextvars
 import logging
+import weakref
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager, suppress
+from datetime import timedelta
 from functools import partial
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from spectra_sherpa.app.models.user import User
 
 logger = logging.getLogger(__name__)
+PUBLICATION_LEASE_SECONDS = 300
+PUBLICATION_RENEWAL_SECONDS = 30
 # File writers never wait on the compute executor or perform async database
 # work. Separate bounded capacity avoids compute -> publication -> compute
 # starvation when private execution loops occupy every default-pool worker.
@@ -58,11 +63,127 @@ async def await_file_writer(function, *args):
     return await await_thread_completion(function, *args, executor=_FILE_PUBLICATION_POOL)
 
 
+async def _database_now(session):
+    clock = func.clock_timestamp() if session.get_bind().dialect.name == "postgresql" else func.current_timestamp()
+    return await session.scalar(select(clock))
+
+
+async def _lease_deadline(session):
+    return await _database_now(session) + timedelta(seconds=PUBLICATION_LEASE_SECONDS)
+
+
+async def _renew_while_executing(factory, user_id, attempt_id, execution_task):
+    """Renew only while the owning execution task lives, never while merely cached."""
+    from spectra_sherpa.app.models.model_publication import ModelPublication
+
+    while True:
+        await asyncio.sleep(PUBLICATION_RENEWAL_SECONDS)
+        owner = execution_task() if execution_task else None
+        if owner is None or owner.done():
+            return
+        del owner  # Do not keep a completed execution alive through the renewal loop.
+        try:
+            async with factory() as session:
+                await lock_storage_owner(session, user_id)
+                owner = execution_task() if execution_task else None
+                if owner is None or owner.done():
+                    return
+                del owner
+                result = await session.execute(
+                    update(ModelPublication)
+                    .where(
+                        ModelPublication.user_id == user_id,
+                        ModelPublication.attempt_id == attempt_id,
+                        ModelPublication.cleanup_requested.is_(False),
+                    )
+                    .values(lease_expires_at=await _lease_deadline(session))
+                )
+                await session.commit()
+                if not result.rowcount:
+                    return
+        except Exception:
+            # A failed renewal grants no authority. Fencing/registration still
+            # serialize on the owner row even if the database stays unavailable.
+            logger.exception("Model publication lease renewal failed")
+
+
+async def _fence_expired_publications(session, *, uids=None):
+    """Expiry permits revocation, not deletion or a claim that execution failed."""
+    from spectra_sherpa.app.models.model_artifact import ModelArtifact
+    from spectra_sherpa.app.models.model_publication import ModelPublication
+
+    query = select(ModelPublication.artifact_uid, ModelPublication.user_id).where(
+        ModelPublication.attempt_id.is_not(None),
+        ModelPublication.cleanup_requested.is_(False),
+        ModelPublication.lease_expires_at <= await _database_now(session),
+    )
+    if uids is not None:
+        query = query.where(ModelPublication.artifact_uid.in_(uids))
+    candidates = list((await session.execute(query)).all())
+    for uid, user_id in candidates:
+        await session.rollback()
+        try:
+            await lock_storage_owner(session, user_id)
+            claim = await session.scalar(
+                select(ModelPublication)
+                .where(
+                    ModelPublication.artifact_uid == uid,
+                    ModelPublication.user_id == user_id,
+                    ModelPublication.attempt_id.is_not(None),
+                    ModelPublication.cleanup_requested.is_(False),
+                    ModelPublication.lease_expires_at <= await _database_now(session),
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if claim is None or await session.scalar(select(ModelArtifact.id).where(ModelArtifact.artifact_uid == uid)):
+                await session.rollback()
+                continue
+            claim.cleanup_requested = True
+            # A separate committed fence must exist before any bytes are removed.
+            # Lost acknowledgement leaves the original writer unable to proceed
+            # if it landed, and leaves files intact if it did not.
+            await session.commit()
+        except Exception:
+            logger.exception("Model publication fencing failed; retaining custody")
+            await session.rollback()
+
+
+async def publication_recovery_loop(factory, store, *, interval=60):
+    """Retry fenced publications and recover crash-left leases without restarting."""
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            async with factory() as session:
+                await reconcile_terminal_publications(session, store=store)
+        except Exception:
+            logger.exception("Model publication recovery pass failed")
+
+
+@asynccontextmanager
+async def publication_recovery_service(factory, store, *, interval=60):
+    """One recovery lifecycle for workbench and standalone headless servers."""
+    try:
+        async with factory() as session:
+            await reconcile_terminal_publications(session, store=store)
+    except Exception:
+        logger.exception("Initial model publication recovery pass failed")
+    task = asyncio.create_task(
+        publication_recovery_loop(factory, store, interval=interval), name="model-publication-recovery"
+    )
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
 class OwnedModelWriter:
     """Claim custody durably before writing, then serialize with account erasure.
 
     A claim is not a usable model or a success receipt. Failed/timed-out runs
-    retain it until a completed artifact takes custody or the account is erased.
+    retain it until registration or durable revocation transfers custody.
     No lock is held while fitting. SDK writers remain caller-owned capabilities.
     """
 
@@ -71,6 +192,23 @@ class OwnedModelWriter:
         self.factory = factory
         self.user_id = user_id
         self.claimed_uids: set[str] = set()
+        self.attempt_id = str(uuid4())
+        self._execution_task = None
+        self._renewal_task = None
+
+    def bind_execution_task(self, task):
+        """A cross-loop adapter binds the task that owns the complete execution."""
+        if task is not None:
+            self._execution_task = weakref.ref(task)
+
+    def _start_renewal(self):
+        if self._execution_task is None:
+            self.bind_execution_task(asyncio.current_task())
+        if self._renewal_task is None or self._renewal_task.done():
+            self._renewal_task = asyncio.create_task(
+                _renew_while_executing(self.factory, self.user_id, self.attempt_id, self._execution_task),
+                name="model-publication-lease",
+            )
 
     def artifact_directory(self, artifact_uid: str) -> str:
         return self.store.artifact_directory(artifact_uid)
@@ -94,6 +232,8 @@ class OwnedModelWriter:
                     artifact_uid=artifact_uid,
                     user_id=self.user_id,
                     artifact_dir=directory,
+                    attempt_id=self.attempt_id,
+                    lease_expires_at=await _lease_deadline(session),
                 )
             )
             # A failed INSERT must not grant custody over an existing claim.
@@ -102,16 +242,20 @@ class OwnedModelWriter:
             await session.flush()
             self.claimed_uids.add(artifact_uid)
             await session.commit()
+            self._start_renewal()
             # Deletion can win between these transactions. Re-admit before any
             # byte is written. A lost claim-commit acknowledgement writes none.
             await lock_storage_owner(session, self.user_id)
+            claim = await session.get(ModelPublication, artifact_uid, populate_existing=True)
+            if claim is None or claim.attempt_id != self.attempt_id or claim.cleanup_requested:
+                raise ValueError("Model publication ownership expired; run the workflow again")
             return await await_file_writer(self.store.save_new, artifact_uid, manifest, arrays)
 
     async def discard_trial(self):
         """Called only after execution/writers stop, never for uncertain durable runs.
 
         Mark intent before deleting bytes. A crash during cleanup is recoverable;
-        unmarked claims remain protected, regardless of their age.
+        legacy unowned claims remain protected, regardless of their age.
         """
         from spectra_sherpa.app.models.model_artifact import ModelArtifact
         from spectra_sherpa.app.models.model_publication import ModelPublication
@@ -126,6 +270,7 @@ class OwnedModelWriter:
                     .where(
                         ModelPublication.artifact_uid == uid,
                         ModelPublication.user_id == self.user_id,
+                        ModelPublication.attempt_id == self.attempt_id,
                     )
                     .values(cleanup_requested=True)
                 )
@@ -137,8 +282,9 @@ async def reconcile_terminal_publications(session, *, store, uids=None):
     """Reclaim only explicit terminal claims, serializing with account erasure."""
     from spectra_sherpa.app.models.model_publication import ModelPublication
 
+    await _fence_expired_publications(session, uids=uids)
     query = select(ModelPublication.artifact_uid, ModelPublication.user_id).where(
-        ModelPublication.cleanup_requested.is_(True)
+        ModelPublication.cleanup_requested.is_(True), ModelPublication.reclaimed_at.is_(None)
     )
     if uids is not None:
         query = query.where(ModelPublication.artifact_uid.in_(uids))
@@ -168,6 +314,7 @@ async def _reclaim_terminal_publication(session, store, uid, user_id):
         .where(
             ModelPublication.artifact_uid == uid,
             ModelPublication.cleanup_requested.is_(True),
+            ModelPublication.reclaimed_at.is_(None),
         )
         .with_for_update()
         .execution_options(populate_existing=True)
@@ -191,8 +338,17 @@ async def _reclaim_terminal_publication(session, store, uid, user_id):
     ):
         logger.warning("Terminal publication cleanup blocked by overlapping retained custody: %s", uid)
         return
-    await await_file_writer(store.delete, uid)
-    await session.delete(claim)
+    protected_paths = [
+        (Path(raw) if Path(raw).is_absolute() else store.models_dir.parent / raw).resolve() for raw in live_paths
+    ]
+    if claim.attempt_id is None:
+        await await_file_writer(store.delete, uid)
+    else:
+        await await_file_writer(store.reclaim_publication, uid, protected_paths)
+    if claim.attempt_id is None:
+        await session.delete(claim)
+    else:
+        claim.reclaimed_at = await session.scalar(select(func.current_timestamp()))
     await session.commit()
 
 
@@ -202,6 +358,11 @@ class LoopBoundModelWriter:
     def __init__(self, writer, loop):
         self.writer = writer
         self.loop = loop
+        writer.bind_execution_task(asyncio.current_task())
+
+    @property
+    def attempt_id(self):
+        return self.writer.attempt_id
 
     def artifact_directory(self, artifact_uid):
         return self.writer.artifact_directory(artifact_uid)

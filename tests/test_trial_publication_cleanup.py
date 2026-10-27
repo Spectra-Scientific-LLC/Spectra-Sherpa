@@ -107,7 +107,8 @@ async def test_cancelled_trial_waits_for_actual_writer_before_cleanup(test_sessi
         release.set()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert await test_session.get(ModelPublication, uid) is None
+    claim = await test_session.get(ModelPublication, uid)
+    assert claim.cleanup_requested and claim.reclaimed_at is not None
     assert not (store.models_dir / uid).exists()
 
 
@@ -130,6 +131,9 @@ def test_upgrade_existing_publication_defaults_to_protected(tmp_path):
     _run_upgrade(url, "head")
     with engine.connect() as conn:
         assert conn.execute(sa.text("SELECT cleanup_requested FROM model_publication")).scalar_one() == 0
+        assert conn.execute(
+            sa.text("SELECT attempt_id, lease_expires_at, reclaimed_at FROM model_publication")
+        ).one() == (None, None, None)
     engine.dispose()
 
 
@@ -175,7 +179,8 @@ async def test_real_pca_trial_releases_publication(
     assert response.status == ("error" if serialization_failure else "completed"), response.error
     if serialization_failure:
         assert "synthetic post-publication" in response.error
-    assert await test_session.scalar(select(ModelPublication)) is None
+    claim = await test_session.scalar(select(ModelPublication))
+    assert claim.cleanup_requested and claim.reclaimed_at is not None
     assert store.list_artifacts() == []
 
 
@@ -194,24 +199,26 @@ async def test_terminal_cleanup_retries_after_file_failure_without_reaping_unkno
     a, b = str(uuid4()), str(uuid4())
     await terminal.save(a, {"model_type": "pca"}, {"scores": np.eye(2)})
     await unknown.save(b, {"model_type": "pca"}, {"scores": np.eye(2)})
-    original = store.delete
+    original = store.reclaim_publication
 
-    def fail(_uid):
+    def fail(*args):
         raise OSError("synthetic deletion interruption")
 
-    monkeypatch.setattr(store, "delete", fail)
+    monkeypatch.setattr(store, "reclaim_publication", fail)
     # The failure is logged per claim; the marked claim waits for the next pass.
     await terminal.discard_trial()
     async with factory() as session:
         assert (await session.get(ModelPublication, a)).cleanup_requested
+        assert (await session.get(ModelPublication, a)).reclaimed_at is None
+        assert (store.models_dir / a / "arrays.npz").exists()
         assert not (await session.get(ModelPublication, b)).cleanup_requested
-    monkeypatch.setattr(store, "delete", original)
+    monkeypatch.setattr(store, "reclaim_publication", original)
     async with factory() as session:
         await reconcile_orphan_artifacts(session, store=store, grace_seconds=0)
     assert not (store.models_dir / a).exists()
     assert (store.models_dir / b / "arrays.npz").exists()
     async with factory() as session:
-        assert await session.get(ModelPublication, a) is None
+        assert (await session.get(ModelPublication, a)).reclaimed_at is not None
         assert await session.get(ModelPublication, b) is not None
 
 
@@ -251,4 +258,4 @@ async def test_one_damaged_terminal_claim_does_not_stall_the_batch_or_orphan_swe
     assert orphan.name in removed
     async with factory() as session:
         assert (await session.get(ModelPublication, damaged)).cleanup_requested
-        assert await session.get(ModelPublication, healthy) is None
+        assert (await session.get(ModelPublication, healthy)).reclaimed_at is not None

@@ -383,8 +383,12 @@ def _make_lifespan(
             )
             raise
 
+        from spectra_sherpa.app.services.model_store import get_model_store
+        from spectra_sherpa.app.services.storage_custody import publication_recovery_service
+
         try:
-            yield
+            async with publication_recovery_service(async_session, get_model_store()):
+                yield
         finally:
             # Register independent cleanup operations in reverse order. A failing
             # extension shutdown must not strand core workers or services.

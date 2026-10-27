@@ -82,10 +82,8 @@ def test_security_and_curated_publish_build_frontend_before_python_artifacts(mon
 def test_backend_docker_builds_and_qualifies_frontend_inside_public_wheel(monorepo_root: Path) -> None:
     dockerfile = (REPO_ROOT / "packages/spectra-ops/docker/Dockerfile.backend").read_text(encoding="utf-8")
     dockerignore = (REPO_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
-    assert "FROM node:22-slim AS sherpa-ui-build" in dockerfile
-    sherpa_ui_stage = dockerfile.split("FROM node:22-slim AS sherpa-ui-build", 1)[1].split(
-        "FROM python:3.11-slim AS public-wheel-build", 1
-    )[0]
+    assert re.search(r"FROM node:22-slim@sha256:[0-9a-f]{64} AS sherpa-ui-build", dockerfile)
+    sherpa_ui_stage = dockerfile.split(" AS sherpa-ui-build", 1)[1].split("\nFROM ", 1)[0]
     registry = "packages/spectra-sherpa/src/spectra_sherpa/data/plate_formats_v1.json"
     assert registry in sherpa_ui_stage
     assert sherpa_ui_stage.index(registry) < sherpa_ui_stage.index("RUN npm run build")
@@ -102,13 +100,24 @@ def test_backend_docker_builds_and_qualifies_frontend_inside_public_wheel(monore
 
 def test_public_frontend_docker_builds_from_locked_source() -> None:
     public_frontend = (PACKAGE_ROOT / "frontend/Dockerfile").read_text(encoding="utf-8")
-    assert "FROM node:22-slim AS build-stage" in public_frontend
+    assert re.search(r"FROM node:22-slim@sha256:[0-9a-f]{64} AS build-stage", public_frontend)
+    assert re.search(r"FROM nginx:stable-alpine@sha256:[0-9a-f]{64} AS production-stage", public_frontend)
     assert "COPY frontend/package*.json ./" in public_frontend
     assert "COPY src/spectra_sherpa/data/plate_formats_v1.json" in public_frontend
     assert "COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf" in public_frontend
     assert public_frontend.index("plate_formats_v1.json") < public_frontend.index("RUN npm run build")
     assert "RUN npm ci" in public_frontend
     assert "node:20" not in public_frontend
+
+
+def test_publication_postgres_proof_is_required_in_existing_linux_lane():
+    source = (PACKAGE_ROOT / ".github/workflows/ci.yml").read_text()
+    backend = source.split("  backend:", 1)[1].split("  desktop-shell:", 1)[0]
+    assert "publication-postgres:" in backend
+    assert "matrix.os == 'ubuntu-latest' && matrix.install_profile == 'postgres'" in backend
+    assert "PUBLICATION_TEST_POSTGRES_URL:" in backend
+    assert "REQUIRE_PUBLICATION_POSTGRES:" in backend
+    assert "'1' || '0'" in backend
 
 
 def test_clean_source_launch_instructions_generate_the_ignored_frontend() -> None:

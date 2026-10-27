@@ -109,7 +109,7 @@ def _require_headless_access(request: Request) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _workflow_lifespan(app: FastAPI):
     """Load the workflow into memory on startup."""
     global _executor, _executor_workflow_id, _executor_workflow_user_id
 
@@ -167,9 +167,20 @@ async def lifespan(app: FastAPI):
         _executor_workflow_id = workflow_id
         _executor_workflow_user_id = workflow.user_id
 
-    yield
-    # Cleanup on shutdown
-    _executor = None
+    try:
+        yield
+    finally:
+        _executor = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from spectra_sherpa.app.services.model_store import get_model_store
+    from spectra_sherpa.app.services.storage_custody import publication_recovery_service
+
+    async with _workflow_lifespan(app):
+        async with publication_recovery_service(async_session, get_model_store()):
+            yield
 
 
 app = FastAPI(

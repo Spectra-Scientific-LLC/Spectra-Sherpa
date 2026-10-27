@@ -99,6 +99,18 @@ jobs:
         install_profile:
           - base
           - postgres
+    services:
+      publication-postgres:
+        image: ${{ matrix.os == 'ubuntu-latest' && matrix.install_profile == 'postgres' && 'postgres:16' || '' }}
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         # Force bash on every runner so the existing POSIX-style ``if [...]``
@@ -139,6 +151,9 @@ jobs:
           fi
 
       - name: Run tests
+        env:
+          PUBLICATION_TEST_POSTGRES_URL: ${{ matrix.os == 'ubuntu-latest' && matrix.install_profile == 'postgres' && 'postgresql+asyncpg://postgres@127.0.0.1:5432/postgres' || '' }}
+          REQUIRE_PUBLICATION_POSTGRES: ${{ matrix.os == 'ubuntu-latest' && matrix.install_profile == 'postgres' && '1' || '0' }}
         run: |
           poetry run python scripts/run_public_tests.py
 
