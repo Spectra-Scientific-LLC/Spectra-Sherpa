@@ -801,6 +801,12 @@ class NodeRegistry:
         self._frozen: bool = False
         self._lock = threading.RLock()
 
+    @property
+    def is_frozen(self) -> bool:
+        """Whether startup has sealed the canonical operation vocabulary."""
+        with self._lock:
+            return self._frozen
+
     def freeze_builtins(self) -> None:
         """Mark all currently registered nodes as built-in.
 

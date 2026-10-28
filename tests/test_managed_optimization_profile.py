@@ -87,3 +87,76 @@ def test_nonreplayable_rubberband_remains_explicitly_local_only() -> None:
     assert contract.payload["managed_optimization_eligibility"] == ("local",)
     assert contract.payload["managed_optimization_profiles"] == ()
     assert "baseline.rubberband" not in profile.operation_ids
+
+
+def test_installed_versions_cached_but_every_contract_requirement_checked(monkeypatch):
+    from dataclasses import replace
+
+    from spectra_sherpa.app.services.dag import managed_optimization_profile as module
+
+    profile = managed_optimization_profile()
+    versions = {r.distribution: r.version for r in profile.runtime_requirements()}
+    calls = []
+    monkeypatch.setattr(module.importlib.metadata, "version", lambda name: calls.append(name) or versions[name])
+    module._installed_version.cache_clear()
+    try:
+        first = profile.runtime_attestation()
+        assert profile.runtime_attestation() == first
+        assert sorted(calls) == sorted(versions)
+        with pytest.raises(ManagedOptimizationProfileError, match="observed"):
+            profile.runtime_attestation(version_resolver=lambda _name: "0.0.0")
+        contract = profile.contracts[0]
+        payload = contract.as_dict()
+        payload["runtime_requirements"][0]["version"] = "0.0.0"
+        changed = replace(profile, contracts=(NodeExecutionContract.from_dict(payload), *profile.contracts[1:]))
+        with pytest.raises(ManagedOptimizationProfileError, match="observed|conflicting"):
+            changed.runtime_attestation()
+        with pytest.raises(ManagedOptimizationProfileError, match="not in managed"):
+            profile.runtime_attestation(("unknown.operation",))
+    finally:
+        module._installed_version.cache_clear()
+
+
+def test_missing_distribution_is_not_cached(monkeypatch):
+    from spectra_sherpa.app.services.dag import managed_optimization_profile as module
+
+    calls = []
+
+    def missing(name):
+        calls.append(name)
+        raise module.importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(module.importlib.metadata, "version", missing)
+    module._installed_version.cache_clear()
+    for _ in range(2):
+        with pytest.raises(ManagedOptimizationProfileError, match="not installed"):
+            managed_optimization_profile().runtime_attestation()
+    assert len(calls) == 2
+
+
+def test_profile_cache_only_after_registry_freeze(monkeypatch):
+    from spectra_sherpa.app.services.dag import managed_optimization_profile as module
+
+    class Registry:
+        is_frozen = False
+        calls = 0
+
+        def list_nodes(self):
+            self.calls += 1
+            return node_registry.list_nodes()
+
+    registry = Registry()
+    monkeypatch.setattr(module, "node_registry", registry)
+    first = module.managed_optimization_profile()
+    assert module.managed_optimization_profile() is not first
+    registry.is_frozen = True
+    sealed = module.managed_optimization_profile()
+    scans = registry.calls
+    assert module.managed_optimization_profile() is sealed
+    assert registry.calls == scans
+    assert sealed.digest == first.digest
+    assert sealed.contracts == first.contracts
+    other_registry = Registry()
+    other_registry.is_frozen = True
+    monkeypatch.setattr(module, "node_registry", other_registry)
+    assert module.managed_optimization_profile() is not sealed

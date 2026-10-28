@@ -69,4 +69,35 @@ describe('Shared scientific comparison', () => {
     expect(plots).toHaveLength(2);
     expect(charts.some(c => (c.props('data') as Array<{ y: number[] }>)[0]?.y[0] === 1)).toBe(true);
   });
+  it('aligns role metrics under run names without mixing CV or inventing deltas', () => {
+    const value = evidence();
+    value.items[0].label = 'PLS calibration'; value.items[1].label = 'R2 candidate 2';
+    value.items[0].sections.held_out.metrics = { rmse: 2.2914, mae: 2.1665 };
+    value.items[1].sections.held_out.metrics = { rmse: 1.7749, mae: 1.5655 };
+    value.items[1].sections.training_cv.metrics = { rmse: 1.4861 };
+    const pair = value.pairs[0].sections.find(s => s.role === 'held_out')!;
+    pair.metric_values = { rmse: { left: 2.2914, right: 1.7749 } };
+    const wrapper = mount(ScientificComparison, { props: { evidence: value } });
+    const held = wrapper.get('[aria-label="Held-out validation"]');
+    expect(held.text()).toContain('PLS calibration'); expect(held.text()).toContain('R2 candidate 2');
+    expect(held.text()).toContain('Delta (2 − 1)');
+    expect(held.text()).toContain('2.2914'); expect(held.text()).toContain('1.7749');
+    expect(held.text()).not.toContain('1.4861');
+    const mae = held.findAll('tr').find(row => row.text().includes('MAE'))!;
+    expect(mae.findAll('td').at(-1)!.text()).toBe('—');
+    expect(wrapper.get('[aria-label="Training CV"]').text()).toContain('1.4861');
+    wrapper.unmount();
+  });
+
+  it('numbers every comparison consistently when more than two results are selected', () => {
+    const value = evidence();
+    value.items.push({ ...value.items[1], label: 'Third run', reference: { ...value.items[1].reference, id: '3' } });
+    value.pairs[0].left_index = 1; value.pairs[0].right_index = 2;
+    const wrapper = mount(ScientificComparison, { props: { evidence: value } });
+    const held = wrapper.get('[aria-label="Held-out validation"]');
+    expect(held.text()).toContain('2 · Run 2'); expect(held.text()).toContain('3 · Third run');
+    expect(held.text()).toContain('Delta (3 − 2)');
+    wrapper.unmount();
+  });
+
 });

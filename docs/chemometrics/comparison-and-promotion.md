@@ -21,6 +21,20 @@ not need a competitor to be reviewed for use. External candidate providers may
 link into this workspace; their origin is retained and they do not become
 ordinary run IDs.
 
+## Read the comparison workspace
+
+**Summary** retains the source, response, units and population of each result.
+**Results** groups measures, plots and specimen values by evaluation role.
+**Validation** contains methodology and optional common-evaluation controls.
+Use the section arrows to collapse details without losing them.
+
+The result tables use the same run names and **Delta (2 − 1)** convention.
+Metrics align by their retained scientific role, not by the name of the node
+that produced them. A held-out RMSEP is never paired with a training RMSECV.
+Deltas appear only when the evidence qualifies that pair. **Workflow details
+and recorded measures** preserves the original node-specific values and settings;
+those descriptive values alone do not prove a paired improvement.
+
 ## Read each result in its own role
 
 | Section | Meaning | What it does not establish |
