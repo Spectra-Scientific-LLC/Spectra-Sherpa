@@ -6,6 +6,7 @@ import hashlib
 import importlib.metadata
 import json
 from dataclasses import dataclass
+from functools import cached_property, lru_cache
 from typing import Callable
 
 from spectra_sherpa.app.services.dag.node_base import node_registry
@@ -19,6 +20,17 @@ MANAGED_OPTIMIZATION_PROFILE_SCHEMA_VERSION = "spectra-managed-optimization-prof
 
 class ManagedOptimizationProfileError(ValueError):
     """The live registry cannot prove an exact managed optimization profile identity."""
+
+
+@lru_cache(maxsize=128)
+def _installed_version(distribution: str, resolver: Callable[[str], str]) -> str:
+    """Snapshot installed distributions for this process, never expected versions.
+
+    Changing an installed runtime requires a process restart. Explicit test or
+    qualification resolvers bypass this cache, and failures are not cached.
+    Every attestation still checks the observed version against its contract.
+    """
+    return resolver(distribution)
 
 
 @dataclass(frozen=True)
@@ -94,11 +106,11 @@ class ManagedOptimizationProfile:
             if self.profile_id not in contract.payload["managed_optimization_profiles"]:
                 raise ManagedOptimizationProfileError("profile contains a contract that does not name its membership")
 
-    @property
+    @cached_property
     def operation_ids(self) -> frozenset[str]:
         return frozenset(contract.payload["operation_id"] for contract in self.contracts)
 
-    @property
+    @cached_property
     def digest(self) -> str:
         return _digest(
             {
@@ -162,7 +174,11 @@ class ManagedOptimizationProfile:
         *,
         version_resolver: Callable[[str], str] | None = None,
     ) -> ManagedOptimizationRuntimeAttestation:
-        resolver = version_resolver or importlib.metadata.version
+        resolver = (
+            version_resolver
+            if version_resolver is not None
+            else (lambda distribution: _installed_version(distribution, importlib.metadata.version))
+        )
         selected_ids = tuple(sorted(self.operation_ids if operation_ids is None else operation_ids))
         observed: list[ManagedOptimizationRuntimeRequirement] = []
         for requirement in self.runtime_requirements(selected_ids):
@@ -191,13 +207,27 @@ class ManagedOptimizationProfile:
 def managed_optimization_profile(profile_id: str = MANAGED_OPTIMIZATION_PLS_PROFILE_ID) -> ManagedOptimizationProfile:
     """Resolve one profile from registered contracts, with no operation map."""
 
+    # Before application startup freezes the registry it is still being built;
+    # do not retain a partial profile. Registry identity also isolates SDK/tests.
+    if node_registry.is_frozen:
+        return _frozen_profile(node_registry, profile_id, MANAGED_OPTIMIZATION_PROFILE_VERSION)
+    return _build_profile(node_registry, profile_id, MANAGED_OPTIMIZATION_PROFILE_VERSION)
+
+
+@lru_cache(maxsize=16)
+def _frozen_profile(registry, profile_id: str, profile_version: str) -> ManagedOptimizationProfile:
+    return _build_profile(registry, profile_id, profile_version)
+
+
+def _build_profile(registry, profile_id: str, profile_version: str) -> ManagedOptimizationProfile:
+
     contracts = []
-    for metadata in node_registry.list_nodes():
+    for metadata in registry.list_nodes():
         contract = metadata.resolved_execution_contract()
         if contract is not None and profile_id in contract.payload["managed_optimization_profiles"]:
             contracts.append(contract)
     contracts.sort(key=lambda contract: str(contract.payload["operation_id"]))
-    return ManagedOptimizationProfile(profile_id, MANAGED_OPTIMIZATION_PROFILE_VERSION, tuple(contracts))
+    return ManagedOptimizationProfile(profile_id, profile_version, tuple(contracts))
 
 
 __all__ = [

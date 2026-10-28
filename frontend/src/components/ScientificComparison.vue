@@ -1,32 +1,36 @@
 <template>
   <section aria-label="Scientific comparison" class="scientific-comparison">
-    <h3>Evaluation evidence <MethodHelp topic="comparison" label="Comparing results" context="Compare matching populations and evaluation roles. Missing evidence in one role does not invalidate another." /></h3>
+    <Panel header="Summary" toggleable>
     <div class="populations">
-      <article v-for="item in evidence.items" :key="`${item.reference.provider}:${item.reference.id}`">
-        <h4>{{ item.label }}</h4>
-        <details><summary>Evidence source</summary>{{ item.reference.kind }} · {{ item.reference.provider }}</details>
+      <article v-for="(item, index) in evidence.items" :key="`${item.reference.provider}:${item.reference.id}`">
+        <h4>{{ itemLabel(index) }}</h4>
+        <details><summary>Evidence source</summary>{{ item.reference.kind }} {{ item.reference.id }} · {{ item.reference.provider }}</details>
         <p>Development: {{ count(item.population.development_count) }} · Held-out: {{ count(item.population.held_out_count) }} · Excluded: {{ count(item.population.excluded_count) }}</p>
         <p>Response: {{ item.population.response || 'Unknown' }} · Units: {{ item.population.units || 'Not recorded' }}</p>
         <p>Population verification: {{ item.population.verification }}</p>
         <details v-if="item.dataset_use"><summary>Recorded dataset use</summary>
           <p>{{ item.dataset_use.notice }}</p>
-          <p v-for="(usage, index) in item.dataset_use.populations" :key="index">{{ usage.basis }} · Results revealed: {{ usage.results_revealed === true ? 'Yes' : usage.results_revealed === false ? 'No' : 'Unknown' }} · Influenced development: {{ usage.influenced_development === true ? 'Yes' : usage.influenced_development === false ? 'No' : 'Unknown' }}</p>
+          <p v-for="(usage, usageIndex) in item.dataset_use.populations" :key="usageIndex">{{ usage.basis }} · Results revealed: {{ usage.results_revealed === true ? 'Yes' : usage.results_revealed === false ? 'No' : 'Unknown' }} · Influenced development: {{ usage.influenced_development === true ? 'Yes' : usage.influenced_development === false ? 'No' : 'Unknown' }}</p>
         </details>
         <p v-for="limit in item.population.limitations" :key="limit" class="limitation">{{ limit }}</p>
       </article>
     </div>
+    </Panel>
+    <Panel header="Results" toggleable>
     <section v-for="role in roles" :key="role" :aria-label="labels[role]" class="role-section">
-      <h4>{{ labels[role] }} <MethodHelp topic="comparison" :label="labels[role]" :context="meanings[role]" /></h4>
+      <Panel :header="roleHasEvidence(role) ? labels[role] : `${labels[role]} · unavailable`" toggleable :collapsed="!roleHasEvidence(role)">
+      <MethodHelp topic="comparison" :label="labels[role]" :context="meanings[role]" />
       <div v-for="pair in evidence.pairs" :key="`${pair.left_index}:${pair.right_index}`" class="pair">
         <template v-for="section in pair.sections.filter(s => s.role === role)" :key="section.role">
-          <h5>{{ evidence.items[pair.left_index]?.label }} / {{ evidence.items[pair.right_index]?.label }}</h5>
+          <h5 v-if="evidence.pairs.length > 1">{{ itemLabel(pair.left_index) }} / {{ itemLabel(pair.right_index) }}</h5>
           <p :class="['state', section.state]">{{ stateLabel(section.state) }}: {{ section.reason }}</p>
           <p v-if="section.state !== 'comparable'" class="next-action">{{ section.next_action }}</p>
-          <table v-if="Object.keys(section.metric_values).length">
-            <thead><tr><th>Measure</th><th>First</th><th>Second</th><th>Second − first</th></tr></thead>
-            <tbody><tr v-for="(value, metric) in section.metric_values" :key="metric">
-              <th scope="row">{{ metricLabel(String(metric), role) }}</th>
-              <td>{{ number(value.left) }}</td><td>{{ number(value.right) }}</td><td>{{ number(value.right - value.left) }}</td>
+          <p class="muted">Units: {{ units(role, pair.left_index) }} / {{ units(role, pair.right_index) }}</p>
+          <table v-if="metricRows(role, pair).length" :aria-label="`${labels[role]} measures`">
+            <thead><tr><th scope="col">Measure</th><th scope="col">{{ itemLabel(pair.left_index) }}</th><th scope="col">{{ itemLabel(pair.right_index) }}</th><th scope="col" title="Second run minus first run; matching evaluation evidence required">{{ comparisonDeltaLabel(pair.left_index, pair.right_index) }}</th></tr></thead>
+            <tbody><tr v-for="value in metricRows(role, pair)" :key="value.metric">
+              <th scope="row">{{ metricLabel(value.metric, role) }}</th>
+              <td>{{ cell(value.left) }}</td><td>{{ cell(value.right) }}</td><td>{{ cell(value.delta) }}</td>
             </tr></tbody>
           </table>
           <details v-if="section.state === 'comparable' && traces(role, pair).length" class="plots" open>
@@ -37,7 +41,7 @@
             <button v-if="selection(role, pair).length" type="button" @click="clearSelection(role, pair)">Clear selected specimens ({{ selection(role, pair).length }})</button>
             <details><summary>Specimen values · up to 50 shown, selected first</summary>
             <table aria-label="Paired specimen results">
-              <thead><tr><th>Specimen</th><th>Reference</th><th>First prediction</th><th>Second prediction</th><th>First residual</th><th>Second residual</th></tr></thead>
+              <thead><tr><th>Specimen</th><th>Reference</th><th>{{ itemLabel(pair.left_index) }} · prediction</th><th>{{ itemLabel(pair.right_index) }} · prediction</th><th>{{ itemLabel(pair.left_index) }} · residual</th><th>{{ itemLabel(pair.right_index) }} · residual</th></tr></thead>
               <tbody><tr v-for="row in sampleRows(role, pair)" :key="row.id" :class="{ 'selected-row': selection(role, pair).includes(row.id) }">
                 <th scope="row"><button type="button" :aria-pressed="selection(role, pair).includes(row.id)" @click="toggleSample(row.id, role, pair)">{{ row.id }}</button></th>
                 <td>{{ number(row.observed) }}</td><td>{{ number(row.left) }}</td><td>{{ number(row.right) }}</td><td>{{ number(row.observed - row.left) }}</td><td>{{ number(row.observed - row.right) }}</td>
@@ -48,20 +52,29 @@
           </details>
         </template>
       </div>
+      </Panel>
     </section>
-    <ScientificBasisHelp />
+    </Panel>
+    <Panel header="Validation" toggleable :collapsed="true">
+      <MethodHelp topic="comparison" label="Comparing results" context="Compare matching populations and evaluation roles. Missing evidence in one role does not invalidate another." />
+      <slot name="validation-controls" />
+      <ScientificBasisHelp />
+    </Panel>
   </section>
 </template>
 
 <script setup lang="ts">
+import Panel from "primevue/panel";
 import MethodHelp from "@/components/MethodHelp.vue";
 import { ref, watch } from 'vue';
 import { selectedSampleIds } from '@/utils/sampleReview';
 import PlotlyChart from '@/components/PlotlyChart.vue';
 import ScientificBasisHelp from '@/components/ScientificBasisHelp.vue';
+import { comparisonLabel, comparisonDeltaLabel } from '@/utils/comparisonLabel';
 import { scientificNumber } from '@/utils/scientificEncoding';
 import type { EvidenceComparison, EvaluationRole } from '@/types/scientificComparison';
 const props = defineProps<{ evidence: EvidenceComparison }>();
+const itemLabel = (index: number) => comparisonLabel(props.evidence.items[index]?.label || 'Unavailable', index);
 type Pair = EvidenceComparison['pairs'][number];
 const selections = ref<Record<string, string[]>>({});
 const selectionKey = (role: EvaluationRole, pair: Pair) => `${role}:${pair.left_index}:${pair.right_index}`;
@@ -90,13 +103,31 @@ const meanings: Record<EvaluationRole, string> = {
   held_out: 'A frozen fitted model applied to samples excluded from fitting. Recorded use determines the independence claim.',
   outlier_challenge: 'Detection and consequences for declared outliers; separate from ordinary accuracy.',
 };
+function roleHasEvidence(role: EvaluationRole) {
+  return props.evidence.items.some(item => item.sections[role] && item.sections[role].state !== 'unavailable');
+}
+const units = (role: EvaluationRole, index: number) => props.evidence.items[index]?.sections[role]?.population.units || 'Not recorded';
+const cell = (value: number | null | undefined) => value == null ? '—' : number(value);
+function metricRows(role: EvaluationRole, pair: Pair) {
+  const left = props.evidence.items[pair.left_index]?.sections[role]?.metrics || {};
+  const right = props.evidence.items[pair.right_index]?.sections[role]?.metrics || {};
+  const qualified = pair.sections.find(section => section.role === role);
+  // The canonical role projections align measures independently of node names.
+  // Never infer a paired delta from matching labels or equal numeric values.
+  const names = [...new Set([...Object.keys(left), ...Object.keys(right), ...Object.keys(qualified?.metric_values || {})])];
+  return names.map(metric => {
+    const paired = qualified?.metric_values[metric];
+    return { metric, left: paired?.left ?? left[metric], right: paired?.right ?? right[metric],
+      delta: qualified?.state === 'comparable' && paired ? paired.right - paired.left : null };
+  });
+}
 const count = (n: number | null | undefined) => n == null ? 'Unknown' : String(n);
 const number = (n: number) => Number.isFinite(n) ? scientificNumber(n, { decimalPlaces: 4 }) : 'Unknown';
 const stateLabel = (s: string) => ({ comparable: 'Comparable', descriptive_only: 'Descriptive only', reevaluation_needed: 'Common evaluation needed', unavailable: 'Unavailable' })[s] || s;
 function metricLabel(metric: string, role: EvaluationRole) {
   if (metric === 'rmse') return ({ calibration: 'RMSEC', training_cv: 'RMSECV', held_out: 'RMSEP', outlier_challenge: 'Challenge RMSE' })[role];
   if (metric === 'r2') return role === 'training_cv' ? 'Q² (OOF)' : role === 'calibration' ? 'Calibration R²' : 'Predictive R²';
-  return metric;
+  return ({ mae: "MAE", bias: "Bias", sep: "SEP", rer: "RER", mse: "MSE" } as Record<string, string>)[metric] || metric;
 }
 function traces(role: EvaluationRole, pair: EvidenceComparison['pairs'][number], residual = false): Record<string, unknown>[] {
   return [pair.left_index, pair.right_index].flatMap(index => {
@@ -104,7 +135,7 @@ function traces(role: EvaluationRole, pair: EvidenceComparison['pairs'][number],
     if (!item) return [];
     const section = item.sections[role];
     if (!section || section.state === 'unavailable' || !section.observations.length || section.observations.length !== section.predictions.length) return [];
-    return [{ type: 'scatter', mode: 'markers', name: item.label,
+    return [{ type: 'scatter', mode: 'markers', name: itemLabel(index),
       x: section.observations,
       y: residual ? section.observations.map((value, i) => value - section.predictions[i]) : section.predictions,
       ids: section.sample_ids, customdata: section.sample_ids,

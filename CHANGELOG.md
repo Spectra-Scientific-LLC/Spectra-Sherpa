@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Staging GUI corrections
 
+- Runs Compare groups retained evidence into collapsible Summary, Results and
+  Validation sections. Consistent numbered run headings align qualified metrics
+  within calibration, training CV and held-out roles; workflow settings and raw
+  node-specific measures remain inspectable. Summary starts expanded so population
+  verification and scientific limitations stay visible alongside the results.
+- Managed optimization verification reuses installed-package versions and frozen
+  registry profiles without relaxing runtime-version or scientific contract checks.
+
 - Starter proposes editable Data — Model — Purpose — Version project names.
   Suggested reference data and analysis templates now wait for explicit user
   actions instead of briefly opening and automatically advancing pages. Returning
