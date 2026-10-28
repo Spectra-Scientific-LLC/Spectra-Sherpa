@@ -1,6 +1,6 @@
 <template>
   <section aria-label="Scientific comparison" class="scientific-comparison">
-    <Panel header="Summary" toggleable :collapsed="true">
+    <Panel header="Summary" toggleable>
     <div class="populations">
       <article v-for="(item, index) in evidence.items" :key="`${item.reference.provider}:${item.reference.id}`">
         <h4>{{ itemLabel(index) }}</h4>

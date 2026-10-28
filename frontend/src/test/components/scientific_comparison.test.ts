@@ -101,3 +101,14 @@ describe('Shared scientific comparison', () => {
   });
 
 });
+
+it('shows population limitations in the initially expanded Summary', () => {
+  const value = evidence();
+  value.items[0].population.limitations = ['Independent population not verified'];
+  const wrapper = mount(ScientificComparison, { props: { evidence: value }, attachTo: document.body });
+  const summary = wrapper.findAllComponents({ name: 'Panel' }).find(panel => panel.props('header') === 'Summary')!;
+  expect(summary.props('collapsed')).toBe(false);
+  expect(summary.text()).toContain('Independent population not verified');
+  expect(summary.get('.p-panel-content').isVisible()).toBe(true);
+  wrapper.unmount();
+});

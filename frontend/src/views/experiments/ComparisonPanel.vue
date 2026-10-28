@@ -19,34 +19,20 @@
     </div>
 
     <template v-else>
-      <ScientificComparison v-if="scientificComparison" :evidence="scientificComparison">
-        <template #validation-controls>
-      <details v-if="runs.length === 2" class="evaluation-controls">
-        <summary>Optional common evaluation and robustness</summary>
-        <p>Select the saved PLS output from each workflow. This creates a new development evaluation and keeps the original runs unchanged.</p>
-        <label v-for="run in runs" :key="run.id">{{ run.name }}
-          <select v-model="selectedModels[run.id]">
-            <option value="">Choose a PLS output</option>
-            <option v-for="node in modelNodes(run.id)" :key="node.node_id" :value="node.node_id">{{ scientificNodeLabel(node) }}</option>
-          </select>
-        </label>
-        <PairedEvaluationPanel :recipes="pairedRecipes" />
-      </details>
+      <component :is="scientificComparison ? ScientificComparison : 'div'" :evidence="scientificComparison">
+        <template #[evaluationSlot]>
+          <ScientificBasisHelp v-if="!scientificComparison" />
+          <ComparisonEvaluationControls :runs="runs">
+            <label v-for="run in runs" :key="run.id">{{ run.name }}
+              <select v-model="selectedModels[run.id]">
+                <option value="">Choose a PLS output</option>
+                <option v-for="node in modelNodes(run.id)" :key="node.node_id" :value="node.node_id">{{ scientificNodeLabel(node) }}</option>
+              </select>
+            </label>
+            <PairedEvaluationPanel :recipes="pairedRecipes" />
+          </ComparisonEvaluationControls>
         </template>
-      </ScientificComparison>
-      <template v-else><ScientificBasisHelp />
-      <details v-if="runs.length === 2" class="evaluation-controls">
-        <summary>Optional common evaluation and robustness</summary>
-        <p>Select the saved PLS output from each workflow. This creates a new development evaluation and keeps the original runs unchanged.</p>
-        <label v-for="run in runs" :key="run.id">{{ run.name }}
-          <select v-model="selectedModels[run.id]">
-            <option value="">Choose a PLS output</option>
-            <option v-for="node in modelNodes(run.id)" :key="node.node_id" :value="node.node_id">{{ scientificNodeLabel(node) }}</option>
-          </select>
-        </label>
-        <PairedEvaluationPanel :recipes="pairedRecipes" />
-      </details>
-      </template>
+      </component>
       <p v-if="scientificComparison" class="qualification-note" role="status">Additional recorded details below; qualified comparisons are shown by evaluation role above.</p>
       <p v-else-if="!rankableMetrics?.length" class="qualification-note" role="status">
         Differences are arithmetic only; ranking requires matching evaluation evidence.
@@ -108,6 +94,7 @@ import { computed, ref, watch } from "vue";
 import Panel from "primevue/panel";
 import Button from "primevue/button";
 import api from "@/api/client";
+import ComparisonEvaluationControls from "@/components/ComparisonEvaluationControls.vue";
 import PairedEvaluationPanel from "@/components/PairedEvaluationPanel.vue";
 import ScientificComparison from "@/components/ScientificComparison.vue";
 import ScientificBasisHelp from "@/components/ScientificBasisHelp.vue";
@@ -123,6 +110,8 @@ const props = defineProps<{
 }>();
 
 defineEmits<{ back: [] }>();
+
+const evaluationSlot = computed(() => props.scientificComparison ? "validation-controls" : "default");
 
 const HIGHER_IS_BETTER = new Set([
   "accuracy",
