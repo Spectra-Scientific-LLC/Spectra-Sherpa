@@ -35,6 +35,16 @@ Deltas appear only when the evidence qualifies that pair. **Workflow details
 and recorded measures** preserves the original node-specific values and settings;
 those descriptive values alone do not prove a paired improvement.
 
+The descriptive **Results** matrix inside **Workflow details and recorded
+measures** currently matches stored metric keys literally. A run with one
+metric source may show `RMSE`, while a run with several sources shows
+`eval 1 · RMSE` and `training cv · RMSE`. These prefixes identify producing
+nodes; they do not identify different metric formulas. A dash can therefore
+mean that the stored keys differ, rather than that an evaluation is absent.
+Use the role-qualified evaluation sections and their population checks to
+assess comparability. Keep held-out RMSEP separate from training RMSECV;
+matching metric names alone is insufficient.
+
 ## Read each result in its own role
 
 | Section | Meaning | What it does not establish |
