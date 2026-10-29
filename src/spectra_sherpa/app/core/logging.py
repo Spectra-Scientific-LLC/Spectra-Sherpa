@@ -184,6 +184,7 @@ def configure_logging(level: int | None = None) -> None:
         buffer_handler = BufferHandler()
         root_logger.addHandler(buffer_handler)
         buffer_handlers = [buffer_handler]
+    handler: logging.Handler
     for handler in buffer_handlers:
         handler.setLevel(level)
         handler.setFormatter(logging.Formatter("%(message)s"))

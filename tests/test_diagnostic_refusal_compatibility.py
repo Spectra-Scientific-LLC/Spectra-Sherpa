@@ -67,8 +67,9 @@ def test_source_only_registrations_preserve_all_previously_supported_producers()
         # have their own independent current-identity assertions.
         if operation == "model.mcr_als":
             # Truth-grid admission changed; no application-compatibility alias
-            # is inferred from that change. Historical registrations stay exact.
-            assert contract.digest == "ecb3ff6dbc9dca42338ced4b815b55a3fc2415e00139d320f69f80789f389467"
+            # is inferred from that change. The current contract also binds axis
+            # semantics explicitly; historical registrations stay exact.
+            assert contract.digest == "d1ed762e88caf1095a9ecb777fac02701994d2846223807b3266e7af305e8eea"
             assert not authority.saved_state_predecessor_is_compatible(
                 current,
                 contract.digest,
