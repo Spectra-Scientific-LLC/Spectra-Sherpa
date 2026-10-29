@@ -273,5 +273,5 @@ def test_reporting_only_pls_grid_is_refused_prospectively_without_breaking_saved
     }
     old = _canonical_search_space_from_request(baseline, request)
     assert canonical_search_space_from_record(baseline, old.as_dict()).as_dict() == old.as_dict()
-    with pytest.raises(CanonicalSearchSpaceError, match="do not change the fitted model"):
+    with pytest.raises(CanonicalSearchSpaceError, match="validation protocol"):
         canonical_search_space_from_request(baseline, request)

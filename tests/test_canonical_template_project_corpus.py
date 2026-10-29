@@ -71,9 +71,12 @@ async def _bound_source(
     source_path = workflow_template_routes.experiment_dir(experiment.id) / source_file.file_path
     source_path.parent.mkdir(parents=True, exist_ok=True)
     source_path.write_text(
-        "sample_id,100,200,300,Moisture,target,response,coefficient_matrix\n"
-        "sample-1,1.0,2.0,3.0,10.0,class-a,0.1,0.25\n"
-        "sample-2,1.5,2.5,3.5,11.0,class-b,0.2,0.75\n",
+        "sample_id,100,200,300,400,500,600,Moisture,target,response,coefficient_matrix\n"
+        + "".join(
+            f"sample-{i + 1},{i + 1}.0,{i + 2}.0,{i + 3}.0,{i + 4}.0,{i + 5}.0,{i + 6}.0,{i + 10}.0,"
+            f"class-{'a' if i % 2 == 0 else 'b'},{i / 10},{i / 20}\n"
+            for i in range(20)
+        ),
         encoding="utf-8",
     )
     source_file.file_size_bytes = source_path.stat().st_size

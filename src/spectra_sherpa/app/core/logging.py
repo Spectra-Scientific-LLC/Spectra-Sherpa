@@ -63,8 +63,10 @@ class RedactingFormatter(logging.Formatter):
 class LockedRotatingFileHandler(logging.handlers.RotatingFileHandler):
     """Bounded shared service log; rotation serialized across worker processes.
 
-    Reopen under the lock so a peer's rotation cannot leave us writing into an
-    unlinked archive. The lock file itself contains no diagnostic data.
+    POSIX streams stay open until a peer rotates the file; identity is checked
+    under the shared lock before every write. Windows closes idle streams so
+    peers can rename archives. Lock timeouts fall back to redacted stderr.
+    The lock file itself contains no diagnostic data.
     """
 
     lock_wait_seconds = 0.25
@@ -95,24 +97,38 @@ class LockedRotatingFileHandler(logging.handlers.RotatingFileHandler):
         kwargs["delay"] = True
         super().__init__(*args, **kwargs)
 
+    def _refresh_stream(self):
+        if self.stream is None:
+            return
+        try:
+            current = os.stat(self.baseFilename)
+            opened = os.fstat(self.stream.fileno())
+            unchanged = (current.st_dev, current.st_ino) == (opened.st_dev, opened.st_ino)
+        except (FileNotFoundError, OSError):
+            unchanged = False
+        if not unchanged:
+            self.stream.close()
+            self.stream = None
+
     def emit(self, record):
         fd = None
         locked = False
+        completed = False
+        self._write_failed = False
         try:
             fd = os.open(self.baseFilename + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
             self._acquire_lock(fd)
             locked = True
-            if self.stream:
-                self.stream.close()
-                self.stream = None
+            self._refresh_stream()
             super().emit(record)
+            completed = True
         except Exception:
             # A diagnostic sink must not fail scientific work or echo secrets
             # through logging's default raw-record error report.
             self.handleError(record)
         finally:
             try:
-                if self.stream:
+                if self.stream and (sys.platform == "win32" or not completed or self._write_failed):
                     try:
                         self.stream.close()
                     finally:
@@ -141,8 +157,12 @@ class LockedRotatingFileHandler(logging.handlers.RotatingFileHandler):
                             self.handleError(record)
 
     def handleError(self, record):
+        self._write_failed = True
         try:
-            sys.stderr.write("Persistent diagnostic log write failed.\n")
+            # Preserve the diagnostic through the console sink on contention
+            # without invoking logging's raw-argument/traceback fallback.
+            rendered = RedactingFormatter(self.formatter).format(record)
+            sys.stderr.write("Persistent diagnostic log write failed. " + rendered + "\n")
         except Exception:
             pass
 
@@ -309,6 +329,7 @@ def configure_logging(level: int | None = None) -> None:
         for handler in logger.handlers:
             if logger is not root_logger:
                 handler.setLevel(level)
-            setattr(handler, "handleError", MethodType(_safe_sink_error, handler))
+            if not isinstance(handler, LockedRotatingFileHandler):
+                setattr(handler, "handleError", MethodType(_safe_sink_error, handler))
             if not isinstance(handler.formatter, RedactingFormatter):
                 handler.setFormatter(RedactingFormatter(handler.formatter))

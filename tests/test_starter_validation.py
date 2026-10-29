@@ -408,3 +408,52 @@ async def test_automatic_pls_preflight_checks_inner_training_population(sample_c
         assert preview["splits"][0]["component_cv"]["status"] == "population_feasible"
     else:
         assert "independent training samples" in preview["reason"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("repeats", ["training", "held_out", "none"])
+async def test_automatic_pls_preflight_checks_independence_of_training_rows_only(repeats):
+    from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+    from spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node import FittedPLSV2Node
+
+    X = np.random.default_rng(88).normal(size=(40, 8))
+    specimens = [f"s{i}" for i in range(40)]
+    if repeats == "training":
+        specimens[:30] = [f"train{i // 2}" for i in range(30)]
+    elif repeats == "held_out":
+        specimens[30:] = [f"test{i // 2}" for i in range(10)]
+    source = SherpaDataset(
+        X=X,
+        target=X[:, 0] + 0.2 * X[:, 1],
+        target_context=TargetContext(target_type="continuous", target_name="y", target_names=["y"]),
+        sample_axis=SampleAxis(
+            labels=[f"r{i}" for i in range(40)],
+            sample_table={
+                "assignment": ["Training"] * 30 + ["Test"] * 10,
+                "specimen_id": specimens,
+            },
+        ),
+    )
+    source.meta["csv.assignment_column"] = "assignment"
+    split_params = {"split_method": "group_holdout", "held_out_groups": ["Test"]}
+    model_params = {"component_fit_mode": "one_standard_error", "component_cv_folds": 5, "component_curve_max": 4}
+    nodes = [
+        {"node_id": "source", "node_type": "data.file_load", "parameters": {}},
+        {"node_id": "split", "node_type": "data.train_test_split", "parameters": split_params},
+        {"node_id": "model", "node_type": "model.fitted_pls", "parameters": model_params},
+    ]
+    edges = [
+        {"from_node_id": "source", "to_node_id": "split", "from_output": "default"},
+        {"from_node_id": "split", "to_node_id": "model", "from_output": "X_train"},
+    ]
+    preview = await preview_starter_validation(nodes, edges, {"source": source})
+    split = await TrainTestSplitNode("split", split_params).execute(X=source)
+    if repeats == "training":
+        assert preview["status"] == "refused"
+        assert "Repeated specimen_id" in preview["reason"]
+        with pytest.raises(ValueError, match="Repeated specimen_id"):
+            await FittedPLSV2Node("model", model_params).execute(input_data=split["X_train"])
+    else:
+        assert preview["status"] == "feasible"
+        assert preview["splits"][0]["training_count"] == 30
+        await FittedPLSV2Node("model", model_params).execute(input_data=split["X_train"])

@@ -346,6 +346,15 @@ def _binding_to_file_load_params(binding: "DataBindingSpec") -> dict[str, object
         if binding.display_name is not None:
             parameters["group_title"] = binding.display_name
         return parameters
+    if binding.group_column:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This single-file source cannot retain the selected grouping column. "
+                "Save it as a Data Portfolio and launch the starter from that portfolio "
+                "to preserve specimen groups during validation."
+            ),
+        )
     assert binding.file_id is not None
     parameters: dict[str, object] = {
         "experiment_id": binding.experiment_id,
@@ -1179,8 +1188,16 @@ def _binding_with_saved_selection(binding, dataset, selection, *, source_digest=
 async def _starter_validation_preview(nodes, edges, sources, bindings):
     if not any(node["node_type"] == "data.train_test_split" for node in nodes):
         return {"status": "not_checked", "reason": "No held-out split requested."}
-    if not any(str(node["node_type"]).startswith("classification.") for node in nodes):
-        return {"status": "not_checked", "reason": "No classification split requested."}
+    supervised_preview = any(
+        str(node["node_type"]).startswith("classification.")
+        or (
+            node["node_type"] == "model.fitted_pls"
+            and node.get("parameters", {}).get("component_fit_mode") == "one_standard_error"
+        )
+        for node in nodes
+    )
+    if not supervised_preview:
+        return {"status": "not_checked", "reason": "No supervised population preflight requested."}
     prepared = {}
     for node_id, dataset in sources.items():
         binding = bindings[node_id]
@@ -1188,6 +1205,19 @@ async def _starter_validation_preview(nodes, edges, sources, bindings):
             continue
         try:
             if binding.target_authority is not None:
+                table = getattr(dataset.sample_axis, "sample_table", None)
+                if not isinstance(table, dict) or binding.selected_target not in table:
+                    # A native file can expose responses as named properties or
+                    # feature columns without a collection sample table. Use
+                    # the same target projection as data.file_load, on a copy
+                    # so previewing never changes the admitted source snapshot.
+                    from spectra_sherpa.app.lib.io import select_dataset_target
+
+                    dataset = select_dataset_target(
+                        dataset.snapshot(),
+                        selected_target=binding.selected_target,
+                        target_type=binding.target_type,
+                    )
                 dataset = attach_selected_target_dataset(
                     dataset,
                     target_type=binding.target_type,
@@ -2054,8 +2084,10 @@ async def preview_bound_source_compatibility(
         select(WorkflowTemplate).where(WorkflowTemplate.is_active.is_(True)).order_by(WorkflowTemplate.slug)
     )
     templates = [template for template in result.scalars().all() if template_admitted_in_profile(template)]
+    # Source assignments adapt the executable split, but are not fields of
+    # the closed structural analysis-profile schema.
     readiness = build_analysis_profile_readiness(
-        analysis_profile,
+        {key: value for key, value in analysis_profile.items() if key != "source_assignment"},
         [
             {
                 "slug": template.slug,
@@ -2082,6 +2114,7 @@ async def preview_bound_source_compatibility(
                 continue
             source_node = next(node for node in nodes if str(node["node_id"]) == source_ids[0])
             _apply_binding_to_template_source(source_node, binding)
+            _adapt_pls_starter_to_source_assignment(template=template, analysis_profile=analysis_profile, nodes=nodes)
             if payload.validation_goal == "known_specimen_cross_block":
                 _adapt_starter_cross_block_holdout(nodes, payload.held_out_groups)
             preview = await _starter_validation_preview(

@@ -42,14 +42,14 @@ _REVIEWED = {
 _READ_ONLY_CONSUMERS = {
     "diagnostics.regression_evaluator": "769f2b7129ae580721435b91c2df1fd11ee6e2400e8489d266643da74ae96684",
     **{operation: current for operation, (_, current) in _REVIEWED.items() if operation != "model.pca"},
-    "model.apply_fitted_linear_regression": "e14aaf4be00b28491e48142f9c493d6bc8ef1440ed94bfada4626520d1e11a14",
-    "model.apply_fitted_pcr": "8fe88c746c430616efd112349b00de94fd6edd87fd3f08f81da21c26a40a1393",
-    "model.apply_fitted_svr": "855978a90f738521784334d10d83566c951068562036588fbf16eba1eb2229bf",
+    "model.apply_fitted_linear_regression": "520728c0451ffd8f5904ea5c3227c40698d601647365a6e38bebf69144d78e2c",
+    "model.apply_fitted_pcr": "f09403b8c0f41c32ea591a1761e9e8dfa57149746634c5748be9b27d876f228c",
+    "model.apply_fitted_svr": "265de5fa6c87e0629cffcaa742da2c84a1fc3ed848ac1c8750fbd7f83d640a58",
     "classification.plsda": "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
-    "model.fitted_pls": "2252dec1ff34b651be6480a68a10662470aeaa566bfb9c179eba04f0d87c83e4",
-    "model.fitted_linear_regression": "e67835fc9e93b0a1b5dcc306ed3cfcbbcae86eb515af3f7b730fe48cc1d79782",
-    "model.fitted_pcr": "25f5e986f615ae0e787dfecbac7b3a544cd2a68583fc6cb213c60773c9639b9e",
-    "model.fitted_svr": "fe7266dee9a09f27a7be7fae4ecba2c38af9c643d9f1bd71b67b8884cc49ea1d",
+    "model.fitted_pls": "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
+    "model.fitted_linear_regression": "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
+    "model.fitted_pcr": "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
+    "model.fitted_svr": "6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",
 }
 _PROFILE_DIGESTS = (None, "9f37d08a914c3e276859c0ba10b5d2187d5d5ba4ff85f6d00b35cba23e7369f4")
 
@@ -123,6 +123,9 @@ def test_scientific_audit_preserves_exact_prior_application_not_execution(operat
     # The reviewed display-only reuse has its own exact current PCA consumer;
     # the historical scientific-audit pairs below remain pinned unchanged.
     latest.update({entry.operation_id: entry.consumer_digest for entry in authority._HANDOFF_PRESENTATION_PREDECESSORS})
+    latest.update(
+        {entry.operation_id: entry.consumer_digest for entry in authority._AUTOMATIC_PLS_APPLICATION_PREDECESSORS}
+    )
     latest["model.pca"] = "1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f"
     assert contract.digest == latest.get(operation, current)
     serializer = contract.payload["fitted_state_serializer"]

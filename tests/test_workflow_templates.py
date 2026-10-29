@@ -179,12 +179,14 @@ def test_pls_starter_uses_explicit_csv_training_validation_assignment(tmp_path: 
 
 
 @pytest.mark.parametrize("selection_scope", ["file_id", "file_ids"])
+@pytest.mark.parametrize("training_rows", [4, 10])
 @pytest.mark.asyncio
 async def test_pls_starter_instantiates_with_csv_training_validation_assignment(
     auth_client: AsyncClient,
     test_session: AsyncSession,
     test_user: User,
     selection_scope: str,
+    training_rows: int,
 ) -> None:
     definition = next(item for item in TemplateLoader().load_all() if item["slug"] == "pls_calibration")
     template = WorkflowTemplate(
@@ -220,8 +222,8 @@ async def test_pls_starter_instantiates_with_csv_training_validation_assignment(
     source_path.parent.mkdir(parents=True, exist_ok=True)
     source_path.write_text(
         "Percent body fat,Age (years),Waist (cm),Validation\n"
-        "12,25,81,Training\n15,30,85,Training\n18,35,89,Training\n"
-        "20,40,92,Validation\n22,45,96,Validation\n",
+        + "".join(f"{12 + i},{25 + i},{81 + i},Training\n" for i in range(training_rows))
+        + "20,40,92,Validation\n22,45,96,Validation\n",
         encoding="utf-8",
     )
     save_prepared_data_overrides(
@@ -254,6 +256,23 @@ async def test_pls_starter_instantiates_with_csv_training_validation_assignment(
             target_type="continuous",
         )
         scope = {"file_id": source_file.id}
+    preview_response = await auth_client.post(
+        "/api/v1/workflow-templates/binding-compatibility-preview",
+        json={
+            "project_id": project.id,
+            "binding": {
+                "source": "experiment",
+                "experiment_id": experiment.id,
+                **scope,
+                "stage": "raw",
+                "target_authority": authority,
+            },
+        },
+    )
+    assert preview_response.status_code == 200, preview_response.text
+    assert preview_response.json()["decisions"], preview_response.text
+    decision = next(d for d in preview_response.json()["decisions"] if d["template_slug"] == "pls_calibration")
+    assert decision["validation_preview"]["status"] == ("refused" if training_rows == 4 else "feasible")
     response = await auth_client.post(
         f"/api/v1/workflow-templates/{template.id}/instantiate",
         json={
@@ -271,6 +290,10 @@ async def test_pls_starter_instantiates_with_csv_training_validation_assignment(
             },
         },
     )
+    if training_rows == 4:
+        assert response.status_code == 409, response.text
+        assert "Automatic PLS selection needs" in response.text
+        return
     assert response.status_code == 201, response.text
     split = next(node for node in response.json()["nodes"] if node["node_type"] == "data.train_test_split")
     assert split["parameters"] == {"split_method": "group_holdout", "held_out_groups": ["Validation"]}
@@ -2170,7 +2193,11 @@ async def test_qualified_canonical_project_contract_persists_scientist_and_candi
     )
     test_session.add(source_file)
     await test_session.commit()
-    _materialize_bound_csv(experiment.id, source_file.file_path)
+    source_path = _materialize_bound_csv(experiment.id, source_file.file_path)
+    source_path.write_text(
+        "1000,1001,1002,1003,1004,1005,Moisture\n"
+        + "".join(",".join(str(i + j + 1) for j in range(6)) + f",{i + 10}\n" for i in range(20))
+    )
     if not type_registry.is_loaded:
         type_registry.load(Path(__file__).resolve().parents[1] / "src" / "spectra_sherpa" / "app" / "types")
 

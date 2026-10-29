@@ -174,7 +174,7 @@ def canonical_search_space_from_request(
     operations = {node.node_id: node.operation_id for node in baseline.graph.nodes}
     if any(is_reporting_only_parameter(operations[slot.node_id], slot.parameter) for slot in result.mutable_slots):
         raise CanonicalSearchSpaceError(
-            "In manual mode, PLS component-curve settings do not change the fitted model. "
+            "PLS component-selection settings define the validation protocol and cannot be searched across trials. "
             "Keep the component-selection protocol fixed across trials. For fixed LV comparisons, "
             "use manual component_fit_mode and vary n_components."
         )

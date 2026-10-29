@@ -19,6 +19,7 @@ from spectra_sherpa.app.services.dag.nodes.data.split_planner import (
     require_known_specimen_cross_block_plan,
 )
 from spectra_sherpa.app.services.dag.nodes.data.transforms import FilterSamplesNode, TrainTestSplitNode
+from spectra_sherpa.core.specimen_independence import independence_violations
 from spectra_sherpa.sdk.validate import make_classification_split_plan, make_split_plan
 
 
@@ -127,10 +128,30 @@ async def preview_starter_validation(
             if labels is None or (labels.ndim > 1 and labels.shape[1] != 1):
                 return {"status": "refused", "reason": "Automatic PLS selection requires one continuous response."}
             try:
+                # Outer Training/Validation assignments are not specimen
+                # groups. Match the fitted node's attached-group authority for
+                # inner CV, retaining real groups but not the assignment label.
+                inner_groups = bind_split_groups(ds)
+                training_groups = None if inner_groups is None else inner_groups[plan.train_indices]
+                table = ds.sample_axis.sample_table if ds.sample_axis is not None else None
+                training_table = (
+                    {key: np.asarray(values)[plan.train_indices] for key, values in table.items()}
+                    if table is not None
+                    else None
+                )
+                violations = independence_violations(
+                    training_table,
+                    n_samples=int(plan.train_indices.size),
+                    target_type="continuous",
+                    target_names=[context.target_name] if context and context.target_name else [],
+                    groups=training_groups,
+                )
+                if violations:
+                    return {"status": "refused", "reason": violations[0].message}
                 inner = make_split_plan(
                     int(plan.train_indices.size),
                     n_splits=parameters["component_cv_folds"],
-                    groups=None if groups is None else groups[plan.train_indices],
+                    groups=training_groups,
                 )
                 if min(len(fold.train) for fold in inner.folds) < 2:
                     raise ValueError("too few training rows")

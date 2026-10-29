@@ -1454,7 +1454,7 @@
       "Body_attach_collection_definition_endpoint_api_v1_experiments__experiment_id__collection_definition_put": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -1490,14 +1490,14 @@
             "title": "Commercial Workspace Id"
           },
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
           "publisher_trust_anchors": {
             "anyOf": [
               {
-                "format": "binary",
+                "contentMediaType": "application/octet-stream",
                 "type": "string"
               },
               {
@@ -1543,14 +1543,14 @@
             "title": "Commercial Workspace Id"
           },
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
           "publisher_trust_anchors": {
             "anyOf": [
               {
-                "format": "binary",
+                "contentMediaType": "application/octet-stream",
                 "type": "string"
               },
               {
@@ -1568,7 +1568,7 @@
             "anyOf": [
               {
                 "items": {
-                  "format": "binary",
+                  "contentMediaType": "application/octet-stream",
                   "type": "string"
                 },
                 "type": "array"
@@ -1588,12 +1588,12 @@
       },
       "Body_import_registered_reference_endpoint_api_v1_experiments__experiment_id__import_registered_reference_post": {
         "properties": {
-          "files": {
+          "file": {
             "items": {
-              "format": "binary",
+              "contentMediaType": "application/octet-stream",
               "type": "string"
             },
-            "title": "Files",
+            "title": "File",
             "type": "array"
           },
           "package_id": {
@@ -1620,7 +1620,7 @@
           }
         },
         "required": [
-          "files"
+          "file"
         ],
         "title": "Body_import_registered_reference_endpoint_api_v1_experiments__experiment_id__import_registered_reference_post",
         "type": "object"
@@ -1628,7 +1628,7 @@
       "Body_inspect_sherpa_object_api_v1_projects_objects_inspect_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -1642,7 +1642,7 @@
       "Body_preview_collection_definition_endpoint_api_v1_experiments__experiment_id__collection_definition_preview_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -1656,12 +1656,12 @@
       "Body_reproduce_imported_campaign_api_v1_projects__project_id__reproduce_campaign_post": {
         "properties": {
           "fixture": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "Fixture",
             "type": "string"
           },
           "package": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "Package",
             "type": "string"
           },
@@ -1670,7 +1670,7 @@
             "type": "string"
           },
           "publisher_keys": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "Publisher Keys",
             "type": "string"
           }
@@ -1688,7 +1688,7 @@
         "properties": {
           "files": {
             "items": {
-              "format": "binary",
+              "contentMediaType": "application/octet-stream",
               "type": "string"
             },
             "title": "Files",
@@ -1715,7 +1715,7 @@
       "Body_stage_upload_file_api_v1_builder_upload_stage_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -1751,7 +1751,7 @@
             "title": "Data Role"
           },
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           },
@@ -1792,7 +1792,7 @@
       "Body_validate_sherpa_object_api_v1_projects_objects_validate_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -13097,6 +13097,13 @@
       },
       "ValidationError": {
         "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
           "loc": {
             "items": {
               "anyOf": [

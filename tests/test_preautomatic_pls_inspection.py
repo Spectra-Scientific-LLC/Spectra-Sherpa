@@ -8,10 +8,7 @@ from spectra_sherpa.app.services.dag.executor_types import WorkflowNode
 from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
 from spectra_sherpa.app.services.dag.validation_graph import ValidationGraphError, assert_admitted_validation_graph
 from spectra_sherpa.core.contract_compatibility import inspection_predecessor_catalog
-from spectra_sherpa.sdk.canonical_execution_evidence import (
-    CanonicalExecutionEvidenceError,
-    _validate_first_profile_parameters,
-)
+from spectra_sherpa.sdk import canonical_execution_evidence
 
 PROFILE = "eec02d6f13ac5b5fa1af45dfea754b0c054faf1c92d75cf9af88ec74ac066cdb"
 
@@ -48,7 +45,7 @@ def test_preautomatic_profile_retains_curve_controls_and_exact_historical_identi
     assert "component_fit_mode" not in node.parameters
     assert node.contract.digest == inspection_predecessor_catalog(PROFILE)["contracts"]["model.fitted_pls"]["digest"]
     assert context.graph(graph.as_dict()).as_dict() == graph.as_dict()
-    _validate_first_profile_parameters(
+    canonical_execution_evidence._validate_first_profile_parameters(
         dict(node.parameters), operation_id="model.fitted_pls", historical_context=context
     )
     with pytest.raises(ValidationGraphError):
@@ -57,8 +54,8 @@ def test_preautomatic_profile_retains_curve_controls_and_exact_historical_identi
     forged["nodes"][0]["parameters"]["component_fit_mode"] = "one_standard_error"
     with pytest.raises(ValidationGraphError):
         context.graph(forged)
-    with pytest.raises(CanonicalExecutionEvidenceError, match="post-profile controls"):
-        _validate_first_profile_parameters(
+    with pytest.raises(canonical_execution_evidence.CanonicalExecutionEvidenceError, match="post-profile controls"):
+        canonical_execution_evidence._validate_first_profile_parameters(
             {**node.parameters, "component_fit_mode": "manual"},
             operation_id="model.fitted_pls",
             historical_context=context,

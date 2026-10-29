@@ -59,6 +59,7 @@ def test_source_only_registrations_preserve_all_previously_supported_producers()
             "_WORKFLOW_POPULATION_PREDECESSORS",
             "_PCA_DISPLAY_INPUT_REUSE_PREDECESSORS",
             "_HANDOFF_PRESENTATION_PREDECESSORS",
+            "_AUTOMATIC_PLS_APPLICATION_PREDECESSORS",
         }:
             previous.extend(entries)
     for operation, (old, current) in _REVIEWED.items():

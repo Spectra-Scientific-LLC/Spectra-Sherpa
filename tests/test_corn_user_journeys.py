@@ -197,6 +197,9 @@ async def test_corn_journey(
             n["node_type"] = "model.fitted_" + model
             if model == "pcr":
                 n["parameters"].pop("target_names", None)
+                # The fixture swaps a PLS starter's model for PCR; automatic
+                # LV fitting is a PLS-only control, not a PCR parameter.
+                n["parameters"].pop("component_fit_mode", None)
     if snv:
         nodes.append({"node_id": "snv", "node_type": "preprocess.normalize", "parameters": {"method": "snv"}})
         edge = next(e for e in edges if e["to_node_id"] == "partition_1" and e.get("to_input") == "X")

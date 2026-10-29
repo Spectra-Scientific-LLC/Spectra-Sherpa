@@ -152,7 +152,7 @@ def test_file_handler_opens_only_under_emit_lock(tmp_path):
     handler = LockedRotatingFileHandler(tmp_path / "app.log", maxBytes=100, backupCount=1)
     assert handler.stream is None
     handler.emit(logging.LogRecord("test", logging.INFO, __file__, 1, "ok", (), None))
-    assert handler.stream is None
+    assert (handler.stream is None) == (sys.platform == "win32")
     assert (tmp_path / "app.log").read_text() == "ok\n"
     handler.close()
 
@@ -470,6 +470,7 @@ print(json.dumps({"elapsed":time.monotonic()-start, "closed": h.stream is None})
         assert result["closed"]
         assert "Persistent diagnostic log write failed." in child.stderr
         assert "PRIVATE_LOCK_TOKEN" not in child.stderr
+        assert "Bearer [REDACTED]" in child.stderr
         assert not path.exists()
     finally:
         if sys.platform == "win32":
@@ -553,7 +554,83 @@ def test_same_handler_can_write_after_a_lock_timeout(tmp_path, monkeypatch, caps
     monkeypatch.setattr(handler, "_acquire_lock", once)
     handler.emit(logging.LogRecord("retry", logging.INFO, __file__, 1, "first", (), None))
     assert handler.stream is None and not path.exists()
-    assert "Persistent diagnostic log write failed." in capsys.readouterr().err
+    fallback = capsys.readouterr().err
+    assert "Persistent diagnostic log write failed." in fallback and "first" in fallback
     handler.emit(logging.LogRecord("retry", logging.INFO, __file__, 1, "second", (), None))
-    assert handler.stream is None and path.read_text().strip() == "second"
+    assert (handler.stream is None) == (sys.platform == "win32")
+    assert path.read_text().strip() == "second"
     handler.close()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows intentionally closes idle streams for peer rotation")
+def test_posix_stream_is_reused_and_follows_a_peers_rotation(tmp_path, monkeypatch):
+    path = tmp_path / "shared.log"
+    handler = LockedRotatingFileHandler(path, maxBytes=100, backupCount=10)
+    peer = LockedRotatingFileHandler(path, maxBytes=100, backupCount=10)
+    opened = []
+    original = handler._open
+
+    def counted_open():
+        stream = original()
+        opened.append(stream)
+        return stream
+
+    monkeypatch.setattr(handler, "_open", counted_open)
+    try:
+        for i in range(3):
+            handler.emit(logging.LogRecord("reuse", logging.INFO, __file__, 1, f"first-{i}", (), None))
+        assert len(opened) == 1 and handler.stream is opened[0]
+        for i in range(8):
+            peer.emit(logging.LogRecord("peer", logging.INFO, __file__, 1, f"peer-record-{i}", (), None))
+        handler.emit(logging.LogRecord("reuse", logging.INFO, __file__, 1, "after-peer", (), None))
+        assert len(opened) == 2 and opened[0].closed
+        assert "after-peer" in path.read_text()
+        lines = [
+            line
+            for file in tmp_path.glob("shared.log*")
+            if not file.name.endswith(".lock")
+            for line in file.read_text().splitlines()
+        ]
+        assert sorted(lines) == sorted(
+            [f"first-{i}" for i in range(3)] + [f"peer-record-{i}" for i in range(8)] + ["after-peer"]
+        )
+    finally:
+        handler.close()
+        peer.close()
+
+
+@pytest.mark.parametrize("failure", ["write", "lock"])
+def test_configured_file_handler_preserves_redacted_fallback_and_recovers(
+    tmp_path, monkeypatch, isolated_log_handlers, capsys, failure
+):
+    path = tmp_path / "configured.log"
+    monkeypatch.setattr(logging_module, "settings", replace(logging_module.settings, log_file_path=str(path)))
+    configure_logging()
+    configure_logging()
+    handler = next(h for h in isolated_log_handlers.handlers if isinstance(h, LockedRotatingFileHandler))
+
+    class BrokenStream(io.StringIO):
+        def write(self, _value):
+            raise OSError("Bearer PRIVATE_WRITE_SECRET")
+
+    with monkeypatch.context() as patch:
+        if failure == "write":
+            broken = BrokenStream()
+            patch.setattr(handler, "_open", lambda: broken)
+        else:
+
+            def busy(_fd):
+                raise TimeoutError("Bearer PRIVATE_LOCK_SECRET")
+
+            patch.setattr(handler, "_acquire_lock", busy)
+        isolated_log_handlers.warning("event %s", "Bearer PRIVATE_ARGUMENT")
+        assert handler._write_failed
+        assert handler.stream is None
+        if failure == "write":
+            assert broken.closed
+    fallback = capsys.readouterr().err
+    assert "Persistent diagnostic log write failed." in fallback
+    assert "event Bearer [REDACTED]" in fallback
+    assert "PRIVATE_" not in fallback
+    isolated_log_handlers.warning("recovered")
+    assert "recovered" in path.read_text()
