@@ -37,6 +37,43 @@ class FittedStateCustodyCapability:
 
 _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingProxyType(
     {
+        # Exact consumers after optional one-SE PLS fitting. Preserve every older capability.
+        (
+            "spectra.sherpa-simpls-regression-json/9",
+            "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
+        ): FittedStateCustodyCapability(
+            serializer="spectra.sherpa-simpls-regression-json/9",
+            contract_digest="806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
+            custody_class="data_free_application_state",
+            rationale="Optional training-fold selection changes fitting, not the closed application-state storage.",
+        ),
+        (
+            "spectrasherpa.model.fitted_pcr/1",
+            "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_pcr/1",
+            contract_digest="a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
+            custody_class="data_free_application_state",
+            rationale="Optional training-fold selection changes fitting, not the closed application-state storage.",
+        ),
+        (
+            "spectrasherpa.model.fitted_svr/1",
+            "6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_svr/1",
+            contract_digest="6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",
+            custody_class="retains_training_rows",
+            rationale="Optional training-fold selection changes fitting, not the closed application-state storage.",
+        ),
+        (
+            "spectrasherpa.model.fitted_linear_regression/1",
+            "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_linear_regression/1",
+            contract_digest="2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
+            custody_class="data_free_application_state",
+            rationale="Optional training-fold selection changes fitting, not the closed application-state storage.",
+        ),
         # Handoff presentation preserves this exact serializer's storage semantics.
         (
             "spectra.sherpa-simpls-regression-json/9",

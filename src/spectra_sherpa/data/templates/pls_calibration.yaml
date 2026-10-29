@@ -1,11 +1,10 @@
 schema_version: 1
 name: PLS Regression Calibration
 slug: pls_calibration
-description: PLS with 3 fixed latent variables. Reports held-out RMSEP
-  and R²; the latent-variable count is not selected by cross-validation. Compare
-  saved runs with the same data and evaluation protocol; select latent-variable counts
-  within the training population before evaluating the held-out test set.
-  Spectra are mean-centred; feature tables are autoscaled using training samples.
+description: PLS with latent variables selected by the one-standard-error rule using
+  cross-validation within training samples, followed by a training-only refit.
+  Reports held-out RMSEP and R². Spectra are mean-centred; feature tables are
+  autoscaled within each training fold. Requires one continuous response.
 category: calibration
 is_active: true
 status: ready
@@ -39,6 +38,7 @@ template_data:
     label: Train PLS Regression
     parameters:
       n_components: 3
+      component_fit_mode: one_standard_error
       scale: false
     position_x: 175
     position_y: 650
@@ -178,6 +178,7 @@ template_data:
         label: Ordinary PLS Starting Point
         parameters:
           n_components: 3
+          component_fit_mode: one_standard_error
           scale: false
         position_x: 475
         position_y: 225

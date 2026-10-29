@@ -137,6 +137,9 @@ const routeQuery = reactive<Record<string, string>>({ project_id: "1" });
 const routeLeaveGuards: Array<() => Promise<boolean>> = [];
 
 vi.mock("vue-router", () => ({
+  RouterLink: defineComponent({ props: ["to"], setup(props, { slots }) {
+    return () => h("a", { href: props.to }, slots.default?.());
+  } }),
   useRoute: () => ({ query: routeQuery }),
   useRouter: () => ({
     push: vi.fn(),
@@ -369,6 +372,27 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     workflowStore.workflowWarnings = ["Input Spectra is not connected"];
     await nextTick();
     expect(toastAdd).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+  it("keeps a refused project out of the editor and offers recovery", async () => {
+    routeQuery.project_id = "999999";
+    projectStore.selectProject.mockImplementationOnce(async () => undefined);
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    expect(wrapper.get('[aria-label="Project unavailable"]').text()).toContain('This project isn’t available');
+    expect(wrapper.text()).toContain('Back to Dashboard');
+    expect(wrapper.find('.canvas-container').exists()).toBe(false);
+    expect(workbookStore.loadSheets).not.toHaveBeenCalled();
+    projectStore.selectProject.mockClear();
+    const retry = wrapper.findAll('button').find(button => button.text() === 'Retry project')!;
+    await retry.trigger('click');
+    await flushPromises();
+    expect(projectStore.selectProject).toHaveBeenCalledWith(999999);
+    projectStore.currentProjectId = 7;
+    await flushPromises();
+    expect(workbookStore.loadSheets).toHaveBeenCalledWith(7);
+    expect(wrapper.find('[aria-label="Project unavailable"]').exists()).toBe(false);
+    expect(wrapper.find('.canvas-container').exists()).toBe(true);
     wrapper.unmount();
   });
   it("shows an interrupted load instead of an empty successful workbook", async () => {
@@ -611,8 +635,8 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     await flushPromises();
 
     const handoff = wrapper.get('[aria-label="My Dataset selection"]');
-    expect(handoff.text()).toContain("3 selected files selected");
-    expect(handoff.text()).toContain("waiting for an analysis starter");
+    expect(handoff.text()).toContain("3 files selected");
+    expect(handoff.text()).toContain("Choose Analysis Starter to create a workflow using this selection");
     expect(handoff.text()).toContain("block requested for grouping");
     expect(handoff.text()).not.toContain("will be offered");
     expect(wrapper.get('[aria-label="Workflow workspace context"]').text()).toContain(

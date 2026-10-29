@@ -20,7 +20,11 @@ from spectra_sherpa.app.lib.comparison_identity import comparison_sample_ids
 from spectra_sherpa.app.schemas.run_evidence import RunEvidence
 from spectra_sherpa.app.schemas.scientific_comparison import PopulationSummary
 from spectra_sherpa.app.services.run_output_retention import read_output
-from spectra_sherpa.app.services.run_validation_summary import _split_summaries, _validation_output_values
+from spectra_sherpa.app.services.run_validation_summary import (
+    ValidationReadBudgetExceeded,
+    _split_summaries,
+    _validation_output_values,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,18 +120,29 @@ class _BoundedOutputReader:
         return self.reads[(node, port)]
 
 
-def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ...], PopulationSummary]:
+def _read_failure_reason(exc: Exception) -> str:
+    if isinstance(exc, ValidationReadBudgetExceeded):
+        return "Comparison incomplete: retained evidence reached the 16 MiB read limit; inspect individual outputs."
+    if isinstance(exc, (ValueError, TypeError, KeyError)):
+        return "Retained evidence failed integrity or format validation; affected results are unavailable."
+    return "A retained output could not be read; other verified results remain available."
+
+
+def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ...], PopulationSummary, bool]:
     evidence = RunEvidence.model_validate(run.evidence_completeness)
     if evidence.qualification != "qualified":
-        return (), PopulationSummary()
+        return (), PopulationSummary(), False
     exact = _BoundedOutputReader(run, evidence)
 
     definition = exact("__workflow__", "definition")
     nodes = {node["node_id"]: node for node in definition.get("nodes", [])}
     records, populations, identity_limitations = [], [], []
+    inventory_complete = True
 
     def read_failure(node, port, exc):
-        identity_limitations.append("A retained output could not be read; other verified results remain available.")
+        nonlocal inventory_complete
+        inventory_complete = False
+        identity_limitations.append(_read_failure_reason(exc))
         logger.warning(
             "Retained comparison output unavailable run=%s node=%s port=%s error_type=%s",
             run.id,
@@ -321,6 +336,7 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                 )
             )
         except (ValueError, TypeError, KeyError, AttributeError, OSError, IndexError) as exc:
+            inventory_complete = False
             # One absent or invalid retained port must not erase evidence from
             # other evaluators. Keep the refusal scoped to this record.
             reason = (
@@ -343,4 +359,4 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
         else PopulationSummary(limitations=list(dict.fromkeys(identity_limitations)))
     )
     common.limitations = list(dict.fromkeys([*identity_limitations, *common.limitations]))
-    return tuple(records), common
+    return tuple(records), common, inventory_complete

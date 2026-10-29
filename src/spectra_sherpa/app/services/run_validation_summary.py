@@ -17,8 +17,12 @@ from spectra_sherpa.core.target_units import TargetUnits, resolve_response_units
 from spectra_sherpa.sdk.validation_reporting import regression_reporting_notes
 
 
-class _ValidationReadBudgetExceeded(ValueError):
-    """Global read cap is not a recoverable per-record failure."""
+class ValidationReadBudgetExceeded(ValueError):
+    """Stop the read at its global cap; never continue to later records."""
+
+
+class SplitPlanIntegrityError(ValueError):
+    """Retained split contents do not establish their claimed identity/population."""
 
 
 def _split_summaries(run: Any, definition: dict, *, on_read_error=None) -> list[dict]:
@@ -37,7 +41,7 @@ def _split_summaries(run: Any, definition: dict, *, on_read_error=None) -> list[
                     continue
                 budget -= item.byte_count
                 if budget < 0:
-                    raise _ValidationReadBudgetExceeded("Split summary read budget exceeded")
+                    raise ValidationReadBudgetExceeded("Split summary read budget exceeded")
                 value = read_output(run.user_id, item)
                 if not isinstance(value, dict) or value.get("type") != "SherpaDataset":
                     continue
@@ -56,7 +60,7 @@ def _split_summaries(run: Any, definition: dict, *, on_read_error=None) -> list[
                     json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
                 ).hexdigest()
                 if digest != plan.get("digest"):
-                    raise ValueError("Split plan does not match its retained identity")
+                    raise SplitPlanIntegrityError("Split plan does not match its retained identity")
                 train, test = plan.get("train_indices"), plan.get("test_indices")
                 count = plan.get("n_samples")
                 if (
@@ -70,9 +74,9 @@ def _split_summaries(run: Any, definition: dict, *, on_read_error=None) -> list[
                     or len(train + test) != count
                     or any(i < 0 or i >= count for i in train + test)
                 ):
-                    raise ValueError("Split population is incomplete or overlaps")
+                    raise SplitPlanIntegrityError("Split population is incomplete or overlaps")
                 if not isinstance(plan.get("method"), str) or type(plan.get("random_seed")) is not int:
-                    raise ValueError("Split method or seed is unavailable")
+                    raise SplitPlanIntegrityError("Split method or seed is unavailable")
                 held = plan.get("held_out_groups")
                 if held is not None and (
                     not isinstance(held, list)
@@ -80,13 +84,15 @@ def _split_summaries(run: Any, definition: dict, *, on_read_error=None) -> list[
                     or type(plan.get("n_groups")) is not int
                     or plan["n_groups"] <= len(held)
                 ):
-                    raise ValueError("Group counts are incomplete")
+                    raise SplitPlanIntegrityError("Group counts are incomplete")
                 summaries.append({"node": identifier, "plan": plan})
                 break
         except (ValueError, TypeError, KeyError, OSError) as exc:
-            if on_read_error is None or isinstance(exc, _ValidationReadBudgetExceeded):
+            if on_read_error is None:
                 raise
             on_read_error(identifier, "split_plan", exc)
+            if isinstance(exc, ValidationReadBudgetExceeded):
+                return summaries
     return summaries
 
 
@@ -397,7 +403,11 @@ def _validation_output_values(run, evidence, *, on_read_error=None):
                 continue
             budget -= item.byte_count
             if budget < 0:
-                raise ValueError("validation report read budget exceeded")
+                exc = ValidationReadBudgetExceeded("Validation report read budget exceeded")
+                if on_read_error is None:
+                    raise exc
+                on_read_error(node, port, exc)
+                return
             try:
                 value = read_output(run.user_id, item)
             except (ValueError, TypeError, KeyError, OSError) as exc:

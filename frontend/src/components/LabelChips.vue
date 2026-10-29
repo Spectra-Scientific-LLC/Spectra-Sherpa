@@ -1,18 +1,16 @@
 <template>
   <div class="label-chips">
-    <Tag
-      v-for="label in modelValue"
-      :key="label"
-      :value="label"
-      severity="info"
-      class="label-tag"
-      :icon="!readonly ? 'pi pi-times' : undefined"
-      @click="!readonly && removeLabel(label)"
-    />
+    <template v-for="label in modelValue" :key="label">
+      <Tag v-if="readonly" :value="label" severity="info" class="label-tag" />
+      <Button v-else :label="label" icon="pi pi-times" class="p-button-text p-button-sm label-tag"
+        :aria-label="`Remove label ${label}`" @click="removeLabel(label)" />
+    </template>
     <div v-if="!readonly && !adding" class="add-label">
       <Button
         icon="pi pi-plus"
-        class="p-button-text p-button-sm p-button-rounded"
+        class="p-button-text p-button-sm"
+        aria-label="Add label"
+        label="Label"
         title="Add label"
         @click="adding = true"
       />

@@ -39,6 +39,7 @@ from spectra_sherpa.app.lib.reference_materialization import materialize_referen
 from spectra_sherpa.app.lib.registered_reference_storage import read_registered_reference_sidecar
 from spectra_sherpa.app.lib.target_authority import issue_target_authority, verify_target_authority
 from spectra_sherpa.app.lib.template_runtime import template_runtime_readiness
+from spectra_sherpa.app.lib.workflow_population import source_population_outputs
 from spectra_sherpa.app.lib.workflow_purpose import ANALYSIS_WORKFLOW, MANAGED_CANDIDATE_AUTHORITY
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
@@ -78,6 +79,7 @@ from spectra_sherpa.app.services.prepared_data import (
     apply_dataset_prepared_data_overrides,
     load_prepared_data_overrides_strict,
 )
+from spectra_sherpa.app.services.starter_validation import preview_starter_validation
 from spectra_sherpa.app.services.template_availability import template_admitted_in_profile
 from spectra_sherpa.app.services.template_workflow_persistence import persist_template_workflow
 from spectra_sherpa.app.services.workflow_access import require_experiment_access, require_file_access
@@ -1174,6 +1176,67 @@ def _binding_with_saved_selection(binding, dataset, selection, *, source_digest=
     return binding.model_copy(update={"target_authority": authority, "group_column": selection.group_column})
 
 
+async def _starter_validation_preview(nodes, edges, sources, bindings):
+    if not any(node["node_type"] == "data.train_test_split" for node in nodes):
+        return {"status": "not_checked", "reason": "No held-out split requested."}
+    if not any(str(node["node_type"]).startswith("classification.") for node in nodes):
+        return {"status": "not_checked", "reason": "No classification split requested."}
+    prepared = {}
+    for node_id, dataset in sources.items():
+        binding = bindings[node_id]
+        if binding.target_binding is not None:
+            continue
+        try:
+            if binding.target_authority is not None:
+                dataset = attach_selected_target_dataset(
+                    dataset,
+                    target_type=binding.target_type,
+                    target_column=binding.selected_target,
+                    group_column=binding.group_column or "",
+                    node_id="starter_validation_preview",
+                    target_authority=binding.target_authority,
+                )
+            prepared[node_id] = dataset
+        except ValueError as exc:
+            return {"status": "refused", "reason": f"Classification source is not ready: {exc}"}
+    return await preview_starter_validation(nodes, edges, prepared)
+
+
+async def _require_starter_validation(nodes, edges, sources, bindings, *, validation_goal, held_out_groups):
+    preview = await _starter_validation_preview(nodes, edges, sources, bindings)
+    if preview["status"] == "refused":
+        raise HTTPException(status_code=409, detail=preview["reason"])
+    split_ids = {str(node["node_id"]) for node in nodes if node["node_type"] == "data.train_test_split"}
+    checked_ids = {str(item["node_id"]) for item in preview.get("splits", [])}
+    if split_ids - checked_ids and any(str(node["node_type"]).startswith("classification.") for node in nodes):
+        # Unsupported paths retain conservative source-level admission. For a
+        # supported path the final planner has checked the actual filtered rows.
+        ancestors = set()
+        pending = list(split_ids - checked_ids)
+        incoming = {}
+        for edge in edges:
+            incoming.setdefault(str(edge["to_node_id"]), set()).add(str(edge["from_node_id"]))
+        while pending:
+            node_id = pending.pop()
+            if node_id in ancestors:
+                continue
+            ancestors.add(node_id)
+            pending.extend(incoming.get(node_id, ()))
+        for node_id, dataset in sources.items():
+            if node_id not in ancestors:
+                continue
+            try:
+                _require_independent_classification_group(
+                    dataset,
+                    bindings[node_id],
+                    analysis_profile_from_dataset(dataset),
+                    validation_goal=validation_goal,
+                    held_out_groups=held_out_groups,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=f"Classification source is not ready: {exc}") from exc
+
+
 async def _validate_binding(
     session: AsyncSession,
     user_id: int,
@@ -1185,6 +1248,7 @@ async def _validate_binding(
     require_independent_classification: bool = False,
     validation_goal: str = "unseen_specimens",
     held_out_groups: list[str] | None = None,
+    validated_datasets: list[Any] | None = None,
 ) -> tuple["DataBindingSpec", dict[str, Any]]:
     await require_experiment_access(session, binding.experiment_id, user_id, project_id)
     saved_selection = None
@@ -1283,6 +1347,8 @@ async def _validate_binding(
         target_binding = None
         if binding.target_binding is not None:
             target_binding, _ = await _validate_binding(session, user_id, binding.target_binding, project_id)
+        if validated_datasets is not None:
+            validated_datasets.append(dataset)
         return (
             binding.model_copy(
                 update={
@@ -1407,6 +1473,8 @@ async def _validate_binding(
             project_id,
         )
 
+    if validated_datasets is not None:
+        validated_datasets.append(dataset)
     return (
         binding.model_copy(update={"stage": normalized_stage, "target_binding": target_binding}),
         analysis_profile,
@@ -1602,6 +1670,9 @@ def _require_independent_classification_group(
         binding.group_column in INDEPENDENT_IDENTITY_FIELDS or not held_out_groups
     ):
         raise HTTPException(status_code=409, detail="Choose an acquisition group and name a held-out block")
+    inclusion = getattr(dataset.sample_axis, "include_mask", None)
+    if inclusion is not None and not all(inclusion):
+        dataset = source_population_outputs(dataset, node_id="template_binding_validation")["default"]
     table = dataset.sample_axis.sample_table if dataset.sample_axis is not None else None
     if not isinstance(table, dict):
         return
@@ -1950,6 +2021,8 @@ class BindingCompatibilityPreviewRequest(BaseModel):
     project_id: int = Field(..., ge=1)
     binding: DataBindingSpec
     use_saved_analysis_selection: bool = False
+    validation_goal: Literal["unseen_specimens", "known_specimen_cross_block"] = "unseen_specimens"
+    held_out_groups: list[str] = Field(default_factory=list)
 
 
 @router.post("/binding-compatibility-preview")
@@ -1961,12 +2034,14 @@ async def preview_bound_source_compatibility(
     """Re-admit an active sheet source before advertising starter actions."""
 
     await require_scientific_access(session, current_user.id, payload.project_id, "read")
+    admitted_datasets: list[Any] = []
     binding, analysis_profile = await _validate_binding(
         session,
         current_user.id,
         payload.binding,
         payload.project_id,
         require_target_variation=False,
+        validated_datasets=admitted_datasets,
         use_saved_analysis_selection=payload.use_saved_analysis_selection,
     )
     if binding.selected_target is not None and binding.target_type is not None:
@@ -1996,6 +2071,29 @@ async def preview_bound_source_compatibility(
             for template in templates
         ],
     )
+    if admitted_datasets:
+        by_slug = {template.slug: template for template in templates}
+        for decision in readiness["decisions"]:
+            template = by_slug[decision["template_slug"]]
+            nodes = copy.deepcopy(template.template_data.get("nodes", []))
+            edges = copy.deepcopy(template.template_data.get("edges", []))
+            source_ids = [str(node["node_id"]) for node in nodes if node["node_type"] == "data.file_load"]
+            if len(source_ids) != 1 or binding.target_binding is not None:
+                continue
+            source_node = next(node for node in nodes if str(node["node_id"]) == source_ids[0])
+            _apply_binding_to_template_source(source_node, binding)
+            if payload.validation_goal == "known_specimen_cross_block":
+                _adapt_starter_cross_block_holdout(nodes, payload.held_out_groups)
+            preview = await _starter_validation_preview(
+                nodes, edges, {source_ids[0]: admitted_datasets[0]}, {source_ids[0]: binding}
+            )
+            decision["validation_preview"] = preview
+            if preview["status"] == "refused" and decision["status"] == "compatible":
+                readiness["counts"][decision["display_status"]] -= 1
+                readiness["counts"]["incompatible"] += 1
+                decision.update(status="incompatible", display_status="incompatible")
+                decision["reasons"].append({"code": "split_infeasible", "message": preview["reason"], "role": None})
+                decision["reason_codes"].append("split_infeasible")
     return {**readiness, "binding": binding.model_dump(mode="json")}
 
 
@@ -2542,6 +2640,7 @@ async def instantiate_template(
             bindings_to_apply = payload.data_bindings
 
         applied_bindings: dict[str, DataBindingSpec] = {}
+        admitted_sources: dict[str, Any] = {}
         bound_profiles: dict[str, dict[str, Any]] = {}
         injected_targets: set[str] = set()
 
@@ -2550,20 +2649,18 @@ async def instantiate_template(
         for binding_key, binding_spec in bindings_to_apply.items():
             node_id = _resolve_binding_node_id(template, binding_key)
             binding_spec = _normalize_binding_target_authority(template, binding_spec, node_id)
+            admitted_datasets: list[Any] = []
             normalized_binding, analysis_profile = await _validate_binding(
                 session,
                 user_id,
                 binding_spec,
                 payload.project_id,
                 require_target_variation=_binding_consumes_target(template, node_id),
-                require_independent_classification=(
-                    payload.launch_mode == "user"
-                    and any(node.get("node_type") == "data.train_test_split" for node in nodes_data)
-                    and any(str(node.get("node_type", "")).startswith("classification.") for node in nodes_data)
-                ),
+                validated_datasets=admitted_datasets,
                 validation_goal=payload.validation_goal,
                 held_out_groups=payload.held_out_groups,
             )
+            admitted_sources.update({node_id: dataset for dataset in admitted_datasets[:1]})
             node = nodes_by_id.get(node_id)
             if node is None:
                 raise HTTPException(
@@ -2666,6 +2763,14 @@ async def instantiate_template(
                 )
 
         if payload.launch_mode != "draft":
+            await _require_starter_validation(
+                nodes_data,
+                edges_data,
+                admitted_sources,
+                applied_bindings,
+                validation_goal=payload.validation_goal,
+                held_out_groups=payload.held_out_groups,
+            )
             _preflight_analysis_graph(
                 template=template,
                 nodes=nodes_data,

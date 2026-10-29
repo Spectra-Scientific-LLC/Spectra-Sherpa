@@ -209,3 +209,33 @@ def test_target_attachment_cannot_hide_global_fitted_preprocessing():
     ]
     with pytest.raises(SheetFoldValidationError, match="inside each validation fold"):
         fold_validation_chain(nodes, edges, "score")
+
+
+@pytest.mark.parametrize(
+    "operation,parameters,allowed",
+    [
+        ("data.file_load", {"stage": "raw"}, True),
+        ("data.train_test_split", {"split": "train"}, True),
+        ("preprocess.scale", {}, False),
+        ("data.train_test_split", {"split": "test"}, False),
+        ("data.file_load", {"stage": "preprocessed"}, False),
+    ],
+)
+async def test_automatic_selection_checks_source_provenance_before_fold_reduction(operation, parameters, allowed):
+    dataset = _dataset()
+    dataset.provenance.append(op_id=operation, parameters=parameters)
+    chain = [
+        WorkflowNode("model", "model.fitted_pls", {"component_fit_mode": "one_standard_error", "n_components": 2}),
+        WorkflowNode("score", "diagnostics.regression_evaluator", {}),
+    ]
+    edges = [WorkflowEdge("model", "score")]
+    if allowed:
+        graph, capability, split = prepare_sheet_fold_validation(_plan(dataset), chain, edges, dataset)
+        result = await run_sheet_fold_validation_async(graph, capability, split)
+        assert np.isfinite(result["metrics"]["rmse"])
+    else:
+        with pytest.raises(SheetFoldValidationError, match="Input"):
+            prepare_sheet_fold_validation(_plan(dataset), chain, edges, dataset)
+        # Historical manual fitting keeps its admission behaviour.
+        manual = [WorkflowNode("model", "model.fitted_pls", {"n_components": 2}), chain[1]]
+        prepare_sheet_fold_validation(_plan(dataset), manual, edges, dataset)

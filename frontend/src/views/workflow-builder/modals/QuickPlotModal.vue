@@ -911,10 +911,10 @@ const dataPreview = computed(() => {
     }
     if (Array.isArray(row)) {
       row.slice(featureOffset.value, featureOffset.value + 10).forEach((val: any, j: number) => {
-        obj[`col_${featureOffset.value + j}`] = typeof val === "number" ? String(Number.isInteger(val) ? val : Number(val.toPrecision(6))) : val;
+        obj[`col_${featureOffset.value + j}`] = typeof val === "number" ? (Number.isInteger(val) ? String(val) : scientificNumber(val)) : val;
       });
     } else {
-      obj.value = typeof row === "number" ? String(Number.isInteger(row) ? row : Number(row.toPrecision(6))) : row;
+      obj.value = typeof row === "number" ? (Number.isInteger(row) ? String(row) : scientificNumber(row)) : row;
     }
     return obj;
   });

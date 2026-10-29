@@ -615,7 +615,7 @@ class SpectralDatasetCapability:
             "is_time_series",
             *_DATASET_METADATA_FIELDS,
         }
-        unknown, missing = set(metadata) - required, required - set(metadata)
+        unknown, missing = set(metadata) - required - {"sample_independence"}, required - set(metadata)
         if unknown or missing:
             raise SpectralCapabilityError("capability metadata must use the closed schema")
 
@@ -647,7 +647,13 @@ class SpectralDatasetCapability:
         # scientific projection/digest inputs. Charge those bounded copies to
         # the dedicated identity budget, not the unrelated metadata budget.
         spatial_mask_bytes = _spatial_mask_budget(metadata, bounds)
-        if len(_canonical_json(metadata)) > bounds.max_metadata_bytes + 4 * identity_bytes + spatial_mask_bytes:
+        independence_bytes = len(_canonical_json(metadata.get("sample_independence")))
+        if independence_bytes > bounds.max_sample_identity_bytes:
+            raise SpectralCapabilityError("sample independence exceeds the capability identity budget")
+        if (
+            len(_canonical_json(metadata))
+            > bounds.max_metadata_bytes + 4 * identity_bytes + spatial_mask_bytes + independence_bytes
+        ):
             raise SpectralCapabilityError("capability metadata exceeds the maximum size")
 
     @staticmethod
@@ -710,6 +716,7 @@ class SpectralDatasetCapability:
         dataset_ref_digest: str | None = None,
         split_plan_digest: str | None = None,
         groups: Any | None = None,
+        retain_sample_independence: bool = False,
         bounds: SpectralCapabilityBounds = DEFAULT_SPECTRAL_CAPABILITY_BOUNDS,
     ) -> "SpectralDatasetCapability":
         """Capture a SherpaDataset without inheriting arbitrary ``extra`` data."""
@@ -804,6 +811,25 @@ class SpectralDatasetCapability:
             "execution_scientific_projection": execution_projection,
             "execution_scientific_digest": hashlib.sha256(_canonical_json(execution_projection)).hexdigest(),
         }
+        if retain_sample_independence and sample_axis is not None and sample_axis.sample_table:
+            from spectra_sherpa.core.specimen_independence import INDEPENDENT_IDENTITY_FIELDS
+
+            # Retain only the declared experimental-unit columns, never the
+            # response table. The full column-hash list proves both membership
+            # and absence of any other independent-unit field against the
+            # original scientific digest. Workers recheck this proof.
+            sample_projection = next(
+                axis["projection"] for axis in dataset.scientific_projection()["axes"] if axis["dimension"] == 0
+            )
+            metadata["sample_independence"] = {
+                "table_projection": sample_projection["sample_table"],
+                "supervision_binding": dict(supervision) if isinstance(supervision, Mapping) else None,
+                "identities": {
+                    key: list(sample_axis.sample_table[key])
+                    for key in INDEPENDENT_IDENTITY_FIELDS
+                    if key in sample_axis.sample_table
+                },
+            }
         return cls(arrays=arrays, metadata=metadata, bounds=bounds)
 
     @property
@@ -951,6 +977,87 @@ class SpectralDatasetCapability:
         if execution_digest != self._metadata["execution_scientific_digest"]:
             raise SpectralCapabilityError("rehydrated dataset does not match its scientific digest")
         return dataset
+
+    def require_independent_validation_groups(self) -> None:
+        """Check experimental-unit evidence before nested CV, including wire transfers.
+
+        Old envelopes remain readable for their original operations. An old
+        envelope with an omitted sample table cannot authorize the new inner
+        selection: absence of retained evidence is never proof of independence.
+        """
+        from spectra_sherpa.core.specimen_independence import INDEPENDENT_IDENTITY_FIELDS, independence_violations
+
+        dataset, groups = self.to_dataset_and_groups()
+        proof = self._metadata.get("sample_independence")
+        if proof is None:
+            if dataset.scientific_digest != self._metadata["scientific_digest"]:
+                raise SpectralCapabilityError(
+                    "Automatic PLS selection requires retained specimen-independence evidence; reload the source"
+                )
+            return
+        if not isinstance(proof, Mapping) or set(proof) != {"table_projection", "identities", "supervision_binding"}:
+            raise SpectralCapabilityError("sample independence proof must use the closed schema")
+        columns, identities = _plain_json(proof["table_projection"]), _plain_json(proof["identities"])
+        if not isinstance(columns, list) or not isinstance(identities, dict):
+            raise SpectralCapabilityError("sample independence proof is malformed")
+        names = []
+        for column in columns:
+            if not isinstance(column, dict) or set(column) != {"name", "values"} or not isinstance(column["name"], str):
+                raise SpectralCapabilityError("sample independence column proof is malformed")
+            names.append(column["name"])
+        if names != sorted(set(names)) or set(identities) != set(names).intersection(INDEPENDENT_IDENTITY_FIELDS):
+            raise SpectralCapabilityError("sample independence proof omits or duplicates a declared identity")
+        # Reconstruct the original digest from the exact execution projection
+        # plus the closed table-hash list. No scientific receipt is rewritten.
+        source = _plain_json(self._metadata["execution_scientific_projection"])
+        sample = next((axis["projection"] for axis in source["axes"] if axis["dimension"] == 0), None)
+        if sample is None or sample.get("axis_class") != "SampleAxis":
+            raise SpectralCapabilityError("sample independence proof lacks its source axis")
+        sample["sample_table"] = columns
+        source_digest = hashlib.sha256(
+            json.dumps(source, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
+        ).hexdigest()
+        if source_digest != self._metadata["scientific_digest"]:
+            raise SpectralCapabilityError("sample independence proof differs from the source scientific digest")
+        binding = _plain_json(proof["supervision_binding"])
+        if binding is not None:
+            if not isinstance(binding, dict):
+                raise SpectralCapabilityError("sample independence grouping binding is malformed")
+            digest = binding.pop("supervision_binding_sha256", None)
+            if (
+                digest != self._metadata["dataset_ref_digest"]
+                or hashlib.sha256(_canonical_json(binding)).hexdigest() != digest
+            ):
+                raise SpectralCapabilityError("sample independence grouping authority changed")
+            without_provenance = {**source, "provenance": None}
+            if hashlib.sha256(_canonical_json(without_provenance)).hexdigest() != binding.get(
+                "dataset_scientific_projection_sha256"
+            ):
+                raise SpectralCapabilityError("sample independence grouping binding differs from source")
+            group_digest = hashlib.sha256(_canonical_json(groups.tolist())).hexdigest() if groups is not None else None
+            if group_digest != binding.get("groups_sha256"):
+                raise SpectralCapabilityError("sample independence groups differ from the bound grouping authority")
+        elif groups is not None:
+            raise SpectralCapabilityError("Automatic PLS selection requires bound sample-table grouping authority")
+        # Use the dataset authority's projection, not a second column hash
+        # implementation. A zero-feature matrix allocates no spectral payload.
+        identity_dataset = SherpaDataset(
+            X=np.empty((dataset.n_samples, 0)), sample_axis=SampleAxis(sample_table=identities)
+        )
+        actual_columns = identity_dataset.scientific_projection(include_data=False)["axes"][0]["projection"][
+            "sample_table"
+        ]
+        if actual_columns != [column for column in columns if column["name"] in identities]:
+            raise SpectralCapabilityError("sample independence identities differ from the source column digests")
+        violations = independence_violations(
+            identities,
+            n_samples=dataset.n_samples,
+            target_type="continuous",
+            target_names=dataset.target_context.target_names or (),
+            groups=groups,
+        )
+        if violations:
+            raise SpectralCapabilityError(f"Automatic PLS selection unavailable: {violations[0].message}")
 
     def to_dataset_and_groups(self) -> tuple[SherpaDataset, np.ndarray | None]:
         """Rehydrate data and the separately typed grouped-validation context.

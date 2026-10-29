@@ -74,6 +74,7 @@ export interface ComponentSelectionSummary {
   selectedComponents: number;
   selectionRule: string;
   selectionRuleStatus: string;
+  automaticFit?: boolean;
   requestedComponents: number;
   selectedInCurve: boolean;
   nCalibration: number;
@@ -285,6 +286,7 @@ function componentSelectionFromRecord(value: unknown, source: string): Component
   return {
     selectedComponents: selected, requestedComponents: finite(value.requested_components) ?? selected,
     selectionRule: typeof value.selection_rule === "string" ? value.selection_rule : "manual_parameter",
+    automaticFit: value.component_fit_mode === "one_standard_error",
     selectionRuleStatus: typeof value.selection_rule_status === "string" ? value.selection_rule_status : "unverified",
     selectedInCurve: value.selected_in_curve === true,
     nCalibration: count, cvStatus: cvAvailable ? "available" : "unavailable",
@@ -390,11 +392,17 @@ export function buildModelSummary(
   }
   let model: ModelSummary["model"] = null;
   if (node) {
-    // Effective parameters are what ran; authored ones are only a fallback for
-    // runs that predate their retention, never current defaults.
+    // Retained curves report the fitted dimension; parameters may contain an
+    // inactive manual value in automatic mode, or a count capped during fitting.
     const parameters = effectiveParameters?.[node.node_id] ?? node.parameters ?? {};
+    const fittedComponents = componentSelection?.selectedComponents
+      ?? pcaComponentSelection?.selectedComponents ?? plsdaComponentSelection?.selectedComponents;
     const settings = METHOD_SETTINGS.flatMap(([key, label, format]) => {
-      const text = format(parameters[key], node.node_type);
+      if (key === "n_components" && fittedComponents == null
+        && parameters.component_fit_mode === "one_standard_error") {
+        return [[label, "Automatic · fitted count not retained"] as [string, string]];
+      }
+      const text = format(key === "n_components" ? fittedComponents ?? parameters[key] : parameters[key], node.node_type);
       return text ? [[label, text] as [string, string]] : [];
     });
     model = { nodeId: node.node_id, method: METHODS[node.node_type] ?? node.label ?? node.node_type, label: node.label ?? node.node_id, settings };

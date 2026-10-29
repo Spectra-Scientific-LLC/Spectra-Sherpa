@@ -76,6 +76,22 @@ def _require_target(target: np.ndarray | None, *, node_id: str, role: str) -> np
     return target
 
 
+def _automatic_pls_fit_context(
+    operation_id: str, parameters: Mapping[str, Any], context: FoldLifecycleContext | FullDataRefitContext
+) -> dict[str, object]:
+    """Authorize inner CV groups without exposing held-out targets to the model.
+
+    The capability preserves a source-bound experimental-unit proof before
+    sample tables are stripped. Recheck it and pass only authorized training
+    groups. Manual models keep their existing fitting ABI.
+    """
+    if operation_id != "model.fitted_pls" or parameters.get("component_fit_mode") != "one_standard_error":
+        return {}
+    context.capability.require_independent_validation_groups()
+    training_groups = context.groups("train") if isinstance(context, FoldLifecycleContext) else context.groups()
+    return {"groups": training_groups}
+
+
 def _fit_fold_transform_state(
     node: Any,
     context: FoldLifecycleContext,
@@ -984,6 +1000,7 @@ async def execute_supervised_validation_fold(
                             role="training",
                         )
                     ),
+                    **_automatic_pls_fit_context(graph_node.operation_id, parameters, train_context),
                 )
                 record = train_context.record_fitted_state(
                     state,
@@ -1174,6 +1191,7 @@ async def execute_scored_supervised_validation_fold(
                             role="training",
                         )
                     ),
+                    **_automatic_pls_fit_context(graph_node.operation_id, parameters, train_context),
                 )
                 record = train_context.record_fitted_state(
                     state, role="train", graph=graph, node_id=graph_node.node_id, parameters=parameters
@@ -1847,6 +1865,7 @@ async def execute_authorized_full_data_refit(
                             role="full-data refit",
                         )
                     ),
+                    **_automatic_pls_fit_context(graph_node.operation_id, parameters, context),
                 )
                 record = context.record_fitted_state(
                     state, graph=graph, node_id=graph_node.node_id, parameters=parameters

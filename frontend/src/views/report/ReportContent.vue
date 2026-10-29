@@ -77,7 +77,7 @@
               :options="runDropdownOptions"
               optionLabel="label"
               optionValue="value"
-              placeholder="Select runs..."
+              :placeholder="reportStore.selectedRunIds.length ? `${reportStore.selectedRunIds.length} run${reportStore.selectedRunIds.length === 1 ? '' : 's'} selected · Add another` : 'Select runs…'"
               class="w-full"
               :disabled="!reportStore.selectedWorkflowId || reportStore.runsLoading"
               :loading="reportStore.runsLoading"

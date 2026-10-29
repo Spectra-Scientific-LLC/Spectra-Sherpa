@@ -111,13 +111,13 @@ type="button" class="project-open"
               </p>
               <div class="project-metrics">
                 <span
-                  ><strong>{{ project.experiment_count }}</strong> datasets</span
+                  ><strong>{{ project.experiment_count }}</strong> {{ project.experiment_count === 1 ? "dataset" : "datasets" }}</span
                 >
                 <span
-                  ><strong>{{ project.workflow_count }}</strong> workflows</span
+                  ><strong>{{ project.workflow_count }}</strong> {{ project.workflow_count === 1 ? "workflow" : "workflows" }}</span
                 >
                 <span
-                  ><strong>{{ project.model_count }}</strong> models</span
+                  ><strong>{{ project.model_count }}</strong> {{ project.model_count === 1 ? "model" : "models" }}</span
                 >
               </div>
             </article>

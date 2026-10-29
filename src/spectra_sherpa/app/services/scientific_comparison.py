@@ -76,8 +76,9 @@ def resolve_run_evidence(run: Any, selection: EvaluationSelection | None = None)
         retained_regression_evidence,
     )
 
+    inventory_complete = False
     try:
-        regression, retained_population = retained_regression_evidence(run)
+        regression, retained_population, inventory_complete = retained_regression_evidence(run)
     except RetainedComparisonUnavailable as exc:
         regression, retained_population = (), PopulationSummary(limitations=[str(exc)])
     except (ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
@@ -94,6 +95,7 @@ def resolve_run_evidence(run: Any, selection: EvaluationSelection | None = None)
             label,
             regression,
             retained_population,
+            incomplete_roles=frozenset() if inventory_complete else frozenset({"calibration", "held_out"}),
             unavailable_reason=" ".join(
                 dict.fromkeys(
                     [
@@ -132,6 +134,7 @@ def resolve_run_evidence(run: Any, selection: EvaluationSelection | None = None)
         label,
         (*regression, record),
         retained_population if retained_population.verification != "unknown" else population,
+        incomplete_roles=frozenset() if inventory_complete else frozenset({"calibration", "held_out"}),
     )
 
 
@@ -242,6 +245,13 @@ def compare_evidence(items: list[ResolvedComparisonEvidence]) -> EvidenceCompari
             candidates = [entry for entry in item.evaluations if entry.role == role]
             if len(candidates) == 1:
                 sections[role], records[role] = _section(candidates[0])
+                if role in item.incomplete_roles:
+                    sections[role].state = "descriptive_only"
+                    sections[role].reason = (
+                        "Comparison incomplete: not all retained outputs could be verified; "
+                        "the selected evaluation cannot be established as the only producer for this role."
+                    )
+                    records[role] = None
             else:
                 sections[role] = ScientificSection(
                     role=role,

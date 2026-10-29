@@ -1417,6 +1417,13 @@
           "binding": {
             "$ref": "#/components/schemas/DataBindingSpec"
           },
+          "held_out_groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Held Out Groups",
+            "type": "array"
+          },
           "project_id": {
             "minimum": 1.0,
             "title": "Project Id",
@@ -1426,6 +1433,15 @@
             "default": false,
             "title": "Use Saved Analysis Selection",
             "type": "boolean"
+          },
+          "validation_goal": {
+            "default": "unseen_specimens",
+            "enum": [
+              "unseen_specimens",
+              "known_specimen_cross_block"
+            ],
+            "title": "Validation Goal",
+            "type": "string"
           }
         },
         "required": [
@@ -1438,7 +1454,7 @@
       "Body_attach_collection_definition_endpoint_api_v1_experiments__experiment_id__collection_definition_put": {
         "properties": {
           "file": {
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File",
             "type": "string"
           }
@@ -1474,14 +1490,14 @@
             "title": "Commercial Workspace Id"
           },
           "file": {
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File",
             "type": "string"
           },
           "publisher_trust_anchors": {
             "anyOf": [
               {
-                "contentMediaType": "application/octet-stream",
+                "format": "binary",
                 "type": "string"
               },
               {
@@ -1527,14 +1543,14 @@
             "title": "Commercial Workspace Id"
           },
           "file": {
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File",
             "type": "string"
           },
           "publisher_trust_anchors": {
             "anyOf": [
               {
-                "contentMediaType": "application/octet-stream",
+                "format": "binary",
                 "type": "string"
               },
               {
@@ -1552,7 +1568,7 @@
             "anyOf": [
               {
                 "items": {
-                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
                   "type": "string"
                 },
                 "type": "array"
@@ -1572,12 +1588,12 @@
       },
       "Body_import_registered_reference_endpoint_api_v1_experiments__experiment_id__import_registered_reference_post": {
         "properties": {
-          "file": {
+          "files": {
             "items": {
-              "contentMediaType": "application/octet-stream",
+              "format": "binary",
               "type": "string"
             },
-            "title": "File",
+            "title": "Files",
             "type": "array"
           },
           "package_id": {
@@ -1604,7 +1620,7 @@
           }
         },
         "required": [
-          "file"
+          "files"
         ],
         "title": "Body_import_registered_reference_endpoint_api_v1_experiments__experiment_id__import_registered_reference_post",
         "type": "object"
@@ -1612,7 +1628,7 @@
       "Body_inspect_sherpa_object_api_v1_projects_objects_inspect_post": {
         "properties": {
           "file": {
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File",
             "type": "string"
           }
@@ -1626,7 +1642,7 @@
       "Body_preview_collection_definition_endpoint_api_v1_experiments__experiment_id__collection_definition_preview_post": {
         "properties": {
           "file": {
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File",
             "type": "string"
           }
@@ -1640,12 +1656,12 @@
       "Body_reproduce_imported_campaign_api_v1_projects__project_id__reproduce_campaign_post": {
         "properties": {
           "fixture": {
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "Fixture",
             "type": "string"
           },
           "package": {
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "Package",
             "type": "string"
           },
@@ -1654,7 +1670,7 @@
             "type": "string"
           },
           "publisher_keys": {
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "Publisher Keys",
             "type": "string"
           }
@@ -1672,7 +1688,7 @@
         "properties": {
           "files": {
             "items": {
-              "contentMediaType": "application/octet-stream",
+              "format": "binary",
               "type": "string"
             },
             "title": "Files",
@@ -1699,7 +1715,7 @@
       "Body_stage_upload_file_api_v1_builder_upload_stage_post": {
         "properties": {
           "file": {
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File",
             "type": "string"
           },
@@ -1735,7 +1751,7 @@
             "title": "Data Role"
           },
           "file": {
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File",
             "type": "string"
           },
@@ -1776,7 +1792,7 @@
       "Body_validate_sherpa_object_api_v1_projects_objects_validate_post": {
         "properties": {
           "file": {
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File",
             "type": "string"
           }
@@ -13081,13 +13097,6 @@
       },
       "ValidationError": {
         "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
           "loc": {
             "items": {
               "anyOf": [

@@ -28,6 +28,7 @@
             class="sheet-tab"
             :class="{ active: index === activeIndex, trial: sheet.kind === 'trial' }"
             :title="sheet.name"
+            :aria-label="sheet.name"
             :style="tabStyle(sheet, index === activeIndex)"
             :draggable="sheet.kind !== 'trial' && !hasTrialSheets"
             @click="emit('switch', index)"
@@ -69,7 +70,7 @@
                 style="color: var(--ss-panel-accent); font-size: 0.7rem; margin-right: 4px"
                 aria-hidden="true"
               ></i>
-              {{ sheet.name }}
+              <span class="sheet-name-start">{{ sheetTabLabel(sheet.name).split('…')[0] }}</span><span v-if="sheetTabLabel(sheet.name).includes('…')" class="sheet-name-end">…{{ sheetTabLabel(sheet.name).split('…').slice(1).join('…') }}</span>
             </span>
           </button>
         </template>
@@ -153,6 +154,7 @@
 </template>
 
 <script setup lang="ts">
+import { sheetTabLabel } from "@/utils/dataPortfolio";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
@@ -456,6 +458,10 @@ watch(
 </script>
 
 <style scoped>
+.sheet-tab-label { display: flex; min-width: 0; }
+.sheet-name-start { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sheet-name-end { flex-shrink: 0; max-width: 75%; overflow: hidden; text-overflow: ellipsis; }
+
 .sheet-tabs-shell {
   align-items: flex-end;
   background: var(--ss-panel);

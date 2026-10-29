@@ -231,6 +231,25 @@ def prepare_sheet_fold_validation(
             f"This analysis chain cannot be cross-validated with the campaign folds: {exc}"
         ) from exc
     target, groups, dataset_ref_digest = _supervised_inputs(dataset)
+    if any(
+        node.operation_id == "model.fitted_pls" and node.parameters.get("component_fit_mode") == "one_standard_error"
+        for node in graph.nodes
+    ):
+        from spectra_sherpa.app.services.dag.nodes.modeling.component_validation import cv_unavailable_reason
+        from spectra_sherpa.core.specimen_independence import independence_violations
+
+        reason = cv_unavailable_reason(dataset)
+        if reason:
+            raise SheetFoldValidationError(reason)
+        violations = independence_violations(
+            dataset.sample_axis.sample_table if dataset.sample_axis is not None else None,
+            n_samples=dataset.n_samples,
+            target_type="continuous",
+            target_names=dataset.target_context.target_names or (),
+            groups=groups,
+        )
+        if violations:
+            raise SheetFoldValidationError(violations[0].message)
     try:
         split = reconstruct_split_plan(
             task_type=plan.task_type,

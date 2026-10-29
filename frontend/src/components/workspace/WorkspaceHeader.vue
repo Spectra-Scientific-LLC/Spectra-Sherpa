@@ -24,6 +24,7 @@ withDefaults(defineProps<{ title: string; actions?: HeaderActionMenuItem[] }>(),
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  flex-wrap: wrap;
   min-width: 0;
   padding-bottom: 1rem;
 }

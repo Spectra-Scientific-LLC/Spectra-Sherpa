@@ -118,31 +118,31 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",
-        "e14aaf4be00b28491e48142f9c493d6bc8ef1440ed94bfada4626520d1e11a14",
+        "520728c0451ffd8f5904ea5c3227c40698d601647365a6e38bebf69144d78e2c",
     ),
     "model.apply_fitted_pcr": (
         "1aecb57326c2c3a8f71823a035cbcb2f21be34d72a3049daedcc5e67a399f2e9",
-        "8fe88c746c430616efd112349b00de94fd6edd87fd3f08f81da21c26a40a1393",
+        "f09403b8c0f41c32ea591a1761e9e8dfa57149746634c5748be9b27d876f228c",
     ),
     "model.apply_fitted_svr": (
         "244fe3defede23aefb869e74d97034600b1a73c9abb63694fb6101ed2fea9c34",
-        "855978a90f738521784334d10d83566c951068562036588fbf16eba1eb2229bf",
+        "265de5fa6c87e0629cffcaa742da2c84a1fc3ed848ac1c8750fbd7f83d640a58",
     ),
     "model.fitted_linear_regression": (
         "04d5ea448432137158df7b412286a17a5fe3498f5589ce53b33414fad2388b2b",
-        "e67835fc9e93b0a1b5dcc306ed3cfcbbcae86eb515af3f7b730fe48cc1d79782",
+        "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
     ),
     "model.fitted_pcr": (
         "a207b7fc520763105b633ca6d99eb267872c38ed54dc6854082b7be1bd1756b8",
-        "25f5e986f615ae0e787dfecbac7b3a544cd2a68583fc6cb213c60773c9639b9e",
+        "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
     ),
     "model.fitted_pls": (
         "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
-        "2252dec1ff34b651be6480a68a10662470aeaa566bfb9c179eba04f0d87c83e4",
+        "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
     ),
     "model.fitted_svr": (
         "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
-        "fe7266dee9a09f27a7be7fae4ecba2c38af9c643d9f1bd71b67b8884cc49ea1d",
+        "6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",
     ),
 }
 
@@ -180,11 +180,43 @@ def historical_port_topology(graph: HistoricalValidationGraph) -> dict[str, obje
     return {**identity, "topology_digest": hashlib.sha256(encoded).hexdigest()}
 
 
+_PRE_AUTOMATIC_PLS_CONSUMERS = {
+    "model.fitted_linear_regression": (
+        "e67835fc9e93b0a1b5dcc306ed3cfcbbcae86eb515af3f7b730fe48cc1d79782",
+        "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
+    ),
+    "model.fitted_pcr": (
+        "25f5e986f615ae0e787dfecbac7b3a544cd2a68583fc6cb213c60773c9639b9e",
+        "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
+    ),
+    "model.fitted_pls": (
+        "2252dec1ff34b651be6480a68a10662470aeaa566bfb9c179eba04f0d87c83e4",
+        "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
+    ),
+    "model.fitted_svr": (
+        "fe7266dee9a09f27a7be7fae4ecba2c38af9c643d9f1bd71b67b8884cc49ea1d",
+        "6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",
+    ),
+}
+
+
 class HistoricalReconstructionContext:
     """One packaged predecessor authority; callers cannot supply contracts."""
 
     def __init__(self, profile_digest: str | None = None):
         self._catalog = inspection_predecessor_catalog(profile_digest)
+
+    @property
+    def predates_automatic_pls(self) -> bool:
+        return (
+            self._catalog["profile"]["profile_digest"]
+            == "eec02d6f13ac5b5fa1af45dfea754b0c054faf1c92d75cf9af88ec74ac066cdb"
+        )
+
+    def added_pls_parameters(self) -> set[str]:
+        if self.predates_automatic_pls:
+            return {"component_fit_mode"}
+        return {"component_selection_rule", "component_curve_max", "component_cv_folds", "component_fit_mode"}
 
     def require_historical_graph(self, graph: ValidationGraph) -> None:
         """Do not let an unchanged live reference escape a historical reader.
@@ -216,7 +248,7 @@ class HistoricalReconstructionContext:
                     # historical recipe never mentioned them. Remove only
                     # exact defaults before rebuilding the archived identity;
                     # graph() re-admits them into a detached projection.
-                    additions = {"component_selection_rule", "component_curve_max", "component_cv_folds"}
+                    additions = self.added_pls_parameters()
                     defaults = {p.name: p.default for p in metadata.parameters if p.name in additions}
                     parameters = node["parameters"]
                     if {key: parameters.get(key) for key in additions} != defaults:
@@ -254,7 +286,9 @@ class HistoricalReconstructionContext:
         contract = NodeExecutionContract.from_dict(archived["payload"])
         if contract.digest != archived["digest"] or contract.digest != digest:
             raise ValidationGraphError("unknown historical operation/contract identity")
-        inspected = _INSPECTION_CONSUMERS.get(operation)
+        inspected = (_PRE_AUTOMATIC_PLS_CONSUMERS if self.predates_automatic_pls else _INSPECTION_CONSUMERS).get(
+            operation
+        )
         previous_consumer = catalog["current_contracts"].get(operation, digest)
         inspected_consumer = inspected == (previous_consumer, current.digest)
         component_curve_consumer = inspected_consumer and operation == "model.fitted_pls"
@@ -277,23 +311,59 @@ class HistoricalReconstructionContext:
             # This exact consumer only adds optional tuning controls and one
             # retained output. Verify the old declarations still project to
             # the archived bytes before using current structural admission.
-            if tuple(contract.payload["runtime_requirements"]) != (
-                {"distribution": "numpy", "version": "1.26.4"},
-            ) or tuple(current.payload["runtime_requirements"]) != (
+            expected_old_runtime = (
+                tuple(current.payload["runtime_requirements"])
+                if self.predates_automatic_pls
+                else ({"distribution": "numpy", "version": "1.26.4"},)
+            )
+            if tuple(contract.payload["runtime_requirements"]) != expected_old_runtime or tuple(
+                current.payload["runtime_requirements"]
+            ) != (
                 {"distribution": "numpy", "version": "1.26.4"},
                 {"distribution": "scipy", "version": "1.17.1"},
             ):
                 raise ValidationGraphError("historical PLS runtime requirements changed")
+            # Inspection projects only the historical manual mode. The exact
+            # consumer may fit automatically for new graphs, never old records.
+            if (contract.payload["implementation_version"], current.payload["implementation_version"]) != (
+                "9.0.0",
+                "10.0.0",
+            ):
+                raise ValidationGraphError("historical PLS implementation declarations changed")
+            if (contract.payload["group_access"], current.payload["group_access"]) != ("none", "fit_only"):
+                raise ValidationGraphError("historical PLS group authority changed")
+            non_semantic.update({"implementation_version", "group_access"})
             metadata = node_registry.get_metadata(operation)
-            additions = {"component_selection_rule", "component_curve_max", "component_cv_folds"}
+            mode = next((p for p in metadata.parameters if p.name == "component_fit_mode"), None)
+            if (
+                mode is None
+                or mode.default != "manual"
+                or mode.options
+                != [
+                    {"label": "Manual", "value": "manual"},
+                    {"label": "Automatic · one-standard-error", "value": "one_standard_error"},
+                ]
+            ):
+                raise ValidationGraphError("historical PLS manual default changed")
+            additions = self.added_pls_parameters()
             if {parameter.name for parameter in metadata.parameters if parameter.name in additions} != additions:
                 raise ValidationGraphError("historical PLS component controls changed")
-            old_metadata = replace(metadata, parameters=[p for p in metadata.parameters if p.name not in additions])
+            old_metadata = replace(
+                metadata,
+                parameters=[
+                    replace(p, visible_when=None) if p.name == "n_components" else p
+                    for p in metadata.parameters
+                    if p.name not in additions
+                ],
+            )
             if _canonical_digest(_parameter_schema(old_metadata)) != contract.payload["parameter_schema_digest"]:
                 raise ValidationGraphError("historical PLS parameter schema changed")
             old_outputs = contract.payload["semantic_outputs"]
             new_outputs = current.payload["semantic_outputs"]
-            if len(new_outputs) != len(old_outputs) + 1 or tuple(new_outputs[:-1]) != tuple(old_outputs):
+            if self.predates_automatic_pls:
+                if tuple(new_outputs) != tuple(old_outputs):
+                    raise ValidationGraphError("historical PLS output ports changed")
+            elif len(new_outputs) != len(old_outputs) + 1 or tuple(new_outputs[:-1]) != tuple(old_outputs):
                 raise ValidationGraphError("historical PLS output ports changed")
             if (
                 new_outputs[-1]["name"] != "component_curve"
@@ -380,7 +450,7 @@ class HistoricalReconstructionContext:
                 and contracts[node_id].digest
                 != node_registry.get_metadata(operation).resolved_execution_contract().digest
             ):
-                additions = {"component_selection_rule", "component_curve_max", "component_cv_folds"}
+                additions = self.added_pls_parameters()
                 parameters = raw["parameters"]
                 if not isinstance(parameters, Mapping) or additions.intersection(parameters):
                     raise ValidationGraphError("historical PLS graph contains post-profile controls")
@@ -416,7 +486,7 @@ class HistoricalReconstructionContext:
                 additions = (
                     {"acknowledge_legacy_input_uncertainty"}
                     if node.operation_id == "model.load_apply"
-                    else {"component_selection_rule", "component_curve_max", "component_cv_folds"}
+                    else self.added_pls_parameters()
                 )
                 metadata = node_registry.get_metadata(node.operation_id)
                 defaults = {

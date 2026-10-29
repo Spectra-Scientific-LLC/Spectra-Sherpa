@@ -200,3 +200,49 @@ describe("saved model diagnostic workbench", () => {
     wrapper.unmount();
   });
 });
+
+describe("saved diagnostic quantity labels", () => {
+  const mountReceipt = async (saved: Record<string, unknown>) => {
+    apiGet.mockResolvedValue({ data: { run_id: 42, node_id: "fit", receipt: saved,
+      decision: { marked: [], excluded: [], heldout_excluded: [] },
+      review_revision: 0, post_review: false, decision_unavailable_reason: null } });
+    const wrapper = mount(SavedModelDiagnostics, {
+      props: { artifactUid: "units-review", projectId: 9, workflowId: 7, nodeId: "fit" },
+      global: { stubs: { PlotlyChart: plotStub, PcaExplanation: true, PlsExplanation: true,
+        PlsApplicability: true, DiagnosticAdvisor: true, DatasetCurationPanel: true } },
+    });
+    await flushPromises();
+    return wrapper;
+  };
+  it("keeps the chosen response name and units on prediction and residual axes", async () => {
+    const wrapper = await mountReceipt({ ...receipt, model_kind: "pls",
+      target_names: ["Methane", "Carbon dioxide"], target_units: ["ppm", "percent"],
+      pls_explanations: { unavailable_reason: "Not retained" } });
+    const layout = (title: string) => wrapper.findAllComponents({ name: "PlotlyChart" })
+      .map(plot => plot.props("layout")).find(value => value.title === title);
+    expect(layout("Predicted versus measured")).toMatchObject({
+      xaxis: { title: "Measured Methane (ppm)" }, yaxis: { title: "Predicted Methane (ppm)" } });
+    expect(layout("Residuals")).toMatchObject({
+      xaxis: { title: "Predicted Methane (ppm)" },
+      yaxis: { title: "Residual Methane (ppm) (measured − predicted)" } });
+    const responseSelect = wrapper.findAll("select").find(select => select.text().includes("Carbon dioxide"))!;
+    await responseSelect.setValue("1");
+    expect(layout("Predicted versus measured").yaxis.title).toBe("Predicted Carbon dioxide (percent)");
+    expect(layout("Residuals").yaxis.title).toContain("Carbon dioxide (percent)");
+    wrapper.unmount();
+  });
+  it.each([null, "cm⁻¹"])("does not call retained coordinates indices or infer their physical meaning (%s)", async units => {
+    const wrapper = await mountReceipt({ ...receipt, explanations: { ...receipt.explanations, feature_units: units } });
+    const layout = wrapper.findAllComponents({ name: "PlotlyChart" }).map(plot => plot.props("layout"))
+      .find(value => String(value.title).includes("loadings"));
+    expect(layout.xaxis.title).toBe(units ? "Fitted feature coordinate (cm⁻¹)" : "Fitted feature coordinate");
+    wrapper.unmount();
+  });
+  it("uses variable index only without retained feature coordinates", async () => {
+    const wrapper = await mountReceipt({ ...receipt, explanations: { ...receipt.explanations, feature_values: null, feature_units: null } });
+    const plot = wrapper.findAllComponents({ name: "PlotlyChart" }).find(plot => String(plot.props("layout").title).includes("loadings"))!;
+    expect(plot.props("layout").xaxis.title).toBe("Variable index");
+    expect(plot.props("data")[0].x).toEqual([1, 2]);
+    wrapper.unmount();
+  });
+});

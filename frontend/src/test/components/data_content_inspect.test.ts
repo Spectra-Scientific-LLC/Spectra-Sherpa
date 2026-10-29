@@ -241,6 +241,7 @@ vi.mock("@/views/data/DataContentsPanel.vue", () => ({
   default: defineComponent({
     name: "DataContentsPanel",
     props: {
+      focusTarget: { type: Boolean, default: false },
       initialAnalysisTarget: { type: String, default: "" },
       initialAnalysisGroup: { type: String, default: "" },
       analysisSelectionHydrated: { type: Boolean, default: false },
@@ -2481,6 +2482,57 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     },
   );
 
+  it("keeps the synthetic stage when all files are handed to Workflow", async () => {
+    mocks.dataStore.experimentFiles[0].stage = "synthetic";
+    mocks.dataStore.experimentFiles[0].file_path = "synthetic/mixture.npz";
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    await vm.goToWorkflow();
+    expect(latestWorkflowReceipt()?.datasets[0]).toMatchObject({
+      experiment_id: 11, stage: "synthetic", selected_file_count: 1,
+    });
+  });
+
+  it("recovers an exact starter file subset and consumes the handoff once", async () => {
+    mocks.dataStore.experimentFiles.push({ ...mocks.dataStore.experimentFiles[0], id: 23, file_path: "raw/other.csv" });
+    mocks.route.query = { tab: "my-dataset", experiment: "11", focus: "target", targetFiles: "23", targetStage: "raw" };
+    const wrapper = mountDataContent();
+    await flushPromises();
+    expect(mocks.dataStore.inspectExperimentRawFiles).toHaveBeenCalledWith(11, null, [23]);
+    expect(mocks.route.query).not.toHaveProperty("targetFiles");
+    expect(wrapper.getComponent({ name: "DataContentsPanel" }).props("focusTarget")).toBe(true);
+  });
+
+  it("keeps the exact target handoff after a transient inspection failure", async () => {
+    mocks.route.query = { tab: "my-dataset", experiment: "11", focus: "target", targetFiles: "22", targetStage: "raw", targetAsset: "data" };
+    mocks.dataStore.inspectExperimentRawFiles.mockRejectedValue(new Error("temporary read failure"));
+    const wrapper = mountDataContent();
+    await flushPromises();
+    expect(mocks.route.query).toMatchObject({ targetFiles: "22", targetAsset: "data", targetStage: "raw" });
+    expect(mocks.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Scientific results unavailable" }));
+    wrapper.unmount();
+  });
+
+  it("restores the exact asset and file subset after a successful target handoff remount", async () => {
+    mocks.dataStore.fetchFileAssets.mockResolvedValue({
+      assets: [{ asset_id: "spectra-A", title: "A", shape: [178, 13] }, { asset_id: "spectra-B", title: "B", shape: [178, 13] }],
+    });
+    mocks.route.query = { tab: "my-dataset", experiment: "11", focus: "target", targetFiles: "22", targetStage: "raw", targetAsset: "spectra-B" };
+    const first = mountDataContent();
+    await flushPromises();
+    expect(mocks.dataStore.inspectExperimentRawFiles).toHaveBeenCalledWith(11, "spectra-B", [22]);
+    expect(mocks.route.query).not.toHaveProperty("targetAsset");
+    (first.vm as unknown as DataContentVm).persistDataDraftNow();
+    first.unmount();
+    mocks.dataStore.fileInfo = null;
+    mocks.dataStore.inspectExperimentRawFiles.mockClear();
+    const restored = mountDataContent();
+    await flushPromises();
+    expect(mocks.dataStore.inspectExperimentRawFiles).toHaveBeenCalledWith(11, "spectra-B", [22]);
+    restored.unmount();
+  });
+
   it("resolves GUI-01 target authority from the current collection before workflow handoff", async () => {
     const wrapper = mountDataContent();
     await flushPromises();
@@ -3075,6 +3127,82 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     expect(vm.importDatasetName).toBe("");
   });
 
+  it("imports the submitted reference even if the basket changes during creation", async () => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    let finish!: (value: { id: number }) => void;
+    mocks.dataStore.createExperiment.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    vm.selectedRefDatasets.add("sklearn::iris");
+    vm.importDatasetName = "Original Iris";
+    const pending = vm.onImportSelectedDatasets();
+    vm.selectedRefDatasets.clear();
+    vm.selectedRefDatasets.add("sklearn::wine");
+    vm.importDatasetName = "Next Wine";
+    finish({ id: 33 });
+    await pending;
+    expect(mocks.dataStore.importReferenceDatasets).toHaveBeenCalledWith(33, [
+      { source: "sklearn", name: "iris", overrides: null },
+    ]);
+    expect([...vm.selectedRefDatasets]).toEqual(["sklearn::wine"]);
+    expect(vm.importDatasetName).toBe("Next Wine");
+  });
+
+  it("does not apply late import effects after switching projects", async () => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    let finish!: (value: { imported: number; files: never[] }) => void;
+    mocks.dataStore.importReferenceDatasets.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    vm.selectedRefDatasets.add("sklearn::iris");
+    const pending = vm.onImportSelectedDatasets();
+    await flushPromises();
+    mocks.projectStore.currentProjectId = 4;
+    await flushPromises();
+    mocks.dataStore.selectExperiment.mockClear();
+    mocks.toastAdd.mockClear();
+    finish({ imported: 1, files: [] });
+    await pending;
+    expect(mocks.dataStore.selectExperiment).not.toHaveBeenCalled();
+    expect(mocks.toastAdd).not.toHaveBeenCalled();
+  });
+
+  it("does not notify a new project when refusal cleanup finishes late", async () => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    mocks.dataStore.importReferenceDatasets.mockRejectedValueOnce({ response: { status: 422 } });
+    let finish!: () => void;
+    mocks.dataStore.deleteExperiment.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    vm.selectedRefDatasets.add("sklearn::iris");
+    const pending = vm.onImportSelectedDatasets();
+    await flushPromises();
+    expect(mocks.dataStore.deleteExperiment).toHaveBeenCalledWith(33);
+    mocks.projectStore.currentProjectId = 4;
+    await flushPromises();
+    mocks.toastAdd.mockClear();
+    finish();
+    await pending;
+    expect(mocks.toastAdd).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("honors an explicit dataset link ahead of the completed starter import", async () => {
+    mocks.route.query = { tab: "my-dataset", experiment: "12" };
+    mocks.dataStore.experiments.push({ ...mocks.dataStore.experiments[0], id: 12, name: "Explicit source" });
+    window.sessionStorage.setItem("sherpa:data-entry-mode", "analysis-starter");
+    window.sessionStorage.setItem("sherpa:data-entry-project-id", "3");
+    window.sessionStorage.setItem("sherpa:data-entry-dataset-intent", JSON.stringify({
+      schema_version: "spectra-analysis-starter-dataset-intent/1", project_id: 3,
+      dataset_id: "sklearn:iris", source: "sklearn", name: "iris", label: "Iris",
+      template_slug: "pca", imported_experiment_id: 11,
+    }));
+    mountDataContent();
+    await flushPromises();
+    expect(mocks.dataStore.selectExperiment).toHaveBeenCalledWith(12);
+    expect(mocks.dataStore.selectExperiment).not.toHaveBeenCalledWith(11);
+  });
+
   it("selects one reference at a time and previews the checked dataset", async () => {
     const lavender: ReferenceDatasetOption = {
       source: "builtin",
@@ -3556,6 +3684,29 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
         (header) => header.get(".tag-stub").attributes("data-severity") === "info",
       ),
     ).toBe(true);
+  });
+
+  it("clears a registered-import busy state on project change and ignores the late completion", async () => {
+    const registered = { source: "registered", name: "public-corn-m5-moisture-v1", label: "Corn", provider: "Eigenvector Research" };
+    mocks.dataStore.referenceCatalog.registered = [registered];
+    const wrapper = mountDataContent();
+    await flushPromises();
+    let finish!: (value: { imported: number }) => void;
+    mocks.dataStore.importRegisteredReference.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const vm = wrapper.vm as unknown as DataContentVm;
+    vm.selectRegisteredReferenceFile(registered);
+    const pending = vm.onRegisteredReferenceSelection({ target: { files: [new File(["fixture"], "corn.zip")], value: "" } } as unknown as Event);
+    await flushPromises();
+    expect(mocks.dataStore.importRegisteredReference).toHaveBeenCalledOnce();
+    mocks.projectStore.currentProjectId = 4;
+    await flushPromises();
+    mocks.toastAdd.mockClear();
+    finish({ imported: 1 });
+    await pending;
+    expect(mocks.toastAdd).not.toHaveBeenCalled();
+    const button = wrapper.findAll("button").find(button => button.text() === "Import downloaded file")!;
+    expect(button.attributes("disabled")).toBeUndefined();
+    wrapper.unmount();
   });
 
   it("keeps qualified hyperspectral references visible and imports a registered file", async () => {

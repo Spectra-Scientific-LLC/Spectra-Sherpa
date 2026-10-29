@@ -58,21 +58,23 @@ describe("Data Story card", () => {
     mocks.store.invalidateDataStory.mockReset();
   });
 
-  it("generates once for an inspected source and accepts a specific question", async () => {
-    const wrapper = mount(DataStoryCard, { props: { sourceKey: "corn-m5", ready: false } });
-    expect(mocks.store.generateDataStory).not.toHaveBeenCalled();
+  it("generates only on demand across readiness, source changes and revisits", async () => {
+    let wrapper = mount(DataStoryCard, { props: { sourceKey: "corn-m5", ready: false } });
     await wrapper.setProps({ ready: true });
-    await flushPromises();
-    expect(mocks.store.generateDataStory).toHaveBeenCalledTimes(1);
     await wrapper.setProps({ ready: false });
     await wrapper.setProps({ ready: true });
-    expect(mocks.store.generateDataStory).toHaveBeenCalledTimes(1);
-
+    expect(mocks.store.generateDataStory).not.toHaveBeenCalled();
+    expect(wrapper.find("button").text()).toBe("Generate");
     await wrapper.find("input").setValue("What do the batches mean?");
-    expect(mocks.store.generateDataStory).toHaveBeenCalledTimes(1);
     await wrapper.find("button").trigger("click");
     expect(mocks.store.dataStoryContext).toBe("What do the batches mean?");
-    expect(mocks.store.generateDataStory).toHaveBeenCalledTimes(2);
+    expect(mocks.store.generateDataStory).toHaveBeenCalledTimes(1);
+    await wrapper.setProps({ sourceKey: "corn-m6" });
+    wrapper.unmount();
+    wrapper = mount(DataStoryCard, { props: { sourceKey: "corn-m6", ready: true } });
+    await flushPromises();
+    expect(mocks.store.generateDataStory).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
   });
 
   it("does not send a story request when the deployment has no LLM capability", async () => {
@@ -93,6 +95,8 @@ describe("Data Story card", () => {
     await flushPromises();
     expect(wrapper.text()).not.toContain("unavailable");
     expect(wrapper.text()).not.toContain("Samples · spectral origin · useful metadata");
+    expect(mocks.store.generateDataStory).not.toHaveBeenCalled();
+    await wrapper.find("button").trigger("click");
     expect(mocks.store.generateDataStory).toHaveBeenCalledTimes(1);
     expect(wrapper.find("button").attributes("disabled")).toBeUndefined();
   });
@@ -104,24 +108,29 @@ describe("Data Story card", () => {
       sourceKey: "m5-one", ready: true, inspectedSource: first,
     } });
     await flushPromises();
+    await wrapper.find("button").trigger("click");
     expect(mocks.store.generateDataStory).toHaveBeenCalledWith(
       first,
-      { cacheKey: "m5-one", force: false },
+      { cacheKey: "m5-one", force: true },
     );
     await wrapper.setProps({ sourceKey: "m5-two", inspectedSource: second });
     await flushPromises();
     expect(mocks.store.invalidateDataStory).toHaveBeenCalledTimes(2);
+    expect(mocks.store.generateDataStory).toHaveBeenCalledTimes(1);
+    await wrapper.find("button").trigger("click");
     expect(mocks.store.generateDataStory).toHaveBeenLastCalledWith(
       second,
-      { cacheKey: "m5-two", force: false },
+      { cacheKey: "m5-two", force: true },
     );
     await wrapper.setProps({ inspectedSource: first });
     await flushPromises();
     expect(mocks.store.generateDataStory).toHaveBeenCalledTimes(2);
     await wrapper.setProps({ sourceKey: "m5-one" });
     await flushPromises();
+    expect(mocks.store.generateDataStory).toHaveBeenCalledTimes(2);
+    await wrapper.find("button").trigger("click");
     expect(mocks.store.generateDataStory).toHaveBeenLastCalledWith(
-      first, { cacheKey: "m5-one", force: false },
+      first, { cacheKey: "m5-one", force: true },
     );
   });
 });

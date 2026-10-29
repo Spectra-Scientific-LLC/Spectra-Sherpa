@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import errno
 import logging
 import logging.handlers
 import os
 import re
 import sys
+import time
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -65,6 +67,29 @@ class LockedRotatingFileHandler(logging.handlers.RotatingFileHandler):
     unlinked archive. The lock file itself contains no diagnostic data.
     """
 
+    lock_wait_seconds = 0.25
+
+    def _acquire_lock(self, fd: int) -> None:
+        deadline = time.monotonic() + self.lock_wait_seconds
+        while True:
+            try:
+                if sys.platform == "win32":
+                    import msvcrt
+
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except OSError as exc:
+                if exc.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                    raise
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("Diagnostic file lock unavailable") from None
+                time.sleep(min(0.01, remaining))
+
     def __init__(self, *args, **kwargs):
         # Do not hold an idle Windows file handle across a peer's rotation.
         kwargs["delay"] = True
@@ -75,46 +100,45 @@ class LockedRotatingFileHandler(logging.handlers.RotatingFileHandler):
         locked = False
         try:
             fd = os.open(self.baseFilename + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
-            if sys.platform == "win32":
-                import msvcrt
-
-                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(fd, fcntl.LOCK_EX)
+            self._acquire_lock(fd)
             locked = True
             if self.stream:
                 self.stream.close()
                 self.stream = None
             super().emit(record)
-            if self.stream:
-                self.stream.close()
-                self.stream = None
         except Exception:
             # A diagnostic sink must not fail scientific work or echo secrets
             # through logging's default raw-record error report.
             self.handleError(record)
         finally:
-            if fd is not None:
-                try:
-                    if locked:
-                        if sys.platform == "win32":
-                            import msvcrt
-
-                            os.lseek(fd, 0, os.SEEK_SET)
-                            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-                        else:
-                            import fcntl
-
-                            fcntl.flock(fd, fcntl.LOCK_UN)
-                except OSError:
-                    self.handleError(record)
-                finally:
+            try:
+                if self.stream:
                     try:
-                        os.close(fd)
+                        self.stream.close()
+                    finally:
+                        self.stream = None
+            except Exception:
+                self.handleError(record)
+            finally:
+                if fd is not None:
+                    try:
+                        if locked:
+                            if sys.platform == "win32":
+                                import msvcrt
+
+                                os.lseek(fd, 0, os.SEEK_SET)
+                                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                            else:
+                                import fcntl
+
+                                fcntl.flock(fd, fcntl.LOCK_UN)
                     except OSError:
                         self.handleError(record)
+                    finally:
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            self.handleError(record)
 
     def handleError(self, record):
         try:
@@ -162,6 +186,45 @@ class BufferHandler(logging.Handler):
             self.handleError(record)
 
 
+def _is_console_handler(handler: logging.Handler) -> bool:
+    if isinstance(handler, logging.FileHandler):
+        return False
+    if type(handler) is logging.StreamHandler:
+        return True
+    # Custom consoles may be StreamHandler subclasses or expose a console
+    # object (e.g. Rich). Capture buffers and files do not own stdout/stderr.
+    stream = getattr(handler, "stream", None)
+    console = getattr(handler, "console", None)
+    console_stream = getattr(console, "file", None)
+    terminals = (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__)
+    return any(
+        candidate is terminal
+        for candidate in (stream, console_stream)
+        for terminal in terminals
+        if terminal is not None
+    )
+
+
+def _protect_custom_console(handler: logging.Handler) -> None:
+    # Some renderers (Rich tracebacks) bypass Formatter for raw msg/exc_info.
+    # Give only that handler a sanitized copy; never mutate a shared/access record.
+    if getattr(handler, "_sherpa_safe_console", False):
+        return
+    original_handle = handler.handle
+
+    def safe_handle(_handler, record):
+        safe = logging.makeLogRecord(record.__dict__.copy())
+        safe.msg = RedactingFormatter(logging.Formatter("%(message)s")).format(safe)
+        safe.args = ()
+        safe.exc_info = None
+        safe.exc_text = None
+        safe.stack_info = None
+        return original_handle(safe)
+
+    setattr(handler, "handle", MethodType(safe_handle, handler))
+    setattr(handler, "_sherpa_safe_console", True)
+
+
 def configure_logging(level: int | None = None) -> None:
     from spectra_sherpa.app.core.request_id import install_request_id_log_factory
 
@@ -191,14 +254,17 @@ def configure_logging(level: int | None = None) -> None:
 
     # An unrelated FileHandler is also a StreamHandler; it must not suppress
     # the application console. Leave third-party capture handlers untouched.
-    console_handlers = [h for h in root_logger.handlers if type(h) is logging.StreamHandler]
+    console_handlers = [h for h in root_logger.handlers if _is_console_handler(h)]
     if not console_handlers:
         console_handler = logging.StreamHandler()
         root_logger.addHandler(console_handler)
         console_handlers = [console_handler]
     for handler in console_handlers:
         handler.setLevel(level)
-        handler.setFormatter(logging.Formatter("%(levelname)s [req=%(request_id)s] %(name)s: %(message)s"))
+        if type(handler) is not logging.StreamHandler:
+            _protect_custom_console(handler)
+        if type(handler) is logging.StreamHandler or handler.formatter is None:
+            handler.setFormatter(logging.Formatter("%(levelname)s [req=%(request_id)s] %(name)s: %(message)s"))
 
     if settings.log_file_path:
         try:

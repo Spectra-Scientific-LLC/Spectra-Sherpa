@@ -4886,6 +4886,8 @@ export interface components {
          */
         BindingCompatibilityPreviewRequest: {
             binding: components["schemas"]["DataBindingSpec"];
+            /** Held Out Groups */
+            held_out_groups?: string[];
             /** Project Id */
             project_id: number;
             /**
@@ -4893,10 +4895,19 @@ export interface components {
              * @default false
              */
             use_saved_analysis_selection?: boolean;
+            /**
+             * Validation Goal
+             * @default unseen_specimens
+             * @enum {string}
+             */
+            validation_goal?: "unseen_specimens" | "known_specimen_cross_block";
         };
         /** Body_attach_collection_definition_endpoint_api_v1_experiments__experiment_id__collection_definition_put */
         Body_attach_collection_definition_endpoint_api_v1_experiments__experiment_id__collection_definition_put: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
         };
         /** Body_import_canonical_project_archive_api_v1_projects_canonical_import_post */
@@ -4905,7 +4916,10 @@ export interface components {
             commercial_subscription_id?: number | null;
             /** Commercial Workspace Id */
             commercial_workspace_id?: number | null;
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
             /** Publisher Trust Anchors */
             publisher_trust_anchors?: string | null;
@@ -4921,7 +4935,10 @@ export interface components {
             commercial_subscription_id?: number | null;
             /** Commercial Workspace Id */
             commercial_workspace_id?: number | null;
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
             /** Publisher Trust Anchors */
             publisher_trust_anchors?: string | null;
@@ -4935,8 +4952,8 @@ export interface components {
         };
         /** Body_import_registered_reference_endpoint_api_v1_experiments__experiment_id__import_registered_reference_post */
         Body_import_registered_reference_endpoint_api_v1_experiments__experiment_id__import_registered_reference_post: {
-            /** File */
-            file: string[];
+            /** Files */
+            files: string[];
             /** Package Id */
             package_id?: string | null;
             /** Projection Id */
@@ -4944,23 +4961,38 @@ export interface components {
         };
         /** Body_inspect_sherpa_object_api_v1_projects_objects_inspect_post */
         Body_inspect_sherpa_object_api_v1_projects_objects_inspect_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
         };
         /** Body_preview_collection_definition_endpoint_api_v1_experiments__experiment_id__collection_definition_preview_post */
         Body_preview_collection_definition_endpoint_api_v1_experiments__experiment_id__collection_definition_preview_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
         };
         /** Body_reproduce_imported_campaign_api_v1_projects__project_id__reproduce_campaign_post */
         Body_reproduce_imported_campaign_api_v1_projects__project_id__reproduce_campaign_post: {
-            /** Fixture */
+            /**
+             * Fixture
+             * Format: binary
+             */
             fixture: string;
-            /** Package */
+            /**
+             * Package
+             * Format: binary
+             */
             package: string;
             /** Projection Id */
             projection_id: string;
-            /** Publisher Keys */
+            /**
+             * Publisher Keys
+             * Format: binary
+             */
             publisher_keys: string;
         };
         /** Body_stage_upload_batch_api_v1_builder_upload_stage_batch_post */
@@ -4972,7 +5004,10 @@ export interface components {
         };
         /** Body_stage_upload_file_api_v1_builder_upload_stage_post */
         Body_stage_upload_file_api_v1_builder_upload_stage_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
             /** Project Id */
             project_id?: number | null;
@@ -4981,7 +5016,10 @@ export interface components {
         Body_upload_experiment_file_api_v1_experiments__experiment_id__files_post: {
             /** Data Role */
             data_role?: string | null;
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
             /** Stage */
             stage: string;
@@ -4992,7 +5030,10 @@ export interface components {
         };
         /** Body_validate_sherpa_object_api_v1_projects_objects_validate_post */
         Body_validate_sherpa_object_api_v1_projects_objects_validate_post: {
-            /** File */
+            /**
+             * File
+             * Format: binary
+             */
             file: string;
         };
         /** BranchRequest */
@@ -9043,10 +9084,6 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
-            /** Context */
-            ctx?: Record<string, never>;
-            /** Input */
-            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */

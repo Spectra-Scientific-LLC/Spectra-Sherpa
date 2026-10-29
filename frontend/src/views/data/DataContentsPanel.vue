@@ -154,6 +154,7 @@
 
     <details
       v-if="dataStore.fileInfo && !dataStore.catalogDatasetInfo"
+      ref="focusedDatasetDetails"
       class="focused-dataset-details"
     >
       <summary>
@@ -232,7 +233,7 @@
           </section>
         </section>
 
-        <section class="dataset-step" aria-label="Sample details">
+        <section ref="sampleDetailsSection" tabindex="-1" class="dataset-step" aria-label="Sample details">
           <div class="essential-card-heading">
             <span class="essential-card-number">3</span>
             <div>
@@ -397,7 +398,7 @@
                         @change="row.sampleId && emit('toggleSample', row.sampleId)"
                       />
                     </td>
-                    <td v-for="column in sampleTableState.visibleColumns" :key="column">
+                    <td v-for="column in sampleTableState.visibleColumns" :key="column" :title="String(row.values[column] ?? '')">
                       {{ formatSampleValue(row.values[column]) }}
                     </td>
                   </tr>
@@ -648,6 +649,7 @@ import { useScopedRequest } from "@/composables/useScopedRequest";
 import { useDatasetReadinessPreview } from "./composables/useDatasetReadinessPreview";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
+import { scientificNumber } from "@/utils/scientificEncoding";
 import axios from "axios";
 import {
   computed,
@@ -718,6 +720,7 @@ function clearSampleTableSaveError(): void {
 
 const props = withDefaults(
   defineProps<{
+    focusTarget?: boolean;
     scopeKey?: string;
     activeDatasetName?: string | null;
     selectedFileCount?: number | null;
@@ -733,6 +736,7 @@ const props = withDefaults(
     displaySettingsTarget?: string | null;
   }>(),
   {
+    focusTarget: false,
     scopeKey: "",
     activeDatasetName: null,
     selectedFileCount: null,
@@ -748,6 +752,20 @@ const props = withDefaults(
     displaySettingsTarget: null,
   },
 );
+
+const focusedDatasetDetails = ref<HTMLDetailsElement | null>(null);
+const sampleDetailsSection = ref<HTMLElement | null>(null);
+let focusedTargetSource: unknown = null;
+watch(() => [props.focusTarget, dataStore.fileInfoLoading, dataStore.fileInfo] as const, async ([requested, loading, info]) => {
+  if (!requested) { focusedTargetSource = null; return; }
+  if (loading || !info || focusedTargetSource === info) return;
+  await nextTick();
+  if (!props.focusTarget || dataStore.fileInfo !== info || !focusedDatasetDetails.value) return;
+  focusedTargetSource = info;
+  focusedDatasetDetails.value.open = true;
+  sampleDetailsSection.value?.scrollIntoView?.({ block: "start" });
+  sampleDetailsSection.value?.focus({ preventScroll: true });
+}, { immediate: true, flush: "post" });
 
 // File identity changes synchronously, even if Vue batches an A → B → A render.
 const inspectionRevision = ref(0);
@@ -2227,6 +2245,7 @@ function formatSampleColumn(value: string): string {
 
 function formatSampleValue(value: unknown): string {
   if (value == null || value === "") return "—";
+  if (typeof value === "number" && !Number.isInteger(value)) return scientificNumber(value);
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }

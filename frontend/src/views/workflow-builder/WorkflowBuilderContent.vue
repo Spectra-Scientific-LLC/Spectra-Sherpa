@@ -1,5 +1,6 @@
 <template>
-  <section class="workflow-builder-content">
+  <ProjectUnavailable v-if="projectSelectionUnavailable" retryable @retry="initializeWorkbook(true)" />
+  <section v-else class="workflow-builder-content">
     <WorkspaceHeader title="Workflow" :actions="actionMenuItems">
       <template #badge>
         <span v-if="workflowStore.workflowExcludedCount" class="workflow-meta-badge" role="status">
@@ -199,7 +200,7 @@
       <i :class="pendingDataSelection ? 'pi pi-clock' : 'pi pi-check-circle'" aria-hidden="true" />
       <div>
         <strong
-          >{{ dataSelectionFileCount }} selected file{{
+          >{{ dataSelectionFileCount }} file{{
             dataSelectionFileCount === 1 ? "" : "s"
           }}
           selected</strong
@@ -207,7 +208,7 @@
         <span>
           From {{ dataSelectionReceipt.datasets.length }} dataset{{
             dataSelectionReceipt.datasets.length === 1 ? "" : "s"
-          }}. This exact selection is waiting for an analysis starter to create a bound sheet{{
+          }}. Choose Analysis Starter to create a workflow using this selection{{
             dataSelectionReceipt.group
               ? `, with ${dataSelectionReceipt.group} requested for grouping`
               : ""
@@ -237,6 +238,8 @@
       @sheet-opened="onTemplateSheetOpened"
     />
 
+    <details class="workflow-context-details">
+      <summary :title="portfolioSummary">Sheet data · {{ portfolioName }} <span class="workflow-context-summary">— {{ portfolioSummary }}</span></summary>
     <WorkspaceContext label="Workflow workspace context" layout="workflow">
       <WorkspaceContextItem label="Active Sheet" :value="activeSheetName" :title="`Created ${sheetCreationTime}`" wrap />
       <WorkspaceContextItem label="Canvas" :value="canvasSummaryLabel" />
@@ -244,6 +247,7 @@
         {{ portfolioSummary }}
       </WorkspaceContextItem>
     </WorkspaceContext>
+    </details>
 
     <!-- Execution status banner -->
     <div v-if="executionCount > 0" class="execution-banner">
@@ -401,6 +405,7 @@ import { useScopedRequest } from "@/composables/useScopedRequest";
 import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
+import ProjectUnavailable from "@/views/ProjectUnavailable.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import PromotionFitContext from "@/components/PromotionFitContext.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
@@ -525,6 +530,7 @@ const dataSelectionReceipt = ref<DataSelectionReceipt | null>(
 // Also suppress notices retained from the previous sheet during navigation.
 const workbookContextReady = ref(false);
 const workbookLoadError = ref("");
+const projectSelectionUnavailable = ref(false);
 const workflowContextLoading = computed(() =>
   !workbookContextReady.value || workbookStore.isLoading || workflowStore.isLoading,
 );
@@ -566,7 +572,12 @@ const pendingDataSelection = computed(() => route.query.fromDataSelection === "1
 // never instantiate: the user opens the picker and chooses the data action.
 const goalPlanTemplateSlug = computed(() => {
   const project = projectStore.currentProject;
-  const slug = project?.goal_plan?.template_slug ?? null;
+  const stored = project?.metadata?.analysis_starter;
+  const durable = stored && typeof stored === "object" && !Array.isArray(stored)
+    ? stored as Record<string, unknown> : null;
+  const gallerySlug = durable?.schema_version === "spectra-analysis-starter-dataset-intent/1"
+    && typeof durable.template_slug === "string" ? durable.template_slug : null;
+  const slug = project?.goal_plan?.template_slug ?? gallerySlug;
   if (!slug) return null;
   return (project?.workflows ?? []).some((workflow) => workflow.created_from_template_name) ? null : slug;
 });
@@ -1766,6 +1777,7 @@ const triggerAutosave = async (
 
 const initializeWorkbook = async (respectDeepLink = true) => {
   workbookLoadError.value = "";
+  projectSelectionUnavailable.value = false;
   try {
     const queryProjectId = Number(route.query.project_id);
     let targetProjectId: number | null =
@@ -1807,7 +1819,10 @@ const initializeWorkbook = async (respectDeepLink = true) => {
     }
 
     await projectStore.selectProject(targetProjectId);
-    if (projectStore.currentProjectId !== targetProjectId) throw new Error("The requested project could not be selected. Reload the workbook to retry.");
+    if (projectStore.currentProjectId !== targetProjectId) {
+      projectSelectionUnavailable.value = true;
+      return;
+    }
     const pendingStarter = readAnalysisStarterIntent();
     const accountAtLoad = [authStore.user?.id, authStore.sessionRevision];
     await workbookStore.loadSheets(targetProjectId, {
@@ -1898,6 +1913,7 @@ watch(
         console.warn("Failed to load experiments for selected workflow project");
       }
       if (!request.isCurrent()) return;
+      projectSelectionUnavailable.value = false;
       restoreWorkflowDraftSnapshot();
       restoreNodeOutputsForActiveSheet();
       toast.add({
@@ -2749,6 +2765,10 @@ const onDeleteNode = (nodeId: string) => {
 </script>
 
 <style scoped>
+.workflow-context-details { margin-bottom: .5rem; }
+.workflow-context-details > summary { cursor: pointer; font-size: .875rem; overflow-wrap: anywhere; }
+.workflow-context-summary { color: var(--text-color-secondary); }
+
 /*
   Page-level chrome adopts the canonical Zen vocabulary used on Project /
   Dashboard / Data / Models: 0.9375rem base font, 1.75rem h1 at weight 500,

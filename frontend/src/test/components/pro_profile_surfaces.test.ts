@@ -83,7 +83,9 @@ describe("Pro routes with operator-owned configuration", () => {
     expect(deploy.find('button[title="Refresh"]').exists()).toBe(false);
     expect(mocks.fetchWatches).not.toHaveBeenCalled();
     expect(mocks.fetchDeployRuns).not.toHaveBeenCalled();
-    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.get).toHaveBeenCalledExactlyOnceWith("/models", {
+      params: { project_id: 3, offset: 0, limit: 25 }, signal: expect.any(AbortSignal),
+    });
     mocks.get.mockClear();
     const audit = mount(AuditContent, { global: { stubs: {
       AuditCapabilityStrip: true, AuditFilterChips: true, AuditEventsTable: true,

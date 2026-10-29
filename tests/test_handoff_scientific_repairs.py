@@ -448,7 +448,7 @@ def test_evaluation_storage_error_does_not_expose_paths(monkeypatch):
     from spectra_sherpa.app.services import retained_regression_comparison as adapter
     from spectra_sherpa.app.services import scientific_comparison as module
 
-    monkeypatch.setattr(adapter, "retained_regression_evidence", lambda run: ((), PopulationSummary()))
+    monkeypatch.setattr(adapter, "retained_regression_evidence", lambda run: ((), PopulationSummary(), True))
 
     def fail(*args):
         raise OSError("PRIVATE_PATH_SENTINEL")

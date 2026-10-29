@@ -26,6 +26,22 @@ Dataset**. On Workflow, choose **Analysis Starter**, then the suggested template
 Where hosted Guidance is available and enabled, its task-specific buttons point
 to these same controls; they do not perform the import or run an analysis.
 
+If a starter needs a response or class label, **Set target in My Dataset** opens
+Sample details for that source selection. The selected files, processing stage
+and result asset are retained; a named portfolio is reopened by its saved
+identity. Choose the target there, then return to Analysis Starter. This does
+not silently change the target in an existing workflow.
+
+For supported classification starter paths, admission checks the actual active
+rows after source inclusion and sample filtering using the same partition
+planner as execution. An impossible training/test partition is refused before
+a workflow is created. A warning that component CV is unavailable means the
+training population cannot support the required class representation in every
+fold; it is not a model-quality verdict. Unsupported upstream transformations
+remain subject to execution-time validation. Fixed-component starters retain
+their declared component count; a diagnostic CV curve alone does not refit or
+automatically select a different model.
+
 ## Dataset
 
 A dataset is a named selection of data, views, target, and optional groups that

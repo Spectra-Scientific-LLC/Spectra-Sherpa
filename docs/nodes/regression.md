@@ -71,6 +71,29 @@ The implementation follows de Jong's SIMPLS algorithm: S. de Jong,
 Chemometrics and Intelligent Laboratory Systems 18 (1993) 251–263,
 <https://doi.org/10.1016/0169-7439(93)85002-X>.
 
+### Automatic latent-variable selection
+
+New PLS Calibration starters use **one-standard-error** selection: choose the
+smallest number of latent variables whose mean fold RMSE is within one standard
+error of the best mean fold RMSE, then refit on the training samples. Scaling
+is fitted separately inside each fold. The saved model keeps the actual
+selected count; Load & Apply uses that frozen model without selecting again.
+
+The held-out test set never participates in selection. Optimize repeats
+selection within each outer training fold. Bind specimen groups explicitly
+when there are repeated acquisitions of a specimen; automatic selection keeps
+those groups together. Insufficient groups, unsafe upstream fitted
+preprocessing, or unsupported multiresponse selection produces a clear refusal,
+not a fallback to three latent variables.
+
+Existing saved workflows retain **Manual** mode and their recorded count.
+Changing the old **Component choice basis** annotation alone does not refit or
+select a model. For new automatic fits, **Component curve maximum** bounds the
+search and **Component CV folds** defines its training-fold protocol. Keep
+that protocol fixed across Optimize candidates; use Manual mode to compare
+specific fixed LV counts. The component curve is tuning evidence, while the
+separate held-out result estimates prediction performance.
+
 ### PLS1, PLS2, and solver names
 
 PLS1 means one response variable and PLS2 means multiple response variables.
@@ -342,7 +365,8 @@ Conditional visibility describes the editor; execution admission remains node-ow
 
 | Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| <code>n_components</code> | <code>number</code> | <code>true</code> | <code>2</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Requested maximum; the fit reports the effective predictive rank and stops before an unidentifiable direction. Must not exceed min(training samples - 1, input features). This choice is saved; the component CV curve is tuning evidence and must not use the locked test cohort. |
+| <code>n_components</code> | <code>number</code> | <code>true</code> | <code>2</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;component_fit_mode&quot;: [&quot;manual&quot;]}}</code> | Requested maximum; the fit reports the effective predictive rank and stops before an unidentifiable direction. Must not exceed min(training samples - 1, input features). This choice is saved; the component CV curve is tuning evidence and must not use the locked test cohort. |
+| <code>component_fit_mode</code> | <code>select</code> | <code>false</code> | <code>&quot;manual&quot;</code> | <code>[{&quot;label&quot;: &quot;Manual&quot;, &quot;value&quot;: &quot;manual&quot;}, {&quot;label&quot;: &quot;Automatic · one-standard-error&quot;, &quot;value&quot;: &quot;one_standard_error&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Manual uses Latent Variables. One-standard-error selects the smallest model within one standard error of the lowest mean fold RMSE, then refits on training samples only. Uses the component-curve maximum and folds; requires one response and qualified fold-local preprocessing. Held-out samples are never used. |
 | <code>scale</code> | <code>boolean</code> | <code>false</code> | <code>false</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
 | <code>component_selection_rule</code> | <code>select</code> | <code>false</code> | <code>&quot;manual_parameter&quot;</code> | <code>[&quot;manual_parameter&quot;, &quot;minimum_mean_fold_rmse&quot;, &quot;one_standard_error&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Choose and save the basis after inspecting the curve, then set Latent Variables to the desired count and refit. For a multiresponse model, use manual because each response has its own suggestion. |
 | <code>component_curve_max</code> | <code>number</code> | <code>false</code> | <code>10</code> | — | <code>{&quot;max_value&quot;: 20, &quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Automatically includes the selected LV up to 20; a larger selected model is marked outside the bounded curve. Bounds the additional calibration/CV fits and retained per-component evidence. |

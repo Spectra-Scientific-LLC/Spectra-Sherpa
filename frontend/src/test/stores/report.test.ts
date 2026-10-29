@@ -235,8 +235,31 @@ describe("report payload assembly", () => {
     expect(store.workflows).toEqual([
       expect.objectContaining({
         id: 2,
-        display_label: "PCA — Wine (bundled example) · Example data · Sheet #2",
+        display_label: "PCA — Wine (bundled example) · Example data",
       }),
+    ]);
+  });
+  it("distinguishes colliding sheet labels without expanding unique names", async () => {
+    const duplicate = { name: "Corn PLS", node_count: 3,
+      primary_data_source_name: "Corn", data_origin: "current" };
+    mocks.apiGet.mockResolvedValueOnce({ data: [
+      { ...duplicate, id: 41 }, { ...duplicate, id: 19 },
+      { ...duplicate, id: 72, name: "Corn PCA" },
+    ] });
+    const store = useReportStore();
+    await store.fetchWorkflows();
+    expect(store.workflows.map((item) => item.display_label)).toEqual([
+      "Corn PLS — Corn · Current data · Sheet 41",
+      "Corn PLS — Corn · Current data · Sheet 19",
+      "Corn PCA — Corn · Current data",
+    ]);
+    mocks.apiGet.mockResolvedValueOnce({ data: [
+      { ...duplicate, id: 19 }, { ...duplicate, id: 41 },
+    ] });
+    await store.fetchWorkflows();
+    expect(store.workflows.map((item) => item.display_label)).toEqual([
+      "Corn PLS — Corn · Current data · Sheet 19",
+      "Corn PLS — Corn · Current data · Sheet 41",
     ]);
   });
   it("cancels an Advisor narrative when its source report is reset", async () => {

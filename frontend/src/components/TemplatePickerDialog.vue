@@ -24,7 +24,7 @@
         <Button
           label="Choose project data"
           class="p-button-sm p-button-text"
-          @click="openDatasetReadiness"
+          @click="openDatasetReadiness()"
         />
       </div>
       <p v-if="currentPortfolioName" class="tp-portfolio" data-testid="starter-data-portfolio">
@@ -47,6 +47,8 @@
                 <span class="tp-unavailable-status">Not Available for Current Dataset</span>
                 <span role="tooltip" class="tp-unavailable-tooltip">{{ unavailableReason(tpl) }}</span>
               </div>
+              <Button v-if="requiresTargetSetup(tpl)" label="Set target in My Dataset"
+                class="p-button-sm p-button-text" @click="openDatasetReadiness(tpl)" />
             </template>
             <template v-else>
             <div class="tp-row-main">
@@ -80,6 +82,7 @@
                 <i class="pi pi-info-circle" aria-hidden="true" />
                 Current selection: {{ currentSelectionDecisionMessage(tpl) }}
               </p>
+              <p v-for="warning in validationWarnings(tpl)" :key="warning" class="tp-row-requirement" role="status">{{ warning }}</p>
               <p v-if="multiSourceBindingSummary(tpl)" class="tp-row-requirement">
                 <i class="pi pi-link" aria-hidden="true" />
                 {{ multiSourceBindingSummary(tpl) }}
@@ -133,7 +136,7 @@
                 label="Set target in My Dataset"
                 icon="pi pi-arrow-right"
                 class="p-button-sm p-button-text tp-readiness-action"
-                @click="openDatasetReadiness"
+                @click="openDatasetReadiness(tpl)"
               />
             </div>
             </template>
@@ -466,6 +469,10 @@ const currentSelectionDecision = (tpl: TemplateOut): DatasetAnalysisReadinessDec
   );
 };
 
+const validationWarnings = (tpl: TemplateOut): string[] =>
+  (currentSelectionDecision(tpl)?.validation_preview?.splits ?? [])
+    .flatMap(split => split.component_cv?.status === "unavailable" && split.component_cv.reason
+      ? [split.component_cv.reason] : []);
 const currentSelectionDecisionMessage = (tpl: TemplateOut): string | null => {
   const decision = currentSelectionDecision(tpl);
   if (decision?.status === "compatible") return null;
@@ -491,12 +498,38 @@ const requiresTargetSetup = (tpl: TemplateOut): boolean =>
     ["continuous_target_missing", "categorical_target_missing", "target_missing"].includes(code),
   );
 
-const openDatasetReadiness = async (): Promise<void> => {
+const openDatasetReadiness = async (template?: TemplateOut): Promise<void> => {
+  const binding = selectedReceiptBinding() ?? currentPrimaryDataBinding();
+  if (template && workbookStore.projectId != null) {
+    try {
+      // Reuse the existing project-scoped Starter handoff. This stores a
+      // recommendation only; the returned dataset must be admitted again.
+      window.sessionStorage.setItem("sherpa:data-entry-mode", "analysis-starter");
+      window.sessionStorage.setItem("sherpa:data-entry-project-id", String(workbookStore.projectId));
+      window.sessionStorage.setItem("sherpa:data-entry-dataset-intent", JSON.stringify({
+        schema_version: "spectra-analysis-starter-dataset-intent/1",
+        project_id: workbookStore.projectId, dataset_id: `experiment:${selectedExperimentId.value}`,
+        source: "upload", name: currentPortfolioName.value || "Project data",
+        label: currentPortfolioName.value || "Project data", template_slug: template.slug,
+        imported_experiment_id: selectedExperimentId.value,
+      }));
+    } catch {
+      toast.add({ severity: "warn", summary: "Starter choice not saved", detail: "Choose the starter again after setting the target.", life: 5000 });
+    }
+  }
   visible.value = false;
   await router.push({
     path: "/data",
     query: {
       tab: "my-dataset",
+      ...(template ? { focus: "target" } : {}),
+      ...(template && binding?.datasetViewId != null
+        ? { viewId: String(binding.datasetViewId) }
+        : template && binding ? {
+            targetFiles: binding.fileId != null ? String(binding.fileId) : binding.fileIds?.join(",") ?? "all",
+            targetStage: binding.stage ?? "raw",
+            ...(binding.assetId ? { targetAsset: binding.assetId } : {}),
+          } : {}),
       project_id: String(workbookStore.projectId),
       ...(selectedExperimentId.value == null
         ? {}
@@ -782,7 +815,7 @@ const loadTemplates = async () => {
         "Project dataset selection could not be verified. Select data in My Dataset, then reopen Analysis Starters.";
     }
     activeProjectDataset.value = choiceResult.dataset;
-    const activeBinding = receipt || projectDatasetChoiceError.value ? null : currentPrimaryDataBinding();
+    const activeBinding = projectDatasetChoiceError.value ? null : selectedReceiptBinding() ?? currentPrimaryDataBinding();
     const [readinessResponse, activeReadinessResponse] = await Promise.all([
       profile
         ? api
@@ -797,6 +830,7 @@ const loadTemplates = async () => {
             } }>("/workflow-templates/binding-compatibility-preview", {
               project_id: projectId,
               use_saved_analysis_selection: activeProjectDataset.value !== null,
+              ...(crossBlockRequested.value ? { validation_goal: "known_specimen_cross_block", held_out_groups: heldOutBlock.value ? [heldOutBlock.value] : [] } : {}),
               binding: {
                 source: activeBinding.source ?? "experiment",
                 experiment_id: activeBinding.experimentId,
@@ -821,9 +855,9 @@ const loadTemplates = async () => {
       effectiveDataSelection.value = {
         ...receipt,
         analysis_readiness:
-          readinessResponse === undefined
-            ? null
-            : (readinessResponse?.data ?? receipt.analysis_readiness),
+          activeBinding && projectId != null
+            ? activeReadinessResponse?.data ?? null
+            : readinessResponse?.data ?? null,
       };
     }
     if (!receipt && activeBinding) {
@@ -853,7 +887,12 @@ const loadTemplates = async () => {
   }
 };
 
-watch(pickerIdentity, () => {
+watch([crossBlockRequested, heldOutBlock], () => {
+  if (visible.value && (!crossBlockRequested.value || heldOutBlock.value)) void loadTemplates();
+});
+watch(pickerIdentity, (current, previous) => {
+  if (current.length === previous.length
+    && current.every((value, index) => Object.is(value, previous[index]))) return;
   if (visible.value) {
     crossBlockRequested.value = false;
     heldOutBlock.value = "";
@@ -867,7 +906,7 @@ watch(pickerIdentity, () => {
     activeProjectDataset.value = null;
     projectDatasetChoiceError.value = null;
   }
-});
+}, { flush: "sync" });
 
 const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
   if (!projectAvailable.value || !visible.value || instantiating.value !== null) return;

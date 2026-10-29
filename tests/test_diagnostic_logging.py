@@ -396,3 +396,164 @@ def test_fallback_filter_normalizes_preexisting_correlation():
     record.request_id = "legacy\nFORGED"
     RequestIDLogFilter().filter(record)
     assert record.request_id == diagnostic_identifier("legacy\nFORGED")
+
+
+@pytest.mark.parametrize("kind", ["stream-subclass", "console-object"])
+def test_custom_console_is_reused_without_duplicate_or_format_loss(monkeypatch, isolated_log_handlers, kind):
+    from types import SimpleNamespace
+
+    output = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", output)
+
+    class ColoredStream(logging.StreamHandler):
+        pass
+
+    class ConsoleObject(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.console = SimpleNamespace(file=output)
+
+        def emit(self, record):
+            self.console.file.write(self.format(record) + "\n")
+
+    console = ColoredStream(output) if kind == "stream-subclass" else ConsoleObject()
+    console.setFormatter(logging.Formatter("custom %(message)s"))
+    isolated_log_handlers.addHandler(console)
+    configure_logging()
+    configure_logging()
+    isolated_log_handlers.warning("custom-console-once Bearer PRIVATE_TOKEN")
+    assert output.getvalue().count("custom-console-once") == 1
+    assert output.getvalue().startswith("custom ")
+    assert "PRIVATE_TOKEN" not in output.getvalue()
+    assert [h for h in isolated_log_handlers.handlers if logging_module._is_console_handler(h)] == [console]
+
+
+def test_capture_subclass_is_not_mistaken_for_console(isolated_log_handlers):
+    class Capture(logging.StreamHandler):
+        pass
+
+    capture = Capture(io.StringIO())
+    isolated_log_handlers.addHandler(capture)
+    configure_logging()
+    assert not logging_module._is_console_handler(capture)
+    assert any(type(handler) is logging.StreamHandler for handler in isolated_log_handlers.handlers)
+
+
+def test_held_cross_process_file_lock_has_deadline_and_recovers(tmp_path):
+    import json
+
+    path = tmp_path / "deadline.log"
+    fd = os.open(str(path) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+    if sys.platform == "win32":
+        import msvcrt
+
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        code = """
+import json, logging, sys, time
+from spectra_sherpa.app.core.logging import LockedRotatingFileHandler
+h = LockedRotatingFileHandler(sys.argv[1], maxBytes=1024, backupCount=1)
+h.lock_wait_seconds = 0.05
+start = time.monotonic()
+h.emit(logging.LogRecord("deadline", logging.INFO, __file__ if "__file__" in globals() else "child", 1,
+                         "Bearer PRIVATE_LOCK_TOKEN", (), None))
+print(json.dumps({"elapsed":time.monotonic()-start, "closed": h.stream is None}))
+"""
+        child = subprocess.run([sys.executable, "-c", code, str(path)], capture_output=True, text=True, timeout=10)
+        assert child.returncode == 0, child.stderr
+        result = json.loads(child.stdout)
+        assert 0.04 <= result["elapsed"] < 2
+        assert result["closed"]
+        assert "Persistent diagnostic log write failed." in child.stderr
+        assert "PRIVATE_LOCK_TOKEN" not in child.stderr
+        assert not path.exists()
+    finally:
+        if sys.platform == "win32":
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+    handler = LockedRotatingFileHandler(path, maxBytes=1024, backupCount=1)
+    handler.emit(logging.LogRecord("recovered", logging.INFO, __file__, 1, "after-release", (), None))
+    handler.close()
+    assert path.read_text().strip() == "after-release"
+
+
+def test_rich_traceback_console_cannot_bypass_redaction(monkeypatch, isolated_log_handlers):
+    try:
+        from rich.console import Console
+        from rich.logging import RichHandler
+    except ImportError:
+        from pip._vendor.rich.console import Console
+        from pip._vendor.rich.logging import RichHandler
+
+    output = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", output)
+    rich = RichHandler(console=Console(file=output, force_terminal=False, width=200), rich_tracebacks=True)
+    isolated_log_handlers.addHandler(rich)
+    configure_logging()
+    configure_logging()
+    try:
+        raise ValueError("Bearer EXCEPTION_PRIVATE")
+    except ValueError:
+        info = sys.exc_info()
+        record = logging.LogRecord("rich", logging.ERROR, __file__, 1, "message %s", ("Bearer MESSAGE_PRIVATE",), info)
+        isolated_log_handlers.handle(record)
+    assert "EXCEPTION_PRIVATE" not in output.getvalue()
+    assert "MESSAGE_PRIVATE" not in output.getvalue()
+    assert "ValueError" in output.getvalue() and "[REDACTED]" in output.getvalue()
+    assert record.exc_info is info and record.args == ("Bearer MESSAGE_PRIVATE",)
+
+
+def test_interrupted_file_emit_closes_stream_before_unlock(tmp_path, monkeypatch):
+    class InterruptedStream(io.StringIO):
+        def write(self, value):
+            raise KeyboardInterrupt()
+
+    stream = InterruptedStream()
+    handler = LockedRotatingFileHandler(tmp_path / "interrupted.log", maxBytes=1024, backupCount=1)
+    monkeypatch.setattr(handler, "_open", lambda: stream)
+    with pytest.raises(KeyboardInterrupt):
+        handler.emit(logging.LogRecord("interrupt", logging.INFO, __file__, 1, "safe", (), None))
+    assert stream.closed and handler.stream is None
+    # A new independent descriptor can immediately obtain the released lock.
+    fd = os.open(str(tmp_path / "interrupted.log") + ".lock", os.O_RDWR)
+    try:
+        handler._acquire_lock(fd)
+        if sys.platform == "win32":
+            import msvcrt
+
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+        handler.close()
+
+
+def test_same_handler_can_write_after_a_lock_timeout(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "retry.log"
+    handler = LockedRotatingFileHandler(path, maxBytes=1024, backupCount=1)
+    acquire = handler._acquire_lock
+    calls = 0
+
+    def once(fd):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise TimeoutError("injected contention timeout")
+        acquire(fd)
+
+    monkeypatch.setattr(handler, "_acquire_lock", once)
+    handler.emit(logging.LogRecord("retry", logging.INFO, __file__, 1, "first", (), None))
+    assert handler.stream is None and not path.exists()
+    assert "Persistent diagnostic log write failed." in capsys.readouterr().err
+    handler.emit(logging.LogRecord("retry", logging.INFO, __file__, 1, "second", (), None))
+    assert handler.stream is None and path.read_text().strip() == "second"
+    handler.close()

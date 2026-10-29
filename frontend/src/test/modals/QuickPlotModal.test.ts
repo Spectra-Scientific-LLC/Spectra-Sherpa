@@ -461,7 +461,7 @@ describe("QuickPlotModal", () => {
     });
     const vm = wrapper.vm as any;
     expect(vm.viewMode).toBe("data");
-    expect(vm.dataPreview[0]).toMatchObject({ _label: "sample-a", col_0: "2.5" });
+    expect(vm.dataPreview[0]).toMatchObject({ _label: "sample-a", col_0: "2.50000" });
     expect(wrapper.find('.plot-type-dropdown').exists()).toBe(false);
     await wrapper.setProps({ modelValue: false });
     await wrapper.setProps({ modelValue: true });
@@ -830,7 +830,7 @@ describe("QuickPlotModal", () => {
 it("does not round micro-scale range or tabular values to zero",()=>{
   const wrapper=mount(QuickPlotModal,{props:{embedded:true,modelValue:true,nodeType:"",nodeLabel:"micro",nodeOutput:{data:[[1e-8,2e-8]],metadata:{}}},global:{stubs:globalStubs}});
   expect(wrapper.text()).toContain("1.0000e-8");
-  expect((wrapper.vm as any).dataPreview[0].col_0).toBe("1e-8");
+  expect((wrapper.vm as any).dataPreview[0].col_0).toBe("1.00000e-8");
   wrapper.unmount();
 });
 

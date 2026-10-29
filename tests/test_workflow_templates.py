@@ -2304,6 +2304,7 @@ async def test_qualified_canonical_project_contract_persists_scientist_and_candi
                 "component_curve_max": 10,
                 "component_cv_folds": 5,
                 "component_selection_rule": "manual_parameter",
+                "component_fit_mode": "one_standard_error",
             },
         ),
         ("candidate_evaluator", "diagnostics.regression_evaluator", {"target_names": []}),

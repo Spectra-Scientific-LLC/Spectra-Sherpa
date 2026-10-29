@@ -7,7 +7,7 @@ import type { DataSelectionReceipt } from "@/utils/workflowDataSelection";
 
 const scope = await vi.hoisted(async () => {
   const { reactive } = await import("vue");
-  return reactive({ projectId: 7, userId: 1, revision: 0, sheetId: 1 });
+  return reactive({ projectId: 7, userId: 1, revision: 0, sheetId: 1, userRefresh: 0, sheetRefresh: 0 });
 });
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
@@ -26,11 +26,11 @@ vi.mock("@/composables/usePrimaryNavigation", () => ({ usePrimaryNavigation: () 
   items: { value: mocks.optimization ? [{ label: "Optimize", to: "/contributed-destination" }] : [] },
 }) }));
 
-vi.mock("@/stores/auth", () => ({ useAuthStore: () => ({ get user() { return { id: scope.userId }; }, get sessionRevision() { return scope.revision; } }) }));
+vi.mock("@/stores/auth", () => ({ useAuthStore: () => ({ get user() { return { id: scope.userId, name: String(scope.userRefresh) }; }, get sessionRevision() { return scope.revision; } }) }));
 
 vi.mock("@/api", () => ({ api: { get: mocks.apiGet, post: mocks.apiPost } }));
 vi.mock("@/stores/workbook", () => ({
-  useWorkbookStore: () => ({ get projectId() { return scope.projectId; }, get activeSheet() { return { workflowId: scope.sheetId }; }, openTemplateAsSheet: mocks.openTemplateAsSheet }),
+  useWorkbookStore: () => ({ get projectId() { return scope.projectId; }, get activeSheet() { return { workflowId: scope.sheetId, name: String(scope.sheetRefresh) }; }, openTemplateAsSheet: mocks.openTemplateAsSheet }),
 }));
 vi.mock("@/stores/workflow", () => ({
   useWorkflowStore: () => ({ nodes: mocks.workflowNodes }),
@@ -115,6 +115,21 @@ describe("TemplatePickerDialog", () => {
     wrapper.unmount();
   });
 
+  it.each(["projectId", "userId", "revision", "sheetId"] as const)("reloads after same-tick %s A-B-A", async (key) => {
+    readyScopeResponses();
+    let finish!: (value: object) => void;
+    mocks.apiPost.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const wrapper = mount(TemplatePickerDialog, { props: { visible: false } });
+    await wrapper.setProps({ visible: true }); await flushPromises();
+    const original = scope[key]; scope[key] = original + 1; scope[key] = original;
+    await flushPromises();
+    finish({ data: null }); await flushPromises();
+    expect(wrapper.text()).not.toContain("Loading analysis starters");
+    expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toContain("Current portfolio");
+    expect(wrapper.findAll("button").find(button => button.text() === "Use Project Dataset")!.attributes("disabled")).toBeUndefined();
+    wrapper.unmount();
+  });
+
   it.each(["projectId", "userId", "revision", "sheetId"] as const)("rejects a late readiness reply across %s A-B-A", async (key) => {
     readyScopeResponses();
     let finish!: (value: object) => void;
@@ -193,7 +208,7 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.openTemplateAsSheet.mockReset();
-    Object.assign(scope, { projectId: 7, userId: 1, revision: 0, sheetId: 1 });
+    Object.assign(scope, { projectId: 7, userId: 1, revision: 0, sheetId: 1, userRefresh: 0, sheetRefresh: 0 });
     mocks.optimization = false;
     mocks.workflowNodes = [];
     mocks.apiPost.mockResolvedValue({ data: null });
@@ -242,7 +257,8 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
     });
   });
 
-  it.each([false, true])("names only the admitted portfolio and waits for the user (extra receipt: %s)", async (extraReceipt) => {
+  it.each([[false, "none"], [true, "none"], [false, "structural"], [false, "bound"]] as const)(
+    "names only the admitted portfolio and respects verification (extra receipt %s, failed %s)", async (extraReceipt, failedRequest) => {
     mocks.openTemplateAsSheet.mockResolvedValue({ name: "PCA" });
     mocks.apiGet.mockResolvedValue({
       data: {
@@ -331,6 +347,14 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
       receipt.datasets.push({ ...receipt.datasets[0], experiment_id: 99, dataset_name: "Unused portfolio" });
     }
 
+    mocks.apiPost.mockImplementation(async (url: string) => {
+      if ((failedRequest === "structural" && url.endsWith("/compatibility-preview")) ||
+          (failedRequest === "bound" && url.endsWith("/binding-compatibility-preview"))) {
+        throw new Error("Verification unavailable");
+      }
+      return { data: receipt.analysis_readiness };
+    });
+
     const wrapper = mount(TemplatePickerDialog, {
       props: { visible: false, dataSelection: receipt, preferredTemplateSlug: "pca" },
     });
@@ -338,6 +362,12 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
     await flushPromises();
 
     expect(mocks.openTemplateAsSheet).not.toHaveBeenCalled();
+    if (failedRequest === "bound") {
+      expect(wrapper.text()).toContain("Compatibility could not be established");
+      expect(wrapper.text()).not.toContain("Use Current Data");
+      wrapper.unmount();
+      return;
+    }
     expect(wrapper.text()).toContain("Suggested");
     expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toBe("Data Portfolio: Lavender");
     expect(wrapper.emitted("sheet-opened")).toBeUndefined();
@@ -431,6 +461,8 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
         diagnostics: [],
       },
     };
+
+    mocks.apiPost.mockResolvedValue({ data: receipt.analysis_readiness });
 
     const wrapper = mount(TemplatePickerDialog, {
       props: { visible: false, dataSelection: receipt },
@@ -571,6 +603,8 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
       },
     };
 
+    mocks.apiPost.mockResolvedValue({ data: receipt.analysis_readiness });
+
     const wrapper = mount(TemplatePickerDialog, {
       props: { visible: false, dataSelection: receipt },
     });
@@ -594,7 +628,7 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
     expect(regression?.text()).not.toContain("Use Current Data");
   });
 
-  it("requires an explicit held-out block before launching known-specimen repeatability", async () => {
+  it.each(["userRefresh", "sheetRefresh", "receipt"] as const)("preserves the explicit held-out choice across equivalent %s replacement", async (replacement) => {
     mocks.openTemplateAsSheet.mockResolvedValue({ name: "PLS-DA" });
     mocks.apiGet.mockResolvedValue({ data: { templates: [{
       id: 12, slug: "classification-plsda", name: "PLS-DA", category: "classification",
@@ -623,6 +657,7 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
           category: "classification", display_status: "compatible", status: "compatible",
           reason_codes: [], reasons: [] }], diagnostics: [] },
     } as DataSelectionReceipt;
+    mocks.apiPost.mockResolvedValue({ data: receipt.analysis_readiness });
     const wrapper = mount(TemplatePickerDialog, { props: { visible: false, dataSelection: receipt,
       preferredTemplateSlug: "classification-plsda" } });
     await wrapper.setProps({ visible: true });
@@ -632,7 +667,14 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
     const button = wrapper.findAll("button").find((candidate) => candidate.text() === "Use Current Data")!;
     expect(button.attributes("disabled")).toBeDefined();
     await wrapper.get('.tp-block-label input').setValue("3");
-    await button.trigger("click");
+    const requestCount = mocks.apiGet.mock.calls.length;
+    if (replacement === "receipt") await wrapper.setProps({ dataSelection: structuredClone(receipt) });
+    else scope[replacement] += 1;
+    await flushPromises();
+    expect(mocks.apiGet).toHaveBeenCalledTimes(requestCount);
+    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(true);
+    expect((wrapper.get('.tp-block-label input').element as HTMLInputElement).value).toBe("3");
+    await wrapper.findAll("button").find(candidate => candidate.text() === "Use Current Data")!.trigger("click");
     await flushPromises();
     expect(mocks.openTemplateAsSheet).toHaveBeenCalledWith(12, "PLS-DA", expect.objectContaining({
       validationGoal: "known_specimen_cross_block", heldOutGroups: ["3"],
@@ -723,9 +765,17 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(wrapper.text()).toContain("Requires a numeric target");
-    expect(wrapper.findAll(".tp-row button")).toHaveLength(0);
+    expect(wrapper.findAll(".tp-row button").map(button => button.text())).toEqual(["Set target in My Dataset"]);
     expect(wrapper.get(".tp-unavailable-status").text()).toBe("Not Available for Current Dataset");
     expect(mocks.routerPush).not.toHaveBeenCalled();
+    await wrapper.get(".tp-row button").trigger("click");
+    expect(mocks.routerPush).toHaveBeenLastCalledWith({ path: "/data", query: {
+      tab: "my-dataset", focus: "target", project_id: "7", experiment: "8",
+      targetFiles: "9", targetStage: "raw",
+    } });
+    expect(JSON.parse(window.sessionStorage.getItem("sherpa:data-entry-dataset-intent")!)).toMatchObject({
+      template_slug: "pls-regression", project_id: 7, imported_experiment_id: 8,
+    });
   });
 
   it("sends an absent saved definition as null, not the load node's empty digest", async () => {
@@ -1128,13 +1178,15 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
       },
     };
 
+    mocks.apiPost.mockResolvedValue({ data: receipt.analysis_readiness });
+
     const wrapper = mount(TemplatePickerDialog, {
       props: { visible: false, dataSelection: receipt },
     });
     await wrapper.setProps({ visible: true });
     await flushPromises();
 
-    expect(wrapper.findAll(".tp-row button")).toHaveLength(0);
+    expect(wrapper.findAll(".tp-row button").map(button => button.text())).toEqual(["Set target in My Dataset"]);
     expect(wrapper.get(".tp-unavailable-status").text()).toBe("Not Available for Current Dataset");
     expect(wrapper.get("[role=tooltip]").text()).toContain("Requires a numeric target");
     expect(wrapper.find(".tp-row-description").exists()).toBe(false);
@@ -1309,6 +1361,8 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
         diagnostics: [],
       },
     };
+
+    mocks.apiPost.mockResolvedValue({ data: receipt.analysis_readiness });
 
     const wrapper = mount(TemplatePickerDialog, {
       props: { visible: false, dataSelection: receipt },

@@ -91,6 +91,14 @@ describe("bootServerModules", () => {
     useAuthStore().user = { id: 1, username: "scientist", capabilities: { admin: false } };
   }
 
+  it("registers the unavailable-project destination on a fresh boot and refresh", async () => {
+    extensionConfig();
+    const router = makeRouter();
+    router.options.history.replace('/project-unavailable');
+    await bootServerModules(router, { importModule: async () => ({ register() {} }) });
+    expect(router.resolve('/project-unavailable').name).toBe('project-unavailable');
+  });
+
   it.each(["project_id", "project"])("restores the linked %s before extension registration", async (key) => {
     extensionConfig();
     const router = makeRouter();
@@ -124,10 +132,12 @@ describe("bootServerModules", () => {
     const router = makeRouter();
     router.options.history.replace(`/mock?project_id=${id}`);
     vi.spyOn(useProjectStore(), "fetchProject").mockResolvedValue(null);
-    const importModule = vi.fn();
+    const importModule = vi.fn(async () => ({ contextualActionsVersion: 1, register: vi.fn() }));
     await bootServerModules(router, { importModule });
-    expect(importModule).not.toHaveBeenCalled();
-    expect(serverModuleLoadFailed.value?.module).toBe("project");
+    expect(importModule).toHaveBeenCalled();
+    expect(serverModuleLoadFailed.value).toBeNull();
+    expect(router.currentRoute.value.name).toBe("project-unavailable");
+    expect(useProjectStore().currentProjectId).toBeNull();
     expect(useProjectStore().ensureProjectForBrowserTab).not.toHaveBeenCalled();
   });
 

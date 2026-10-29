@@ -238,9 +238,91 @@ def handoff_facts(tmp_path, monkeypatch):
         "after": len(split_after.evaluations),
         "reason": split_after.unavailable_reason,
     }
+    # Integrity failures remain distinct from an unreadable file. The unrelated
+    # valid calibration survives, but the invalid split never yields a plan.
+    import hashlib
+    import json
+
+    from spectra_sherpa.app.schemas.run_evidence import OutputEvidence
+    from spectra_sherpa.app.services.run_validation_summary import _split_summaries
+
+    original_wire = retention.read_output(
+        1, OutputEvidence.model_validate(split_run.evidence_completeness["outputs"]["unused_split"]["X_test"])
+    )
+    facts["invalid_split"] = {}
+    for failure in ("digest", "overlap"):
+        wire = copy.deepcopy(original_wire)
+        plan = next(p["parameters"] for p in wire["provenance"] if p["op_id"] == "data.train_test_split")
+        if failure == "digest":
+            plan["digest"] = "0" * 64
+        else:
+            plan["test_indices"][0] = plan["train_indices"][0]
+            unsigned = {k: v for k, v in plan.items() if k not in {"split", "digest"}}
+            plan["digest"] = hashlib.sha256(
+                json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+            ).hexdigest()
+        bad = retain_run(failure, {**base_outputs, "unused_split": {"X_test": wire}}, base_result.diagnostics)
+        errors = []
+        assert _split_summaries(bad, definition, on_read_error=lambda *args: errors.append(args)) == []
+        assert len(errors) == 1
+        resolved = resolve_run_evidence(bad)
+        facts["invalid_split"][failure] = {
+            "evaluations": len(resolved.evaluations),
+            "limitations": resolved.population.limitations,
+        }
+
     definition.clear()
     definition.update(base_definition)
+    capped = retain_run(
+        "budget",
+        {
+            **base_outputs,
+            "too_large": {"default": {"unused": True}},
+            "after_limit": {"default": {"must_not_read": True}},
+        },
+        base_result.diagnostics,
+    )
+    # Oversized declared length must stop before opening this or any later file.
+    capped.evidence_completeness["outputs"]["too_large"]["default"]["byte_count"] = 17 * 1024 * 1024
+    from spectra_sherpa.app.services import run_validation_summary as summary_module
 
+    opened = []
+    original_read = summary_module.read_output
+
+    def tracking_read(owner, item):
+        opened.append(item.sha256)
+        return original_read(owner, item)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(summary_module, "read_output", tracking_read)
+        resolved = resolve_run_evidence(capped)
+    for name in ("too_large", "after_limit"):
+        assert capped.evidence_completeness["outputs"][name]["default"]["sha256"] not in opened
+    facts["budget_partial"] = {"evaluations": len(resolved.evaluations), "limitations": resolved.population.limitations}
+
+    # A cap between two producers must not turn ambiguous evidence into a pair.
+    definition["nodes"].append({"node_id": "second_pls", "node_type": "model.fitted_pls"})
+    definition["edges"].extend([{**edge, "to_node_id": "second_pls"} for edge in base_definition["edges"]])
+    both = retain_run(
+        "ambiguous-producers",
+        {**base_outputs, "too_large": {"default": {"unused": True}}, "second_pls": base_result.outputs},
+        base_result.diagnostics,
+    )
+    complete = resolve_run_evidence(both)
+    both.evidence_completeness["outputs"]["too_large"]["default"]["byte_count"] = 17 * 1024 * 1024
+    partial = resolve_run_evidence(both)
+    facts["partial_ambiguity"] = {
+        "complete_count": len(complete.evaluations),
+        "partial_count": len(partial.evaluations),
+        "complete_state": calibration_pair(complete, complete),
+        "partial_state": calibration_pair(partial, partial),
+        "partial_metrics": next(
+            section.metric_values
+            for section in compare_evidence([partial, partial]).pairs[0].sections
+            if section.role == "calibration"
+        ),
+        "incomplete_roles": partial.incomplete_roles,
+    }
     return facts
 
 
@@ -283,3 +365,25 @@ def test_external_array_never_borrows_unrelated_predictor_target_units(handoff_f
 def test_unrelated_missing_split_does_not_erase_other_verified_evaluations(handoff_facts):
     facts = handoff_facts["unrelated_split_missing_X_train"]
     assert facts["before"] == facts["after"] == 1
+
+
+@pytest.mark.parametrize("failure", ["digest", "overlap"])
+def test_bad_split_is_explicitly_unqualified_without_erasing_independent_result(handoff_facts, failure):
+    result = handoff_facts["invalid_split"][failure]
+    assert result["evaluations"] == 1
+    assert any("failed integrity" in message for message in result["limitations"])
+    assert not any("could not be read" in message for message in result["limitations"])
+
+
+def test_read_cap_preserves_verified_results_with_explicit_partial_notice(handoff_facts):
+    result = handoff_facts["budget_partial"]
+    assert result["evaluations"] == 1
+    assert any("Comparison incomplete" in message and "16 MiB" in message for message in result["limitations"])
+
+
+def test_partial_inventory_cannot_remove_producer_ambiguity(handoff_facts):
+    result = handoff_facts["partial_ambiguity"]
+    assert result["complete_count"] == 2 and result["partial_count"] == 1
+    assert result["complete_state"] == result["partial_state"] == "descriptive_only"
+    assert "calibration" in result["incomplete_roles"]
+    assert all("delta" not in metric for metric in result["partial_metrics"].values())
