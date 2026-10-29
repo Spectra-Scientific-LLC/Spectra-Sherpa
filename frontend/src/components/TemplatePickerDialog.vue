@@ -443,7 +443,7 @@ const selectedReceiptBinding = (): TemplateDataBinding | null => {
 // otherwise the verified project choice, otherwise a bound source on the sheet.
 // Do not label the modal from a stale sheet when the project choice is in use.
 const currentPortfolioName = computed(() => {
-  if (projectDatasetChoiceError.value) return null;
+  if (loading.value || projectDatasetChoiceError.value) return null;
   const binding = selectedReceiptBinding() ?? currentPrimaryDataBinding();
   return binding ? binding.displayName || "Current source selection" : null;
 });

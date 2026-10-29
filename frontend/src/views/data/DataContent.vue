@@ -5303,7 +5303,18 @@ function workflowExperimentIds(): number[] {
 
 function workflowSelectionForExperiment(experimentId: number): PlotFileSelection {
   const portfolio = experimentId === dataStore.activeExperimentId ? currentPortfolioView.value : null;
-  if (portfolio && portfolio.selection.selected_file_ids == null) return null;
+  if (portfolio) {
+    if (portfolio.selection.selected_file_ids == null) return null;
+    // sourcePortfolioView has verified the same file membership. Preserve the
+    // saved order too: its digest binds a sequence, not just a set of IDs.
+    const selected = plotFileSelections.value[experimentId];
+    if (Array.isArray(selected)) {
+      const byId = new Map(selected.map((file) => [file.id, file]));
+      return portfolio.selection.selected_file_ids.map((id) => ({
+        ...byId.get(id)!, stage: portfolio.selection.stage,
+      }));
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(plotFileSelections.value, experimentId)) {
     return plotFileSelections.value[experimentId];
   }

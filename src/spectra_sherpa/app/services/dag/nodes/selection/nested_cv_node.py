@@ -29,6 +29,7 @@ from sklearn.model_selection import KFold
 
 import spectra_sherpa.app.services.dag.regression_comparison as regression_comparison
 import spectra_sherpa.sdk.validate as sdk_validate
+from spectra_sherpa.app.lib import comparison_identity, sample_identity
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
@@ -954,6 +955,8 @@ bind_stable_execution_contract(
     license_id="Apache-2.0",
     help_reference="docs/nodes/selection-validation.md",
     implementation_modules=(
+        comparison_identity,
+        sample_identity,
         out_of_fold_evidence,
         _vip,
         cars_node,

@@ -151,14 +151,14 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         "model.parafac": "caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
         "classification.plsda": "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
         "model.load_apply": "272022dfaa41de8e593ed606612f4a3fd00d8fed2b0e8ca7080d33786bc43ee2",
-        "model.apply_fitted_linear_regression": "0b17e504f91c2ea20a85a74bd3bdc22e01f52f50911be18a840d21883154000c",
-        "model.apply_fitted_pcr": "8f887ca24cdc30332b44bc6f2dd55a3afecf9b061ff81508d90b4b0b28eccf2e",
+        "model.apply_fitted_linear_regression": "d2d1306c1b29286f1103349c9bf961428dd17c065054a024e1efe4d7f2428495",
+        "model.apply_fitted_pcr": "6663dc32859dd2b7552ec3c22bc608173a24ad032bc96fe9a82b5fb8ec0b25fe",
         "model.apply_fitted_pls": "cd9c84a4d7b44d1768db8f627418c8e04899a2a1fb8b8aeb44016cbaa42df648",
-        "model.apply_fitted_svr": "b88b5fdbfd93a89e51e8758d9fcd02ea3b3ef08d7fbf520f68156f0f2db8aadb",
-        "model.fitted_linear_regression": "953c95ef58def16768d7280ee71e94f3837ab7d3d2076d48999804df3e32af23",
-        "model.fitted_pcr": "754a5a53c49fda40269196838397458ffa26d6542953b2200c595e8d4a298f2a",
-        "model.fitted_pls": "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
-        "model.fitted_svr": "4e8a05f4ca0147570f038542448c3391444ee5df09405c8a37a506599cb66344",
+        "model.apply_fitted_svr": "492ef1eb3ed2bda68cd34e7c100fc3f196e45045b26246199de937ed4a1d7c6b",
+        "model.fitted_linear_regression": "f28fc334028632f8bfce32aded3019e2d4094846825d0573b743f8b513b4f69f",
+        "model.fitted_pcr": "af58a7e90bc1a7dffae447ab12048fa8b702ec493a86c256711ef0a3ccce2f63",
+        "model.fitted_pls": "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
+        "model.fitted_svr": "598257753f8ef867cf069372e8cdfb88d1a2ba3f6a862b12a8afd12e41b11179",
     }
     reviewed_changes = {
         "model.apply_fitted_linear_regression": [
@@ -261,6 +261,8 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
     reviewed_changes["model.fitted_pls"] = sorted(
         [
             *reviewed_changes["model.fitted_pls"],
+            "spectra_sherpa.app.lib.comparison_identity",
+            "spectra_sherpa.app.lib.sample_identity",
             "spectra_sherpa.app.services.dag.regression_comparison",
         ]
     )

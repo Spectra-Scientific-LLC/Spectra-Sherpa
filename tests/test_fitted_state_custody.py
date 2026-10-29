@@ -70,11 +70,11 @@ def test_custody_capabilities_bind_the_current_registered_execution_contracts() 
     }
     expected.update(
         {
-            FITTED_PLS_STATE_SERIALIZER: "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
-            "spectrasherpa.model.fitted_pcr/1": "754a5a53c49fda40269196838397458ffa26d6542953b2200c595e8d4a298f2a",
-            "spectrasherpa.model.fitted_svr/1": "4e8a05f4ca0147570f038542448c3391444ee5df09405c8a37a506599cb66344",
+            FITTED_PLS_STATE_SERIALIZER: "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
+            "spectrasherpa.model.fitted_pcr/1": "af58a7e90bc1a7dffae447ab12048fa8b702ec493a86c256711ef0a3ccce2f63",
+            "spectrasherpa.model.fitted_svr/1": "598257753f8ef867cf069372e8cdfb88d1a2ba3f6a862b12a8afd12e41b11179",
             "spectrasherpa.model.fitted_linear_regression/1": (
-                "953c95ef58def16768d7280ee71e94f3837" "ab7d3d2076d48999804df3e32af23"
+                "f28fc334028632f8bfce32aded3019e2d4094846825d0573b743f8b513b4f69f"
             ),
             PLSDA_FITTED_STATE_SERIALIZER: "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
             "spectra.scale-reference-json.v2": "5bcce28bb446d20a2a5f1a44b43d10dc5d98c69e1b981d831151885b069b41e8",

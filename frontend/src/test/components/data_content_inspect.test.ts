@@ -1629,6 +1629,28 @@ describe("DataContent file inspection", () => {
     })]);
   });
 
+  it("uses the saved explicit file order when the display list is reordered", async () => {
+    const view = { ...savedDatasetView(93), name: "Ordered portfolio",
+      selection: { ...savedDatasetView(93).selection, selected_file_ids: [23, 22] } };
+    mocks.dataStore.experimentFiles.push({ ...mocks.dataStore.experimentFiles[0], id: 23, file_path: "raw/second.csv" });
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({
+      data: url.endsWith("/dataset-views/93") ? view : url.endsWith("/dataset-views") ? [view] : {},
+    } as never));
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    await vm.showDatasetView(view);
+    await flushPromises();
+    vm.plotFileSelections = { 11: [...mocks.dataStore.experimentFiles] };
+    await flushPromises();
+    expect(vm.currentPortfolioView).toMatchObject({ id: 93 });
+    await vm.goToWorkflow();
+    expect(latestWorkflowReceipt()?.datasets).toEqual([expect.objectContaining({
+      dataset_name: "Ordered portfolio", dataset_view_id: 93,
+      dataset_view_sha256: view.selection_sha256, selection: "subset", file_ids: [23, 22], stage: "raw",
+    })]);
+  });
+
   it("refuses a plain save that would silently drop a deselected sample", async () => {
     const wrapper = mountDataContent();
     await flushPromises();

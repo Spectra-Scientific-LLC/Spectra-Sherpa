@@ -289,7 +289,7 @@ def map_process_log(
             labels=labels,
             title="Wafer",
             sample_table={
-                # Wafer names are display labels, not unique observation IDs.
+                "sample_id": labels,
                 "source_partition": partitions,
                 "fault_name": faults,
                 "time_point_count": counts,

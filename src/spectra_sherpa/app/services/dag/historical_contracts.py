@@ -42,7 +42,7 @@ class HistoricalValidationGraph(ValidationGraph):
 _INSPECTION_CONSUMERS = {
     "diagnostics.regression_evaluator": (
         "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
-        "e8dfebf9c73e28bdb6269421c05279968f2f83506d9f7501f57bdc474188d0a3",
+        "aa784905102025d9771db83c7339ba323e7cce5e407f4af90d764ffe7413beab",
     ),
     "baseline.penalized_ls": (
         "b3b824ef38585a9f7e1e673f2369f03c3d2e4900028168f79948aa35592095da",
@@ -118,31 +118,31 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",
-        "0b17e504f91c2ea20a85a74bd3bdc22e01f52f50911be18a840d21883154000c",
+        "d2d1306c1b29286f1103349c9bf961428dd17c065054a024e1efe4d7f2428495",
     ),
     "model.apply_fitted_pcr": (
         "1aecb57326c2c3a8f71823a035cbcb2f21be34d72a3049daedcc5e67a399f2e9",
-        "8f887ca24cdc30332b44bc6f2dd55a3afecf9b061ff81508d90b4b0b28eccf2e",
+        "6663dc32859dd2b7552ec3c22bc608173a24ad032bc96fe9a82b5fb8ec0b25fe",
     ),
     "model.apply_fitted_svr": (
         "244fe3defede23aefb869e74d97034600b1a73c9abb63694fb6101ed2fea9c34",
-        "b88b5fdbfd93a89e51e8758d9fcd02ea3b3ef08d7fbf520f68156f0f2db8aadb",
+        "492ef1eb3ed2bda68cd34e7c100fc3f196e45045b26246199de937ed4a1d7c6b",
     ),
     "model.fitted_linear_regression": (
         "04d5ea448432137158df7b412286a17a5fe3498f5589ce53b33414fad2388b2b",
-        "953c95ef58def16768d7280ee71e94f3837ab7d3d2076d48999804df3e32af23",
+        "f28fc334028632f8bfce32aded3019e2d4094846825d0573b743f8b513b4f69f",
     ),
     "model.fitted_pcr": (
         "a207b7fc520763105b633ca6d99eb267872c38ed54dc6854082b7be1bd1756b8",
-        "754a5a53c49fda40269196838397458ffa26d6542953b2200c595e8d4a298f2a",
+        "af58a7e90bc1a7dffae447ab12048fa8b702ec493a86c256711ef0a3ccce2f63",
     ),
     "model.fitted_pls": (
         "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
-        "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
+        "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
     ),
     "model.fitted_svr": (
         "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
-        "4e8a05f4ca0147570f038542448c3391444ee5df09405c8a37a506599cb66344",
+        "598257753f8ef867cf069372e8cdfb88d1a2ba3f6a862b12a8afd12e41b11179",
     ),
 }
 

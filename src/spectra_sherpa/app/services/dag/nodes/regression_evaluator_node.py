@@ -17,6 +17,7 @@ import numpy as np
 
 import spectra_sherpa.app.services.dag.regression_comparison as regression_comparison
 import spectra_sherpa.sdk.validate as sdk_validate
+from spectra_sherpa.app.lib import comparison_identity, sample_identity
 from spectra_sherpa.app.lib.sample_identity import require_matching_sample_identity, sample_ids
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag.node_base import (
@@ -309,7 +310,7 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/selection-validation.md",
-    implementation_modules=(sdk_validate, regression_comparison),
+    implementation_modules=(comparison_identity, sample_identity, sdk_validate, regression_comparison),
     implementation_distributions=("numpy", "scikit-learn"),
     runtime_requirements=(("numpy", "1.26.4"), ("scikit-learn", "1.9.0"), ("scipy", "1.17.1")),
     managed_optimization_profiles=("first_party_pls",),

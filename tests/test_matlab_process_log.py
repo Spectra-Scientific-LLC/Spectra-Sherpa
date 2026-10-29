@@ -86,6 +86,7 @@ def test_matlab_process_log_preserves_wafer_time_feature_authority(tmp_path: Pat
     assert dataset.feature_axis.values.tolist() == [250.0, 300.0]
     assert dataset.sample_axis.labels == ["cal-1", "cal-2", "test-1"]
     assert dataset.sample_axis.sample_table == {
+        "sample_id": ["cal-1", "cal-2", "test-1"],
         "source_partition": ["calibration", "calibration", "test"],
         "fault_name": ["normal", "normal", "fault-a"],
         "time_point_count": [2, 3, 2],
@@ -253,8 +254,12 @@ def test_registered_process_log_materialization_records_repeatable_explicit_aver
     assert first.portable_reference["native_reader_contract"] == "spectrasherpa.matlab-process-log/1"
 
 
-def test_repeated_wafer_names_are_labels_not_observation_ids(tmp_path):
+def test_repeated_wafer_names_preserve_legacy_payload_without_qualifying_identity(tmp_path):
     source, _, _ = _write_process_log(tmp_path / "replicates.mat", names=("S1", "S1", "S1"))
     dataset = ingest(source).assets[0].dataset
     assert dataset.sample_axis.labels == ["S1", "S1", "S1"]
-    assert "sample_id" not in dataset.sample_axis.sample_table
+    assert dataset.sample_axis.sample_table["sample_id"] == ["S1", "S1", "S1"]
+    from spectra_sherpa.app.lib.comparison_identity import comparison_sample_ids
+
+    ids, reason = comparison_sample_ids(dataset)
+    assert ids is None and "legacy importer" in reason

@@ -17,6 +17,7 @@ import spectra_sherpa.app.services.dag.nodes.regression_evaluator_node as canoni
 import spectra_sherpa.app.services.dag.presentation_limits as presentation_limits
 import spectra_sherpa.app.services.dag.regression_comparison as regression_comparison
 import spectra_sherpa.sdk.validate as sdk_validate
+from spectra_sherpa.app.lib import comparison_identity, sample_identity
 from spectra_sherpa.app.services.dag.node_base import NodeResult, PortMetadata, register_node
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.core.target_units import resolve_target_units
@@ -173,6 +174,8 @@ bind_stable_execution_contract(
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/selection-validation.md",
     implementation_modules=(
+        comparison_identity,
+        sample_identity,
         canonical_evaluator,
         regression_comparison,
         sdk_validate,

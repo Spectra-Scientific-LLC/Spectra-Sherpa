@@ -75,7 +75,7 @@ class LockedRotatingFileHandler(logging.handlers.RotatingFileHandler):
         locked = False
         try:
             fd = os.open(self.baseFilename + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
-            if os.name == "nt":
+            if sys.platform == "win32":
                 import msvcrt
 
                 msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
@@ -99,7 +99,7 @@ class LockedRotatingFileHandler(logging.handlers.RotatingFileHandler):
             if fd is not None:
                 try:
                     if locked:
-                        if os.name == "nt":
+                        if sys.platform == "win32":
                             import msvcrt
 
                             os.lseek(fd, 0, os.SEEK_SET)
@@ -162,8 +162,12 @@ class BufferHandler(logging.Handler):
             self.handleError(record)
 
 
-def configure_logging(level: int = logging.INFO) -> None:
+def configure_logging(level: int | None = None) -> None:
     from spectra_sherpa.app.core.request_id import install_request_id_log_factory
+
+    if level is None:
+        configured = logging.getLevelName(os.environ.get("LOG_LEVEL", "INFO").strip().upper())
+        level = configured if isinstance(configured, int) else logging.INFO
 
     # Install once before any handler is added: this sets
     # ``record.request_id`` at LogRecord creation time, so handler
@@ -224,6 +228,6 @@ def configure_logging(level: int = logging.INFO) -> None:
         logging.getLogger("gunicorn.error"),
     ):
         for handler in logger.handlers:
-            handler.handleError = MethodType(_safe_sink_error, handler)
+            setattr(handler, "handleError", MethodType(_safe_sink_error, handler))
             if not isinstance(handler.formatter, RedactingFormatter):
                 handler.setFormatter(RedactingFormatter(handler.formatter))

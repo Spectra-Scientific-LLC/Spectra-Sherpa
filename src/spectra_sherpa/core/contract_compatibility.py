@@ -851,8 +851,9 @@ _HANDOFF_PRESENTATION_PREDECESSORS = tuple(
         (
             "model.fitted_linear_regression",
             "spectrasherpa.model.fitted_linear_regression/1",
-            "953c95ef58def16768d7280ee71e94f3837ab7d3d2076d48999804df3e32af23",
+            "f28fc334028632f8bfce32aded3019e2d4094846825d0573b743f8b513b4f69f",
             (
+                "953c95ef58def16768d7280ee71e94f3837ab7d3d2076d48999804df3e32af23",
                 "04d5ea448432137158df7b412286a17a5fe3498f5589ce53b33414fad2388b2b",
                 "0ba997bbc87209703db011f38850ee82d93027bb72ab28db27aa108a8f9cca9a",
                 "10b125ffb88229b92cfe1eac67e5717117cfdf57d485b3e370abb2ef8910f6a7",
@@ -867,8 +868,9 @@ _HANDOFF_PRESENTATION_PREDECESSORS = tuple(
         (
             "model.fitted_pcr",
             "spectrasherpa.model.fitted_pcr/1",
-            "754a5a53c49fda40269196838397458ffa26d6542953b2200c595e8d4a298f2a",
+            "af58a7e90bc1a7dffae447ab12048fa8b702ec493a86c256711ef0a3ccce2f63",
             (
+                "754a5a53c49fda40269196838397458ffa26d6542953b2200c595e8d4a298f2a",
                 "18c724b705c6c1331a82a45e7c4f7c2c8a6c4b91fb375385e3e146f3f39b9b11",
                 "577777179c36fedf0338c84a003e9080aa8879043e2ad0e19e7dccc5f618c201",
                 "7a58390a7bfb79ed0e7920dae41c2de5a3d8c6d8ca323754c3000fb9cd6cf4a4",
@@ -883,8 +885,9 @@ _HANDOFF_PRESENTATION_PREDECESSORS = tuple(
         (
             "model.fitted_pls",
             "spectra.sherpa-simpls-regression-json/9",
-            "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
+            "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
             (
+                "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
                 "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
                 "3939dc715653c735c11d3993942bd8e8baf5343fd42e21341d5cde130dafdde3",
                 "473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
@@ -897,8 +900,9 @@ _HANDOFF_PRESENTATION_PREDECESSORS = tuple(
         (
             "model.fitted_svr",
             "spectrasherpa.model.fitted_svr/1",
-            "4e8a05f4ca0147570f038542448c3391444ee5df09405c8a37a506599cb66344",
+            "598257753f8ef867cf069372e8cdfb88d1a2ba3f6a862b12a8afd12e41b11179",
             (
+                "4e8a05f4ca0147570f038542448c3391444ee5df09405c8a37a506599cb66344",
                 "0daa0a05e555974ab7810bc97ddecc09abb00c24f7b5f6014be8a99aaee1b97b",
                 "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
                 "321d4a0411f164d20a3904dc438d886b1fb807c19200a2bb640ceaeb6169fc24",

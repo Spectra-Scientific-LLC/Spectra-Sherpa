@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.lib.sherpa_dataset import DatasetSourceIdentity, Provenance, SherpaDataset
 from spectra_sherpa.app.services import run_output_retention as retention
 from spectra_sherpa.app.services.dag.nodes.data.split_planner import materialize_split_outputs, plan_train_test_split
 from spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node import FittedPLSV2Node
@@ -18,13 +18,39 @@ from spectra_sherpa.app.services.dag.regression_comparison import build_regressi
 from spectra_sherpa.app.services.scientific_comparison import compare_evidence, resolve_run_evidence
 
 
-def retained_run(prefix, *, label_prefix="display", collection="a", typed=True, comparison_ids=None):
+def retained_run(
+    prefix,
+    *,
+    label_prefix="display",
+    collection="a",
+    typed=True,
+    comparison_ids=None,
+    source_format=None,
+    identity_unavailable=False,
+):
     x = np.arange(36, dtype=float).reshape(12, 3)
     y = np.arange(12, dtype=float)
     plan = plan_train_test_split(x, y, method="random")
     source = SherpaDataset(
         X=x,
         target=y,
+        source_identity=DatasetSourceIdentity(source_format=source_format) if source_format else None,
+        provenance=(
+            Provenance.from_list(
+                [
+                    {
+                        "op_id": (
+                            "import.matlab_dso" if source_format == "eigenvector-dso" else "import.matlab_process_log"
+                        ),
+                        "op_version": "1.0",
+                        "parameters": {},
+                        "timestamp": "",
+                    }
+                ]
+            )
+            if source_format
+            else None
+        ),
         sample_axis=SampleAxis(
             labels=[f"{label_prefix}-{i}" for i in range(12)],
             sample_table={"sample_id": [f"{prefix}-{i}" for i in range(12)]} if typed else None,
@@ -46,6 +72,8 @@ def retained_run(prefix, *, label_prefix="display", collection="a", typed=True, 
         "population": ["split", "test"],
         "fitted_populations": [["split", "train"]],
     }
+    if identity_unavailable:
+        comparison["metadata"]["sample_identity_unavailable"] = "Unavailable identity origin"
     if comparison_ids is not None:
         comparison["metadata"]["sample_ids"] = comparison_ids
     return SimpleNamespace(
@@ -433,7 +461,7 @@ def test_missing_training_port_preserves_other_retained_evaluations(tmp_path, mo
 
 
 @pytest.mark.parametrize("declared_ids", [None, ["scan-1", "scan-2", "scan-3"]])
-def test_mat_pair_keeps_replicate_labels_separate_from_declared_ids(monkeypatch, tmp_path, declared_ids):
+def test_mat_pair_preserves_historical_identity_payload(monkeypatch, tmp_path, declared_ids):
     import spectra_sherpa.io as io
     from spectra_sherpa.app.lib.eigenvector import load_eigenvector_mat_pair_as_sherpa
 
@@ -464,7 +492,9 @@ def test_mat_pair_keeps_replicate_labels_separate_from_declared_ids(monkeypatch,
         technique="NIR",
     )
     assert loaded.sample_axis.labels == ["S1", "S1", "S1"]
-    assert loaded.sample_axis.sample_table.get("sample_id") == declared_ids
+    # Keep the historical payload until a versioned source migration exists.
+    # Even unique label copies do not establish declared observation identity.
+    assert loaded.sample_axis.sample_table.get("sample_id") == ["S1", "S1", "S1"]
 
 
 @pytest.mark.parametrize("grid", [[600.0, 600.0, 602.0], [600.0, 602.0, 601.0]])
@@ -482,3 +512,168 @@ def test_mcr_rejects_ambiguous_grid_order_even_when_truth_matches(grid):
     reasons = []
     assert _compare_mcr_spectra_to_truth(np.array([[1.0, 3.0, 2.0]]), dataset, unavailable_reasons=reasons) is None
     assert reasons == ["Spectral truth comparison unavailable: physical coordinates differ."]
+
+
+@pytest.mark.parametrize("ids", [["S1"] * 20, [""] * 20])
+@pytest.mark.asyncio
+async def test_optional_comparison_identity_does_not_fail_embedded_target_pls(ids):
+    rng = np.random.default_rng(2026)
+    x = rng.normal(size=(20, 5))
+    y = x[:, 0] + 0.1 * x[:, 1]
+    source = SherpaDataset(
+        X=x,
+        target=y,
+        sample_axis=SampleAxis(
+            labels=[f"scan-{i}" for i in range(20)],
+            sample_table={"sample_id": ids},
+        ),
+    )
+    node = FittedPLSV2Node(node_id="pls", parameters={"n_components": 2})
+    result = await node.execute(source)
+    comparison = result.outputs["calibration_comparison"]
+    assert comparison["metadata"]["sample_identity"] == "unavailable"
+    assert "sample_ids" not in comparison["metadata"]
+    assert len(comparison["data"]) == 20
+    assert comparison["data"][0]["sample"] == "scan-0"
+    from spectra_sherpa.app.lib.sample_identity import sample_ids
+
+    with pytest.raises(ValueError, match="unique"):
+        sample_ids(source)  # Actual identity consumers remain strict.
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"source_format": "eigenvector-dso"},
+        {"source_format": "matlab-process-log"},
+        {"identity_unavailable": True},
+    ],
+)
+def test_legacy_or_explicitly_unavailable_identity_cannot_requalify(tmp_path, monkeypatch, kwargs):
+    monkeypatch.setattr(retention, "settings", replace(retention.settings, data_dir=tmp_path))
+    result = resolve_run_evidence(retained_run("A", **kwargs))
+    assert not result.evaluations
+    assert result.unavailable_reason
+
+
+def test_genuine_typed_ids_equal_to_labels_remain_qualified_for_annotation():
+    source = SherpaDataset(
+        X=np.ones((3, 2)),
+        sample_axis=SampleAxis(
+            labels=["one", "two", "three"],
+            sample_table={"sample_id": ["one", "two", "three"]},
+        ),
+    )
+    comparison = build_regression_comparison([1, 2, 3], [1.1, 2.1, 3.1], role="calibration", sample_dataset=source)
+    assert comparison["metadata"]["sample_ids"] == ["one", "two", "three"]
+    assert comparison["metadata"]["sample_identity"] == "typed_sample_id"
+
+
+@pytest.mark.parametrize("contradictory", [False, True])
+def test_evaluator_legacy_origin_refusal_preserves_results_but_not_conflicting_ids(contradictory):
+    from copy import deepcopy
+
+    target = SherpaDataset(
+        X=np.arange(4.0).reshape(-1, 1),
+        sample_axis=SampleAxis(sample_table={"sample_id": ["a", "b", "c", "d"]}),
+    )
+    result = evaluate_regression_v2(target.X + 0.1, target)
+    comparison = result.outputs["comparison"]
+    before = deepcopy(comparison)
+    source = SherpaDataset(
+        X=np.ones((4, 2)),
+        sample_axis=SampleAxis(
+            sample_table={"sample_id": ["b", "a", "c", "d"] if contradictory else ["a", "b", "c", "d"]}
+        ),
+        source_identity=DatasetSourceIdentity(source_format="eigenvector-dso"),
+    )
+    receipt = {
+        "role": "held_out_test",
+        "qualification": "graph_verified",
+        "population": ["split", "test"],
+        "fitted_populations": [["split", "train"]],
+    }
+    if contradictory:
+        with pytest.raises(ValueError, match="identities disagree"):
+            qualify_evaluation_result(result, receipt, source_results={"split": {"X_test": source}})
+        return
+    qualify_evaluation_result(result, receipt, source_results={"split": {"X_test": source}})
+    assert comparison["statistics"] == before["statistics"]
+    assert comparison["data"] == [{**row, "role": "held_out_test"} for row in before["data"]]
+    assert comparison["metadata"]["sample_identity"] == "unavailable"
+    assert "sample_ids" not in comparison["metadata"]
+
+
+def test_rebinding_cannot_erase_producer_identity_refusal():
+    from copy import deepcopy
+
+    from spectra_sherpa.app.services.dag.regression_comparison import bind_regression_sample_axis
+
+    legacy = SherpaDataset(
+        X=np.ones((3, 2)),
+        sample_axis=SampleAxis(labels=["a", "b", "c"], sample_table={"sample_id": ["a", "b", "c"]}),
+        source_identity=DatasetSourceIdentity(source_format="matlab-process-log"),
+    )
+    comparison = build_regression_comparison([1, 2, 3], [1.1, 2.1, 3.1], role="calibration", sample_dataset=legacy)
+    before = deepcopy(comparison)
+    generic = SherpaDataset(X=legacy.X, sample_axis=legacy.sample_axis.copy())
+    bind_regression_sample_axis(comparison, generic)
+    assert comparison == before
+    assert comparison["metadata"]["sample_identity"] == "unavailable"
+    assert "sample_ids" not in comparison["metadata"]
+
+
+@pytest.mark.parametrize(
+    "array, expected",
+    [
+        (np.array([[1.0, np.nan], [2.0, 3.0]]), "a6de65f9cd1e4e30201e7347e13e1aed6267ee5fb42a9a316924442854a2e1fa"),
+        (np.array([["A"], ["B"]]), "5e4daa6fd14cba4e3ee9b6e09e18df9556f0c2e0c685b7b3fafbd23fc7f26829"),
+        (np.array([1, 2, 3]), "9b608210261719aa44d067585746ea013de441afc0e43ac92a6f7cb58a50ad77"),
+    ],
+)
+def test_shared_array_identity_preserves_pre_refactor_digests(array, expected):
+    from spectra_sherpa.app.lib.array_identity import array_content_digest
+
+    assert array_content_digest(array) == expected
+
+
+@pytest.mark.parametrize(
+    "operation, helper",
+    [
+        ("data.train_test_split", "array_identity"),
+        ("model.fitted_pls", "comparison_identity"),
+        ("diagnostics.regression_evaluator", "comparison_identity"),
+        ("diagnostics.labeled_regression_evaluator", "comparison_identity"),
+        ("selection.nested_cv", "comparison_identity"),
+        ("output.plot", "comparison_identity"),
+    ],
+)
+def test_extracted_helpers_remain_in_explicit_scientific_contract(operation, helper):
+    import hashlib
+    import importlib
+    from pathlib import Path
+
+    from spectra_sherpa.app.services.dag import node_registry
+
+    contract = node_registry.get_metadata(operation).resolved_execution_contract()
+    components = {item["component_id"]: item["digest"] for item in contract.payload["implementation_components"]}
+    for name in (helper, "sample_identity"):
+        module = importlib.import_module(f"spectra_sherpa.app.lib.{name}")
+        assert components[module.__name__] == hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("origin", ["eigenvector-dso", "matlab-process-log"])
+def test_renamed_and_mixed_legacy_origins_remain_explicitly_unqualified(origin):
+    from spectra_sherpa.app.lib.comparison_identity import comparison_sample_ids
+
+    source = SherpaDataset(
+        X=np.ones((3, 2)),
+        title="Renamed by user",
+        sample_axis=SampleAxis(
+            labels=["A", "B", "C"],
+            sample_table={"sample_id": ["A", "B", "C"]},
+        ),
+        extra={"source_member_metadata": [{"source_identity": {"source_format": origin}}]},
+    )
+    ids, reason = comparison_sample_ids(source)
+    assert ids is None and "identity-origin proof" in reason

@@ -9,7 +9,7 @@ from typing import Any, Mapping, cast
 import numpy as np
 
 import spectra_sherpa.app.services.dag.regression_comparison as regression_comparison
-from spectra_sherpa.app.lib import numerical_scaling, pca_numerics
+from spectra_sherpa.app.lib import comparison_identity, numerical_scaling, pca_numerics, sample_identity
 from spectra_sherpa.app.services.dag.feature_axis_identity import (
     feature_axis_identity as _canonical_feature_axis_identity,
 )
@@ -856,6 +856,8 @@ bind_stable_execution_contract(
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/regression.md",
     implementation_modules=(
+        comparison_identity,
+        sample_identity,
         pca_numerics,
         numerical_scaling,
         component_validation,

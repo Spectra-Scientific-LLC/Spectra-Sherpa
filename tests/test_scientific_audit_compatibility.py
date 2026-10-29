@@ -40,16 +40,16 @@ _REVIEWED = {
 }
 
 _READ_ONLY_CONSUMERS = {
-    "diagnostics.regression_evaluator": "e8dfebf9c73e28bdb6269421c05279968f2f83506d9f7501f57bdc474188d0a3",
+    "diagnostics.regression_evaluator": "aa784905102025d9771db83c7339ba323e7cce5e407f4af90d764ffe7413beab",
     **{operation: current for operation, (_, current) in _REVIEWED.items() if operation != "model.pca"},
-    "model.apply_fitted_linear_regression": "0b17e504f91c2ea20a85a74bd3bdc22e01f52f50911be18a840d21883154000c",
-    "model.apply_fitted_pcr": "8f887ca24cdc30332b44bc6f2dd55a3afecf9b061ff81508d90b4b0b28eccf2e",
-    "model.apply_fitted_svr": "b88b5fdbfd93a89e51e8758d9fcd02ea3b3ef08d7fbf520f68156f0f2db8aadb",
+    "model.apply_fitted_linear_regression": "d2d1306c1b29286f1103349c9bf961428dd17c065054a024e1efe4d7f2428495",
+    "model.apply_fitted_pcr": "6663dc32859dd2b7552ec3c22bc608173a24ad032bc96fe9a82b5fb8ec0b25fe",
+    "model.apply_fitted_svr": "492ef1eb3ed2bda68cd34e7c100fc3f196e45045b26246199de937ed4a1d7c6b",
     "classification.plsda": "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
-    "model.fitted_pls": "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
-    "model.fitted_linear_regression": "953c95ef58def16768d7280ee71e94f3837ab7d3d2076d48999804df3e32af23",
-    "model.fitted_pcr": "754a5a53c49fda40269196838397458ffa26d6542953b2200c595e8d4a298f2a",
-    "model.fitted_svr": "4e8a05f4ca0147570f038542448c3391444ee5df09405c8a37a506599cb66344",
+    "model.fitted_pls": "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
+    "model.fitted_linear_regression": "f28fc334028632f8bfce32aded3019e2d4094846825d0573b743f8b513b4f69f",
+    "model.fitted_pcr": "af58a7e90bc1a7dffae447ab12048fa8b702ec493a86c256711ef0a3ccce2f63",
+    "model.fitted_svr": "598257753f8ef867cf069372e8cdfb88d1a2ba3f6a862b12a8afd12e41b11179",
 }
 _PROFILE_DIGESTS = (None, "9f37d08a914c3e276859c0ba10b5d2187d5d5ba4ff85f6d00b35cba23e7369f4")
 

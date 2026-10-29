@@ -50,11 +50,12 @@ def test_timing_logs_route_template_and_id_not_query_or_user_path(caplog):
     async def endpoint(item: str):
         return {"ok": True}
 
-    caplog.set_level(logging.INFO, logger="spectra_sherpa.app.core.request_id")
+    caplog.set_level(logging.DEBUG, logger="spectra_sherpa.app.core.request_id")
     response = TestClient(app).get("/items/PRIVATE_ITEM?token=SECRET_TOKEN", headers={"X-Request-ID": "trace-7"})
     assert response.headers["X-Request-ID"] == "trace-7"
     entries = [entry for entry in caplog.records if entry.name.endswith("request_id")]
     assert len(entries) == 1
+    assert entries[0].levelno == logging.DEBUG
     assert "route=/items/{item}" in entries[0].getMessage()
     assert "response_headers_ms=" in entries[0].getMessage()
     assert "PRIVATE_ITEM" not in entries[0].getMessage()
@@ -178,3 +179,65 @@ def test_console_write_failure_cannot_echo_raw_arguments(monkeypatch, capsys):
     finally:
         root.handlers = previous
         root.setLevel(level)
+
+
+def test_configured_log_level_applies_to_worker_startup(monkeypatch):
+    root = logging.getLogger()
+    previous, level = root.handlers[:], root.level
+    monkeypatch.setenv("LOG_LEVEL", "WARNING")
+    monkeypatch.setattr(logging_module, "settings", replace(logging_module.settings, log_file_path=None))
+    try:
+        configure_logging()
+        assert root.level == logging.WARNING
+    finally:
+        root.handlers = previous
+        root.setLevel(level)
+
+
+def test_failed_poll_is_visible_at_normal_log_level(caplog):
+    from fastapi.responses import JSONResponse
+
+    app = FastAPI()
+    app.add_middleware(RequestIDMiddleware)
+
+    @app.get("/health")
+    async def endpoint():
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+
+    caplog.set_level(logging.INFO, logger="spectra_sherpa.app.core.request_id")
+    assert TestClient(app).get("/health").status_code == 503
+    records = [r for r in caplog.records if r.name.endswith("request_id")]
+    assert len(records) == 1 and records[0].levelno == logging.WARNING
+    assert "status=503" in records[0].getMessage()
+
+
+def test_fast_successful_poll_does_not_fill_info_logs(caplog):
+    app = FastAPI()
+    app.add_middleware(RequestIDMiddleware)
+
+    @app.get("/health")
+    async def endpoint():
+        return {"ok": True}
+
+    caplog.set_level(logging.INFO, logger="spectra_sherpa.app.core.request_id")
+    assert TestClient(app).get("/health").status_code == 200
+    assert not [r for r in caplog.records if r.name.endswith("request_id")]
+
+
+def test_slow_successful_read_keeps_timing_at_info(monkeypatch, caplog):
+    from spectra_sherpa.app.core import request_id
+
+    ticks = iter([10.0, 11.2])
+    monkeypatch.setattr(request_id, "perf_counter", lambda: next(ticks))
+    app = FastAPI()
+    app.add_middleware(RequestIDMiddleware)
+
+    @app.get("/items")
+    async def endpoint():
+        return {"ok": True}
+
+    caplog.set_level(logging.INFO, logger="spectra_sherpa.app.core.request_id")
+    assert TestClient(app).get("/items").status_code == 200
+    records = [r for r in caplog.records if r.name.endswith("request_id")]
+    assert len(records) == 1 and records[0].levelno == logging.INFO
+    assert "response_headers_ms=1200.0" in records[0].getMessage()

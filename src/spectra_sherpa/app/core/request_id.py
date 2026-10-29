@@ -104,12 +104,21 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         finally:
             # Route templates exclude user paths, queries, tokens and bodies.
             route = getattr(request.scope.get("route"), "path", "unmatched")
-            logging.getLogger(__name__).info(
+            duration_ms = (perf_counter() - started) * 1000
+            # Successful fast GETs include frequent health/history polls. Keep
+            # their timing available at DEBUG without crowding service logs.
+            level = (
+                logging.WARNING
+                if status >= 400
+                else (logging.DEBUG if request.method in {"GET", "HEAD"} and duration_ms < 1000 else logging.INFO)
+            )
+            logging.getLogger(__name__).log(
+                level,
                 "HTTP_REQUEST method=%s route=%s status=%s response_headers_ms=%.1f",
                 request.method,
                 route,
                 status,
-                (perf_counter() - started) * 1000,
+                duration_ms,
             )
             _request_id_var.reset(token)
         response.headers[REQUEST_ID_HEADER] = request_id

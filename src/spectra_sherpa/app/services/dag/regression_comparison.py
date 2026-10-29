@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from spectra_sherpa.app.lib.comparison_identity import comparison_sample_ids
 from spectra_sherpa.app.lib.sample_identity import sample_ids
 from spectra_sherpa.sdk.validate import metrics
 
@@ -129,10 +130,20 @@ def bind_regression_sample_axis(comparison: dict, dataset: object) -> None:
     count, targets = metadata["n_samples"], metadata["n_targets"]
     if getattr(dataset, "n_samples", None) != count or len(comparison["data"]) != count * targets:
         raise ValueError("Regression sample axis must match the comparison population")
-    ids = sample_ids(dataset)
+    ids, identity_reason = comparison_sample_ids(dataset)
     declared_ids = metadata.get("sample_ids")
-    if declared_ids is not None and declared_ids != ids:
+    # Origin qualification can withhold otherwise well-formed IDs. That is
+    # not a contradiction; compare the actual typed values when available.
+    try:
+        observed_ids = sample_ids(dataset)
+    except ValueError:
+        observed_ids = None
+    if declared_ids is not None and observed_ids is not None and declared_ids != observed_ids:
         raise ValueError("Regression comparison sample identities disagree with the verified population")
+    # Rebinding cannot manufacture the origin proof a producer did not retain.
+    identity_reason = metadata.get("sample_identity_unavailable") or identity_reason
+    if identity_reason is not None:
+        ids = None
     labels = getattr(getattr(dataset, "sample_axis", None), "labels", None)
     if labels is not None and len(labels) != count:
         raise ValueError("Regression sample labels must match the comparison population")
@@ -151,7 +162,11 @@ def bind_regression_sample_axis(comparison: dict, dataset: object) -> None:
     metadata["sample_identity"] = (
         "typed_sample_id" if ids is not None else "display_labels" if labels is not None else "row_position"
     )
-    if ids is not None:
+    if identity_reason is not None:
+        metadata.pop("sample_ids", None)
+        metadata["sample_identity"] = "unavailable"
+        metadata["sample_identity_unavailable"] = identity_reason
+    elif ids is not None:
         metadata["sample_ids"] = ids
 
 

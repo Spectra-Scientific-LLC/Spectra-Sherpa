@@ -88,7 +88,7 @@ def resolve_run_evidence(run: Any, selection: EvaluationSelection | None = None)
     try:
         evaluation = _evaluation(run, selection)
     except (ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
-        logger.warning("EVALUATION_UNAVAILABLE run_id=%s error_type=%s", run.id, type(exc).__name__, exc_info=True)
+        logger.warning("EVALUATION_UNAVAILABLE run_id=%s error_type=%s", run.id, type(exc).__name__)
         return ResolvedComparisonEvidence(
             reference,
             label,

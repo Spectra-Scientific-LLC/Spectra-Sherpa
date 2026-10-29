@@ -10,6 +10,7 @@ import numpy as np
 
 import spectra_sherpa.app.services.dag.regression_comparison as regression_comparison_contract
 import spectra_sherpa.sdk.plot_spec as plot_spec_contract
+from spectra_sherpa.app.lib import comparison_identity, sample_identity
 from spectra_sherpa.app.lib.data_roles import get_dataset_data_role
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag import presentation_limits
@@ -1928,6 +1929,8 @@ bind_stable_execution_contract(
     implementation_id="spectrasherpa.output.plot",
     implementation_version="2.2.0",
     implementation_modules=(
+        comparison_identity,
+        sample_identity,
         presentation_limits,
         plot_spec_contract,
         regression_comparison_contract,

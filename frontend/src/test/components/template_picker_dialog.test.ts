@@ -634,8 +634,8 @@ describe("TemplatePickerDialog", () => {
   it("uses the verified project dataset instead of a stale active sheet source", async () => {
     mocks.workflowNodes = [{
       id: "data_1",
-      type: "data.file_load",
-      params: { experiment_id: 8, file_id: 10, stage: "raw" }, // MP5 on the old sheet
+      type: "data.collection_load",
+      params: { experiment_id: 8, selected_file_ids: [10], group_title: "Old sheet portfolio", stage: "raw" }, // MP5 on the old sheet
     }];
     const projectDataset = {
       id: 42,
@@ -657,8 +657,10 @@ describe("TemplatePickerDialog", () => {
         group_column: null,
       },
     };
+    let resolveChoice!: (value: { data: { dataset: typeof projectDataset } }) => void;
+    const choice = new Promise<{ data: { dataset: typeof projectDataset } }>((resolve) => { resolveChoice = resolve; });
     mocks.apiGet.mockImplementation(async (url: string) => url.includes("current-dataset")
-      ? { data: { dataset: projectDataset } }
+      ? choice
       : { data: { templates: [{
           id: 2, slug: "pls-regression", name: "PLS Regression", description: "Quantitative analysis",
           category: "calibration", status: "ready", status_detail: null, is_active: true,
@@ -674,6 +676,10 @@ describe("TemplatePickerDialog", () => {
 
     const wrapper = mount(TemplatePickerDialog, { props: { visible: false } });
     await wrapper.setProps({ visible: true });
+    await flushPromises();
+    expect(wrapper.find('[data-testid="starter-data-portfolio"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Old sheet portfolio");
+    resolveChoice({ data: { dataset: projectDataset } });
     await flushPromises();
 
     expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toContain("Data Portfolio: Corn MP6 · Moisture");

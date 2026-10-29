@@ -15,10 +15,10 @@ from typing import Any
 import numpy as np
 
 from spectra_sherpa.app.contracts.comparison_evidence import EvaluationEvidence
-from spectra_sherpa.app.lib.sample_identity import sample_ids
+from spectra_sherpa.app.lib.array_identity import array_content_digest
+from spectra_sherpa.app.lib.comparison_identity import comparison_sample_ids
 from spectra_sherpa.app.schemas.run_evidence import RunEvidence
 from spectra_sherpa.app.schemas.scientific_comparison import PopulationSummary
-from spectra_sherpa.app.services.dag.nodes.data.split_planner import _array_content_digest
 from spectra_sherpa.app.services.run_output_retention import read_output
 from spectra_sherpa.app.services.run_validation_summary import _split_summaries, _validation_output_values
 
@@ -40,12 +40,15 @@ def _retained_sample_ids(dataset, count):
     if not isinstance(dataset, dict):
         return None
     axis = dataset.get("y_axis") or {}
-    return sample_ids(
+    return comparison_sample_ids(
         SimpleNamespace(
             sample_axis=SimpleNamespace(sample_table=axis.get("sample_table")),
             n_samples=count,
+            source_identity=dataset.get("source_identity"),
+            provenance=dataset.get("provenance"),
+            meta=dataset.get("extra") or {},
         )
-    )
+    )[0]
 
 
 def _target(dataset, target_edge, standalone_plan, split, branch, exact):
@@ -147,7 +150,7 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                         # exact feature values and physical feature-axis declaration.
                         "x_content_digest": _digest(
                             {
-                                "data": _array_content_digest(np.asarray(dataset.get("data"), dtype=float)),
+                                "data": array_content_digest(np.asarray(dataset.get("data"), dtype=float)),
                                 "x_axis": dataset.get("x_axis"),
                             }
                         ),
@@ -200,6 +203,11 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
             # and preserves membership across different fitted preprocessing.
             source = (dataset.get("extra") or {}).get("source_collection", {}).get("source_manifest_sha256")
             if not isinstance(source, str) or len(source) != 64:
+                continue
+            if metadata.get("sample_identity_unavailable"):
+                identity_limitations.append(
+                    "Sample identities were not qualified; numerical results remain inspectable."
+                )
                 continue
             cohort_ids = _retained_sample_ids(dataset, len(indices))
             fitted = dataset if branch == "train" else exact(split, "X_train")
