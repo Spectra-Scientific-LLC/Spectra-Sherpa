@@ -128,7 +128,9 @@ def evaluate_labeled_regression(
             multiplier=repetitions,
             max_values=500_000,
         )
-    result = canonical_evaluator.evaluate_regression_v2(predicted, observed, node_id=node_id, target_names=names)
+    result = canonical_evaluator.evaluate_regression_v2(
+        predictions, held_out_target, node_id=node_id, target_names=names
+    )
     comparison = result.outputs["comparison"]
     for index, row in enumerate(comparison["data"]):
         row["sample"] = labels[index // observed.shape[1]]

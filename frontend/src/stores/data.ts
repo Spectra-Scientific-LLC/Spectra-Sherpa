@@ -970,6 +970,7 @@ export const useDataStore = defineStore("data", () => {
     experimentId: number,
     assetId?: string | null,
     fileIds?: number[] | null,
+    portfolio?: { id: number; selection_sha256: string },
   ) => {
     activeFileId.value = null;
     activeFilePath.value = null;
@@ -982,8 +983,10 @@ export const useDataStore = defineStore("data", () => {
         "/builder/file-info",
         {
           experiment_id: experimentId,
-          ...(assetId ? { asset_id: assetId } : {}),
-          ...(fileIds?.length ? { file_ids: fileIds } : {}),
+          ...(portfolio
+            ? { dataset_view_id: portfolio.id, dataset_view_sha256: portfolio.selection_sha256 }
+            : { ...(assetId ? { asset_id: assetId } : {}),
+                ...(fileIds?.length ? { file_ids: fileIds } : {}) }),
         },
         { signal: request.signal },
       );

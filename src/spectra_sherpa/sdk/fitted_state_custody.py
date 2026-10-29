@@ -40,6 +40,42 @@ _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingP
         # Handoff presentation preserves this exact serializer's storage semantics.
         (
             "spectra.sherpa-simpls-regression-json/9",
+            "2252dec1ff34b651be6480a68a10662470aeaa566bfb9c179eba04f0d87c83e4",
+        ): FittedStateCustodyCapability(
+            serializer="spectra.sherpa-simpls-regression-json/9",
+            contract_digest="2252dec1ff34b651be6480a68a10662470aeaa566bfb9c179eba04f0d87c83e4",
+            custody_class="data_free_application_state",
+            rationale="Workflow display/source-curation bindings; fitted arrays and serializers are unchanged.",
+        ),
+        (
+            "spectrasherpa.model.fitted_pcr/1",
+            "25f5e986f615ae0e787dfecbac7b3a544cd2a68583fc6cb213c60773c9639b9e",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_pcr/1",
+            contract_digest="25f5e986f615ae0e787dfecbac7b3a544cd2a68583fc6cb213c60773c9639b9e",
+            custody_class="data_free_application_state",
+            rationale="Scientific display/CV dependency binding; fitted arrays and custody unchanged.",
+        ),
+        (
+            "spectrasherpa.model.fitted_svr/1",
+            "fe7266dee9a09f27a7be7fae4ecba2c38af9c643d9f1bd71b67b8884cc49ea1d",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_svr/1",
+            contract_digest="fe7266dee9a09f27a7be7fae4ecba2c38af9c643d9f1bd71b67b8884cc49ea1d",
+            custody_class="retains_training_rows",
+            rationale="Scientific display/CV dependency binding; fitted arrays and custody unchanged.",
+        ),
+        (
+            "spectrasherpa.model.fitted_linear_regression/1",
+            "e67835fc9e93b0a1b5dcc306ed3cfcbbcae86eb515af3f7b730fe48cc1d79782",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_linear_regression/1",
+            contract_digest="e67835fc9e93b0a1b5dcc306ed3cfcbbcae86eb515af3f7b730fe48cc1d79782",
+            custody_class="data_free_application_state",
+            rationale="Scientific display/CV dependency binding; fitted arrays and custody unchanged.",
+        ),
+        (
+            "spectra.sherpa-simpls-regression-json/9",
             "7e577601daba52133d0e63f7496614960747b78a438c03c01297c22b28226012",
         ): FittedStateCustodyCapability(
             serializer="spectra.sherpa-simpls-regression-json/9",

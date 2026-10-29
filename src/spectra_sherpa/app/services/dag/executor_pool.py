@@ -358,11 +358,11 @@ def _with_worker_logging(function):
     @wraps(function)
     def logged(*args, **kwargs):
         from spectra_sherpa.app.core.logging import configure_logging
-        from spectra_sherpa.app.core.request_id import use_request_id
+        from spectra_sherpa.app.core.request_id import diagnostic_identifier, use_request_id
 
         configure_logging()
         context = kwargs.get("worker_context", args[5] if len(args) > 5 else None)
-        node_id = kwargs.get("node_id", args[1] if len(args) > 1 else "unknown")
+        node_id = diagnostic_identifier(kwargs.get("node_id", args[1] if len(args) > 1 else "unknown"))
         execution_id = context.execution_id if context is not None else None
         started = perf_counter()
         with use_request_id(context.request_id if context is not None else None):

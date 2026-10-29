@@ -5358,11 +5358,14 @@ async function goToWorkflow(addNode?: string) {
     const requestedTarget = analysisChoice.value.target;
     const requestedAsset = inspectionAssetId.value;
     try {
-      await dataStore.inspectExperimentRawFiles(
-        experimentId,
-        inspectionAssetId.value,
-        workflowSelection?.map((file) => file.id),
-      );
+      const portfolio = currentPortfolioView.value;
+      if (portfolio) {
+        await dataStore.inspectExperimentRawFiles(experimentId, null, null, portfolio);
+      } else {
+        await dataStore.inspectExperimentRawFiles(
+          experimentId, inspectionAssetId.value, workflowSelection?.map((file) => file.id),
+        );
+      }
       await nextTick();
       if (!ticket.isCurrent()) return;
       if (

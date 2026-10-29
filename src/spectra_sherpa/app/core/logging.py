@@ -179,44 +179,54 @@ def configure_logging(level: int | None = None) -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 
-    if not any(isinstance(h, BufferHandler) for h in root_logger.handlers):
+    buffer_handlers = [h for h in root_logger.handlers if isinstance(h, BufferHandler)]
+    if not buffer_handlers:
         buffer_handler = BufferHandler()
-        buffer_handler.setLevel(level)
-        buffer_handler.setFormatter(logging.Formatter("%(message)s"))
         root_logger.addHandler(buffer_handler)
+        buffer_handlers = [buffer_handler]
+    for handler in buffer_handlers:
+        handler.setLevel(level)
+        handler.setFormatter(logging.Formatter("%(message)s"))
 
-    if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
-        stream_handler = logging.StreamHandler()
-        stream_handler.setLevel(level)
-        stream_handler.setFormatter(logging.Formatter("%(levelname)s [req=%(request_id)s] %(name)s: %(message)s"))
-        root_logger.addHandler(stream_handler)
+    # An unrelated FileHandler is also a StreamHandler; it must not suppress
+    # the application console. Leave third-party capture handlers untouched.
+    console_handlers = [h for h in root_logger.handlers if type(h) is logging.StreamHandler]
+    if not console_handlers:
+        console_handler = logging.StreamHandler()
+        root_logger.addHandler(console_handler)
+        console_handlers = [console_handler]
+    for handler in console_handlers:
+        handler.setLevel(level)
+        handler.setFormatter(logging.Formatter("%(levelname)s [req=%(request_id)s] %(name)s: %(message)s"))
 
-    # Persistent file logging (local audit log)
     if settings.log_file_path:
-        if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root_logger.handlers):
-            try:
-                log_path = Path(settings.log_file_path)
+        try:
+            log_path = Path(os.path.abspath(settings.log_file_path))
+            owned_files = [
+                h
+                for h in root_logger.handlers
+                if isinstance(h, LockedRotatingFileHandler) and h.baseFilename == str(log_path)
+            ]
+            if not owned_files:
                 log_path.parent.mkdir(parents=True, exist_ok=True)
-
                 file_handler = LockedRotatingFileHandler(
                     log_path,
                     maxBytes=settings.log_file_max_bytes,
                     backupCount=settings.log_file_backup_count,
                     encoding="utf-8",
                 )
-                file_handler.setLevel(level)
-                file_handler.setFormatter(
+                root_logger.addHandler(file_handler)
+                owned_files = [file_handler]
+            for handler in owned_files:
+                handler.setLevel(level)
+                handler.setFormatter(
                     logging.Formatter(
                         "%(asctime)s %(levelname)s [req=%(request_id)s] %(name)s: %(message)s",
                         datefmt="%Y-%m-%d %H:%M:%S",
                     )
                 )
-
-                root_logger.addHandler(file_handler)
-            except (OSError, ValueError):
-                # Logging availability must not change scientific execution.
-                # Deliberately omit exception text, paths and credentials.
-                logging.getLogger(__name__).warning("Persistent diagnostic log unavailable; using console diagnostics.")
+        except (OSError, ValueError):
+            logging.getLogger(__name__).warning("Persistent diagnostic log unavailable; using console diagnostics.")
 
     # Cover handlers installed by Gunicorn/Uvicorn as well as application
     # console/file handlers. Idempotent; do not flatten access logger args.
@@ -227,7 +237,11 @@ def configure_logging(level: int | None = None) -> None:
         logging.getLogger("gunicorn.access"),
         logging.getLogger("gunicorn.error"),
     ):
+        if logger is not root_logger:
+            logger.setLevel(level)
         for handler in logger.handlers:
+            if logger is not root_logger:
+                handler.setLevel(level)
             setattr(handler, "handleError", MethodType(_safe_sink_error, handler))
             if not isinstance(handler.formatter, RedactingFormatter):
                 handler.setFormatter(RedactingFormatter(handler.formatter))

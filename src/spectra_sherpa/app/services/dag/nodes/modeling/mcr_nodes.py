@@ -22,6 +22,7 @@ from spectra_sherpa.app.services.dag.meta_helpers import (
     inherit_origin_flags,
     inherit_sample_flags,
 )
+from spectra_sherpa.core import axis_semantics as axis_semantics_authority
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
     ManagedOptimizationEligibility,
@@ -1355,6 +1356,7 @@ bind_stable_execution_contract(
         modeling_core_utils,
         _artifact_builder,
         sample_identity_authority,
+        axis_semantics_authority,
     ),
     fitted_state_serializer=MCR_FITTED_STATE_SERIALIZER,
     deterministic=True,

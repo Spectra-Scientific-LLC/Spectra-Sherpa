@@ -51,6 +51,15 @@ def _retained_sample_ids(dataset, count):
     )[0]
 
 
+def _response_edge(definition, node):
+    targets = [
+        edge for edge in definition.get("edges", []) if edge.get("to_node_id") == node and edge.get("to_input") == "y"
+    ]
+    if len(targets) > 1:
+        raise RetainedComparisonUnavailable("Retained response binding is ambiguous.")
+    return targets[0] if targets else None
+
+
 def _target(dataset, target_edge, standalone_plan, split, branch, exact):
     if target_edge is not None:
         value = exact(target_edge["from_node_id"], target_edge.get("from_output") or "default")
@@ -58,7 +67,29 @@ def _target(dataset, target_edge, standalone_plan, split, branch, exact):
         value = exact(split, "y_" + branch)
     else:
         value = dataset.get("target")
-    return value.get("data") if isinstance(value, dict) else value
+    external = target_edge is not None or (dataset.get("target") is None and standalone_plan is None)
+    return (value.get("data"), value, external) if isinstance(value, dict) else (value, None, external)
+
+
+def _response_units(dataset, response_source, target_names, *, external):
+    context = {} if external else dataset.get("target_context") or {}
+    units = context.get("target_units")
+    if response_source is not None:
+        # A connected response contributes its data matrix, not the
+        # predictor's unrelated embedded target or intensity units.
+        units = response_source.get("units")
+        response_context = (
+            (response_source.get("target_context") or {}) if response_source.get("target") is None else {}
+        )
+        declared_units = response_context.get("target_units")
+        if units and declared_units and units != declared_units:
+            raise RetainedComparisonUnavailable("Retained response unit declarations conflict.")
+        units = units or declared_units
+        names = (response_source.get("x_axis") or {}).get("labels")
+        declared_names = response_context.get("target_names")
+        if any(candidate and candidate != target_names for candidate in (names, declared_names)):
+            raise RetainedComparisonUnavailable("Retained response names conflict with the comparison.")
+    return units
 
 
 class _BoundedOutputReader:
@@ -92,10 +123,21 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
     exact = _BoundedOutputReader(run, evidence)
 
     definition = exact("__workflow__", "definition")
-    plans = {entry["node"]: entry["plan"] for entry in _split_summaries(run, definition)}
     nodes = {node["node_id"]: node for node in definition.get("nodes", [])}
     records, populations, identity_limitations = [], [], []
-    for node, port, value in _validation_output_values(run, evidence):
+
+    def read_failure(node, port, exc):
+        identity_limitations.append("A retained output could not be read; other verified results remain available.")
+        logger.warning(
+            "Retained comparison output unavailable run=%s node=%s port=%s error_type=%s",
+            run.id,
+            node,
+            port,
+            type(exc).__name__,
+        )
+
+    plans = {entry["node"]: entry["plan"] for entry in _split_summaries(run, definition, on_read_error=read_failure)}
+    for node, port, value in _validation_output_values(run, evidence, on_read_error=read_failure):
         if value.get("schema_version") != "spectrasherpa-regression-comparison/1":
             continue
         try:
@@ -134,6 +176,7 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                 dataset = exact(edge["from_node_id"], edge.get("from_output") or "default")
                 if not isinstance(dataset, dict):
                     continue
+                target_edge = _response_edge(definition, node)
                 receipts = [
                     entry for entry in dataset.get("provenance", []) if entry.get("op_id") == "data.train_test_split"
                 ]
@@ -156,13 +199,6 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                         ),
                         "digest": None,
                     }
-                    targets = [
-                        e
-                        for e in definition.get("edges", [])
-                        if e.get("to_node_id") == node and e.get("to_input") == "y"
-                    ]
-                    if len(targets) == 1:
-                        target_edge = targets[0]
                 else:
                     split, branch = receipts[-1].get("node_id"), "train"
                     if split not in plans or receipts[-1].get("parameters", {}).get("split") != "train":
@@ -190,7 +226,9 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
             ):
                 continue
             observed = tuple(float(row["reference"]) for row in rows)
-            target = _target(dataset, target_edge, standalone_plan, split, branch, exact)
+            target, response_source, external_response = _target(
+                dataset, target_edge, standalone_plan, split, branch, exact
+            )
             target_array = np.asarray(target, dtype=float)
             if target_array.shape not in {(len(rows),), (len(rows), 1)} or not np.array_equal(
                 target_array.reshape(-1), observed
@@ -220,6 +258,11 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                     "but cannot establish a paired population."
                 )
                 continue
+            if response_source is not None and _retained_sample_ids(response_source, len(indices)) != cohort_ids:
+                identity_limitations.append(
+                    "Response sample identities were not qualified against the retained population."
+                )
+                continue
             recorded_ids = metadata.get("sample_ids")
             if recorded_ids is not None and recorded_ids != cohort_ids:
                 continue
@@ -245,8 +288,7 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                     },
                 }
             )
-            context = dataset.get("target_context") or {}
-            units = context.get("target_units")
+            units = _response_units(dataset, response_source, target_names, external=external_response)
             summary = PopulationSummary(
                 admitted_count=plan["n_samples"],
                 development_count=len(plan["train_indices"]),

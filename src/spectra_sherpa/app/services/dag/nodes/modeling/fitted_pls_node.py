@@ -10,6 +10,7 @@ import numpy as np
 
 import spectra_sherpa.app.services.dag.regression_comparison as regression_comparison
 from spectra_sherpa.app.lib import comparison_identity, numerical_scaling, pca_numerics, sample_identity
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag.feature_axis_identity import (
     feature_axis_identity as _canonical_feature_axis_identity,
 )
@@ -767,19 +768,23 @@ class FittedPLSV2Node(Node):
             cv_unavailable_reason=curve_reason,
             selection_rule=str(params["component_selection_rule"]),
         )
+        calibration_comparison = regression_comparison.build_regression_comparison(
+            target_matrix,
+            predictions,
+            role="calibration",
+            target_names=target_names,
+            sample_dataset=dataset,
+        )
+        if not embedded and isinstance(response_source, SherpaDataset):
+            # A typed predictor axis cannot certify a legacy response's origin.
+            regression_comparison.restrict_regression_sample_identity(calibration_comparison, response_source)
         return NodeResult(
             outputs={
                 "default": predictions,
                 "fitted_state": envelope,
                 "_model_artifact": artifact,
                 "vip_scores": np.asarray(state["vip_scores"], dtype=np.float64),
-                "calibration_comparison": regression_comparison.build_regression_comparison(
-                    target_matrix,
-                    predictions,
-                    role="calibration",
-                    target_names=target_names,
-                    sample_dataset=dataset,
-                ),
+                "calibration_comparison": calibration_comparison,
                 "x_scores": np.asarray(model.x_scores, dtype=np.float64),
                 "x_loadings": np.asarray(model.x_loadings.T, dtype=np.float64),
                 "explained_variance": explained_variance,

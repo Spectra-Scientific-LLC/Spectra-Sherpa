@@ -163,6 +163,8 @@ import { useToast } from "primevue/usetoast";
 import { api } from "@/api";
 import { useWorkbookStore } from "@/stores/workbook";
 import { useWorkflowStore } from "@/stores/workflow";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { usePrimaryNavigation } from "@/composables/usePrimaryNavigation";
 import type { TargetAuthority, TemplateDataBinding, WorkflowNode } from "@/stores/workflow-types";
@@ -245,6 +247,7 @@ const emit = defineEmits<{ "sheet-opened": [] }>();
 
 const workbookStore = useWorkbookStore();
 const workflowStore = useWorkflowStore();
+const authStore = useAuthStore();
 const toast = useToast();
 const router = useRouter();
 
@@ -738,7 +741,22 @@ const exampleButtonTitle = (tpl: TemplateOut): string =>
   templateRuntimeMessage(tpl) ??
   `${exampleDataSummary(tpl) ?? "Use this starter's bundled example."} This creates a separate sheet and does not use the project's current dataset.`;
 
+const pickerIdentity = () => [
+  visible.value, workbookStore.projectId, workbookStore.activeSheet?.workflowId,
+  authStore.user?.id, authStore.sessionRevision, JSON.stringify(props.dataSelection ?? null),
+];
+const templateRequests = useScopedRequest(pickerIdentity);
+// Accepted template writes own their lifetime; only UI effects lose ownership
+// on close/account/project changes. The write itself activates a new sheet.
+const launchRequests = useScopedRequest(
+  () => [visible.value, workbookStore.projectId, authStore.user?.id,
+    authStore.sessionRevision, JSON.stringify(props.dataSelection ?? null)],
+  () => { instantiating.value = null; },
+  { abortOnInvalidate: false },
+);
 const loadTemplates = async () => {
+  const ticket = templateRequests.begin();
+  const projectId = workbookStore.projectId;
   loading.value = true;
   loadError.value = null;
   try {
@@ -749,15 +767,16 @@ const loadTemplates = async () => {
     activeProjectDataset.value = null;
     projectDatasetChoiceError.value = null;
     const [templateResponse, choiceResult] = await Promise.all([
-      api.get<{ templates: TemplateOut[]; total: number }>("/workflow-templates"),
-      !receipt && workbookStore.projectId != null
+      api.get<{ templates: TemplateOut[]; total: number }>("/workflow-templates", { signal: ticket.signal }),
+      !receipt && projectId != null
         ? api.get<{ dataset: ActiveProjectDataset | null }>(
-            `/projects/${workbookStore.projectId}/choices/current-dataset`,
+            `/projects/${projectId}/choices/current-dataset`, { signal: ticket.signal },
           )
             .then((response) => ({ dataset: response.data.dataset, failed: false }))
             .catch(() => ({ dataset: null, failed: true }))
         : Promise.resolve({ dataset: null, failed: false }),
     ]);
+    if (!ticket.isCurrent()) return;
     if (choiceResult.failed) {
       projectDatasetChoiceError.value =
         "Project dataset selection could not be verified. Select data in My Dataset, then reopen Analysis Starters.";
@@ -769,14 +788,14 @@ const loadTemplates = async () => {
         ? api
             .post<DatasetAnalysisReadiness>("/workflow-templates/compatibility-preview", {
               analysis_profile: profile,
-            })
+            }, { signal: ticket.signal })
             .catch(() => undefined)
         : Promise.resolve(null),
-      activeBinding && workbookStore.projectId != null
+      activeBinding && projectId != null
         ? api.post<DatasetAnalysisReadiness & { binding: {
               target_authority: TargetAuthority | null; group_column: string | null;
             } }>("/workflow-templates/binding-compatibility-preview", {
-              project_id: workbookStore.projectId,
+              project_id: projectId,
               use_saved_analysis_selection: activeProjectDataset.value !== null,
               binding: {
                 source: activeBinding.source ?? "experiment",
@@ -792,10 +811,11 @@ const loadTemplates = async () => {
                 target_authority: activeBinding.targetAuthority ?? null,
                 group_column: activeBinding.groupColumn ?? null,
               },
-            })
+            }, { signal: ticket.signal })
             .catch(() => undefined)
         : Promise.resolve(null),
     ]);
+    if (!ticket.isCurrent()) return;
     templates.value = templateResponse.data.templates;
     if (receipt && profile) {
       effectiveDataSelection.value = {
@@ -825,39 +845,50 @@ const loadTemplates = async () => {
       }
     }
   } catch (err) {
+    if (!ticket.isCurrent()) return;
     loadError.value = getErrorMessage(err, "Failed to load analysis starters.");
     templates.value = [];
   } finally {
-    loading.value = false;
+    if (ticket.isCurrent()) loading.value = false;
   }
 };
 
-watch(visible, (next) => {
-  if (next) {
+watch(pickerIdentity, () => {
+  if (visible.value) {
     crossBlockRequested.value = false;
     heldOutBlock.value = "";
     selectedExperimentId.value = props.dataSelection?.datasets[0]?.experiment_id ?? null;
     void loadTemplates();
   } else {
+    templateRequests.invalidate();
+    loading.value = false;
+    effectiveDataSelection.value = null;
+    activeBindingReadiness.value = null;
     activeProjectDataset.value = null;
     projectDatasetChoiceError.value = null;
   }
 });
 
 const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
-  if (!projectAvailable.value) return;
+  if (!projectAvailable.value || !visible.value || instantiating.value !== null) return;
+  const launch = launchRequests.begin();
+  const preflight = templateRequests.capture();
+  const projectId = workbookStore.projectId;
+  const chosen = activeProjectDataset.value;
   if (launchMode === "current" && activeProjectDataset.value && !props.dataSelection) {
     try {
       const latest = await api.get<{ dataset: ActiveProjectDataset | null }>(
-        `/projects/${workbookStore.projectId}/choices/current-dataset`,
+        `/projects/${projectId}/choices/current-dataset`, { signal: launch.signal },
       );
+      if (!launch.isCurrent() || !preflight.isCurrent()) return;
       if (
-        latest.data.dataset?.id !== activeProjectDataset.value.id ||
-        latest.data.dataset?.digest !== activeProjectDataset.value.digest
+        latest.data.dataset?.id !== chosen?.id ||
+        latest.data.dataset?.digest !== chosen?.digest
       ) {
         throw new Error("Project dataset changed. Reopen Analysis Starters to use the new selection.");
       }
     } catch (err) {
+      if (!launch.isCurrent() || !preflight.isCurrent()) return;
       toast.add({
         severity: "warn",
         summary: "Project dataset needs review",
@@ -904,6 +935,8 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
           }
         : { launchMode: "example" },
     );
+    if (!launch.isCurrent()) return;
+    if (sheet.workflowId != null && workbookStore.activeSheet?.workflowId !== sheet.workflowId) return;
     emit("sheet-opened");
     const managedWarning = managedCandidateSelectionWarning(tpl);
     toast.add({
@@ -918,6 +951,7 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
     });
     visible.value = false;
   } catch (err) {
+    if (!launch.isCurrent()) return;
     const message = getErrorMessage(err, "Could not start analysis.");
     toast.add({
       severity: "error",
@@ -926,7 +960,7 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
       life: 4000,
     });
   } finally {
-    instantiating.value = null;
+    if (launch.isCurrent()) instantiating.value = null;
   }
 };
 </script>

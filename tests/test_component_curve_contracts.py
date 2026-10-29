@@ -112,10 +112,10 @@ def test_exact_application_predecessor_only(operation: str, serializer: str, pre
     workflow_consumers = {
         "model.pca": "1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f",
         "classification.plsda": "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
-        "model.fitted_pls": "7e577601daba52133d0e63f7496614960747b78a438c03c01297c22b28226012",
-        "model.fitted_linear_regression": "f28fc334028632f8bfce32aded3019e2d4094846825d0573b743f8b513b4f69f",
-        "model.fitted_pcr": "af58a7e90bc1a7dffae447ab12048fa8b702ec493a86c256711ef0a3ccce2f63",
-        "model.fitted_svr": "598257753f8ef867cf069372e8cdfb88d1a2ba3f6a862b12a8afd12e41b11179",
+        "model.fitted_pls": "2252dec1ff34b651be6480a68a10662470aeaa566bfb9c179eba04f0d87c83e4",
+        "model.fitted_linear_regression": "e67835fc9e93b0a1b5dcc306ed3cfcbbcae86eb515af3f7b730fe48cc1d79782",
+        "model.fitted_pcr": "25f5e986f615ae0e787dfecbac7b3a544cd2a68583fc6cb213c60773c9639b9e",
+        "model.fitted_svr": "fe7266dee9a09f27a7be7fae4ecba2c38af9c643d9f1bd71b67b8884cc49ea1d",
     }
     consumer = workflow_consumers.get(operation, current)
     assert node_registry.get_metadata(operation).resolved_execution_contract().digest == consumer

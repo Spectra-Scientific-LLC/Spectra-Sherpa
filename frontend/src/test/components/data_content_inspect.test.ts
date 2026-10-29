@@ -583,6 +583,66 @@ type DataContentVm = {
 };
 
 describe("DataContent file inspection", () => {
+it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio retains its exact authority (%s)", async (outcome) => {
+  const authority = {
+    schema_version: "spectrasherpa-target-authority/1",
+    column: "Moisture",
+    target_type: "continuous",
+    units: "%",
+    source_digest: "a".repeat(64),
+  };
+  const view = {
+    ...savedDatasetView(94),
+    name: "Preprocessed portfolio",
+    selection: {
+      ...savedDatasetView(94).selection,
+      stage: "preprocessed",
+      target_authority: authority,
+    },
+  };
+  mocks.dataStore.experimentFiles = [
+    { ...mocks.dataStore.experimentFiles[0], stage: "preprocessed" },
+  ];
+  const wrapper = mountDataContent();
+  await flushPromises();
+  const vm = wrapper.vm as unknown as DataContentVm;
+  vm.selectedDatasetView = view;
+  vm.plotFileSelections = {};
+  vm.analysisChoice = {
+    target: "Moisture",
+    targetType: "continuous",
+    targetUnits: "%",
+    sourceDigest: "a".repeat(64),
+    group: "",
+    readiness: null,
+  };
+  await flushPromises();
+  expect(vm.currentPortfolioView).toMatchObject({ id: 94 });
+  mocks.dataStore.inspectExperimentRawFiles.mockClear();
+  if (outcome === "refused") {
+    mocks.dataStore.inspectExperimentRawFiles.mockRejectedValue(new Error("Saved data portfolio changed"));
+  } else {
+    const readiness = { profile: { target_type: "continuous", target_fields: ["Moisture"] }, decisions: [] };
+    vi.mocked(api.post).mockResolvedValue({ data: readiness });
+    mocks.dataStore.inspectExperimentRawFiles.mockImplementationOnce(async () => {
+      mocks.dataStore.fileInfo = { analysis_readiness: readiness, metadata: { contents_stage: "preprocessed" } };
+      return mocks.dataStore.fileInfo;
+    });
+  }
+  await vm.goToWorkflow();
+  expect(mocks.dataStore.inspectExperimentRawFiles).toHaveBeenCalledWith(11, null, null, view);
+  expect(mocks.dataStore.inspectExperimentRawFiles).toHaveBeenCalledTimes(1);
+  if (outcome === "resolved") {
+    expect(mocks.routerPush).toHaveBeenCalled();
+    expect(latestWorkflowReceipt()).toMatchObject({ target_authority: authority, datasets: [expect.objectContaining({
+      dataset_view_id: view.id, dataset_view_sha256: view.selection_sha256, stage: "preprocessed", file_ids: null,
+    })] });
+  } else {
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+  }
+  wrapper.unmount();
+});
+
   beforeEach(() => {
     mocks.pro = false;
     vi.clearAllMocks();

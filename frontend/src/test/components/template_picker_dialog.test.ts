@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import TemplatePickerDialog from "@/components/TemplatePickerDialog.vue";
 import type { DataSelectionReceipt } from "@/utils/workflowDataSelection";
 
+const scope = await vi.hoisted(async () => {
+  const { reactive } = await import("vue");
+  return reactive({ projectId: 7, userId: 1, revision: 0, sheetId: 1 });
+});
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
   apiPost: vi.fn(),
@@ -22,9 +26,11 @@ vi.mock("@/composables/usePrimaryNavigation", () => ({ usePrimaryNavigation: () 
   items: { value: mocks.optimization ? [{ label: "Optimize", to: "/contributed-destination" }] : [] },
 }) }));
 
+vi.mock("@/stores/auth", () => ({ useAuthStore: () => ({ get user() { return { id: scope.userId }; }, get sessionRevision() { return scope.revision; } }) }));
+
 vi.mock("@/api", () => ({ api: { get: mocks.apiGet, post: mocks.apiPost } }));
 vi.mock("@/stores/workbook", () => ({
-  useWorkbookStore: () => ({ projectId: 7, openTemplateAsSheet: mocks.openTemplateAsSheet }),
+  useWorkbookStore: () => ({ get projectId() { return scope.projectId; }, get activeSheet() { return { workflowId: scope.sheetId }; }, openTemplateAsSheet: mocks.openTemplateAsSheet }),
 }));
 vi.mock("@/stores/workflow", () => ({
   useWorkflowStore: () => ({ nodes: mocks.workflowNodes }),
@@ -67,9 +73,127 @@ const role = (targetType: "continuous" | "categorical") => ({
   },
 });
 
+const scopeDataset = { id: 42, dataset_view_id: 7, name: "Current portfolio", digest: "c".repeat(64),
+  definition: { experiment_id: 11, stage: "raw", selected_file_ids: [22], asset_id: null, target_authority: null, group_column: null } };
+const scopeTemplate = { id: 1, slug: "pca", name: "PCA", category: "exploratory", status: "ready", is_active: true,
+  template_data: { nodes: [{ node_id: "data_1", node_type: "data.file_load", parameters: {} }] } };
+function readyScopeResponses() {
+  mocks.apiGet.mockImplementation(async (url: string) => url.includes("current-dataset")
+    ? { data: { dataset: scopeDataset } } : { data: { templates: [scopeTemplate], total: 1 } });
+  mocks.apiPost.mockResolvedValue({ data: { binding: { target_authority: null, group_column: null }, decisions: [{ template_slug: "pca", status: "compatible", reasons: [], reason_codes: [] }] } });
+}
+
 describe("TemplatePickerDialog", () => {
+  it.each(["resolve", "reject"])("ignores an old launch after close and reopen (%s)", async (outcome) => {
+    readyScopeResponses();
+    let resolve!: (value: object) => void;
+    let reject!: (reason: Error) => void;
+    mocks.openTemplateAsSheet.mockImplementationOnce(() => new Promise((yes, no) => { resolve = yes; reject = no; }));
+    const wrapper = mount(TemplatePickerDialog, { props: { visible: false } });
+    await wrapper.setProps({ visible: true }); await flushPromises();
+    await wrapper.findAll("button").find(button => button.text() === "Use Project Dataset")!.trigger("click");
+    await flushPromises();
+    expect(mocks.openTemplateAsSheet).toHaveBeenCalledOnce();
+    await wrapper.setProps({ visible: false }); await wrapper.setProps({ visible: true }); await flushPromises();
+    if (outcome === "resolve") resolve({ name: "Old sheet" }); else reject(new Error("Old failed launch"));
+    await flushPromises();
+    expect(wrapper.emitted("sheet-opened")).toBeUndefined();
+    expect(mocks.toastAdd).not.toHaveBeenCalled();
+    expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toContain("Current portfolio");
+    wrapper.unmount();
+  });
+
+  it("permits its own successful sheet activation", async () => {
+    readyScopeResponses();
+    mocks.openTemplateAsSheet.mockImplementationOnce(async () => { scope.sheetId = 2; return { workflowId: 2, name: "New sheet" }; });
+    const wrapper = mount(TemplatePickerDialog, { props: { visible: false } });
+    await wrapper.setProps({ visible: true }); await flushPromises();
+    await wrapper.findAll("button").find(button => button.text() === "Use Project Dataset")!.trigger("click");
+    await flushPromises();
+    expect(wrapper.emitted("sheet-opened")).toHaveLength(1);
+    expect(mocks.toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Analysis started" }));
+    wrapper.unmount();
+  });
+
+  it.each(["projectId", "userId", "revision", "sheetId"] as const)("rejects a late readiness reply across %s A-B-A", async (key) => {
+    readyScopeResponses();
+    let finish!: (value: object) => void;
+    mocks.apiPost.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const wrapper = mount(TemplatePickerDialog, { props: { visible: false } });
+    await wrapper.setProps({ visible: true }); await flushPromises();
+    const original = scope[key]; scope[key] = original + 1; await flushPromises(); scope[key] = original; await flushPromises();
+    expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toContain("Current portfolio");
+    finish({ data: null }); await flushPromises();
+    expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toContain("Current portfolio");
+    expect(wrapper.text()).not.toContain("Saved dataset could not be verified");
+    wrapper.unmount();
+  });
+
+it("late closed-picker failure cannot overwrite reopened portfolio", async () => {
+  let rejectOld!: (reason: Error) => void;
+  const oldChoice = new Promise((_resolve, reject) => {
+    rejectOld = reject;
+  });
+  let choices = 0;
+  const dataset = {
+    id: 42,
+    dataset_view_id: 7,
+    name: "Current portfolio B",
+    digest: "c".repeat(64),
+    definition: {
+      experiment_id: 11,
+      stage: "raw",
+      selected_file_ids: [22],
+      asset_id: null,
+      target_authority: null,
+      group_column: null,
+    },
+  };
+  const template = {
+    id: 1,
+    slug: "pca",
+    name: "PCA",
+    category: "exploratory",
+    status: "ready",
+    is_active: true,
+    template_data: {
+      nodes: [
+        { node_id: "data_1", node_type: "data.collection_load", parameters: {} },
+      ],
+    },
+  };
+  mocks.apiGet.mockImplementation(async (url: string) =>
+    url.includes("current-dataset")
+      ? ++choices === 1
+        ? oldChoice
+        : { data: { dataset } }
+      : { data: { templates: [template], total: 1 } },
+  );
+  mocks.apiPost.mockResolvedValue({
+    data: {
+      binding: { target_authority: null, group_column: null },
+      decisions: [],
+    },
+  });
+  const wrapper = mount(TemplatePickerDialog, { props: { visible: false } });
+  await wrapper.setProps({ visible: true });
+  await flushPromises();
+  await wrapper.setProps({ visible: false });
+  await wrapper.setProps({ visible: true });
+  await flushPromises();
+  expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toContain(
+    "Current portfolio B",
+  );
+  rejectOld(new Error("Old request failed"));
+  await flushPromises();
+  expect(wrapper.find('[data-testid="starter-data-portfolio"]').exists()).toBe(true);
+  wrapper.unmount();
+});
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.openTemplateAsSheet.mockReset();
+    Object.assign(scope, { projectId: 7, userId: 1, revision: 0, sheetId: 1 });
     mocks.optimization = false;
     mocks.workflowNodes = [];
     mocks.apiPost.mockResolvedValue({ data: null });
@@ -596,6 +720,7 @@ describe("TemplatePickerDialog", () => {
         project_id: 7,
         binding: expect.objectContaining({ experiment_id: 8, file_id: 9 }),
       }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(wrapper.text()).toContain("Requires a numeric target");
     expect(wrapper.findAll(".tp-row button")).toHaveLength(0);
@@ -686,6 +811,7 @@ describe("TemplatePickerDialog", () => {
     expect(mocks.apiPost).toHaveBeenCalledWith(
       "/workflow-templates/binding-compatibility-preview",
       expect.objectContaining({ use_saved_analysis_selection: true, binding: expect.objectContaining({ file_ids: [11], dataset_view_id: 7 }) }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     const button = wrapper.findAll("button").find((candidate) => candidate.text() === "Use Project Dataset");
     expect(button).toBeDefined();
@@ -730,6 +856,7 @@ describe("TemplatePickerDialog", () => {
     expect(mocks.apiPost).toHaveBeenCalledWith(
       "/workflow-templates/binding-compatibility-preview",
       expect.objectContaining({ binding: expect.objectContaining({ asset_id: assetId }) }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     const button = wrapper.findAll("button").find((candidate) => candidate.text() === "Use Project Dataset");
     expect(button?.attributes("disabled")).toBeUndefined();
@@ -900,7 +1027,7 @@ describe("TemplatePickerDialog", () => {
 
     expect(mocks.apiPost).toHaveBeenCalledWith("/workflow-templates/compatibility-preview", {
       analysis_profile: receipt.analysis_readiness?.profile,
-    });
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(wrapper.text()).toContain("Requires Raman data; the dataset technique is FTIR.");
     expect(wrapper.text()).toContain("Not Available for Current Dataset");
     expect(wrapper.text()).not.toContain("Use Current Data");

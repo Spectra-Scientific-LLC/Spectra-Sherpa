@@ -274,3 +274,125 @@ def test_slow_successful_read_keeps_timing_at_info(monkeypatch, caplog):
     records = [r for r in caplog.records if r.name.endswith("request_id")]
     assert len(records) == 1 and records[0].levelno == logging.INFO
     assert "response_headers_ms=1200.0" in records[0].getMessage()
+
+
+@pytest.mark.parametrize("raw", ["client\nFORGED_EVENT", "client\r\tentry", "x" * 4096, "sample-\u202eabcd"])
+def test_non_http_correlation_is_bounded_in_lines_and_buffer_metadata(raw):
+    from spectra_sherpa.app.core.logging import BufferHandler, log_buffer
+    from spectra_sherpa.app.core.request_id import diagnostic_identifier, install_request_id_log_factory
+
+    install_request_id_log_factory()
+    handler = BufferHandler()
+    handler.setFormatter(RedactingFormatter(logging.Formatter("[req=%(request_id)s] %(message)s")))
+    with use_request_id(raw):
+        record = logging.getLogger("review.correlation").makeRecord(
+            "review.correlation", logging.INFO, __file__, 1, "legitimate event", (), None
+        )
+        handler.handle(record)
+        assert get_request_id() == raw  # Protocol identity is not rewritten.
+    entry = log_buffer[-1]
+    assert entry["request_id"] == diagnostic_identifier(raw)
+    assert len(entry["request_id"]) == 71
+    assert raw not in entry["message"]
+    assert len(entry["message"].splitlines()) == 1
+    assert diagnostic_identifier(raw) != diagnostic_identifier(raw + "other")
+
+
+def test_worker_logs_bound_node_identity_without_changing_execution(monkeypatch, caplog):
+    from spectra_sherpa.app.core.request_id import diagnostic_identifier
+    from spectra_sherpa.app.services.dag.executor_pool import _with_worker_logging
+
+    monkeypatch.setattr("spectra_sherpa.app.core.logging.configure_logging", lambda: None)
+    caplog.set_level(logging.INFO)
+    raw = "node\nFORGED_EVENT"
+
+    @_with_worker_logging
+    def task(node_type, node_id, parameters, args, kwargs, worker_context):
+        assert node_id == raw
+        return 17
+
+    assert task("test", raw, {}, (), {}, None) == 17
+    records = [record for record in caplog.records if "NODE_WORKER_" in record.getMessage()]
+    assert len(records) == 2
+    assert all(raw not in record.getMessage() for record in records)
+    assert all(diagnostic_identifier(raw) in record.getMessage() for record in records)
+
+
+@pytest.fixture
+def isolated_log_handlers(monkeypatch):
+    root = logging.getLogger()
+    known = [
+        logging.getLogger(name) for name in ("uvicorn.access", "uvicorn.error", "gunicorn.access", "gunicorn.error")
+    ]
+    saved = [(logger, logger.handlers[:], logger.level) for logger in [root, *known]]
+    for logger in [root, *known]:
+        logger.handlers = []
+    monkeypatch.setattr(logging_module, "settings", replace(logging_module.settings, log_file_path=None))
+    yield root
+    for logger, handlers, level in saved:
+        for handler in logger.handlers:
+            if handler not in handlers:
+                handler.close()
+        logger.handlers = handlers
+        logger.setLevel(level)
+
+
+def test_existing_console_receives_configured_level_and_correlation(isolated_log_handlers):
+    root = isolated_log_handlers
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setLevel(logging.WARNING)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    root.addHandler(handler)
+    configure_logging(logging.INFO)
+    with use_request_id("worker-trace"):
+        root.info("worker started")
+    assert "worker started" in stream.getvalue()
+    assert "[req=worker-trace]" in stream.getvalue()
+    configure_logging(logging.WARNING)
+    root.info("not requested")
+    assert "not requested" not in stream.getvalue()
+
+
+def test_server_access_handler_obeys_configured_threshold(isolated_log_handlers):
+    stream = io.StringIO()
+    logger = logging.getLogger("uvicorn.access")
+    handler = logging.StreamHandler(stream)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    configure_logging(logging.WARNING)
+    logger.info("routine access")
+    assert not stream.getvalue()
+    logger.warning("server fault")
+    assert "server fault" in stream.getvalue()
+
+
+@pytest.mark.parametrize("relative_segments", [False, True])
+def test_unrelated_rotating_sink_does_not_suppress_requested_service_log(
+    tmp_path, monkeypatch, isolated_log_handlers, relative_segments
+):
+    root = isolated_log_handlers
+    foreign = logging.handlers.RotatingFileHandler(tmp_path / "unrelated.log")
+    root.addHandler(foreign)
+    path = tmp_path / "api.log"
+    configured = tmp_path / "logs" / ".." / "api.log" if relative_segments else path
+    (tmp_path / "logs").mkdir(exist_ok=True)
+    monkeypatch.setattr(logging_module, "settings", replace(logging_module.settings, log_file_path=str(configured)))
+    configure_logging()
+    configure_logging()
+    owned = [h for h in root.handlers if isinstance(h, LockedRotatingFileHandler)]
+    assert len(owned) == 1 and owned[0].baseFilename == str(path)
+    assert any(type(h) is logging.StreamHandler for h in root.handlers)
+    with use_request_id("trace-1"):
+        root.info("persistent event")
+    assert "persistent event" in path.read_text()
+    assert "[req=trace-1]" in path.read_text()
+
+
+def test_fallback_filter_normalizes_preexisting_correlation():
+    from spectra_sherpa.app.core.request_id import RequestIDLogFilter, diagnostic_identifier
+
+    record = logging.LogRecord("test", logging.INFO, __file__, 1, "event", (), None)
+    record.request_id = "legacy\nFORGED"
+    RequestIDLogFilter().filter(record)
+    assert record.request_id == diagnostic_identifier("legacy\nFORGED")

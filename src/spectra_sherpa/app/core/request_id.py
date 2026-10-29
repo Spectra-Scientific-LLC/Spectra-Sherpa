@@ -20,6 +20,7 @@ requiring OSS to know server semantics.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import uuid
@@ -39,6 +40,21 @@ REQUEST_ID_HEADER = "X-Request-ID"
 # workers, ad-hoc scripts. The logging filter renders that as ``-`` so
 # formatters with ``%(request_id)s`` don't crash outside a request.
 _request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+
+
+def diagnostic_identifier(value: object) -> str:
+    """Bound user-controlled correlation fields without changing wire identity."""
+    if value is None:
+        return "-"
+    if not isinstance(value, str):
+        return "invalid"
+    if not value:
+        return "-"
+    if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", value):
+        return value
+    # Preserve deterministic correlation without copying arbitrary content into
+    # rendered lines or structured browser-buffer fields.
+    return "sha256:" + hashlib.sha256(value.encode("utf-8", errors="surrogatepass")).hexdigest()
 
 
 def get_request_id() -> str | None:
@@ -146,8 +162,7 @@ class RequestIDLogFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if not hasattr(record, "request_id"):
-            record.request_id = get_request_id() or "-"
+        record.request_id = diagnostic_identifier(getattr(record, "request_id", get_request_id()))
         return True
 
 
@@ -164,7 +179,7 @@ def install_request_id_log_factory() -> None:
 
     def factory(*args, **kwargs):  # type: ignore[no-untyped-def]
         record = current(*args, **kwargs)
-        record.request_id = get_request_id() or "-"
+        record.request_id = diagnostic_identifier(get_request_id())
         return record
 
     factory._request_id_factory_installed = True  # type: ignore[attr-defined]

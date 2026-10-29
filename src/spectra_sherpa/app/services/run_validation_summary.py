@@ -17,7 +17,11 @@ from spectra_sherpa.core.target_units import TargetUnits, resolve_response_units
 from spectra_sherpa.sdk.validation_reporting import regression_reporting_notes
 
 
-def _split_summaries(run: Any, definition: dict) -> list[dict]:
+class _ValidationReadBudgetExceeded(ValueError):
+    """Global read cap is not a recoverable per-record failure."""
+
+
+def _split_summaries(run: Any, definition: dict, *, on_read_error=None) -> list[dict]:
     evidence = RunEvidence.model_validate(run.evidence_completeness)
     if evidence.qualification != "qualified":
         return []
@@ -27,57 +31,62 @@ def _split_summaries(run: Any, definition: dict) -> list[dict]:
         if node.get("node_type") != "data.train_test_split":
             continue
         identifier = node["node_id"]
-        for item in evidence.outputs.get(identifier, {}).values():
-            if item.state != "exact" or item.storage != "file" or not item.byte_count:
-                continue
-            budget -= item.byte_count
-            if budget < 0:
-                raise ValueError("Split summary read budget exceeded")
-            value = read_output(run.user_id, item)
-            if not isinstance(value, dict) or value.get("type") != "SherpaDataset":
-                continue
-            entries = [
-                entry
-                for entry in value.get("provenance", [])
-                if entry.get("op_id") == "data.train_test_split" and entry.get("node_id") == identifier
-            ]
-            if not entries:
-                continue
-            plan = entries[-1].get("parameters", {})
-            if plan.get("schema") != "spectrasherpa-split-plan/2":
-                continue
-            unsigned = {key: value for key, value in plan.items() if key not in {"split", "digest"}}
-            digest = hashlib.sha256(
-                json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-            ).hexdigest()
-            if digest != plan.get("digest"):
-                raise ValueError("Split plan does not match its retained identity")
-            train, test = plan.get("train_indices"), plan.get("test_indices")
-            count = plan.get("n_samples")
-            if (
-                not isinstance(train, list)
-                or not isinstance(test, list)
-                or type(count) is not int
-                or not train
-                or not test
-                or any(type(i) is not int for i in train + test)
-                or len(set(train + test)) != len(train + test)
-                or len(train + test) != count
-                or any(i < 0 or i >= count for i in train + test)
-            ):
-                raise ValueError("Split population is incomplete or overlaps")
-            if not isinstance(plan.get("method"), str) or type(plan.get("random_seed")) is not int:
-                raise ValueError("Split method or seed is unavailable")
-            held = plan.get("held_out_groups")
-            if held is not None and (
-                not isinstance(held, list)
-                or not held
-                or type(plan.get("n_groups")) is not int
-                or plan["n_groups"] <= len(held)
-            ):
-                raise ValueError("Group counts are incomplete")
-            summaries.append({"node": identifier, "plan": plan})
-            break
+        try:
+            for item in evidence.outputs.get(identifier, {}).values():
+                if item.state != "exact" or item.storage != "file" or not item.byte_count:
+                    continue
+                budget -= item.byte_count
+                if budget < 0:
+                    raise _ValidationReadBudgetExceeded("Split summary read budget exceeded")
+                value = read_output(run.user_id, item)
+                if not isinstance(value, dict) or value.get("type") != "SherpaDataset":
+                    continue
+                entries = [
+                    entry
+                    for entry in value.get("provenance", [])
+                    if entry.get("op_id") == "data.train_test_split" and entry.get("node_id") == identifier
+                ]
+                if not entries:
+                    continue
+                plan = entries[-1].get("parameters", {})
+                if plan.get("schema") != "spectrasherpa-split-plan/2":
+                    continue
+                unsigned = {key: value for key, value in plan.items() if key not in {"split", "digest"}}
+                digest = hashlib.sha256(
+                    json.dumps(unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+                ).hexdigest()
+                if digest != plan.get("digest"):
+                    raise ValueError("Split plan does not match its retained identity")
+                train, test = plan.get("train_indices"), plan.get("test_indices")
+                count = plan.get("n_samples")
+                if (
+                    not isinstance(train, list)
+                    or not isinstance(test, list)
+                    or type(count) is not int
+                    or not train
+                    or not test
+                    or any(type(i) is not int for i in train + test)
+                    or len(set(train + test)) != len(train + test)
+                    or len(train + test) != count
+                    or any(i < 0 or i >= count for i in train + test)
+                ):
+                    raise ValueError("Split population is incomplete or overlaps")
+                if not isinstance(plan.get("method"), str) or type(plan.get("random_seed")) is not int:
+                    raise ValueError("Split method or seed is unavailable")
+                held = plan.get("held_out_groups")
+                if held is not None and (
+                    not isinstance(held, list)
+                    or not held
+                    or type(plan.get("n_groups")) is not int
+                    or plan["n_groups"] <= len(held)
+                ):
+                    raise ValueError("Group counts are incomplete")
+                summaries.append({"node": identifier, "plan": plan})
+                break
+        except (ValueError, TypeError, KeyError, OSError) as exc:
+            if on_read_error is None or isinstance(exc, _ValidationReadBudgetExceeded):
+                raise
+            on_read_error(identifier, "split_plan", exc)
     return summaries
 
 
@@ -366,7 +375,7 @@ def _fold_count_rows(node, plan):
     ]
 
 
-def _validation_output_values(run, evidence):
+def _validation_output_values(run, evidence, *, on_read_error=None):
     """Skip unrelated large artifacts while bounding reads of validation evidence."""
     budget = 16 * 1024 * 1024
     for node, ports in evidence.outputs.items():
@@ -389,7 +398,13 @@ def _validation_output_values(run, evidence):
             budget -= item.byte_count
             if budget < 0:
                 raise ValueError("validation report read budget exceeded")
-            value = read_output(run.user_id, item)
+            try:
+                value = read_output(run.user_id, item)
+            except (ValueError, TypeError, KeyError, OSError) as exc:
+                if on_read_error is None:
+                    raise
+                on_read_error(node, port, exc)
+                continue
             if not isinstance(value, dict):
                 continue
             yield node, port, value
