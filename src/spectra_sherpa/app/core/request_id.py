@@ -12,21 +12,20 @@ Why a contextvar?
   they operate on ``LogRecord``, not call frames. A contextvar is
   the only mechanism the filter sees.
 
-The header / payload propagation pattern is **separate-mint with
-upstream override**: when an inbound ``X-Request-ID`` (HTTP) or
-``request_id`` (WebSocket message) is present, the value is used
-verbatim; otherwise a fresh UUID hex is minted. This lets the
-commercial server forward IDs from upstream traffic when it wants
-single-request traceability, without forcing OSS to know anything
-about server semantics.
+HTTP accepts a bounded, log-safe upstream request ID or mints a fresh UUID.
+WebSocket handlers bind their message correlation through the same ContextVar.
+The commercial server can therefore forward correlation identifiers without
+requiring OSS to know server semantics.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
+from time import perf_counter
 from typing import Iterator
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -95,11 +94,23 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         incoming = request.headers.get(REQUEST_ID_HEADER, "").strip()
-        request_id = incoming or mint_request_id()
+        request_id = incoming if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", incoming) else mint_request_id()
         token = _request_id_var.set(request_id)
+        started = perf_counter()
+        status = 500
         try:
             response: Response = await call_next(request)
+            status = response.status_code
         finally:
+            # Route templates exclude user paths, queries, tokens and bodies.
+            route = getattr(request.scope.get("route"), "path", "unmatched")
+            logging.getLogger(__name__).info(
+                "HTTP_REQUEST method=%s route=%s status=%s response_headers_ms=%.1f",
+                request.method,
+                route,
+                status,
+                (perf_counter() - started) * 1000,
+            )
             _request_id_var.reset(token)
         response.headers[REQUEST_ID_HEADER] = request_id
         from spectra_sherpa.app.core.config import settings

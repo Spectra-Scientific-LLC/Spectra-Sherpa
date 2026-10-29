@@ -596,9 +596,9 @@ async def test_project_runs_list_and_compare_across_project(test_session, test_u
 
     assert comparison.scientific_comparison == compare_saved_run_evidence([first, second])
     assert all(s.state == "unavailable" for s in comparison.scientific_comparison.pairs[0].sections)
-    assert comparison.metric_keys == ["accuracy"]
-    assert comparison.diff["accuracy"][str(first.id)] == 0.8
-    assert comparison.diff["accuracy"][str(second.id)] == 0.9
+    assert comparison.metric_keys == ["model.accuracy"]
+    assert comparison.diff["model.accuracy"][str(first.id)] == 0.8
+    assert comparison.diff["model.accuracy"][str(second.id)] == 0.9
     with pytest.raises(HTTPException) as missing:
         await runs_route.compare_project_runs(
             CompareRunsRequest(run_ids=[first.id, second.id, 999999]),
@@ -664,15 +664,18 @@ async def test_project_run_compare_extracts_nested_training_metrics(test_session
         current_user=test_user,
     )
 
-    assert "train_accuracy" in comparison.metric_keys
-    assert "cv_accuracy" in comparison.metric_keys
-    assert "cv_f1_macro" in comparison.metric_keys
-    assert "cv_sensitivity_macro" in comparison.metric_keys
-    assert "cv_specificity_macro" in comparison.metric_keys
-    assert comparison.diff["train_accuracy"][str(first.id)] == 0.88
-    assert comparison.diff["train_accuracy"][str(second.id)] == 0.95
-    assert comparison.diff["cv_accuracy"][str(second.id)] == 0.91
-    assert comparison.diff["cv_f1_macro"][str(second.id)] == 0.89
+    assert set(comparison.metric_keys) == {
+        "simca.train_accuracy",
+        "knn.train_accuracy",
+        "knn.cv_accuracy",
+        "knn.cv_f1_macro",
+        "knn.cv_sensitivity_macro",
+        "knn.cv_specificity_macro",
+    }
+    assert comparison.diff["simca.train_accuracy"] == {str(first.id): 0.88}
+    assert comparison.diff["knn.train_accuracy"] == {str(second.id): 0.95}
+    assert comparison.diff["knn.cv_accuracy"][str(second.id)] == 0.91
+    assert comparison.diff["knn.cv_f1_macro"][str(second.id)] == 0.89
 
 
 @pytest.mark.asyncio
@@ -734,10 +737,10 @@ async def test_workflow_compare_uses_curated_scalar_metrics(test_session, test_u
 
     assert comparison.scientific_comparison == compare_saved_run_evidence([first, second])
     assert all(s.state == "unavailable" for s in comparison.scientific_comparison.pairs[0].sections)
-    assert comparison.metric_keys == ["cv_accuracy", "train_accuracy"]
-    assert set(comparison.diff) == {"cv_accuracy", "train_accuracy"}
-    assert comparison.diff["cv_accuracy"][str(first.id)] == 0.9
-    assert comparison.diff["train_accuracy"][str(second.id)] == 0.95
+    assert comparison.metric_keys == ["knn.cv_accuracy", "simca.train_accuracy"]
+    assert set(comparison.diff) == {"knn.cv_accuracy", "simca.train_accuracy"}
+    assert comparison.diff["knn.cv_accuracy"][str(first.id)] == 0.9
+    assert comparison.diff["simca.train_accuracy"][str(second.id)] == 0.95
 
 
 @pytest.mark.asyncio
@@ -906,16 +909,24 @@ async def test_workflow_compare_prefers_canonical_classification_contract(test_s
     )
 
     assert "accuracy" not in comparison.metric_keys
-    assert comparison.metric_keys[:5] == [
-        "cv_balanced_accuracy",
-        "cv_accuracy",
-        "train_accuracy",
-        "train_balanced_accuracy",
-        "cv_f1_macro",
-    ]
-    assert comparison.diff["cv_balanced_accuracy"][str(first.id)] == 0.80
-    assert comparison.diff["cv_balanced_accuracy"][str(second.id)] == 0.83
-    assert comparison.diff["train_accuracy"][str(first.id)] == 0.94
+    expected = {
+        "knn.cv_balanced_accuracy": (0.80, None),
+        "knn.n_classes": (3, None),
+        "simca.n_classes": (None, 3),
+        "knn.cv_accuracy": (0.82, None),
+        "knn.train_accuracy": (0.94, None),
+        "knn.train_balanced_accuracy": (0.93, None),
+        "knn.cv_f1_macro": (0.79, None),
+        "simca.cv_balanced_accuracy": (None, 0.83),
+        "simca.cv_accuracy": (None, 0.84),
+        "simca.train_accuracy": (None, 0.96),
+        "simca.train_balanced_accuracy": (None, 0.95),
+        "simca.cv_f1_macro": (None, 0.81),
+    }
+    assert set(comparison.metric_keys) == set(expected)
+    for key, (left, right) in expected.items():
+        assert comparison.diff[key].get(str(first.id)) == left
+        assert comparison.diff[key].get(str(second.id)) == right
 
 
 @pytest.mark.asyncio

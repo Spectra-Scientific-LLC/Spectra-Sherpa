@@ -461,3 +461,15 @@ No parameters.
 | <code>noise</code> | <code>number</code> | <code>false</code> | <code>3.0</code> | — | <code>{&quot;max_value&quot;: 15.0, &quot;min_value&quot;: 0.0, &quot;step&quot;: 0.1}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Noise level for purity calculation SpectroChemPy documents the SIMPLISMA noise range as 0-15 percent |
 
 <!-- END GENERATED NODE REFERENCE -->
+
+
+### MCR spectral truth alignment
+
+Pure-spectrum recovery scores require a retained physical axis with compatible
+quantity and units. A reversed axis is reconciled by reversing its truth
+spectra as well. Machine-level float roundoff is accepted within four ULPs;
+this is not a tolerance for experimental resolution or a rounded report.
+No interpolation or inferred unit conversion is performed. Missing, shifted
+or ambiguous coordinates leave spectral truth scoring unavailable, with a
+visible reason in Quick Plot and Detailed View. Other MCR results remain
+available. Retained comparison metadata records the alignment used.

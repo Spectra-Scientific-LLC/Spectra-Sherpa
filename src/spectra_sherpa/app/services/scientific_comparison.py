@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import replace
 from itertools import combinations
 from math import isfinite
@@ -29,6 +30,8 @@ from spectra_sherpa.app.schemas.scientific_comparison import (
 from spectra_sherpa.app.services.dag.out_of_fold_evidence import _normalized_split_plan
 from spectra_sherpa.app.services.run_evaluation_comparison import _evaluation
 from spectra_sherpa.sdk import validate as sdk_validate
+
+logger = logging.getLogger(__name__)
 
 ROLES = ("calibration", "training_cv", "held_out", "outlier_challenge")
 
@@ -77,20 +80,28 @@ def resolve_run_evidence(run: Any, selection: EvaluationSelection | None = None)
         regression, retained_population = retained_regression_evidence(run)
     except RetainedComparisonUnavailable as exc:
         regression, retained_population = (), PopulationSummary(limitations=[str(exc)])
-    except (ValueError, TypeError, KeyError, AttributeError, OSError):
+    except (ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
+        logger.warning("RETAINED_COMPARISON_UNAVAILABLE run_id=%s error_type=%s", run.id, type(exc).__name__)
         regression, retained_population = (), PopulationSummary(
             limitations=["Retained population evidence could not be verified; inspect individual run outputs."]
         )
     try:
         evaluation = _evaluation(run, selection)
     except (ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
+        logger.warning("EVALUATION_UNAVAILABLE run_id=%s error_type=%s", run.id, type(exc).__name__, exc_info=True)
         return ResolvedComparisonEvidence(
             reference,
             label,
             regression,
             retained_population,
-            unavailable_reason=" ".join(retained_population.limitations)
-            or ("Retained evaluation evidence could not be read." if isinstance(exc, OSError) else str(exc)),
+            unavailable_reason=" ".join(
+                dict.fromkeys(
+                    [
+                        "Retained evaluation evidence could not be read." if isinstance(exc, OSError) else str(exc),
+                        *retained_population.limitations,
+                    ]
+                )
+            ),
         )
     receipts = dict(evaluation.inputs)
     # These positions are qualified by the exact retained scientific input

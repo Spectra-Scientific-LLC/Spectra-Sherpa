@@ -14,6 +14,7 @@ from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 from time import perf_counter
 from typing import Optional
@@ -307,6 +308,7 @@ class WorkerExecutionContext:
     # The main process sets this immediately before handing the trusted context
     # to a spawned worker. It is evidence only, never an authorization input.
     origin_pid: int = 0
+    request_id: str | None = None
 
 
 def set_default_pool(pool: Optional[ProcessPoolExecutor | IsolatedWorkerPool]) -> None:
@@ -352,6 +354,42 @@ def _worker_node(node_type: str, node_id: str, parameters: dict, worker_context:
     return node
 
 
+def _with_worker_logging(function):
+    @wraps(function)
+    def logged(*args, **kwargs):
+        from spectra_sherpa.app.core.logging import configure_logging
+        from spectra_sherpa.app.core.request_id import use_request_id
+
+        configure_logging()
+        context = kwargs.get("worker_context", args[5] if len(args) > 5 else None)
+        node_id = kwargs.get("node_id", args[1] if len(args) > 1 else "unknown")
+        execution_id = context.execution_id if context is not None else None
+        started = perf_counter()
+        with use_request_id(context.request_id if context is not None else None):
+            logger.info("NODE_WORKER_START node_id=%s execution_id=%s", node_id, execution_id)
+            try:
+                result = function(*args, **kwargs)
+            except BaseException as exc:
+                logger.warning(
+                    "NODE_WORKER_FAILED node_id=%s execution_id=%s error_type=%s duration_ms=%.1f",
+                    node_id,
+                    execution_id,
+                    type(exc).__name__,
+                    (perf_counter() - started) * 1000,
+                )
+                raise
+            logger.info(
+                "NODE_WORKER_DONE node_id=%s execution_id=%s duration_ms=%.1f",
+                node_id,
+                execution_id,
+                (perf_counter() - started) * 1000,
+            )
+            return result
+
+    return logged
+
+
+@_with_worker_logging
 def _run_population_in_worker(node_type, node_id, parameters, outputs, inputs, worker_context):
     """Apply a declared display operation in the same isolated workflow lease."""
     reject_spectrochempy_transport((outputs, inputs), boundary="population worker input")
@@ -369,6 +407,7 @@ def _run_population_in_worker(node_type, node_id, parameters, outputs, inputs, w
     return result
 
 
+@_with_worker_logging
 def _run_node_in_worker(
     node_type: str,
     node_id: str,

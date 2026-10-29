@@ -97,30 +97,46 @@ def test_missing_or_misaligned_identity_cannot_qualify_retained_comparison(tmp_p
     assert not resolve_run_evidence(retained_run("A", **kwargs)).evaluations
 
 
-@pytest.mark.parametrize("mutation", ["shifted", "reversed", "wrong_units", "missing", "quantity", "nan", "exact"])
+@pytest.mark.parametrize(
+    "mutation",
+    ["shifted", "reversed", "roundoff", "rounded_report", "wrong_units", "missing", "quantity", "nan", "exact"],
+)
 def test_mcr_ground_truth_requires_exact_physical_grid(mutation):
     axis = np.arange(600.0, 611.0)
-    signal = np.exp(-((axis - 605) ** 2) / 3)[None, :]
+    signal = (np.exp(-((axis - 603) ** 2) / 3) + 0.1 * (axis - 600))[None, :]
+    truth_signal = signal.copy()
     truth = axis.copy()
     if mutation == "shifted":
         truth += 10
     if mutation == "reversed":
         truth = truth[::-1]
+        truth_signal = truth_signal[:, ::-1]
+    if mutation == "roundoff":
+        truth = np.nextafter(truth, np.inf)
+    if mutation == "rounded_report":
+        truth += 0.00001
     if mutation == "nan":
         truth[0] = np.nan
     dataset = SherpaDataset(
         X=np.zeros((3, len(axis))),
         feature_axis=SpectralAxis(values=axis, title="Wavenumber", units="cm-1"),
         extra={
-            "ground_truth.spectra": signal.tolist(),
+            "ground_truth.spectra": truth_signal.tolist(),
             "ground_truth.spectra_x": None if mutation == "missing" else truth.tolist(),
             "ground_truth.spectra_x_title": "Raman shift" if mutation == "quantity" else "Wavenumber",
             "ground_truth.spectra_x_units": "nm" if mutation == "wrong_units" else "cm^-1",
         },
     )
-    result = _compare_mcr_spectra_to_truth(signal, dataset)
-    assert (result is not None) == (mutation == "exact")
+    reasons = []
+    result = _compare_mcr_spectra_to_truth(signal, dataset, unavailable_reasons=reasons)
+    admitted = mutation in {"exact", "reversed", "roundoff"}
+    assert bool(reasons) != admitted
+    assert (result is not None) == admitted
     if result is not None:
+        assert (
+            result["axis_alignment"]
+            == {"exact": "exact", "reversed": "reversed", "roundoff": "floating_point_roundoff"}[mutation]
+        )
         assert result["selected_match"]["r2"] == pytest.approx(1.0)
 
 
@@ -224,8 +240,10 @@ async def test_pls_blank_display_label_does_not_invalidate_typed_identity():
 def test_unsplit_calibration_identity_does_not_depend_on_display_labels(tmp_path, monkeypatch):
     monkeypatch.setattr(retention, "settings", replace(retention.settings, data_dir=tmp_path))
 
-    def make_run(labels, offset=0, units="absorbance"):
+    def make_run(labels, offset=0, units="absorbance", masked=False):
         x = np.arange(36.0, dtype=float).reshape(12, 3) + offset
+        if masked:
+            x[0, 0] = np.nan
         y = np.arange(12.0, dtype=float)
         source = SherpaDataset(
             X=x,
@@ -266,6 +284,12 @@ def test_unsplit_calibration_identity_does_not_depend_on_display_labels(tmp_path
     assert first.evaluations[0].feature_receipt != changed.evaluations[0].feature_receipt
     unit_change = resolve_run_evidence(make_run([f"a-{i}" for i in range(12)], units="transmittance"))
     assert first.evaluations[0].feature_receipt != unit_change.evaluations[0].feature_receipt
+
+    # Current retention marks nonfinite-to-null conversion as reduced evidence.
+    # Supporting a numeric fingerprint must not promote that payload to exact.
+    masked = resolve_run_evidence(make_run([f"a-{i}" for i in range(12)], masked=True))
+    assert not masked.evaluations
+    assert "Exact retained population evidence is unavailable" in masked.unavailable_reason
 
 
 def test_typed_label_only_evaluator_refuses_contradictory_order():
@@ -349,6 +373,7 @@ def test_missing_held_out_identity_reason_survives_valid_calibration(tmp_path, m
     resolved = resolve_run_evidence(run)
     assert [item.role for item in resolved.evaluations] == ["calibration"]
     assert "Typed sample identities were not retained" in resolved.unavailable_reason
+    assert not any("Typed sample identities" in reason for reason in resolved.evaluations[0].population.limitations)
 
 
 def test_evaluation_storage_error_does_not_expose_paths(monkeypatch):
@@ -367,3 +392,93 @@ def test_evaluation_storage_error_does_not_expose_paths(monkeypatch):
     )
     result = resolve_run_evidence(run)
     assert result.unavailable_reason == "Retained evaluation evidence could not be read."
+
+
+def test_missing_training_port_preserves_other_retained_evaluations(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(retention, "settings", replace(retention.settings, data_dir=tmp_path))
+    caplog.set_level("WARNING")
+    healthy = retained_run("A")
+    # Second evaluator references a distinct split with no retained training data.
+    from copy import deepcopy
+
+    from spectra_sherpa.app.schemas.run_evidence import RunEvidence
+
+    evidence = RunEvidence.model_validate(healthy.evidence_completeness)
+    definition = retention.read_output(1, evidence.outputs["__workflow__"]["definition"])
+    outputs = {
+        name: {port: retention.read_output(1, item) for port, item in ports.items()}
+        for name, ports in evidence.outputs.items()
+        if name != "__workflow__"
+    }
+    outputs["missing"] = deepcopy(outputs["split"])
+    outputs["missing"].pop("X_train")
+    for value in outputs["missing"].values():
+        if isinstance(value, dict):
+            for step in value.get("provenance", []):
+                if step.get("node_id") == "split":
+                    step["node_id"] = "missing"
+    broken = deepcopy(outputs["eval"]["comparison"])
+    broken["metadata"]["population_authority"].update(
+        population=["missing", "test"], fitted_populations=[["missing", "train"]]
+    )
+    outputs["broken_eval"] = {"comparison": broken}
+    definition["nodes"].append({"node_id": "missing", "node_type": "data.train_test_split"})
+    outputs["__workflow__"] = {"definition": definition}
+    healthy.evidence_completeness = retention.retain_run_outputs(1, outputs, {})
+    result = resolve_run_evidence(healthy)
+    assert len(result.evaluations) == 1
+    assert "Exact retained population evidence is unavailable" in result.unavailable_reason
+    assert "RETAINED_COMPARISON_UNAVAILABLE" in caplog.text
+    assert "broken_eval" in caplog.text
+
+
+@pytest.mark.parametrize("declared_ids", [None, ["scan-1", "scan-2", "scan-3"]])
+def test_mat_pair_keeps_replicate_labels_separate_from_declared_ids(monkeypatch, tmp_path, declared_ids):
+    import spectra_sherpa.io as io
+    from spectra_sherpa.app.lib.eigenvector import load_eigenvector_mat_pair_as_sherpa
+
+    axis = SampleAxis(labels=["S1", "S1", "S1"], sample_table={"sample_id": declared_ids} if declared_ids else None)
+    spectra = SherpaDataset(
+        X=np.ones((3, 4)),
+        sample_axis=axis,
+        feature_axis=SpectralAxis(values=np.arange(4.0), title="Wavelength", units="nm"),
+    )
+    properties = SherpaDataset(X=np.arange(21.0).reshape(3, 7), sample_axis=axis.copy())
+    monkeypatch.setattr(
+        io,
+        "ingest",
+        lambda path: SimpleNamespace(
+            assets=[
+                SimpleNamespace(asset_id="spectra", dataset=spectra),
+                SimpleNamespace(asset_id="properties", dataset=properties),
+            ]
+        ),
+    )
+    loaded = load_eigenvector_mat_pair_as_sherpa(
+        tmp_path / "unused.mat",
+        spec_key="spectra",
+        prop_key="properties",
+        prop_names=[f"y{i}" for i in range(7)],
+        x_title="Wavelength",
+        x_units="nm",
+        technique="NIR",
+    )
+    assert loaded.sample_axis.labels == ["S1", "S1", "S1"]
+    assert loaded.sample_axis.sample_table.get("sample_id") == declared_ids
+
+
+@pytest.mark.parametrize("grid", [[600.0, 600.0, 602.0], [600.0, 602.0, 601.0]])
+def test_mcr_rejects_ambiguous_grid_order_even_when_truth_matches(grid):
+    dataset = SherpaDataset(
+        X=np.ones((2, 3)),
+        feature_axis=SpectralAxis(values=grid, title="Wavenumber", units="cm-1"),
+        extra={
+            "ground_truth.spectra": [[1.0, 3.0, 2.0]],
+            "ground_truth.spectra_x": grid,
+            "ground_truth.spectra_x_title": "Wavenumber",
+            "ground_truth.spectra_x_units": "cm-1",
+        },
+    )
+    reasons = []
+    assert _compare_mcr_spectra_to_truth(np.array([[1.0, 3.0, 2.0]]), dataset, unavailable_reasons=reasons) is None
+    assert reasons == ["Spectral truth comparison unavailable: physical coordinates differ."]

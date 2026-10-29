@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import os
 import re
+import sys
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
+from types import MethodType
 from typing import Any, Deque
 
 from spectra_sherpa.app.core.config import settings
@@ -14,7 +17,8 @@ log_buffer: Deque[dict[str, Any]] = deque(maxlen=settings.log_buffer_size)
 
 REDACTION_RULES = [
     (re.compile(r"sk-[a-zA-Z0-9]{20,}"), "[REDACTED_API_KEY]"),
-    (re.compile(r"Bearer\s+[A-Za-z0-9._-]+"), "Bearer [REDACTED]"),
+    (re.compile(r"Bearer\s+[^\s\"',;]+", re.IGNORECASE), "Bearer [REDACTED]"),
+    (re.compile(r"([?&](?:token|code|api_key|key|password|secret)=)[^&\s\"']+", re.IGNORECASE), r"\1[REDACTED]"),
     (re.compile(r"password[\"\s:=]+[^\"\s]+", re.IGNORECASE), "password=[REDACTED]"),
 ]
 
@@ -23,6 +27,100 @@ def redact_message(message: str) -> str:
     for pattern, replacement in REDACTION_RULES:
         message = pattern.sub(replacement, message)
     return message
+
+
+def _safe_sink_error(_handler, _record):
+    # logging.Handler.handleError prints raw msg/args when a sink fails.
+    # Never expose those through stderr, even in development/debug mode.
+    try:
+        sys.stderr.write("Diagnostic sink unavailable.\n")
+    except Exception:
+        pass
+
+
+class RedactingFormatter(logging.Formatter):
+    """Redact the final formatted message, including args and exception text."""
+
+    def __init__(self, formatter: logging.Formatter | None = None):
+        super().__init__()
+        self.wrapped = formatter or logging.Formatter("%(message)s")
+
+    def format(self, record):
+        try:
+            rendered = self.wrapped.format(record)
+        except Exception:
+            # Standard handleError prints raw msg/args. Never enter that path
+            # for malformed third-party logging calls.
+            return "[Diagnostic omitted: formatting failed]"
+        # Never clip a secret before redaction. Oversized diagnostics are omitted.
+        if len(rendered) > 32768:
+            return "[Diagnostic omitted: exceeds processing limit]"
+        return redact_message(rendered)
+
+
+class LockedRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """Bounded shared service log; rotation serialized across worker processes.
+
+    Reopen under the lock so a peer's rotation cannot leave us writing into an
+    unlinked archive. The lock file itself contains no diagnostic data.
+    """
+
+    def __init__(self, *args, **kwargs):
+        # Do not hold an idle Windows file handle across a peer's rotation.
+        kwargs["delay"] = True
+        super().__init__(*args, **kwargs)
+
+    def emit(self, record):
+        fd = None
+        locked = False
+        try:
+            fd = os.open(self.baseFilename + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            locked = True
+            if self.stream:
+                self.stream.close()
+                self.stream = None
+            super().emit(record)
+            if self.stream:
+                self.stream.close()
+                self.stream = None
+        except Exception:
+            # A diagnostic sink must not fail scientific work or echo secrets
+            # through logging's default raw-record error report.
+            self.handleError(record)
+        finally:
+            if fd is not None:
+                try:
+                    if locked:
+                        if os.name == "nt":
+                            import msvcrt
+
+                            os.lseek(fd, 0, os.SEEK_SET)
+                            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                        else:
+                            import fcntl
+
+                            fcntl.flock(fd, fcntl.LOCK_UN)
+                except OSError:
+                    self.handleError(record)
+                finally:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        self.handleError(record)
+
+    def handleError(self, record):
+        try:
+            sys.stderr.write("Persistent diagnostic log write failed.\n")
+        except Exception:
+            pass
 
 
 class AccessPathFilter(logging.Filter):
@@ -92,28 +190,40 @@ def configure_logging(level: int = logging.INFO) -> None:
     # Persistent file logging (local audit log)
     if settings.log_file_path:
         if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in root_logger.handlers):
-            log_path = Path(settings.log_file_path)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                log_path = Path(settings.log_file_path)
+                log_path.parent.mkdir(parents=True, exist_ok=True)
 
-            file_handler = logging.handlers.RotatingFileHandler(
-                log_path,
-                maxBytes=settings.log_file_max_bytes,
-                backupCount=settings.log_file_backup_count,
-                encoding="utf-8",
-            )
-            file_handler.setLevel(level)
-            file_handler.setFormatter(
-                logging.Formatter(
-                    "%(asctime)s %(levelname)s [req=%(request_id)s] %(name)s: %(message)s",
-                    datefmt="%Y-%m-%d %H:%M:%S",
+                file_handler = LockedRotatingFileHandler(
+                    log_path,
+                    maxBytes=settings.log_file_max_bytes,
+                    backupCount=settings.log_file_backup_count,
+                    encoding="utf-8",
                 )
-            )
+                file_handler.setLevel(level)
+                file_handler.setFormatter(
+                    logging.Formatter(
+                        "%(asctime)s %(levelname)s [req=%(request_id)s] %(name)s: %(message)s",
+                        datefmt="%Y-%m-%d %H:%M:%S",
+                    )
+                )
 
-            # Add a filter to redact sensitive data before writing to file
-            class RedactionFilter(logging.Filter):
-                def filter(self, record: logging.LogRecord) -> bool:
-                    record.msg = redact_message(str(record.msg))
-                    return True
+                root_logger.addHandler(file_handler)
+            except (OSError, ValueError):
+                # Logging availability must not change scientific execution.
+                # Deliberately omit exception text, paths and credentials.
+                logging.getLogger(__name__).warning("Persistent diagnostic log unavailable; using console diagnostics.")
 
-            file_handler.addFilter(RedactionFilter())
-            root_logger.addHandler(file_handler)
+    # Cover handlers installed by Gunicorn/Uvicorn as well as application
+    # console/file handlers. Idempotent; do not flatten access logger args.
+    for logger in (
+        root_logger,
+        logging.getLogger("uvicorn.access"),
+        logging.getLogger("uvicorn.error"),
+        logging.getLogger("gunicorn.access"),
+        logging.getLogger("gunicorn.error"),
+    ):
+        for handler in logger.handlers:
+            handler.handleError = MethodType(_safe_sink_error, handler)
+            if not isinstance(handler.formatter, RedactingFormatter):
+                handler.setFormatter(RedactingFormatter(handler.formatter))

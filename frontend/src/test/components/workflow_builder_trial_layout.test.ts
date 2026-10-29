@@ -1,11 +1,13 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, h, nextTick, onUnmounted, reactive } from "vue";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkflowValidationError } from "@/utils/errors";
 import {
   dataSelectionReceiptStorageKey,
   storeDataSelectionReceipt,
 } from "@/utils/workflowDataSelection";
+
+enableAutoUnmount(afterEach);
 
 const lifecycleCounts = reactive({
   toolbarUnmounts: 0,
@@ -614,7 +616,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     expect(handoff.text()).toContain("block requested for grouping");
     expect(handoff.text()).not.toContain("will be offered");
     expect(wrapper.get('[aria-label="Workflow workspace context"]').text()).toContain(
-      "DatasetPending: Lavender Essential Oil FTIR Corpus v1",
+      "Data PortfolioPending: Lavender Essential Oil FTIR Corpus v1",
     );
     expect(
       wrapper.get('[data-testid="workflow-inspector"]').attributes("data-execution-disabled"),
@@ -654,7 +656,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
       "missing, expired, or belongs to another browser tab",
     );
     expect(wrapper.get('[aria-label="Workflow workspace context"]').text()).toContain(
-      "DatasetPending selection unavailable",
+      "Data PortfolioPending selection unavailable",
     );
     expect(
       wrapper.get('[data-testid="workflow-inspector"]').attributes("data-execution-disabled"),
@@ -771,7 +773,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
 
     const context = wrapper.get('[aria-label="Workflow workspace context"]');
     expect(context.text()).not.toContain("ProjectIris PCA");
-    expect(context.text()).toContain("DatasetSynthetic Atmospheric FTIR");
+    expect(context.text()).toContain("Data PortfolioSynthetic Atmospheric FTIR");
     expect(context.text()).not.toContain("1 dataset bound");
     expect(context.findAll(".workspace-context-item")[2]?.get("strong").attributes("title")).toBe(
       "Synthetic Atmospheric FTIR",

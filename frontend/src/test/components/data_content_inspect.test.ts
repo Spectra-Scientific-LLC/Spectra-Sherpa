@@ -1618,6 +1618,10 @@ describe("DataContent file inspection", () => {
     await vm.showDatasetView(view);
     await flushPromises();
     expect(vm.currentPortfolioView).toMatchObject({ id: 92 });
+    // A restored saved all-files view may have no transient plot override.
+    // Workflow must not infer a different subset from the visible file list.
+    vm.plotFileSelections = {};
+    await flushPromises();
     await vm.goToWorkflow();
     expect(latestWorkflowReceipt()?.datasets).toEqual([expect.objectContaining({
       dataset_name: "Saved source", dataset_view_id: 92,

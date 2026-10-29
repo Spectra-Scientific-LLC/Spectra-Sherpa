@@ -5302,6 +5302,8 @@ function workflowExperimentIds(): number[] {
 }
 
 function workflowSelectionForExperiment(experimentId: number): PlotFileSelection {
+  const portfolio = experimentId === dataStore.activeExperimentId ? currentPortfolioView.value : null;
+  if (portfolio && portfolio.selection.selected_file_ids == null) return null;
   if (Object.prototype.hasOwnProperty.call(plotFileSelections.value, experimentId)) {
     return plotFileSelections.value[experimentId];
   }

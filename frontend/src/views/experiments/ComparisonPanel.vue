@@ -484,13 +484,9 @@ const metricRows = computed<MetricRow[]>(() => {
     .filter((key) => props.rankableMetrics?.includes(key) && SCIENTIFIC_METRIC_KEYS.has(metricNameFromKey(key)))
     .map((key) => buildMetricRow(key, props.diff[key] || {}));
 
-  const derivedRows = [
-    deriveErrorRow("test_error", ["test_accuracy", "accuracy_test"]),
-    deriveErrorRow("cv_error", ["cv_accuracy", "cv_balanced_accuracy"]),
-    deriveErrorRow("train_error", ["train_accuracy"]),
-  ].filter((row): row is MetricRow => row !== null);
-
-  return [...derivedRows.filter(row => props.rankableMetrics?.includes(row.metric)), ...baseRows].sort((a, b) => metricRank(a.metric) - metricRank(b.metric));
+  // Qualification belongs to retained scientific evidence. Do not derive an
+  // apparently qualified error metric from unrelated producer accuracy keys.
+  return baseRows.sort((a, b) => metricRank(a.metric) - metricRank(b.metric));
 });
 
 function recordedMeasures(runId: number) {
@@ -642,21 +638,6 @@ function buildMetricRow(metric: string, values: Record<string, unknown>): Metric
   }
 
   return { metric, values, delta, bestRunId };
-}
-
-function deriveErrorRow(metric: string, sourceKeys: string[]): MetricRow | null {
-  const values: Record<string, number> = {};
-  for (const run of props.runs) {
-    const runId = String(run.id);
-    for (const key of sourceKeys) {
-      const value = props.diff[key]?.[runId];
-      if (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1) {
-        values[runId] = 1 - value;
-        break;
-      }
-    }
-  }
-  return Object.keys(values).length > 0 ? buildMetricRow(metric, values) : null;
 }
 
 function metricRank(metric: string): number {

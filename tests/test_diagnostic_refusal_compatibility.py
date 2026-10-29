@@ -58,18 +58,30 @@ def test_source_only_registrations_preserve_all_previously_supported_producers()
             "_SCIENTIFIC_AUDIT_PREDECESSORS",
             "_WORKFLOW_POPULATION_PREDECESSORS",
             "_PCA_DISPLAY_INPUT_REUSE_PREDECESSORS",
+            "_HANDOFF_PRESENTATION_PREDECESSORS",
         }:
             previous.extend(entries)
     for operation, (old, current) in _REVIEWED.items():
         contract = node_registry.get_metadata(operation).resolved_execution_contract()
         # Earlier registrations stay historically pinned. New exact consumers
         # have their own independent current-identity assertions.
-        assert contract.digest == current or authority.saved_state_predecessor_is_compatible(
-            current,
-            contract.digest,
-            operation_id=operation,
-            serializer=contract.payload["fitted_state_serializer"],
-        )
+        if operation == "model.mcr_als":
+            # Truth-grid admission changed; no application-compatibility alias
+            # is inferred from that change. Historical registrations stay exact.
+            assert contract.digest == "ecb3ff6dbc9dca42338ced4b815b55a3fc2415e00139d320f69f80789f389467"
+            assert not authority.saved_state_predecessor_is_compatible(
+                current,
+                contract.digest,
+                operation_id=operation,
+                serializer=contract.payload["fitted_state_serializer"],
+            )
+        else:
+            assert contract.digest == current or authority.saved_state_predecessor_is_compatible(
+                current,
+                contract.digest,
+                operation_id=operation,
+                serializer=contract.payload["fitted_state_serializer"],
+            )
         serializer = contract.payload["fitted_state_serializer"]
         entries = [entry for entry in new if entry.operation_id == operation]
         expected = {old}

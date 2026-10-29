@@ -915,12 +915,15 @@ class DAGExecutor:
 
     def _worker_context(self, node: Node) -> WorkerExecutionContext:
         """Create trusted worker authority; never derive it from workflow data."""
+        from spectra_sherpa.app.core.request_id import get_request_id
+
         capabilities = resolved_runtime_worker_capabilities(node)
         return WorkerExecutionContext(
             execution_id=str(uuid.uuid4()),
             runtime=self.runtime.for_worker(capabilities),
             capabilities=capabilities,
             origin_pid=os.getpid(),
+            request_id=get_request_id(),
         )
 
     @staticmethod

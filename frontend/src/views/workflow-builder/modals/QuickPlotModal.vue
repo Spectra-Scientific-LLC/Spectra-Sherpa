@@ -207,6 +207,7 @@ v-model:scale-value="selectedFeatureScale"
       </div>
 
       <p v-for="failure in comparisonRefusals" :key="failure" role="alert">{{ failure }}</p>
+      <p v-if="spectralTruthLimitation(nodeType, nodeOutput?.metadata)" role="status">{{ spectralTruthLimitation(nodeType, nodeOutput?.metadata) }}</p>
       <p v-if="requestedGroupingError" role="alert">{{ requestedGroupingError }}</p>
 
       <!-- Plotly chart -->
@@ -299,7 +300,7 @@ import { plotMatrixSlices } from "@/utils/plotMatrixSlices";
 import SampleMetadataStyleControls from "../node-detail/panels/SampleMetadataStyleControls.vue";
 import { scientificNumber } from "@/utils/scientificEncoding";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
-import { scientificPlotRefusal } from "@/utils/scientificPlotState";
+import { scientificPlotRefusal, spectralTruthLimitation } from "@/utils/scientificPlotState";
 /* eslint-disable @typescript-eslint/no-explicit-any -- quick-plot consumes generic backend visualization payloads. */
 import { ref, computed, provide, watch } from "vue";
 

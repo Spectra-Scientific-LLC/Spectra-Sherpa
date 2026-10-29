@@ -12,6 +12,14 @@ import { datasetMetadataGroupingState } from "@/utils/sampleMetadataGrouping";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe("QuickPlotModal", () => {
+  it("discloses unavailable MCR truth scoring in Quick Plot", () => {
+    const reason = "Spectral truth comparison unavailable: a physical axis was not retained.";
+    const wrapper = mount(QuickPlotModal, { props: { embedded: true, modelValue: true,
+      nodeType: "model.mcr_als", nodeLabel: "MCR", nodeOutput: { data: [[1, 2]],
+        metadata: { spectra_recovery_unavailable: reason } } }, global: { stubs: globalStubs } });
+    expect(wrapper.findAll('[role="status"]').some(item => item.text() === reason)).toBe(true);
+    wrapper.unmount();
+  });
   it("keeps typed applied-score row names and PC columns in embedded tables", () => {
     const wrapper = mount(QuickPlotModal, { props: { embedded: true, tableOnly: true,
       modelValue: true, nodeType: "model.load_apply", nodeLabel: "Applied PCA",

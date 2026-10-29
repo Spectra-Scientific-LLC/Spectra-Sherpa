@@ -696,7 +696,8 @@ def load_eigenvector_mat_pair_as_sherpa(
 
     sample_payload = spectral_samples.model_dump(mode="python") if spectral_samples is not None else {}
     sample_table = dict(sample_payload.get("sample_table") or {})
-    sample_table["sample_id"] = labels
+    # Specimen display names may repeat across replicate scans. Preserve any
+    # declared observation IDs; labels are not an identity authority.
     sample_table.update(
         {
             name: [None if np.isnan(value) else float(value) for value in properties.X[:, index]]
