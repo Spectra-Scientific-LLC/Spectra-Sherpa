@@ -170,4 +170,19 @@ def bind_regression_sample_axis(comparison: dict, dataset: object) -> None:
         metadata["sample_ids"] = ids
 
 
+def restrict_regression_sample_identity(comparison: dict, dataset: object) -> None:
+    """Preserve a prediction operand's refusal, never grant reference identity.
+
+    Prediction IDs cannot establish the origin of an array-only reference. A
+    known limitation must nevertheless survive later graph qualification.
+    Exact identity/order joins remain the evaluator's strict input check.
+    """
+    _, reason = comparison_sample_ids(dataset)
+    if reason is not None:
+        metadata = comparison["metadata"]
+        metadata.pop("sample_ids", None)
+        metadata["sample_identity"] = "unavailable"
+        metadata.setdefault("sample_identity_unavailable", reason)
+
+
 __all__ = ["REGRESSION_COMPARISON_SCHEMA", "build_regression_comparison"]

@@ -105,13 +105,16 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             # Route templates exclude user paths, queries, tokens and bodies.
             route = getattr(request.scope.get("route"), "path", "unmatched")
             duration_ms = (perf_counter() - started) * 1000
-            # Successful fast GETs include frequent health/history polls. Keep
-            # their timing available at DEBUG without crowding service logs.
-            level = (
-                logging.WARNING
-                if status >= 400
-                else (logging.DEBUG if request.method in {"GET", "HEAD"} and duration_ms < 1000 else logging.INFO)
-            )
+            # Routine reads, signed-out configuration probes and missing URLs
+            # must not crowd warnings. Keep client refusals at INFO, except
+            # fast read-only 401/404 probes at DEBUG. Server faults stay visible.
+            fast_read = request.method in {"GET", "HEAD"} and duration_ms < 1000
+            if status >= 500:
+                level = logging.WARNING
+            elif fast_read and (status < 400 or status in {401, 404}):
+                level = logging.DEBUG
+            else:
+                level = logging.INFO
             logging.getLogger(__name__).log(
                 level,
                 "HTTP_REQUEST method=%s route=%s status=%s response_headers_ms=%.1f",

@@ -42,7 +42,7 @@ class HistoricalValidationGraph(ValidationGraph):
 _INSPECTION_CONSUMERS = {
     "diagnostics.regression_evaluator": (
         "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
-        "aa784905102025d9771db83c7339ba323e7cce5e407f4af90d764ffe7413beab",
+        "769f2b7129ae580721435b91c2df1fd11ee6e2400e8489d266643da74ae96684",
     ),
     "baseline.penalized_ls": (
         "b3b824ef38585a9f7e1e673f2369f03c3d2e4900028168f79948aa35592095da",
@@ -138,7 +138,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.fitted_pls": (
         "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
-        "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
+        "7e577601daba52133d0e63f7496614960747b78a438c03c01297c22b28226012",
     ),
     "model.fitted_svr": (
         "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",

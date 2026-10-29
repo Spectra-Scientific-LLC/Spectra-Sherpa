@@ -885,8 +885,9 @@ _HANDOFF_PRESENTATION_PREDECESSORS = tuple(
         (
             "model.fitted_pls",
             "spectra.sherpa-simpls-regression-json/9",
-            "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
+            "7e577601daba52133d0e63f7496614960747b78a438c03c01297c22b28226012",
             (
+                "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
                 "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
                 "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
                 "3939dc715653c735c11d3993942bd8e8baf5343fd42e21341d5cde130dafdde3",

@@ -40,13 +40,13 @@ _REVIEWED = {
 }
 
 _READ_ONLY_CONSUMERS = {
-    "diagnostics.regression_evaluator": "aa784905102025d9771db83c7339ba323e7cce5e407f4af90d764ffe7413beab",
+    "diagnostics.regression_evaluator": "769f2b7129ae580721435b91c2df1fd11ee6e2400e8489d266643da74ae96684",
     **{operation: current for operation, (_, current) in _REVIEWED.items() if operation != "model.pca"},
     "model.apply_fitted_linear_regression": "d2d1306c1b29286f1103349c9bf961428dd17c065054a024e1efe4d7f2428495",
     "model.apply_fitted_pcr": "6663dc32859dd2b7552ec3c22bc608173a24ad032bc96fe9a82b5fb8ec0b25fe",
     "model.apply_fitted_svr": "492ef1eb3ed2bda68cd34e7c100fc3f196e45045b26246199de937ed4a1d7c6b",
     "classification.plsda": "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
-    "model.fitted_pls": "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
+    "model.fitted_pls": "7e577601daba52133d0e63f7496614960747b78a438c03c01297c22b28226012",
     "model.fitted_linear_regression": "f28fc334028632f8bfce32aded3019e2d4094846825d0573b743f8b513b4f69f",
     "model.fitted_pcr": "af58a7e90bc1a7dffae447ab12048fa8b702ec493a86c256711ef0a3ccce2f63",
     "model.fitted_svr": "598257753f8ef867cf069372e8cdfb88d1a2ba3f6a862b12a8afd12e41b11179",

@@ -7,6 +7,7 @@ import subprocess
 import sys
 from dataclasses import replace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -209,6 +210,38 @@ def test_failed_poll_is_visible_at_normal_log_level(caplog):
     records = [r for r in caplog.records if r.name.endswith("request_id")]
     assert len(records) == 1 and records[0].levelno == logging.WARNING
     assert "status=503" in records[0].getMessage()
+
+
+@pytest.mark.parametrize(
+    "method,status,expected",
+    [
+        ("GET", 401, logging.DEBUG),
+        ("GET", 404, logging.DEBUG),
+        ("HEAD", 401, logging.DEBUG),
+        ("POST", 401, logging.INFO),
+        ("GET", 403, logging.INFO),
+        ("POST", 422, logging.INFO),
+        ("GET", 429, logging.INFO),
+        ("GET", 500, logging.WARNING),
+        ("POST", 503, logging.WARNING),
+    ],
+)
+def test_client_refusals_are_not_server_warnings(caplog, method, status, expected):
+    from fastapi.responses import Response
+
+    app = FastAPI()
+    app.add_middleware(RequestIDMiddleware)
+
+    @app.api_route("/api/config", methods=["GET", "POST", "HEAD"])
+    async def endpoint():
+        return Response(status_code=status)
+
+    caplog.set_level(logging.DEBUG, logger="spectra_sherpa.app.core.request_id")
+    response = TestClient(app).request(method, "/api/config?token=PRIVATE")
+    assert response.status_code == status
+    records = [r for r in caplog.records if r.name.endswith("request_id")]
+    assert len(records) == 1 and records[0].levelno == expected
+    assert "PRIVATE" not in records[0].getMessage()
 
 
 def test_fast_successful_poll_does_not_fill_info_logs(caplog):

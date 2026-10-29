@@ -40,6 +40,15 @@ _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingP
         # Handoff presentation preserves this exact serializer's storage semantics.
         (
             "spectra.sherpa-simpls-regression-json/9",
+            "7e577601daba52133d0e63f7496614960747b78a438c03c01297c22b28226012",
+        ): FittedStateCustodyCapability(
+            serializer="spectra.sherpa-simpls-regression-json/9",
+            contract_digest="7e577601daba52133d0e63f7496614960747b78a438c03c01297c22b28226012",
+            custody_class="data_free_application_state",
+            rationale="Workflow display/source-curation bindings; fitted arrays and serializers are unchanged.",
+        ),
+        (
+            "spectra.sherpa-simpls-regression-json/9",
             "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
         ): FittedStateCustodyCapability(
             serializer="spectra.sherpa-simpls-regression-json/9",

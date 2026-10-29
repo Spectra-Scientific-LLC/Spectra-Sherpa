@@ -249,6 +249,45 @@ def test_typed_target_evaluator_preserves_ids_and_refuses_misaligned_predictions
         evaluate_regression_v2(predicted, target)
 
 
+@pytest.mark.parametrize("legacy_side", ["prediction", "reference", "both", "neither"])
+def test_evaluator_qualifies_both_operands_without_replacing_reference_labels(legacy_side):
+    target = SherpaDataset(
+        X=np.arange(4.0).reshape(-1, 1),
+        sample_axis=SampleAxis(labels=[f"reference-{i}" for i in range(4)], sample_table={"sample_id": list("abcd")}),
+        source_identity=(
+            DatasetSourceIdentity(source_format="eigenvector-dso") if legacy_side in {"reference", "both"} else None
+        ),
+    )
+    predicted = SherpaDataset(
+        X=target.X + 0.1,
+        sample_axis=SampleAxis(labels=[f"prediction-{i}" for i in range(4)], sample_table={"sample_id": list("abcd")}),
+        source_identity=(
+            DatasetSourceIdentity(source_format="matlab-process-log") if legacy_side in {"prediction", "both"} else None
+        ),
+    )
+    result = evaluate_regression_v2(predicted, target)
+    comparison = result.outputs["comparison"]
+    assert result.outputs["default"]["rmse"] == pytest.approx(0.1)
+    assert [row["sample"] for row in comparison["data"]] == target.sample_axis.labels
+    if legacy_side == "neither":
+        assert comparison["metadata"]["sample_ids"] == list("abcd")
+        assert comparison["metadata"]["sample_identity"] == "typed_sample_id"
+    else:
+        assert "sample_ids" not in comparison["metadata"]
+        assert comparison["metadata"]["sample_identity"] == "unavailable"
+        assert "identity-origin proof" in comparison["metadata"]["sample_identity_unavailable"]
+
+
+def test_prediction_ids_cannot_establish_identity_for_untyped_references():
+    predicted = SherpaDataset(
+        X=(np.arange(4.0) + 0.1).reshape(-1, 1),
+        sample_axis=SampleAxis(sample_table={"sample_id": list("abcd")}),
+    )
+    result = evaluate_regression_v2(predicted, np.arange(4.0))
+    assert "sample_ids" not in result.outputs["comparison"]["metadata"]
+    assert result.outputs["default"]["rmse"] == pytest.approx(0.1)
+
+
 @pytest.mark.asyncio
 async def test_pls_blank_display_label_does_not_invalidate_typed_identity():
     rng = np.random.default_rng(21)
@@ -677,3 +716,72 @@ def test_renamed_and_mixed_legacy_origins_remain_explicitly_unqualified(origin):
     )
     ids, reason = comparison_sample_ids(source)
     assert ids is None and "identity-origin proof" in reason
+
+
+@pytest.mark.parametrize("target_kind", ["array", "typed"])
+def test_prediction_origin_refusal_survives_graph_qualification_and_retention(tmp_path, monkeypatch, target_kind):
+    monkeypatch.setattr(retention, "settings", replace(retention.settings, data_dir=tmp_path))
+    x = np.arange(36, dtype=float).reshape(12, 3)
+    y = np.arange(12, dtype=float)
+    plan = plan_train_test_split(x, y, method="random")
+    source = SherpaDataset(
+        X=x,
+        target=y,
+        sample_axis=SampleAxis(sample_table={"sample_id": [f"sample-{i}" for i in range(12)]}),
+        extra={
+            "source_collection": {
+                "source_manifest_sha256": "a" * 64,
+                "collection_definition_sha256": "b" * 64,
+                "scientific_collection_sha256": "b" * 64,
+            }
+        },
+    )
+    outputs = materialize_split_outputs(source, x, y, plan, node_id="split")
+    observed = y[plan.test_indices]
+    predictions = SherpaDataset(
+        X=(observed + 0.1).reshape(-1, 1),
+        sample_axis=outputs["X_test"].sample_axis.copy(),
+        source_identity=DatasetSourceIdentity(source_format="eigenvector-dso"),
+    )
+    target = (
+        observed
+        if target_kind == "array"
+        else SherpaDataset(X=observed.reshape(-1, 1), sample_axis=outputs["X_test"].sample_axis.copy())
+    )
+    result = evaluate_regression_v2(predictions, target)
+    receipt = {
+        "role": "held_out_test",
+        "qualification": "graph_verified",
+        "population": ["split", "test"],
+        "fitted_populations": [["split", "train"]],
+    }
+    qualify_evaluation_result(result, receipt, source_results={"split": outputs})
+    comparison = result.outputs["comparison"]
+    assert comparison["metadata"]["sample_identity"] == "unavailable"
+    assert "sample_ids" not in comparison["metadata"]
+    assert result.outputs["default"]["rmse"] == pytest.approx(0.1)
+    run = SimpleNamespace(
+        id="legacy-prediction",
+        user_id=1,
+        name="legacy-prediction",
+        diagnostics={},
+        source_metadata={},
+        evidence_completeness=retention.retain_run_outputs(
+            1,
+            {
+                "split": outputs,
+                "eval": {"comparison": comparison},
+                "__workflow__": {
+                    "definition": {
+                        "schema_version": 1,
+                        "nodes": [{"node_id": "split", "node_type": "data.train_test_split"}],
+                        "edges": [],
+                    }
+                },
+            },
+            {},
+        ),
+    )
+    retained = resolve_run_evidence(run)
+    assert not retained.evaluations
+    assert "Sample identities were not qualified" in retained.unavailable_reason

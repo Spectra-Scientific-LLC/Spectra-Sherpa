@@ -251,6 +251,8 @@ def evaluate_regression_v2(
     """
 
     if isinstance(predictions, SherpaDataset) and isinstance(held_out_target, SherpaDataset):
+        # Exact row agreement prevents mismatched arithmetic, but does not prove
+        # that legacy label-derived IDs qualify cross-run population pairing.
         require_matching_sample_identity(predictions, held_out_target)
         predicted_ids, target_ids = sample_ids(predictions), sample_ids(held_out_target)
         if predicted_ids != target_ids:
@@ -267,6 +269,8 @@ def evaluate_regression_v2(
         target_names=names,
         sample_dataset=held_out_target if hasattr(held_out_target, "sample_axis") else None,
     )
+    if isinstance(predictions, SherpaDataset):
+        regression_comparison.restrict_regression_sample_identity(comparison, predictions)
     records = [record["metrics"] for record in comparison["statistics"]["targets"]]
     if len(records) == 1:
         metric_output: dict[str, object] = {"task_type": "regression", **records[0]}

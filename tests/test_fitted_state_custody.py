@@ -70,7 +70,7 @@ def test_custody_capabilities_bind_the_current_registered_execution_contracts() 
     }
     expected.update(
         {
-            FITTED_PLS_STATE_SERIALIZER: "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
+            FITTED_PLS_STATE_SERIALIZER: "7e577601daba52133d0e63f7496614960747b78a438c03c01297c22b28226012",
             "spectrasherpa.model.fitted_pcr/1": "af58a7e90bc1a7dffae447ab12048fa8b702ec493a86c256711ef0a3ccce2f63",
             "spectrasherpa.model.fitted_svr/1": "598257753f8ef867cf069372e8cdfb88d1a2ba3f6a862b12a8afd12e41b11179",
             "spectrasherpa.model.fitted_linear_regression/1": (

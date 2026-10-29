@@ -439,8 +439,9 @@ const selectedReceiptBinding = (): TemplateDataBinding | null => {
   return bindingFromSelectionReceipt(effectiveDataSelection.value, selectedExperimentId.value);
 };
 
-// Follow the same precedence as starter admission: an incoming selection,
-// otherwise the verified project choice, otherwise a bound source on the sheet.
+// Follow starter admission: selectedReceiptBinding() handles an incoming
+// selection; currentPrimaryDataBinding() checks activeProjectDataset first,
+// falling back to the sheet source only when no project dataset was selected.
 // Do not label the modal from a stale sheet when the project choice is in use.
 const currentPortfolioName = computed(() => {
   if (loading.value || projectDatasetChoiceError.value) return null;

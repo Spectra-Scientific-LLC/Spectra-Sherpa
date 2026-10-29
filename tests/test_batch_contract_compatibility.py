@@ -157,7 +157,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         "model.apply_fitted_svr": "492ef1eb3ed2bda68cd34e7c100fc3f196e45045b26246199de937ed4a1d7c6b",
         "model.fitted_linear_regression": "f28fc334028632f8bfce32aded3019e2d4094846825d0573b743f8b513b4f69f",
         "model.fitted_pcr": "af58a7e90bc1a7dffae447ab12048fa8b702ec493a86c256711ef0a3ccce2f63",
-        "model.fitted_pls": "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
+        "model.fitted_pls": "7e577601daba52133d0e63f7496614960747b78a438c03c01297c22b28226012",
         "model.fitted_svr": "598257753f8ef867cf069372e8cdfb88d1a2ba3f6a862b12a8afd12e41b11179",
     }
     reviewed_changes = {
