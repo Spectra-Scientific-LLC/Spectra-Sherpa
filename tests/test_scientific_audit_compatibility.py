@@ -40,12 +40,16 @@ _REVIEWED = {
 }
 
 _READ_ONLY_CONSUMERS = {
+    "diagnostics.regression_evaluator": "e8dfebf9c73e28bdb6269421c05279968f2f83506d9f7501f57bdc474188d0a3",
     **{operation: current for operation, (_, current) in _REVIEWED.items() if operation != "model.pca"},
-    "model.apply_fitted_linear_regression": "d78b114e9232c089d62045df8389531f24d24a20a8d94daf201063007c819665",
-    "model.apply_fitted_pcr": "f83e7ed65a6ab4f2efe14346e515fa57aa618fe268f68be0044bb538cc660428",
-    "model.apply_fitted_svr": "755d8867e11d93d20d752af591cc995b180f559a10ecdbdd31c145ed1e92b320",
+    "model.apply_fitted_linear_regression": "0b17e504f91c2ea20a85a74bd3bdc22e01f52f50911be18a840d21883154000c",
+    "model.apply_fitted_pcr": "8f887ca24cdc30332b44bc6f2dd55a3afecf9b061ff81508d90b4b0b28eccf2e",
+    "model.apply_fitted_svr": "b88b5fdbfd93a89e51e8758d9fcd02ea3b3ef08d7fbf520f68156f0f2db8aadb",
     "classification.plsda": "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
-    "model.fitted_pls": "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
+    "model.fitted_pls": "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
+    "model.fitted_linear_regression": "953c95ef58def16768d7280ee71e94f3837ab7d3d2076d48999804df3e32af23",
+    "model.fitted_pcr": "754a5a53c49fda40269196838397458ffa26d6542953b2200c595e8d4a298f2a",
+    "model.fitted_svr": "4e8a05f4ca0147570f038542448c3391444ee5df09405c8a37a506599cb66344",
 }
 _PROFILE_DIGESTS = (None, "9f37d08a914c3e276859c0ba10b5d2187d5d5ba4ff85f6d00b35cba23e7369f4")
 
@@ -58,6 +62,11 @@ def test_exact_historical_inspection_consumers_preserve_both_packaged_profiles(o
     current = node_registry.get_metadata(operation).resolved_execution_contract()
     assert current.digest == _READ_ONLY_CONSUMERS[operation]
     archived = catalog["contracts"].get(operation) or catalog.get("profile_contracts", {}).get(operation)
+    if archived is None and operation == "diagnostics.regression_evaluator":
+        # The first pinned profile omitted this payload; the second contains
+        # exactly the same historic digest, verified by the reconstruction path.
+        staging = authority.inspection_predecessor_catalog(_PROFILE_DIGESTS[1])
+        archived = staging["contracts"][operation]
     if archived is None:
         assert operation not in catalog["profile"]["operations"]
         original = authority.inspection_predecessor_catalog()["contracts"][operation]
@@ -113,6 +122,7 @@ def test_scientific_audit_preserves_exact_prior_application_not_execution(operat
     latest = {entry.operation_id: entry.consumer_digest for entry in authority._WORKFLOW_POPULATION_PREDECESSORS}
     # The reviewed display-only reuse has its own exact current PCA consumer;
     # the historical scientific-audit pairs below remain pinned unchanged.
+    latest.update({entry.operation_id: entry.consumer_digest for entry in authority._HANDOFF_PRESENTATION_PREDECESSORS})
     latest["model.pca"] = "1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f"
     assert contract.digest == latest.get(operation, current)
     serializer = contract.payload["fitted_state_serializer"]

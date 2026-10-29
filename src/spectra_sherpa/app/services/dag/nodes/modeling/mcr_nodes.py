@@ -414,6 +414,32 @@ def _compare_mcr_spectra_to_truth(
         )
         return None
 
+    # Ground-truth values are comparable only on the same physical grid.
+    # Component scale/permutation ambiguity does not authorize axis alignment.
+    from spectra_sherpa.core.axis_semantics import axis_semantics, require_compatible_axis_semantics
+
+    axis = getattr(input_ds, "feature_axis", None)
+    try:
+        if axis is None or axis.values is None or truth_x is None:
+            return None
+        require_compatible_axis_semantics(
+            axis_semantics(axis_class=type(axis).__name__, title=axis.title, units=axis.units, quantity=axis.quantity),
+            axis_semantics(axis_class="SpectralAxis", title=truth_x_title, units=truth_x_units),
+            context="MCR ground-truth spectra",
+        )
+        observed_grid, truth_grid = np.asarray(axis.values, dtype=float), np.asarray(truth_x, dtype=float)
+        if (
+            observed_grid.shape != (St_data.shape[1],)
+            or truth_grid.shape != observed_grid.shape
+            or not np.isfinite(observed_grid).all()
+            or not np.isfinite(truth_grid).all()
+            or not np.array_equal(observed_grid, truth_grid)
+        ):
+            return None
+    except (ValueError, TypeError):
+        logger.debug("MCR ground-truth spectrum comparison unavailable: incompatible axis authority")
+        return None
+
     n_components = St_data.shape[0]
     n_truth = truth_spectra.shape[0]
     if n_components == 0 or n_truth == 0:

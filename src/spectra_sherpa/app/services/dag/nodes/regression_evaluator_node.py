@@ -17,6 +17,8 @@ import numpy as np
 
 import spectra_sherpa.app.services.dag.regression_comparison as regression_comparison
 import spectra_sherpa.sdk.validate as sdk_validate
+from spectra_sherpa.app.lib.sample_identity import require_matching_sample_identity, sample_ids
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag.node_base import (
     Node,
     NodeMetadata,
@@ -43,7 +45,7 @@ from spectra_sherpa.sdk.validate import RegressionMetricAccumulator, RegressionM
 def _target_matrix(value: object, *, name: str) -> np.ndarray:
     """Return a finite target matrix without flattening response columns."""
     try:
-        array = np.asarray(value, dtype=np.float64)
+        array = np.asarray(value.X if isinstance(value, SherpaDataset) else value, dtype=np.float64)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{name} must be a finite prediction or target matrix") from exc
     if array.ndim == 1:
@@ -247,6 +249,11 @@ def evaluate_regression_v2(
     scientifically ambiguous.
     """
 
+    if isinstance(predictions, SherpaDataset) and isinstance(held_out_target, SherpaDataset):
+        require_matching_sample_identity(predictions, held_out_target)
+        predicted_ids, target_ids = sample_ids(predictions), sample_ids(held_out_target)
+        if predicted_ids != target_ids:
+            raise ValueError("Prediction and reference sample identities must agree in order")
     predicted = _target_matrix(predictions, name="predictions")
     observed = _target_matrix(held_out_target, name="held_out_target")
     if predicted.shape != observed.shape:
@@ -257,6 +264,7 @@ def evaluate_regression_v2(
         predicted,
         role="unqualified_evaluation",
         target_names=names,
+        sample_dataset=held_out_target if hasattr(held_out_target, "sample_axis") else None,
     )
     records = [record["metrics"] for record in comparison["statistics"]["targets"]]
     if len(records) == 1:

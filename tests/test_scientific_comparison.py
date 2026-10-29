@@ -152,6 +152,7 @@ def test_unsplit_pls_calibration_is_inspectable_without_inventing_a_test_set(tmp
 
     import numpy as np
 
+    from spectra_sherpa.app.lib.axes import SampleAxis
     from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
     from spectra_sherpa.app.services import run_output_retention as retention
     from spectra_sherpa.app.services.dag.regression_comparison import build_regression_comparison
@@ -160,6 +161,7 @@ def test_unsplit_pls_calibration_is_inspectable_without_inventing_a_test_set(tmp
     source = SherpaDataset(
         X=np.arange(12, dtype=float).reshape(4, 3),
         target=np.arange(4, dtype=float),
+        sample_axis=SampleAxis(sample_table={"sample_id": [f"id-{i}" for i in range(4)]}),
         extra={"source_collection": {"source_manifest_sha256": "a" * 64}},
     )
     definition = {
@@ -193,6 +195,7 @@ def test_native_heldout_receipt_retains_counts_and_ignores_unqualified_cv(tmp_pa
 
     import numpy as np
 
+    from spectra_sherpa.app.lib.axes import SampleAxis
     from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
     from spectra_sherpa.app.services import run_output_retention as retention
     from spectra_sherpa.app.services.dag.nodes.data.split_planner import (
@@ -204,7 +207,12 @@ def test_native_heldout_receipt_retains_counts_and_ignores_unqualified_cv(tmp_pa
     monkeypatch.setattr(retention, "settings", replace(retention.settings, data_dir=tmp_path))
     x = np.arange(36, dtype=float).reshape(12, 3)
     y = np.arange(12, dtype=float)
-    source = SherpaDataset(X=x, target=y, extra={"source_collection": {"source_manifest_sha256": "a" * 64}})
+    source = SherpaDataset(
+        X=x,
+        target=y,
+        sample_axis=SampleAxis(sample_table={"sample_id": [f"id-{i}" for i in range(12)]}),
+        extra={"source_collection": {"source_manifest_sha256": "a" * 64}},
+    )
     plan = plan_train_test_split(x, y, method="random")
     outputs = materialize_split_outputs(source, x, y, plan, node_id="split")
     target = y[plan.test_indices]
@@ -279,7 +287,9 @@ def test_preprocessed_training_calibration_preserves_serialized_sample_identity(
     source = SherpaDataset(
         X=x,
         target=y,
-        sample_axis=SampleAxis(labels=[f"sample-{i}" for i in range(12)]),
+        sample_axis=SampleAxis(
+            labels=[f"sample-{i}" for i in range(12)], sample_table={"sample_id": [f"id-{i}" for i in range(12)]}
+        ),
         extra={"source_collection": {"source_manifest_sha256": "a" * 64}},
     )
     plan = plan_train_test_split(x, y, method="random")

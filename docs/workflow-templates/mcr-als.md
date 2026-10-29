@@ -50,6 +50,12 @@ flowchart LR
 - **R2 and iterations**: fit quality and convergence behavior.
 - **Residuals**: systematic residuals can indicate missing components, wrong preprocessing, saturation, or axis problems.
 
+When synthetic ground-truth spectra are available, automatic component scoring
+requires the same numeric spectral coordinates, physical axis quantity, and
+compatible units as the fitted spectra. Equal array widths alone are insufficient.
+Missing, shifted, reversed, or incompatible axes leave that comparison unavailable;
+they do not imply a poor MCR fit or permit an automatic interpolation.
+
 ## Interpretation and Failure Modes
 
 MCR-ALS is exploratory unless constrained by chemistry, references, or known profiles. Use it to propose component structure, then validate with independent evidence.

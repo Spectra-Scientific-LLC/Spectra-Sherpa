@@ -109,3 +109,10 @@ def test_authority_map_has_separate_owners_documents_tests_consumers():
             assert (
                 "def test" in text or re.search(r"\b(?:test|it)(?:\.each)?\s*\(", text) or "def main" in text
             ), f"{topic}: {path} is not an executable test/check"
+
+
+def test_data_portfolio_is_approved_selection_terminology():
+    checker = copy_checker()
+    assert not any(re.search(pattern, "Data Portfolio", re.I) for pattern, _ in checker.RULES.values())
+    assert "execute-workflow" in checker.RULES
+    assert "scientific-summary" in checker.RULES

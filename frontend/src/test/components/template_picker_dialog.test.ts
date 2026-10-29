@@ -118,7 +118,7 @@ describe("TemplatePickerDialog", () => {
     });
   });
 
-  it("keeps the suggested starter visible until the user chooses current data", async () => {
+  it.each([false, true])("names only the admitted portfolio and waits for the user (extra receipt: %s)", async (extraReceipt) => {
     mocks.openTemplateAsSheet.mockResolvedValue({ name: "PCA" });
     mocks.apiGet.mockResolvedValue({
       data: {
@@ -203,6 +203,10 @@ describe("TemplatePickerDialog", () => {
       },
     };
 
+    if (extraReceipt) {
+      receipt.datasets.push({ ...receipt.datasets[0], experiment_id: 99, dataset_name: "Unused portfolio" });
+    }
+
     const wrapper = mount(TemplatePickerDialog, {
       props: { visible: false, dataSelection: receipt, preferredTemplateSlug: "pca" },
     });
@@ -211,6 +215,7 @@ describe("TemplatePickerDialog", () => {
 
     expect(mocks.openTemplateAsSheet).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain("Suggested");
+    expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toBe("Data Portfolio: Lavender");
     expect(wrapper.emitted("sheet-opened")).toBeUndefined();
     await wrapper.findAll("button").find(button => button.text() === "Use Current Data")!.trigger("click");
     await flushPromises();
@@ -671,7 +676,7 @@ describe("TemplatePickerDialog", () => {
     await wrapper.setProps({ visible: true });
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Project dataset: Corn MP6 · Moisture");
+    expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toContain("Data Portfolio: Corn MP6 · Moisture");
     expect(mocks.apiPost).toHaveBeenCalledWith(
       "/workflow-templates/binding-compatibility-preview",
       expect.objectContaining({ use_saved_analysis_selection: true, binding: expect.objectContaining({ file_ids: [11], dataset_view_id: 7 }) }),
@@ -757,6 +762,7 @@ describe("TemplatePickerDialog", () => {
     await flushPromises();
     expect(wrapper.text()).toContain("PLS Regression");
     expect(wrapper.text()).toContain("Project dataset selection could not be verified");
+    expect(wrapper.find('[data-testid="starter-data-portfolio"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Failed to load analysis starters");
     expect(wrapper.get(".tp-unavailable-status").text()).toBe("Not Available for Current Dataset");
     expect(wrapper.findAll(".tp-row button")).toHaveLength(0);

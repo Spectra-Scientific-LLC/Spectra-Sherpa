@@ -40,6 +40,10 @@ class HistoricalValidationGraph(ValidationGraph):
 # changes to exact new consumers below. Archived declarations/digests are not
 # rewritten; contract() still verifies declarations and never admits execution.
 _INSPECTION_CONSUMERS = {
+    "diagnostics.regression_evaluator": (
+        "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
+        "e8dfebf9c73e28bdb6269421c05279968f2f83506d9f7501f57bdc474188d0a3",
+    ),
     "baseline.penalized_ls": (
         "b3b824ef38585a9f7e1e673f2369f03c3d2e4900028168f79948aa35592095da",
         "3572299978c258b77523d201247340fc62dce738c2feff9357583016f37574c1",
@@ -114,31 +118,31 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",
-        "d78b114e9232c089d62045df8389531f24d24a20a8d94daf201063007c819665",
+        "0b17e504f91c2ea20a85a74bd3bdc22e01f52f50911be18a840d21883154000c",
     ),
     "model.apply_fitted_pcr": (
         "1aecb57326c2c3a8f71823a035cbcb2f21be34d72a3049daedcc5e67a399f2e9",
-        "f83e7ed65a6ab4f2efe14346e515fa57aa618fe268f68be0044bb538cc660428",
+        "8f887ca24cdc30332b44bc6f2dd55a3afecf9b061ff81508d90b4b0b28eccf2e",
     ),
     "model.apply_fitted_svr": (
         "244fe3defede23aefb869e74d97034600b1a73c9abb63694fb6101ed2fea9c34",
-        "755d8867e11d93d20d752af591cc995b180f559a10ecdbdd31c145ed1e92b320",
+        "b88b5fdbfd93a89e51e8758d9fcd02ea3b3ef08d7fbf520f68156f0f2db8aadb",
     ),
     "model.fitted_linear_regression": (
         "04d5ea448432137158df7b412286a17a5fe3498f5589ce53b33414fad2388b2b",
-        "0ba997bbc87209703db011f38850ee82d93027bb72ab28db27aa108a8f9cca9a",
+        "953c95ef58def16768d7280ee71e94f3837ab7d3d2076d48999804df3e32af23",
     ),
     "model.fitted_pcr": (
         "a207b7fc520763105b633ca6d99eb267872c38ed54dc6854082b7be1bd1756b8",
-        "99359a3588dfe55e29fd32428ce896d1ca503e3472e8b17a5982ed24d72a0d0d",
+        "754a5a53c49fda40269196838397458ffa26d6542953b2200c595e8d4a298f2a",
     ),
     "model.fitted_pls": (
         "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
-        "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
+        "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
     ),
     "model.fitted_svr": (
         "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
-        "b8ba060d1154848d0f96e25a0178c0c5eeff6658a4fc36de6ae3f7c82cb3f7ed",
+        "4e8a05f4ca0147570f038542448c3391444ee5df09405c8a37a506599cb66344",
     ),
 }
 

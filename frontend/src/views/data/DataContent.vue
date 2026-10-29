@@ -69,7 +69,7 @@
       />
       <WorkspaceContextItem
         v-if="activeTab === TAB_MY_DATASET"
-        label="Dataset"
+        label="Data Portfolio"
         :value="dataPortfolioName"
         wrap
         >{{ dataPortfolioDetail }}</WorkspaceContextItem
@@ -5483,7 +5483,11 @@ async function goToWorkflow(addNode?: string) {
               dataset_view_sha256: currentPortfolioView.value.selection_sha256,
             }
           : {}),
-        stage: workflowSelectionStage(selection === null ? "raw" : selection[0].stage),
+        stage: workflowSelectionStage(
+          experimentId === dataStore.activeExperimentId && currentPortfolioView.value
+            ? currentPortfolioView.value.selection.stage
+            : (selection === null ? "raw" : selection[0].stage),
+        ),
       };
     });
   } catch (error) {

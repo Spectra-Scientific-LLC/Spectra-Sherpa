@@ -778,6 +778,7 @@ class FittedPLSV2Node(Node):
                     predictions,
                     role="calibration",
                     target_names=target_names,
+                    sample_dataset=dataset,
                 ),
                 "x_scores": np.asarray(model.x_scores, dtype=np.float64),
                 "x_loadings": np.asarray(model.x_loadings.T, dtype=np.float64),

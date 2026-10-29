@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import HTTPException
@@ -22,6 +23,44 @@ from spectra_sherpa.app.schemas.workflow_data_selection import WorkflowSourceSel
 from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
 from spectra_sherpa.app.services.dataset_views import materialize_selection_receipt, receipt_sha256
 from spectra_sherpa.app.services.model_application import LoadedProjectDataset, load_project_dataset
+
+logger = logging.getLogger(__name__)
+
+
+def _portfolio_mismatch_fields(selection: WorkflowSourceSelection, receipt: dict[str, Any]) -> tuple[str, ...]:
+    """Return closed field names only; never serialize either scientific payload.
+
+    This uses the admission comparisons below, including the existing exact-file
+    equivalence. It adds observability, not a second receipt authority or a more
+    permissive normalization of a conflicting selection.
+    """
+    fields = (
+        "stage",
+        "asset_id",
+        "source_manifest_sha256",
+        "collection_definition_sha256",
+        "scientific_collection_sha256",
+        "group_column",
+    )
+    mismatches = [name for name in fields if getattr(selection, name) != receipt[name]]
+    if not selection_file_ids_match(receipt, selection.selected_file_ids):
+        mismatches.append("selected_file_ids")
+    authority = selection.target_authority.canonical_dict() if selection.target_authority else None
+    if authority != receipt["target_authority"]:
+        mismatches.append("target_authority")
+    return tuple(mismatches)
+
+
+def _log_selection_refusal(selection: WorkflowSourceSelection, *, code: str, fields: tuple[str, ...]) -> None:
+    # Request-ID correlation is supplied by the request logging context. Omit
+    # names, labels, targets, values, paths, hashes and raw exception messages.
+    logger.warning(
+        "DATA_SELECTION_REFUSED code=%s experiment_id=%s dataset_view_id=%s fields=%s",
+        code,
+        selection.experiment_id,
+        selection.dataset_view_id,
+        ",".join(fields),
+    )
 
 
 def source_parameters(selection: WorkflowSourceSelection) -> dict[str, Any]:
@@ -160,16 +199,19 @@ async def validate_selection(
         file_ids=selection.selected_file_ids,
         asset_id=selection.asset_id,
     )
-    if (
-        loaded.source_manifest_sha256 != selection.source_manifest_sha256
-        or loaded.collection_definition_sha256 != selection.collection_definition_sha256
-        or loaded.scientific_collection_sha256 != selection.scientific_collection_sha256
-    ):
+    identity_mismatches = tuple(
+        name
+        for name in ("source_manifest_sha256", "collection_definition_sha256", "scientific_collection_sha256")
+        if getattr(loaded, name) != getattr(selection, name)
+    )
+    if identity_mismatches:
+        _log_selection_refusal(selection, code="source_identity", fields=identity_mismatches)
         raise HTTPException(status_code=409, detail="Data selection no longer matches the admitted dataset identity")
     if selection.target_authority is not None:
         try:
             verify_target_authority(loaded.dataset, selection.target_authority)
         except ValueError as exc:
+            _log_selection_refusal(selection, code="target_authority", fields=("target_authority",))
             raise HTTPException(status_code=409, detail=str(exc)) from exc
     if selection.group_column and selection.target_authority is None:
         raise HTTPException(status_code=400, detail="Grouping requires a selected target authority")
@@ -188,25 +230,19 @@ async def validate_selection(
             view.selection_sha256 != selection.dataset_view_sha256
             or receipt_sha256(view.selection) != view.selection_sha256
         ):
+            _log_selection_refusal(selection, code="portfolio_digest", fields=("dataset_view_sha256",))
             raise HTTPException(status_code=409, detail="Saved dataset definition digest changed")
         try:
             materialized = materialize_selection_receipt(loaded, view.selection)
         except ValueError as exc:
+            _log_selection_refusal(selection, code="portfolio_materialization", fields=())
             raise HTTPException(
                 status_code=409, detail="Saved dataset definition no longer matches its source or cohort"
             ) from exc
         receipt = view.selection
-        if (
-            selection.stage != receipt["stage"]
-            or not selection_file_ids_match(receipt, selection.selected_file_ids)
-            or selection.asset_id != receipt["asset_id"]
-            or selection.source_manifest_sha256 != receipt["source_manifest_sha256"]
-            or selection.collection_definition_sha256 != receipt["collection_definition_sha256"]
-            or selection.scientific_collection_sha256 != receipt["scientific_collection_sha256"]
-            or (selection.target_authority.canonical_dict() if selection.target_authority else None)
-            != receipt["target_authority"]
-            or selection.group_column != receipt["group_column"]
-        ):
+        mismatches = _portfolio_mismatch_fields(selection, receipt)
+        if mismatches:
+            _log_selection_refusal(selection, code="saved_portfolio", fields=mismatches)
             raise HTTPException(status_code=409, detail="Workflow selection differs from the saved dataset definition")
         return materialized
     return loaded

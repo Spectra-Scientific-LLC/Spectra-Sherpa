@@ -82,6 +82,17 @@
         </table>
       </div>
       </Panel>
+      <Panel header="Recorded node measures" toggleable :collapsed="true">
+        <p class="qualification-note">Producer records; compare qualified evaluation roles above.</p>
+        <Panel v-for="(run, index) in runs" :key="run.id" :header="comparisonLabel(run.name, index)" toggleable>
+          <table class="comparison-matrix" :aria-label="`Recorded measures for ${run.name}`">
+            <thead><tr><th scope="col">Measure</th><th scope="col">Value</th></tr></thead>
+            <tbody><tr v-for="row in recordedMeasures(run.id)" :key="row.key">
+              <th scope="row">{{ formatMetricName(row.key) }}</th><td>{{ formatValue(row.value) }}</td>
+            </tr></tbody>
+          </table>
+        </Panel>
+      </Panel>
     </template>
   </div>
 </template>
@@ -470,7 +481,7 @@ const dataPartitionRows = computed<ComparisonRow[]>(() => [
 
 const metricRows = computed<MetricRow[]>(() => {
   const baseRows = props.metricKeys
-    .filter((key) => SCIENTIFIC_METRIC_KEYS.has(metricNameFromKey(key)))
+    .filter((key) => props.rankableMetrics?.includes(key) && SCIENTIFIC_METRIC_KEYS.has(metricNameFromKey(key)))
     .map((key) => buildMetricRow(key, props.diff[key] || {}));
 
   const derivedRows = [
@@ -479,8 +490,14 @@ const metricRows = computed<MetricRow[]>(() => {
     deriveErrorRow("train_error", ["train_accuracy"]),
   ].filter((row): row is MetricRow => row !== null);
 
-  return [...derivedRows, ...baseRows].sort((a, b) => metricRank(a.metric) - metricRank(b.metric));
+  return [...derivedRows.filter(row => props.rankableMetrics?.includes(row.metric)), ...baseRows].sort((a, b) => metricRank(a.metric) - metricRank(b.metric));
 });
+
+function recordedMeasures(runId: number) {
+  return props.metricKeys
+    .filter(key => !props.rankableMetrics?.includes(key) && props.diff[key]?.[String(runId)] != null)
+    .map(key => ({ key, value: props.diff[key][String(runId)] }));
+}
 
 const paramDiffRows = computed<ComparisonRow[]>(() => {
   if (props.runs.length < 2) return [];
@@ -542,7 +559,7 @@ const comparisonSections = computed<MatrixSection[]>(() => [
   matrixSection("Data & partition", dataPartitionRows.value, "No partition evidence captured."),
   workflowSection.value,
   {
-    title: "Results",
+    title: "Qualified measures",
     rows: metricRows.value.map((metric) => ({
       label: formatMetricName(metric.metric),
       values: Object.fromEntries(
@@ -554,7 +571,7 @@ const comparisonSections = computed<MatrixSection[]>(() => [
       changed: rowValuesDiffer(metric.values),
       metric,
     })),
-    empty: "No comparable scalar results.",
+    empty: "See evaluation roles above; unqualified producer values remain in Recorded node measures.",
   },
   {
     title: "Changed settings",

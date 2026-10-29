@@ -37,6 +37,46 @@ class FittedStateCustodyCapability:
 
 _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingProxyType(
     {
+        # Handoff presentation preserves this exact serializer's storage semantics.
+        (
+            "spectra.sherpa-simpls-regression-json/9",
+            "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
+        ): FittedStateCustodyCapability(
+            serializer="spectra.sherpa-simpls-regression-json/9",
+            contract_digest="a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
+            custody_class="data_free_application_state",
+            rationale="Workflow display/source-curation bindings; fitted arrays and serializers are unchanged.",
+        ),
+        # Handoff presentation preserves this exact serializer's storage semantics.
+        (
+            "spectrasherpa.model.fitted_linear_regression/1",
+            "953c95ef58def16768d7280ee71e94f3837ab7d3d2076d48999804df3e32af23",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_linear_regression/1",
+            contract_digest="953c95ef58def16768d7280ee71e94f3837ab7d3d2076d48999804df3e32af23",
+            custody_class="data_free_application_state",
+            rationale="Scientific display/CV dependency binding; fitted arrays and custody unchanged.",
+        ),
+        # Handoff presentation preserves this exact serializer's storage semantics.
+        (
+            "spectrasherpa.model.fitted_pcr/1",
+            "754a5a53c49fda40269196838397458ffa26d6542953b2200c595e8d4a298f2a",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_pcr/1",
+            contract_digest="754a5a53c49fda40269196838397458ffa26d6542953b2200c595e8d4a298f2a",
+            custody_class="data_free_application_state",
+            rationale="Scientific display/CV dependency binding; fitted arrays and custody unchanged.",
+        ),
+        # Handoff presentation preserves this exact serializer's storage semantics.
+        (
+            "spectrasherpa.model.fitted_svr/1",
+            "4e8a05f4ca0147570f038542448c3391444ee5df09405c8a37a506599cb66344",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_svr/1",
+            contract_digest="4e8a05f4ca0147570f038542448c3391444ee5df09405c8a37a506599cb66344",
+            custody_class="retains_training_rows",
+            rationale="Scientific display/CV dependency binding; fitted arrays and custody unchanged.",
+        ),
         (
             "spectrasherpa.model-artifact.pca/3",
             "1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f",

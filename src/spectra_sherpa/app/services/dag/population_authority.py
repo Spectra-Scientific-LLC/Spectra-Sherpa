@@ -291,7 +291,8 @@ def qualify_evaluation_result(
         if (
             source_results is not None
             and receipt.get("qualification") == "graph_verified"
-            and comparison.get("schema_version") == "spectrasherpa-classification-comparison/1"
+            and comparison.get("schema_version")
+            in {"spectrasherpa-classification-comparison/1", "spectrasherpa-regression-comparison/1"}
             and isinstance(population, list)
             and len(population) == 2
             and population[1] in {"train", "test"}
@@ -300,10 +301,18 @@ def qualify_evaluation_result(
 
             outputs = source_results.get(population[0], {})
             dataset = outputs.get("X_" + population[1]) if isinstance(outputs, dict) else None
+            if (
+                isinstance(dataset, SherpaDataset)
+                and comparison.get("schema_version") == "spectrasherpa-regression-comparison/1"
+            ):
+                from .regression_comparison import bind_regression_sample_axis
+
+                bind_regression_sample_axis(comparison, dataset)
             labels = getattr(getattr(dataset, "sample_axis", None), "labels", None)
             rows = comparison.get("data", [])
             if (
-                isinstance(dataset, SherpaDataset)
+                comparison.get("schema_version") == "spectrasherpa-classification-comparison/1"
+                and isinstance(dataset, SherpaDataset)
                 and labels is not None
                 and len(labels) == len(rows)
                 and all(isinstance(label, str) and label for label in labels)

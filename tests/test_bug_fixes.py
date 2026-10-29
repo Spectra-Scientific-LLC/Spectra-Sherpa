@@ -361,7 +361,7 @@ def test_run_metric_collapse_suppresses_nested_classification_aliases():
     assert "f1" not in collapsed
 
 
-def test_run_metric_collapse_merges_duplicate_identical_node_metrics():
+def test_run_metric_projection_preserves_identical_values_from_distinct_producers():
     from spectra_sherpa.app.services.run_metrics import comparable_results_for_run
 
     collapsed = comparable_results_for_run(
@@ -371,7 +371,7 @@ def test_run_metric_collapse_merges_duplicate_identical_node_metrics():
         }
     )
 
-    assert collapsed == {"n_classes": 3}
+    assert collapsed == {"model_1.n_classes": 3, "evaluate_1.n_classes": 3}
 
 
 def test_run_metric_collapse_normalizes_legacy_test_accuracy_alias():

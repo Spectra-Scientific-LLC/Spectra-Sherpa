@@ -27,9 +27,9 @@
           @click="openDatasetReadiness"
         />
       </div>
-      <p v-if="activeProjectDataset" class="tp-row-requirement">
+      <p v-if="currentPortfolioName" class="tp-portfolio" data-testid="starter-data-portfolio">
         <i class="pi pi-database" aria-hidden="true" />
-        Project dataset: {{ activeProjectDataset.name }}
+        Data Portfolio: {{ currentPortfolioName }}
       </p>
       <p v-if="projectDatasetChoiceError" class="tp-status tp-status-warning" role="alert">
         {{ projectDatasetChoiceError }}
@@ -438,6 +438,15 @@ const currentPrimaryDataBinding = (): TemplateDataBinding | null => {
 const selectedReceiptBinding = (): TemplateDataBinding | null => {
   return bindingFromSelectionReceipt(effectiveDataSelection.value, selectedExperimentId.value);
 };
+
+// Follow the same precedence as starter admission: an incoming selection,
+// otherwise the verified project choice, otherwise a bound source on the sheet.
+// Do not label the modal from a stale sheet when the project choice is in use.
+const currentPortfolioName = computed(() => {
+  if (projectDatasetChoiceError.value) return null;
+  const binding = selectedReceiptBinding() ?? currentPrimaryDataBinding();
+  return binding ? binding.displayName || "Current source selection" : null;
+});
 
 const currentSelectionDecision = (tpl: TemplateOut): DatasetAnalysisReadinessDecision | null => {
   if (
@@ -950,6 +959,13 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
   border-radius: 6px;
   padding: 10px 12px;
   text-align: left;
+}
+
+.tp-portfolio {
+  margin: 0 0 12px;
+  color: var(--ss-text-body);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }
 
 .tp-tagline {

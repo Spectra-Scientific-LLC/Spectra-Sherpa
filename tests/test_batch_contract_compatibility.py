@@ -80,6 +80,7 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
     from spectra_sherpa.core.contract_compatibility import (
         _DIAGNOSTIC_REFUSAL_PREDECESSORS,
         _FEATURE_PRESENTATION_PREDECESSORS,
+        _HANDOFF_PRESENTATION_PREDECESSORS,
         _PCA_DISPLAY_INPUT_REUSE_PREDECESSORS,
         _SCIENTIFIC_AUDIT_PREDECESSORS,
         _SCIENTIFIC_AUTHORITY_PREDECESSORS,
@@ -102,6 +103,10 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
     )
     current_entries = tuple(_PCA_DISPLAY_INPUT_REUSE_PREDECESSORS) + tuple(
         entry for entry in current_entries if entry.operation_id != "model.pca"
+    )
+    handoff_operations = {entry.operation_id for entry in _HANDOFF_PRESENTATION_PREDECESSORS}
+    current_entries = tuple(_HANDOFF_PRESENTATION_PREDECESSORS) + tuple(
+        entry for entry in current_entries if entry.operation_id not in handoff_operations
     )
     for entry in current_entries:
         current = node_registry.get_metadata(entry.operation_id).resolved_execution_contract()
@@ -146,14 +151,14 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         "model.parafac": "caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
         "classification.plsda": "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
         "model.load_apply": "272022dfaa41de8e593ed606612f4a3fd00d8fed2b0e8ca7080d33786bc43ee2",
-        "model.apply_fitted_linear_regression": "d78b114e9232c089d62045df8389531f24d24a20a8d94daf201063007c819665",
-        "model.apply_fitted_pcr": "f83e7ed65a6ab4f2efe14346e515fa57aa618fe268f68be0044bb538cc660428",
+        "model.apply_fitted_linear_regression": "0b17e504f91c2ea20a85a74bd3bdc22e01f52f50911be18a840d21883154000c",
+        "model.apply_fitted_pcr": "8f887ca24cdc30332b44bc6f2dd55a3afecf9b061ff81508d90b4b0b28eccf2e",
         "model.apply_fitted_pls": "cd9c84a4d7b44d1768db8f627418c8e04899a2a1fb8b8aeb44016cbaa42df648",
-        "model.apply_fitted_svr": "755d8867e11d93d20d752af591cc995b180f559a10ecdbdd31c145ed1e92b320",
-        "model.fitted_linear_regression": "0ba997bbc87209703db011f38850ee82d93027bb72ab28db27aa108a8f9cca9a",
-        "model.fitted_pcr": "99359a3588dfe55e29fd32428ce896d1ca503e3472e8b17a5982ed24d72a0d0d",
-        "model.fitted_pls": "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
-        "model.fitted_svr": "b8ba060d1154848d0f96e25a0178c0c5eeff6658a4fc36de6ae3f7c82cb3f7ed",
+        "model.apply_fitted_svr": "b88b5fdbfd93a89e51e8758d9fcd02ea3b3ef08d7fbf520f68156f0f2db8aadb",
+        "model.fitted_linear_regression": "953c95ef58def16768d7280ee71e94f3837ab7d3d2076d48999804df3e32af23",
+        "model.fitted_pcr": "754a5a53c49fda40269196838397458ffa26d6542953b2200c595e8d4a298f2a",
+        "model.fitted_pls": "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
+        "model.fitted_svr": "4e8a05f4ca0147570f038542448c3391444ee5df09405c8a37a506599cb66344",
     }
     reviewed_changes = {
         "model.apply_fitted_linear_regression": [
@@ -253,6 +258,12 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
             "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
         ],
     }
+    reviewed_changes["model.fitted_pls"] = sorted(
+        [
+            *reviewed_changes["model.fitted_pls"],
+            "spectra_sherpa.app.services.dag.regression_comparison",
+        ]
+    )
     for operation, archived in catalog["contracts"].items():
         current = node_registry.get_metadata(operation).resolved_execution_contract()
         assert current.digest == component_phase_digests.get(operation, catalog["current_contracts"][operation])

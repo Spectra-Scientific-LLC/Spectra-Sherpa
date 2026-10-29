@@ -1606,6 +1606,25 @@ describe("DataContent file inspection", () => {
     wrapper.unmount();
   });
 
+  it.each(["raw", "synthetic", "preprocessed"])("preserves an all-files saved portfolio's %s stage", async (stage) => {
+    const view = { ...savedDatasetView(92), name: "Saved source", selection: { ...savedDatasetView(92).selection, stage } };
+    mocks.dataStore.experimentFiles = [{ ...mocks.dataStore.experimentFiles[0], stage }];
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({
+      data: url.endsWith("/dataset-views/92") ? view : url.endsWith("/dataset-views") ? [view] : {},
+    } as never));
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    await vm.showDatasetView(view);
+    await flushPromises();
+    expect(vm.currentPortfolioView).toMatchObject({ id: 92 });
+    await vm.goToWorkflow();
+    expect(latestWorkflowReceipt()?.datasets).toEqual([expect.objectContaining({
+      dataset_name: "Saved source", dataset_view_id: 92,
+      dataset_view_sha256: view.selection_sha256, selection: "all", file_ids: null, stage,
+    })]);
+  });
+
   it("refuses a plain save that would silently drop a deselected sample", async () => {
     const wrapper = mountDataContent();
     await flushPromises();

@@ -15,7 +15,6 @@ BASELINE = ROOT / "docs/developers/user-copy-baseline.json"
 # Exact product phrases, not scientific terms, symbols, identifiers or API names.
 RULES = {
     "execute-workflow": (r"\bexecute workflow\b", "Run workflow"),
-    "data-portfolio": (r"\bdata portfolios?\b", "Dataset / datasets"),
     "scientific-summary": (r"\bshort scientific summary\b", "Short summary"),
 }
 ATTRIBUTES = {"label", "title", "header", "placeholder", "aria-label", "alt"}
