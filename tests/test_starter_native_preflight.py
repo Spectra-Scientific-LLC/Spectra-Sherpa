@@ -80,3 +80,27 @@ async def test_native_starter_population_is_checked_before_any_sheet_is_saved(
             )
             > 0
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("slug", ["classification_plsda", "knn_classification", "simca_classification"])
+async def test_real_wine_example_starter_admits_fresh_and_cached_native_targets(
+    auth_client, test_session, test_user, slug
+):
+    ensure_type_registry_loaded()
+    template = WorkflowTemplate(**_template_record(slug))
+    project = Project(user_id=test_user.id, name="Bundled Wine starter qualification")
+    test_session.add_all([template, project])
+    await test_session.commit()
+    bindings = []
+    for attempt in range(2):
+        response = await auth_client.post(
+            f"/api/v1/workflow-templates/{template.id}/instantiate",
+            json={"workflow_name": f"Wine qualification {attempt}", "project_id": project.id, "launch_mode": "example"},
+        )
+        assert response.status_code == 201, response.text
+        source = next(node for node in response.json()["nodes"] if node["node_id"] == "data_1")
+        assert source["node_type"] == "data.file_load"
+        assert source["parameters"]["target_authority"]["target_type"] == "categorical"
+        bindings.append(source["parameters"])
+    assert bindings[0] == bindings[1], "Cached examples must retain the exact native source binding"

@@ -897,15 +897,14 @@ async def _materialize_example_bindings(
                             status_code=400,
                             detail="Example target selection requires one exact column and scientific type.",
                         )
+                    target_authority, asset_id = await _issue_file_target_authority(
+                        session,
+                        exact_binding,
+                        selected_target=selected_target,
+                        target_type=cast(TargetType, target_type),
+                    )
                     exact_binding = exact_binding.model_copy(
-                        update={
-                            "target_authority": await _issue_file_target_authority(
-                                session,
-                                exact_binding,
-                                selected_target=selected_target,
-                                target_type=cast(TargetType, target_type),
-                            )
-                        }
+                        update={"target_authority": target_authority, "asset_id": asset_id}
                     )
                 cached_bindings[cache_key] = exact_binding.model_copy(
                     update={"display_name": f"{dataset_name} (bundled example)"}
@@ -1205,12 +1204,9 @@ async def _starter_validation_preview(nodes, edges, sources, bindings):
             continue
         try:
             if binding.target_authority is not None:
-                table = getattr(dataset.sample_axis, "sample_table", None)
-                if not isinstance(table, dict) or binding.selected_target not in table:
-                    # A native file can expose responses as named properties or
-                    # feature columns without a collection sample table. Use
-                    # the same target projection as data.file_load, on a copy
-                    # so previewing never changes the admitted source snapshot.
+                if binding.file_id is not None and binding.file_ids is None and not binding.all_files:
+                    # Match native Load Data: a named, aligned target vector is
+                    # valid without a collection sample-table supervision receipt.
                     from spectra_sherpa.app.lib.io import select_dataset_target
 
                     dataset = select_dataset_target(
@@ -1218,14 +1214,18 @@ async def _starter_validation_preview(nodes, edges, sources, bindings):
                         selected_target=binding.selected_target,
                         target_type=binding.target_type,
                     )
-                dataset = attach_selected_target_dataset(
-                    dataset,
-                    target_type=binding.target_type,
-                    target_column=binding.selected_target,
-                    group_column=binding.group_column or "",
-                    node_id="starter_validation_preview",
-                    target_authority=binding.target_authority,
-                )
+                    dataset.target_context = dataset.target_context.model_copy(
+                        update={"selected_authority": binding.target_authority}
+                    )
+                else:
+                    dataset = attach_selected_target_dataset(
+                        dataset,
+                        target_type=binding.target_type,
+                        target_column=binding.selected_target,
+                        group_column=binding.group_column or "",
+                        node_id="starter_validation_preview",
+                        target_authority=binding.target_authority,
+                    )
             prepared[node_id] = dataset
         except ValueError as exc:
             return {"status": "refused", "reason": f"Classification source is not ready: {exc}"}
