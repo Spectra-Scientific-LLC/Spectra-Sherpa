@@ -15,7 +15,7 @@ from packaging.version import Version
 from spectra_sherpa.app.services import synthesis
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-QUALIFICATION_REPORT = PACKAGE_ROOT.parents[1] / "docs/evidence/public-install-profiles-diagnostics-20261029.json"
+QUALIFICATION_REPORT = PACKAGE_ROOT.parents[1] / "docs/evidence/public-install-profiles-web-runtime-20261029.json"
 
 
 def _metadata() -> dict[str, Any]:
@@ -82,7 +82,7 @@ def test_retained_public_profile_qualification_is_commit_and_lock_bound() -> Non
     report = json.loads(QUALIFICATION_REPORT.read_text(encoding="utf-8"))
 
     assert report["schema_version"] == "spectra-public-install-qualification/1"
-    assert report["source_revision"] == "f70b6cb2db1014ec0c16ff9126906f742d4606fb"
+    assert report["source_revision"] == "5db0db9d7f9752a79daf4eb85af2379aac0aa6fe"
     lock_bytes = (PACKAGE_ROOT / "poetry.lock").read_bytes()
     lock_hash = hashlib.sha256(lock_bytes).hexdigest()
     assert report["poetry_lock_sha256"] == lock_hash
