@@ -153,10 +153,12 @@ describe("SimplifiedDashboard Starter tab", () => {
     const tabs = wrapper.findAll('[role="tab"]');
     expect(tabs[0].text()).toBe("Starter");
     expect(tabs[1].attributes("aria-selected")).toBe("true");
+    expect(wrapper.findAll("button").some(button => button.text() === "New Analysis")).toBe(true);
     mocks.starter!.emit("overview", { is_first_run: true });
     await flushPromises();
     expect(mocks.routerReplace).toHaveBeenLastCalledWith({ hash: "#starter" });
     expect(tabs[0].attributes("aria-selected")).toBe("true");
+    expect(wrapper.findAll("button").some(button => button.text() === "New Analysis")).toBe(false);
 
     mocks.routerReplace.mockClear();
     mocks.route.hash = "#archive";

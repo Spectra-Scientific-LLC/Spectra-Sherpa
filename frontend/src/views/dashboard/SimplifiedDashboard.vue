@@ -5,6 +5,7 @@
       :actions="headerActionItems"
     >
       <Button
+        v-if="activeDashboardTab !== 'starter'"
         label="New Analysis"
         icon="pi pi-bolt"
         class="p-button-sm"
@@ -55,7 +56,7 @@ label="Project" icon="pi pi-arrow-right" iconPos="right"
     >
       <TabPanel header="Starter">
         <StarterPanel
-          :active-project="activeGoalProject"
+          :active-project="projectStore.currentProject"
           :is-local-mode="isLocalMode"
           :starting="isStartingAnalysis"
           @start="startFromGoal"
@@ -336,7 +337,7 @@ const toast = useToast();
 const projectStore = useProjectStore();
 const projectImportAction = ref<InstanceType<typeof ProjectImportAction> | null>(null);
 const headerActionItems = computed(() => [
-  { label: "New Analysis", icon: "pi pi-bolt", command: startAnalysisFlow },
+  ...(activeDashboardTab.value === "starter" ? [] : [{ label: "New Analysis", icon: "pi pi-bolt", command: startAnalysisFlow }]),
   {
     label: "Import Project",
     icon: "pi pi-upload",

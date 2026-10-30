@@ -35,6 +35,10 @@ Select **Plan my steps**. Starter picks:
 - **The steps**, from adding data to reviewing results. Select a step to read
   what it involves.
 
+When a project is already open, **Start another project** creates a separate
+project and preserves the current project’s goal. **New Analysis** remains on
+**Dashboard → Your Project**, rather than the Starter subtab.
+
 Name the project and select **Ready to Start**. Starter creates the project
 with your goal and plan and takes you to the first step.
 
