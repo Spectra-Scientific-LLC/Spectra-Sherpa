@@ -25,10 +25,12 @@ export function comparisonVerdict(evidence: EvidenceComparison, pair: Pair): str
     const title = role === "held_out" ? "held-out error" : "cross-validation error";
     const metric = role === "held_out" ? "RMSEP" : "RMSECV";
     const first = pair.left_index + 1, second = pair.right_index + 1;
-    if (values.left === values.right) return `Runs ${first} and ${second} have equal ${title}: ${metric} ${scientificNumber(values.left, { significantDigits: 4 })} ${leftUnits}.`;
+    const origins = [pair.left_index, pair.right_index].some(index => evidence.items[index]?.reference.kind === "external")
+      ? ` Evaluations: Run ${first}: ${evidence.items[pair.left_index].label}; Run ${second}: ${evidence.items[pair.right_index].label}.` : "";
+    if (values.left === values.right) return `Runs ${first} and ${second} have equal ${title}: ${metric} ${scientificNumber(values.left, { significantDigits: 4 })} ${leftUnits}.${origins}`;
     const winner = values.right < values.left ? second : first;
     const low = Math.min(values.left, values.right), high = Math.max(values.left, values.right);
-    return `Run ${winner} has lower ${title}: ${metric} ${scientificNumber(low, { significantDigits: 4 })} vs ${scientificNumber(high, { significantDigits: 4 })} ${leftUnits}.`;
+    return `Run ${winner} has lower ${title}: ${metric} ${scientificNumber(low, { significantDigits: 4 })} vs ${scientificNumber(high, { significantDigits: 4 })} ${leftUnits}.${origins}`;
   }
   return null;
 }

@@ -404,6 +404,20 @@ describe("ChatPanel", () => {
     wrapper.unmount();
   });
 
+  it.each([['local', 'Delete', 'Deleted'], ['test_product', 'Archive', 'Archived']])(
+    'names the actual %s conversation removal and its success message', async (mode, action, past) => {
+      mocks.appMode.value = mode;
+      mocks.llmStore.conversations = [{id: 'disposable', title: 'Test topic', updatedAt: new Date().toISOString()}];
+      const wrapper = mountWithUiStubs(ChatPanel);
+      await flushPromises();
+      await wrapper.get(`[aria-label="${action} conversation"]`).trigger('click');
+      await flushPromises();
+      expect(mocks.llmStore.deleteConversation).toHaveBeenCalledWith('disposable');
+      expect(mocks.toastAdd).toHaveBeenCalledWith(expect.objectContaining({summary: `Conversation ${past}`}));
+      wrapper.unmount();
+    },
+  );
+
   it("shows local BYO endpoint setup copy in local mode", async () => {
     const wrapper = mountWithUiStubs(ChatPanel);
     await flushPromises();
