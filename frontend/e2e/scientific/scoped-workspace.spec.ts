@@ -238,7 +238,7 @@ test("cold multi-file inspection retains both sibling source inventories", async
   ).toBeChecked();
 });
 
-test("clicking the active sheet preserves its pending initial graph load", async ({
+test("@smoke clicking the active sheet preserves its pending initial graph load", async ({
   page,
   request,
 }) => {
@@ -269,7 +269,8 @@ test("clicking the active sheet preserves its pending initial graph load", async
     await page.goto(`/workflow?workflow_id=${workflow.id}&project_id=${iris.project.id}`);
     await intercepted;
     const sheet = page.locator(".sheet-tab.active");
-    await expect(sheet).toContainText(workflow.name);
+    // Visible names are shortened; the full accessible name identifies the sheet.
+    await expect(sheet).toHaveAccessibleName(workflow.name);
     await sheet.click();
     release();
     await completed;
@@ -319,13 +320,13 @@ test("switching sheets during retained Data View loading cannot open the previou
     await page.locator(".workflow-node").filter({ hasText: "Load Data" }).first().click();
     await page.getByRole("button", { name: "View Data", exact: true }).click();
     await intercepted;
-    await page.locator(".sheet-tab").filter({ hasText: second.name }).click();
-    await expect(page.locator(".sheet-tab.active")).toContainText(second.name);
+    await page.locator(".sheet-tab").and(page.getByRole("button", { name: second.name, exact: true })).click();
+    await expect(page.locator(".sheet-tab.active")).toHaveAccessibleName(second.name);
     await expect(page.locator(".canvas-container")).toHaveAttribute("aria-busy", "false");
     release();
     await completed;
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.locator(".sheet-tab.active")).toContainText(second.name);
+    await expect(page.locator(".sheet-tab.active")).toHaveAccessibleName(second.name);
   } finally {
     release();
     await page.unroute(pattern);
@@ -339,7 +340,7 @@ test("switching sheets during retained Data View loading cannot open the previou
   await expect(dialog).not.toContainText("No data to display");
 });
 
-test("leaving an accepted run preserves its successful sheet status without painting the new sheet", async ({
+test("@smoke leaving an accepted run preserves its successful sheet status without painting the new sheet", async ({
   page, request,
 }, testInfo) => {
   const iris = await createDataset(request, "Iris accepted run scope", {
@@ -376,8 +377,8 @@ test("leaving an accepted run preserves its successful sheet status without pain
     await page.goto(`/workflow?workflow_id=${first.id}&project_id=${iris.project.id}`);
     await page.getByRole("button", { name: /^Run(?:\s|$)/ }).first().click();
     await intercepted;
-    const origin = page.locator(".sheet-tab").filter({ hasText: first.name });
-    const destination = page.locator(".sheet-tab").filter({ hasText: second.name });
+    const origin = page.locator(".sheet-tab").and(page.getByRole("button", { name: first.name, exact: true }));
+    const destination = page.locator(".sheet-tab").and(page.getByRole("button", { name: second.name, exact: true }));
     await expect(origin.locator(".pi-spinner")).toBeVisible();
     const switchStarted = performance.now();
     await destination.click();
