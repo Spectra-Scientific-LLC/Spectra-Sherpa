@@ -357,8 +357,8 @@ def _worker_node(node_type: str, node_id: str, parameters: dict, worker_context:
 def _with_worker_logging(function):
     @wraps(function)
     def logged(*args, **kwargs):
-        from spectra_sherpa.app.core.logging import configure_logging
-        from spectra_sherpa.app.core.request_id import diagnostic_identifier, use_request_id
+        from spectra_sherpa.core.diagnostic_context import diagnostic_identifier, use_request_id
+        from spectra_sherpa.core.diagnostic_logging import configure_logging
 
         configure_logging()
         context = kwargs.get("worker_context", args[5] if len(args) > 5 else None)

@@ -100,7 +100,7 @@ def test_worker_context_is_correlated_and_cleared(monkeypatch, caplog):
     from spectra_sherpa.app.services.dag.executor_pool import WorkerExecutionContext, _with_worker_logging
     from spectra_sherpa.core.execution_runtime import ExecutionRuntime
 
-    monkeypatch.setattr("spectra_sherpa.app.core.logging.configure_logging", lambda: None)
+    monkeypatch.setattr("spectra_sherpa.core.diagnostic_logging.configure_logging", lambda: None)
     caplog.set_level(logging.INFO)
     context = WorkerExecutionContext("execution-1", ExecutionRuntime(), request_id="origin-1")
 
@@ -302,7 +302,7 @@ def test_worker_logs_bound_node_identity_without_changing_execution(monkeypatch,
     from spectra_sherpa.app.core.request_id import diagnostic_identifier
     from spectra_sherpa.app.services.dag.executor_pool import _with_worker_logging
 
-    monkeypatch.setattr("spectra_sherpa.app.core.logging.configure_logging", lambda: None)
+    monkeypatch.setattr("spectra_sherpa.core.diagnostic_logging.configure_logging", lambda: None)
     caplog.set_level(logging.INFO)
     raw = "node\nFORGED_EVENT"
 
@@ -685,3 +685,24 @@ def test_successful_write_cleanup_failure_does_not_replay_record(tmp_path, monke
         assert "PRIVATE_" not in stderr
     finally:
         handler.close()
+
+
+def test_host_configuration_resizes_preimported_shared_buffer(monkeypatch, isolated_log_handlers):
+    from spectra_sherpa.core import diagnostic_logging as core_logging
+
+    buffer = core_logging.log_buffer
+    previous = tuple(buffer)
+    previous_limit = buffer.maxlen
+    try:
+        buffer.clear()
+        buffer.extend([{"message": str(index)} for index in range(4)])
+        monkeypatch.setattr(
+            logging_module, "settings", replace(logging_module.settings, log_buffer_size=2, log_file_path=None)
+        )
+        configure_logging()
+        assert logging_module.log_buffer is buffer
+        assert core_logging.log_buffer is buffer
+        assert buffer.maxlen == 2
+        assert [row["message"] for row in buffer] == ["2", "3"]
+    finally:
+        buffer.__init__(previous, maxlen=previous_limit)
