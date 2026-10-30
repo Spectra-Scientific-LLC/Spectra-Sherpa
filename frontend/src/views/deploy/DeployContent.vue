@@ -1,9 +1,9 @@
 <template>
   <section class="page-content deploy-content">
     <WorkspaceHeader title="Deploy" :actions="headerActionItems">
-      <ContextualActions v-if="!isHostedDeployment" :context="deployActionContext" />
+      <ContextualActions v-if="!isHostedDeployment && activeTab === 'application'" :context="deployActionContext" />
       <Button
-        v-if="!isHostedDeployment"
+        v-if="!isHostedDeployment && activeTab === 'watches'"
         label="New Watch"
         icon="pi pi-plus"
         class="p-button-sm"
@@ -12,7 +12,20 @@
       />
     </WorkspaceHeader>
 
-    <SavedModelsForDeployment />
+    <WorkspaceContext label="Deployment context">
+      <WorkspaceContextItem
+        :label="sectionTitle"
+        :value="sectionSubtitle"
+      >
+        <span
+          v-if="!isHostedDeployment && activeTab === 'application' && selectedApplication?.campaign_validation_recorded"
+          title="Campaign validation evidence recorded; accuracy on new samples is not certified."
+          >★</span
+        >
+      </WorkspaceContextItem>
+    </WorkspaceContext>
+
+    <SavedModelsForDeployment v-if="isHostedDeployment" />
 
     <section v-if="isHostedDeployment" class="hosted-pro-deploy" role="status">
       <i class="pi pi-desktop" aria-hidden="true"></i>
@@ -25,20 +38,9 @@
     </section>
 
     <template v-else>
-      <WorkspaceContext label="Deployment context">
-        <WorkspaceContextItem
-          :label="sectionTitle"
-          :value="selectedApplication?.name || 'Select an application'"
-        >
-          <span
-            v-if="selectedApplication?.campaign_validation_recorded"
-            title="Campaign validation evidence recorded; accuracy on new samples is not certified."
-            >★</span
-          >
-        </WorkspaceContextItem>
-      </WorkspaceContext>
       <WorkspaceTabs v-model="activeTab" :tab-ids="tabIds">
         <TabPanel header="Application">
+          <SavedModelsForDeployment />
           <section class="released-applications" aria-labelledby="released-applications-heading">
             <div class="section-heading">
               <div>
@@ -687,10 +689,16 @@ const tabIds = ["application", "watches", "history"] as const;
 const activeTab = ref<string>("application");
 const sectionTitle = computed(
   () =>
-    ({ application: "Application", watches: "Folder Watches", history: "Prediction History" })[
+    isHostedDeployment.value ? "Application" : ({ application: "Application", watches: "Folder Watches", history: "Prediction History" })[
       activeTab.value
     ] || "Application",
 );
+const sectionSubtitle = computed(() => {
+  if (isHostedDeployment.value) return "Review saved models for Workbench deployment";
+  if (activeTab.value === "watches") return "Process new files with a fitted application";
+  if (activeTab.value === "history") return "Review predictions from folder watches";
+  return selectedApplication.value?.name || "Review and select a fitted application";
+});
 const applicationError = ref("");
 let mounted = false;
 let disposed = false;
@@ -796,6 +804,19 @@ function watchArtifactOptions(watch: FolderWatch) {
 }
 const route = useRoute();
 const router = useRouter();
+function deployTab(value: unknown): string {
+  const tab = typeof value === "string" ? value : "application";
+  if (tab === "integrations") return "watches";
+  if (tab === "jobs") return "history";
+  return tabIds.includes(tab as (typeof tabIds)[number]) ? tab : "application";
+}
+watch(() => route.query.tab, value => { activeTab.value = deployTab(value); }, { immediate: true });
+watch(activeTab, value => {
+  if (!isHostedDeployment.value && deployTab(route.query.tab) !== value) {
+    void router.replace({ query: { ...route.query, tab: value } });
+  }
+});
+
 const deployActionContext = computed(() => {
   if (isHostedDeployment.value) return null;
   const projectId = projectStore.currentProjectId;
@@ -969,7 +990,7 @@ function requestedApplicationId(): string | null {
 // Watch CRUD state
 const showCreateDialog = ref(false);
 const headerActionItems = computed(() => {
-  if (isHostedDeployment.value) return [];
+  if (isHostedDeployment.value || activeTab.value !== "watches") return [];
   return [
     {
       label: "New Watch",
@@ -1100,15 +1121,6 @@ onMounted(async () => {
   if (disposed) return;
   mounted = true;
   if (isHostedDeployment.value) return;
-  const tab = String(route.query.tab || "application");
-  activeTab.value =
-    tab === "integrations"
-      ? "watches"
-      : tab === "jobs"
-        ? "history"
-        : tabIds.includes(tab as (typeof tabIds)[number])
-          ? tab
-          : "application";
   await refreshAll();
   if (disposed) return;
   window.addEventListener("focus", syncOperationalState);

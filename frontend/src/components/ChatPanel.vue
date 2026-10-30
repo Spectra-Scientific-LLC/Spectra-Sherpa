@@ -197,10 +197,11 @@
                 <span>{{ formatDateTime(conversation.updatedAt) }}</span>
               </button>
               <Button
-                icon="pi pi-trash"
+                :icon="appMode === 'local' ? 'pi pi-trash' : 'pi pi-inbox'"
+                :aria-label="conversationRemovalLabel"
                 class="p-button-text p-button-sm p-button-danger delete-btn"
                 @click="deleteConversation(conversation.id)"
-                v-tooltip.left="'Delete conversation'"
+                v-tooltip.left="conversationRemovalLabel"
               />
             </div>
           </div>
@@ -1276,13 +1277,17 @@ const loadConversation = async (conversationId: string) => {
   }
 };
 
+// This sidebar calls the LLM store: local records are removed; its hosted
+// /llm/conversation route archives. Hybrid Advisor uses a separate transport.
+const conversationRemovalLabel = computed(() => appMode.value === "local" ? "Delete conversation" : "Archive conversation");
 const deleteConversation = async (conversationId: string) => {
+  const archives = appMode.value !== "local";
   try {
     await store.deleteConversation(conversationId);
     toast.add({
       severity: "success",
-      summary: "Conversation Deleted",
-      detail: "Conversation removed",
+      summary: archives ? "Conversation Archived" : "Conversation Deleted",
+      detail: archives ? "Conversation archived; messages are retained." : "Conversation removed",
       life: 2000,
     });
   } catch (error: unknown) {

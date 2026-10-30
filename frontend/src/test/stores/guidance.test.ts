@@ -494,7 +494,7 @@ describe("guidance store", () => {
 
     await store.clickAction();
 
-    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/deploy", query: { project: "7" }, hash: undefined });
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/deploy", query: { tab: "watches", project: "7" }, hash: undefined });
     expect(clickSpy).toHaveBeenCalledTimes(1);
     document.body.removeChild(button);
   });

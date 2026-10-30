@@ -240,6 +240,8 @@ describe("StarterPanel", () => {
 
     expect(adapter.fetchStarterProgress).toHaveBeenCalledWith(5);
     const active = wrapper.get('[data-test="starter-active-goal"]');
+    expect(wrapper.get("#goal-starter-new-title").text()).toBe("Start another project");
+    expect(wrapper.text()).toContain("Describe a goal; Ready to Start creates a new project for it. This project keeps its current goal.");
     expect(active.text()).toContain("Predict moisture in my corn NIR spectra");
     expect(wrapper.get('[data-test="starter-step-data"]').classes()).toContain("goal-step--done");
     const current = wrapper.get('[data-test="starter-step-workflow"]');

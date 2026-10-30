@@ -154,3 +154,40 @@ it('formats very large and very small measures without changing retained data', 
   expect(value.items[0].sections.held_out.metrics.bias).toBe(-6.0364e-15);
   wrapper.unmount();
 });
+
+
+it('keeps evaluation origin in campaign headers, copied table text and numerical verdicts', () => {
+  const value = evidence();
+  const labels = ['Model 1.1 · Re-scored in round 2', 'Model 2.1 · Original evaluation in round 2'];
+  value.items.forEach((item, index) => {
+    item.label = labels[index];
+    item.reference = {...item.reference, kind: 'external', provider: 'campaigns'};
+    item.sections.held_out.population = {verification: 'verified', limitations: [], units: 'ppm'};
+  });
+  const wrapper = mount(ScientificComparison, {props: {evidence: value}});
+  const table = wrapper.get('[aria-label="Held-out validation measures"]');
+  for (const label of labels) {
+    expect(table.text()).toContain(label);
+    expect(wrapper.get('.comparison-verdict').text()).toContain(label);
+  }
+  wrapper.unmount();
+});
+
+it('maps a right-hand winner to its origin when copied from a three-model comparison', () => {
+  const value = evidence();
+  value.items.push(structuredClone(value.items[1]));
+  value.items.forEach((item, index) => {
+    item.label = `Model ${index + 1}.1 · Original evaluation in round ${index + 1}`;
+    item.reference = {...item.reference, kind: 'external', provider: 'campaigns'};
+    item.sections.held_out.population = {verification: 'verified', limitations: [], units: 'ppm'};
+  });
+  const pair = value.pairs[0];
+  pair.left_index = 1; pair.right_index = 2;
+  pair.sections.find(s => s.role === 'held_out')!.metric_values.rmse = {left: 2, right: 1};
+  const wrapper = mount(ScientificComparison, {props: {evidence: value}});
+  const verdict = wrapper.get('.comparison-verdict').text();
+  expect(verdict).toContain('Run 3 has lower held-out error: RMSEP 1.000 vs 2.000 ppm');
+  expect(verdict).toContain('Run 2: Model 2.1 · Original evaluation in round 2');
+  expect(verdict).toContain('Run 3: Model 3.1 · Original evaluation in round 3');
+  wrapper.unmount();
+});

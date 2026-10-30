@@ -58,7 +58,7 @@ const stubs = {
       '<div><button v-if="expandedRows" @click="$emit(\'update:expandedRows\',Object.fromEntries(value.map(row=>[row.id,true])))">Expand runs</button><div v-for="row in value" :key="row.id"><slot v-if="expandedRows?.[row.id]" name="expansion" :data="row"/><span v-if="!expandedRows">{{row.file_name}}</span></div></div>',
   },
 };
-async function open(component: any, path = "/report") {
+async function open(component: any, path = "/report", realTabs = false) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -68,7 +68,7 @@ async function open(component: any, path = "/report") {
   });
   await router.push(path);
   await router.isReady();
-  const wrapper = mount(component, { global: { plugins: [router], stubs } });
+  const wrapper = mount(component, { global: { plugins: [router], stubs: { ...stubs, ...(realTabs ? { TabView: false, TabPanel: false } : {}) } } });
   await flushPromises();
   return wrapper;
 }
@@ -514,4 +514,26 @@ it('does not install polling or focus listeners when initial loading finishes af
   expect(interval).not.toHaveBeenCalled();
   expect(listener.mock.calls.some(([event])=>event === 'focus')).toBe(false);
   interval.mockRestore(); listener.mockRestore();
+});
+
+
+describe('Deploy subtab pages', () => {
+  it('keeps saved models and watch actions on their own pages and follows the route', async () => {
+    const wrapper = await open(DeployContent, '/deploy?tab=application', true);
+    const vm = wrapper.vm as any;
+    expect(wrapper.find('saved-models-for-deployment-stub').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain('New Watch');
+    vm.activeTab = 'watches'; await flushPromises();
+    expect(vm.$route.query.tab).toBe('watches');
+    expect((wrapper.get('saved-models-for-deployment-stub').element.closest('[role="tabpanel"]') as HTMLElement).style.display).toBe('none');
+    expect(wrapper.text()).toContain('New Watch');
+    expect(wrapper.get('[aria-label="Deployment context"]').text()).toContain('Process new files');
+    await vm.$router.push('/deploy?tab=history'); await flushPromises();
+    expect(wrapper.text()).not.toContain('New Watch');
+    expect((wrapper.get('saved-models-for-deployment-stub').element.closest('[role="tabpanel"]') as HTMLElement).style.display).toBe('none');
+    expect(wrapper.get('[aria-label="Deployment context"]').text()).toContain('Review predictions');
+    await vm.$router.push('/deploy?tab=application'); await flushPromises();
+    expect(wrapper.find('saved-models-for-deployment-stub').exists()).toBe(true);
+    wrapper.unmount();
+  });
 });

@@ -92,7 +92,8 @@
 
     <section class="goal-starter__section" aria-labelledby="goal-starter-new-title">
       <header class="goal-starter__header">
-        <h2 id="goal-starter-new-title">{{ activePlan ? "Start a new goal" : "What would you like to do?" }}</h2>
+        <h2 id="goal-starter-new-title">{{ activeProject ? "Start another project" : "What would you like to do?" }}</h2>
+        <p v-if="activeProject" class="goal-starter__hint">Describe a goal; Ready to Start creates a new project for it. This project keeps its current goal.</p>
 
       </header>
       <label for="goal-starter-text" class="sr-only">Your goal</label>

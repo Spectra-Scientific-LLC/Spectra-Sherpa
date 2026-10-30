@@ -119,6 +119,7 @@ export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
     actionId: "create_folder_watch",
     actionVersion: 1,
     route: "/deploy",
+    query: { tab: "watches" },
     label: "Create folder watch",
     // Opens the New-Watch dialog.  With this in place, the
     // deploy_runs_no_automation rule's toast CTA actually does the

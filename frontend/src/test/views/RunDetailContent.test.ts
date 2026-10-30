@@ -3,6 +3,7 @@ import { mount, flushPromises, type VueWrapper } from '@vue/test-utils';
 import { reactive } from 'vue';
 import { createRouter, createMemoryHistory } from 'vue-router';
 import RunDetailContent from '@/views/models/RunDetailContent.vue';
+import { registerContextualActions, removeContextualActions } from '@/composables/useContextualActions';
 import { runProjectScopeResets } from '@/stores/projectScopeRegistry';
 
 const { get, patch, switchScope, downloadJson, downloadCsv } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn(), switchScope: vi.fn().mockResolvedValue(null), downloadJson: vi.fn(), downloadCsv: vi.fn() }));
@@ -43,14 +44,14 @@ beforeEach(() => {
   });
 });
 afterEach(() => { for (const wrapper of mounted) wrapper.unmount(); mounted = []; });
-async function open(query = '?project=1&view=Results&node=pca&offset=50') {
+async function open(query = '?project=1&view=Results&node=pca&offset=50', realContext = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/runs/:runId', component: RunDetailContent }, { path: '/runs', component: { template: '<div />' } }, { path: '/report', component: { template: '<div />' } }] });
   await router.push(`/runs/42${query}`);
   await router.isReady();
   const wrapper = mount(RunDetailContent, { global: { plugins: [router], stubs: {
     Button: { props: ['label'], template: '<button @click="$emit(\'click\')">{{label}}<slot /></button>' },
     ModelPromotionReview: { props: ['artifactUid'], template: '<div class="promotion-dialog">{{artifactUid}}</div>' },
-    SelectButton: true, ProgressSpinner: true, Dropdown: true, ContextualActions: true,
+    SelectButton: true, ProgressSpinner: true, Dropdown: true, ContextualActions: !realContext,
     QuickPlotModal: { name: 'QuickPlotModal', props: ['nodeOutput', 'nodeType', 'nodeLabel'], template: '<div class="saved-plot">{{ nodeLabel }}</div>' },
   } } });
   mounted.push(wrapper);
@@ -788,3 +789,32 @@ describe("Persistent run inspection", () => {
     expect(get.mock.calls.some(([url]) => String(url).includes('/version'))).toBe(false);
     wrapper.unmount();
   });
+
+
+describe('Inspect contributed header actions', () => {
+  it('keeps Optimize in the header and responsive menu with the same scoped executor', async () => {
+    installIdentifiedRuns();
+    const execute = vi.fn().mockRejectedValue(new Error('Review is unavailable'));
+    registerContextualActions('inspect-header-test', [{
+      id: 'optimize', label: 'Optimize', icon: 'pi pi-chart-line',
+      available: context => context.surface === 'run' && context.runId === 42,
+      execute,
+    }], () => true);
+    try {
+      const { wrapper } = await open('?project=1&view=Summary', true);
+      const action = wrapper.get('[aria-label="Run actions"]').findAll('button').find(button => button.text() === 'Optimize');
+      expect(action).toBeDefined();
+      const menu = (wrapper.vm as unknown as { headerActions: { label: string; command: () => void }[] }).headerActions;
+      menu.find(item => item.label === 'Optimize')!.command();
+      await flushPromises();
+      expect(execute).toHaveBeenCalledWith({ surface: 'run', projectId: 1, runId: 42 }, expect.any(AbortSignal));
+      expect(wrapper.get('[role="alert"]').text()).toBe('Review is unavailable');
+      expect(wrapper.get('[role="alert"]').element.closest('[aria-label="Run actions"]')).toBeNull();
+      project.currentProjectId = 2;
+      await flushPromises();
+      expect((wrapper.vm as unknown as { headerActions: { label: string }[] }).headerActions.some(item => item.label === 'Optimize')).toBe(false);
+    } finally {
+      removeContextualActions('inspect-header-test');
+    }
+  });
+});
