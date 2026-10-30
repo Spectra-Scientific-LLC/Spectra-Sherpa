@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator } from "@playwright/test";
 import { createDataset, instantiate, runWorkflow } from "./journeys";
 
 test("new measured tables use Settings format and large plates have one keyboard entry", async ({ page, request }) => {
@@ -86,17 +86,26 @@ test("workspace sections keep actions and context without duplicate introduction
   await expect(page.getByRole("heading", { name: "Inspect", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Open History", exact: true })).toBeVisible();
   const inspect = page.getByRole("region", { name: "Inspect", exact: true }).locator(".workspace-state--page");
-  const inspectStyle = await inspect.evaluate(element => {
-    const state = getComputedStyle(element), message = getComputedStyle(element.querySelector("p")!);
-    return { padding: state.padding, gap: state.gap, size: message.fontSize, weight: message.fontWeight };
-  });
+  // Inspect replaces its empty state during the asynchronous latest-run lookup.
+  // Sample the current DOM in one turn; a detached/loading element is not a
+  // style baseline, and two empty style snapshots must never qualify parity.
+  const expectedStyle = { padding: "32px 0px", gap: "8px", size: "16px", weight: "500" };
+  async function expectPageStyle(surface: Locator, text: string) {
+    await expect.poll(() => surface.evaluateAll((elements, expectedText) => {
+      const element = elements.length === 1 ? elements[0] : null;
+      const message = element?.querySelector("p");
+      if (!element?.isConnected || !message || element.getAttribute("aria-busy") !== "false"
+        || message.textContent !== expectedText) return null;
+      const bounds = element.getBoundingClientRect();
+      const state = getComputedStyle(element), messageStyle = getComputedStyle(message);
+      if (bounds.width <= 0 || bounds.height <= 0 || state.visibility !== "visible") return null;
+      return { padding: state.padding, gap: state.gap, size: messageStyle.fontSize, weight: messageStyle.fontWeight };
+    }, text)).toEqual(expectedStyle);
+  }
+  await expectPageStyle(inspect, "Choose a run in History.");
   await page.getByRole("button", { name: "Compare", exact: true }).click();
   const compare = page.getByRole("region", { name: "Compare", exact: true }).locator(".workspace-state--page");
-  await expect(compare).toBeVisible();
-  expect(await compare.evaluate(element => {
-    const state = getComputedStyle(element), message = getComputedStyle(element.querySelector("p")!);
-    return { padding: state.padding, gap: state.gap, size: message.fontSize, weight: message.fontWeight };
-  })).toEqual(inspectStyle);
+  await expectPageStyle(compare, "Select 2–10 runs in History to compare.");
   await page.getByRole("button", { name: "Models", exact: true }).click();
   for (const section of ["Local Model History", "Saved Models", "Imported Models"]) {
     await expect(page.getByRole("button", { name: section, exact: true })).toBeVisible();
