@@ -1,0 +1,52 @@
+{
+  "edges": [
+    {
+      "from_node": "normalize",
+      "from_output": "default",
+      "to_input": "default",
+      "to_node": "model"
+    },
+    {
+      "from_node": "model",
+      "from_output": "default",
+      "to_input": "default",
+      "to_node": "score"
+    }
+  ],
+  "graph_digest": "880d62bbd5e37ca93ed810120f5cb50c3c83f21c1012ae66fc27f4ec2385b40e",
+  "nodes": [
+    {
+      "contract_digest": "b245b1e293f1b89b311663a3d73bfb36ac56a1898f586cb81a07ffefee72bd6e",
+      "node_id": "normalize",
+      "operation_id": "preprocess.normalize",
+      "parameters": {
+        "method": "snv",
+        "scale_method": "max",
+        "std_ddof": 0
+      }
+    },
+    {
+      "contract_digest": "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
+      "node_id": "model",
+      "operation_id": "model.fitted_pls",
+      "parameters": {
+        "component_curve_max": 10,
+        "component_cv_folds": 5,
+        "component_fit_mode": "manual",
+        "component_selection_rule": "manual_parameter",
+        "n_components": 2,
+        "scale": false,
+        "target_names": []
+      }
+    },
+    {
+      "contract_digest": "769f2b7129ae580721435b91c2df1fd11ee6e2400e8489d266643da74ae96684",
+      "node_id": "score",
+      "operation_id": "diagnostics.regression_evaluator",
+      "parameters": {
+        "target_names": []
+      }
+    }
+  ],
+  "schema_version": "spectra-validation-graph/1"
+}

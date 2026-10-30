@@ -37,6 +37,38 @@ class FittedStateCustodyCapability:
 
 _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingProxyType(
     {
+        # Exact current producers; older custody classifications remain intact.
+        (
+            "spectrasherpa.model-artifact.pca/3",
+            "3832e1488a123217d7068bcf33dae7aa982b5665dec00c402cfb034fd11064c4",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.pca/3",
+            contract_digest="3832e1488a123217d7068bcf33dae7aa982b5665dec00c402cfb034fd11064c4",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale=(
+                "Display projection reuses one input; fitting, application arrays and serializer are unchanged."
+            ),
+        ),
+        (
+            "spectra.sherpa-simpls-regression-json/9",
+            "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
+        ): FittedStateCustodyCapability(
+            serializer="spectra.sherpa-simpls-regression-json/9",
+            contract_digest="ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
+            custody_class="data_free_application_state",
+            rationale="Optional training-fold selection changes fitting, not the closed application-state storage.",
+        ),
+        (
+            "spectrasherpa.sherpa-plsda-state/5",
+            "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale=(
+                "Optional CV specimen-independence guard; " "fitted arrays, serializer and application are unchanged."
+            ),
+        ),
         # Exact consumers after optional one-SE PLS fitting. Preserve every older capability.
         (
             "spectra.sherpa-simpls-regression-json/9",

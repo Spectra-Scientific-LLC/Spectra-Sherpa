@@ -256,7 +256,12 @@ bind_stable_execution_contract(
     implementation_id="spectrasherpa.preprocess.clip_range",
     implementation_version="1.1.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
-    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    managed_optimization_eligibility=(
+        ManagedOptimizationEligibility.LOCAL,
+        ManagedOptimizationEligibility.DEVELOPMENT,
+        ManagedOptimizationEligibility.FULL_REFIT,
+    ),
+    managed_optimization_profiles=("first_party_pls",),
     sample_effect="preserves_samples",
     feature_effect="filters_features",
     axis_effect="changes_axis",
@@ -274,6 +279,9 @@ bind_stable_execution_contract(
     ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
+    citations=(
+        "NumPy 1.26, Boolean array indexing: ordered coordinate selection, https://numpy.org/doc/1.26/user/basics.indexing.html#boolean-array-indexing",
+    ),
 )
 
 
