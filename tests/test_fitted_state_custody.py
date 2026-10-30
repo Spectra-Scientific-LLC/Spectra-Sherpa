@@ -76,7 +76,7 @@ def test_custody_capabilities_bind_the_current_registered_execution_contracts() 
             "spectrasherpa.model.fitted_linear_regression/1": (
                 "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6"
             ),
-            PLSDA_FITTED_STATE_SERIALIZER: "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+            PLSDA_FITTED_STATE_SERIALIZER: "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
             "spectra.scale-reference-json.v2": "5bcce28bb446d20a2a5f1a44b43d10dc5d98c69e1b981d831151885b069b41e8",
         }
     )

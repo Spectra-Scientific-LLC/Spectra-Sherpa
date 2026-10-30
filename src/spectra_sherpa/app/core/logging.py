@@ -134,7 +134,7 @@ class LockedRotatingFileHandler(logging.handlers.RotatingFileHandler):
                     finally:
                         self.stream = None
             except Exception:
-                self.handleError(record)
+                self._report_cleanup_error()
             finally:
                 if fd is not None:
                     try:
@@ -149,12 +149,22 @@ class LockedRotatingFileHandler(logging.handlers.RotatingFileHandler):
 
                                 fcntl.flock(fd, fcntl.LOCK_UN)
                     except OSError:
-                        self.handleError(record)
+                        self._report_cleanup_error()
                     finally:
                         try:
                             os.close(fd)
                         except OSError:
-                            self.handleError(record)
+                            self._report_cleanup_error()
+
+    @staticmethod
+    def _report_cleanup_error():
+        # The write outcome was already reported. Never replay the record for
+        # a descriptor/lock cleanup failure after a successful write.
+        try:
+            error_type = type(sys.exc_info()[1]).__name__
+            sys.stderr.write(f"Persistent diagnostic log cleanup failed ({error_type}).\n")
+        except Exception:
+            pass
 
     def handleError(self, record):
         self._write_failed = True

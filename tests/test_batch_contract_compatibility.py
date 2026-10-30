@@ -83,6 +83,7 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
         _FEATURE_PRESENTATION_PREDECESSORS,
         _HANDOFF_PRESENTATION_PREDECESSORS,
         _PCA_DISPLAY_INPUT_REUSE_PREDECESSORS,
+        _PLSDA_INDEPENDENCE_READERS,
         _SCIENTIFIC_AUDIT_PREDECESSORS,
         _SCIENTIFIC_AUTHORITY_PREDECESSORS,
         _WORKFLOW_POPULATION_PREDECESSORS,
@@ -112,6 +113,9 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
     automatic_operations = {entry.operation_id for entry in _AUTOMATIC_PLS_APPLICATION_PREDECESSORS}
     current_entries = tuple(_AUTOMATIC_PLS_APPLICATION_PREDECESSORS) + tuple(
         entry for entry in current_entries if entry.operation_id not in automatic_operations
+    )
+    current_entries = tuple(_PLSDA_INDEPENDENCE_READERS) + tuple(
+        entry for entry in current_entries if entry.operation_id != "classification.plsda"
     )
     for entry in current_entries:
         current = node_registry.get_metadata(entry.operation_id).resolved_execution_contract()

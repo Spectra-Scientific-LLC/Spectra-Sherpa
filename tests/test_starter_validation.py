@@ -457,3 +457,107 @@ async def test_automatic_pls_preflight_checks_independence_of_training_rows_only
         assert preview["status"] == "feasible"
         assert preview["splits"][0]["training_count"] == 30
         await FittedPLSV2Node("model", model_params).execute(input_data=split["X_train"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("repeated", [False, True])
+async def test_plsda_preview_and_fit_share_inner_groups_not_outer_assignment(repeated):
+    from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+    from spectra_sherpa.app.services.dag.nodes.classification.plsda_nodes import PLSDANode
+
+    labels = ["a" if i % 2 else "b" for i in range(60)]
+    specimens = (
+        ([f"s{i % 20}" for i in range(40)] + [f"t{i % 10}" for i in range(20)])
+        if repeated
+        else [f"s{i}" for i in range(60)]
+    )
+    source = SherpaDataset(
+        X=np.random.default_rng(613).normal(size=(60, 4)),
+        target=np.asarray(labels),
+        target_context=TargetContext(target_type="categorical", target_name="class", target_names=["class"]),
+        sample_axis=SampleAxis(
+            labels=[f"row{i}" for i in range(60)],
+            sample_table={
+                "specimen_id": specimens,
+                "assignment": ["Training"] * 40 + ["Test"] * 20,
+            },
+        ),
+    )
+    source.meta["csv.assignment_column"] = "assignment"
+    nodes, edges = graph({"split_method": "group_holdout", "held_out_groups": ["Test"]})
+    preview = await preview_starter_validation(nodes, edges, {"source": source})
+    assert preview["status"] == "feasible"
+    executed = await TrainTestSplitNode("split", nodes[1]["parameters"]).execute(X=source)
+    fitted = await PLSDANode("model", {"n_components": 2}).execute(X=executed["X_train"])
+    cv = fitted.outputs["component_curve"]["cross_validation"]
+    assert cv["status"] == ("unavailable" if repeated else "available")
+    assert preview["splits"][0]["component_cv"]["status"] == ("unavailable" if repeated else "population_feasible")
+    if repeated:
+        assert "Repeated specimen_id" in cv["reason"]
+    else:
+        expected = __import__(
+            "spectra_sherpa.sdk.validate", fromlist=["make_classification_split_plan"]
+        ).make_classification_split_plan(executed["y_train"])
+        assert cv["split_digest"] == expected.digest
+
+
+@pytest.mark.asyncio
+async def test_automatic_pls_preview_refuses_population_fitted_preprocessing_like_execution():
+    from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+    from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
+    from spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node import FittedPLSV2Node
+
+    X = np.random.default_rng(617).normal(size=(30, 4))
+    source = SherpaDataset(X=X, target=X[:, 0], target_context=TargetContext(target_type="continuous", target_name="y"))
+    add_processing_step(source, "preprocess.scale", {"method": "autoscale"}, node_id="earlier_scale")
+    nodes, edges = graph({"split_method": "random"})
+    nodes[-1].update(node_type="model.fitted_pls", parameters={"component_fit_mode": "one_standard_error"})
+    preview = await preview_starter_validation(nodes, edges, {"source": source})
+    assert preview["status"] == "refused" and "fold-local" in preview["reason"]
+    split = await TrainTestSplitNode("split", nodes[1]["parameters"]).execute(X=source)
+    with pytest.raises(ValueError, match="fold-local"):
+        await FittedPLSV2Node("model", nodes[-1]["parameters"]).execute(input_data=split["X_train"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response", ["embedded_identity", "array", "typed_external"])
+async def test_plsda_independence_uses_actual_response_not_predictor_target(response):
+    from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis
+    from spectra_sherpa.app.services.dag.nodes.classification.plsda_nodes import PLSDANode
+
+    ids = [f"s{i//2}" for i in range(60)]
+    source = SherpaDataset(
+        X=np.random.default_rng(918).normal(size=(60, 6)),
+        sample_axis=SampleAxis(
+            labels=[f"row{i}" for i in range(60)],
+            sample_table={"sample_id": [f"row{i}" for i in range(60)], "specimen_id": ids},
+        ),
+    )
+    source.meta["source_collection"] = {
+        key: "d" * 64 for key in ("manifest_digest", "collection_definition_sha256", "scientific_collection_sha256")
+    }
+    source = attach_target_dataset(
+        source,
+        None,
+        target_type="categorical",
+        target_source="sample_table_column",
+        target_column="specimen_id",
+        group_column="specimen_id",
+        node_id="attach",
+    )
+    y = np.asarray(["a" if (i // 2) % 2 else "b" for i in range(60)])
+    explicit = None if response == "embedded_identity" else y
+    if response == "typed_external":
+        explicit = SherpaDataset(
+            X=np.zeros((60, 1)),
+            target=y,
+            feature_axis=FeatureAxis(labels=["Class"]),
+            sample_axis=SampleAxis(
+                labels=[f"row{i}" for i in range(60)], sample_table={"sample_id": [f"row{i}" for i in range(60)]}
+            ),
+        )
+    fitted = await PLSDANode("model", {"n_components": 2}).execute(X=source, y=explicit)
+    cv = fitted.outputs["component_curve"]["cross_validation"]
+    assert cv["status"] == ("unavailable" if response == "embedded_identity" else "available")
+    if response != "embedded_identity":
+        assert fitted.outputs["metrics"]["classes"] == ["a", "b"]

@@ -21,6 +21,7 @@ from spectra_sherpa.app.services.dag.meta_helpers import (
 )
 from spectra_sherpa.app.services.dag.nodes.modeling import pls_applicability
 from spectra_sherpa.app.services.dag.supervision_binding import admit_attached_sample_table_supervision
+from spectra_sherpa.core import specimen_independence
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
     ManagedOptimizationEligibility,
@@ -139,6 +140,12 @@ def _plsda_scientific_core(
 
     params = _canonical_plsda_parameters(parameters)
     dataset, matrix, labels, classes = _plsda_inputs(X, y)
+    response_source = dataset if y is None else y
+    response_names = dag_io_contracts.resolve_target_names(y, dataset if y is None else None)
+    response_context = getattr(response_source, "target_context", None)
+    if not response_names and response_context is not None:
+        response_name = response_context.selected_target or response_context.target_name
+        response_names = [response_name] if response_name else None
     component_limit = min(matrix.shape[1], matrix.shape[0] - 1)
     if int(params["n_components"]) > component_limit:
         raise ValueError(f"PLS-DA n_components must not exceed the calibration rank bound ({component_limit})")
@@ -176,6 +183,7 @@ def _plsda_scientific_core(
         "dataset": dataset,
         "matrix": matrix,
         "labels": labels,
+        "response_names": response_names or [],
         "classes": classes,
         "parameters": params,
         "fit": fit,
@@ -204,6 +212,17 @@ def _component_curve_for_core(core: dict[str, Any]) -> dict[str, object]:
     requested = int(core["parameters"]["n_components"])
     maximum = min(max(10, selected), _PLSDA_MAX_COMPONENTS, matrix.shape[1], matrix.shape[0] - 1)
     attached = admit_attached_sample_table_supervision(dataset)
+    groups = None if attached is None else attached.groups
+    reason = component_validation.cv_unavailable_reason(dataset)
+    violations = specimen_independence.independence_violations(
+        dataset.sample_axis.sample_table if dataset.sample_axis is not None else None,
+        n_samples=dataset.n_samples,
+        target_type="categorical",
+        target_names=core["response_names"],
+        groups=groups,
+    )
+    if violations:
+        reason = reason or violations[0].message
     return plsda_component_curve.build_plsda_component_curve(
         matrix,
         core["labels"],
@@ -212,8 +231,8 @@ def _component_curve_for_core(core: dict[str, Any]) -> dict[str, object]:
         maximum_components=maximum,
         scale=bool(core["parameters"]["scale"]),
         fit_model=lambda x, y, classes, n, scale: _native_plsda_fit(x, y, classes, n_components=n, scale=scale)[0],
-        groups=None if attached is None else attached.groups,
-        cv_unavailable_reason=component_validation.cv_unavailable_reason(dataset),
+        groups=groups,
+        cv_unavailable_reason=reason,
     )
 
 
@@ -782,6 +801,7 @@ bind_stable_execution_contract(
         "Kucheryavskiy, mdatools PLS-DA documentation; rchemo::plsrda maximum dummy-response rule",
     ),
     implementation_modules=(
+        specimen_independence,
         pca_numerics,
         numerical_scaling,
         input_identity_authority,

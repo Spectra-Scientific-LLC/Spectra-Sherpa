@@ -243,6 +243,17 @@ _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingP
             rationale="Workflow display/source-curation bindings; fitted arrays and serializers are unchanged.",
         ),
         (
+            "spectrasherpa.sherpa-plsda-state/5",
+            "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale=(
+                "Optional CV specimen-independence guard; " "fitted arrays, serializer and application are unchanged."
+            ),
+        ),
+        (
             "spectra.sherpa-simpls-regression-json/9",
             "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
         ): FittedStateCustodyCapability(

@@ -108,7 +108,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "classification.plsda": (
         "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-        "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+        "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
@@ -181,6 +181,10 @@ def historical_port_topology(graph: HistoricalValidationGraph) -> dict[str, obje
 
 
 _PRE_AUTOMATIC_PLS_CONSUMERS = {
+    "classification.plsda": (
+        "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+        "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
+    ),
     "model.fitted_linear_regression": (
         "e67835fc9e93b0a1b5dcc306ed3cfcbbcae86eb515af3f7b730fe48cc1d79782",
         "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
@@ -292,7 +296,9 @@ class HistoricalReconstructionContext:
         previous_consumer = catalog["current_contracts"].get(operation, digest)
         inspected_consumer = inspected == (previous_consumer, current.digest)
         component_curve_consumer = inspected_consumer and operation == "model.fitted_pls"
-        classifier_curve_consumer = inspected_consumer and operation == "classification.plsda"
+        classifier_curve_consumer = (
+            inspected_consumer and operation == "classification.plsda" and not self.predates_automatic_pls
+        )
         legacy_application_consumer = inspected_consumer and operation == "model.load_apply"
         if current.digest != previous_consumer and not inspected_consumer:
             raise ValidationGraphError("current implementation is not qualified for historical reconstruction")

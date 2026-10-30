@@ -45,7 +45,7 @@ _READ_ONLY_CONSUMERS = {
     "model.apply_fitted_linear_regression": "520728c0451ffd8f5904ea5c3227c40698d601647365a6e38bebf69144d78e2c",
     "model.apply_fitted_pcr": "f09403b8c0f41c32ea591a1761e9e8dfa57149746634c5748be9b27d876f228c",
     "model.apply_fitted_svr": "265de5fa6c87e0629cffcaa742da2c84a1fc3ed848ac1c8750fbd7f83d640a58",
-    "classification.plsda": "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+    "classification.plsda": "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
     "model.fitted_pls": "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
     "model.fitted_linear_regression": "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
     "model.fitted_pcr": "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
@@ -126,6 +126,7 @@ def test_scientific_audit_preserves_exact_prior_application_not_execution(operat
     latest.update(
         {entry.operation_id: entry.consumer_digest for entry in authority._AUTOMATIC_PLS_APPLICATION_PREDECESSORS}
     )
+    latest.update({entry.operation_id: entry.consumer_digest for entry in authority._PLSDA_INDEPENDENCE_READERS})
     latest["model.pca"] = "1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f"
     assert contract.digest == latest.get(operation, current)
     serializer = contract.payload["fitted_state_serializer"]
@@ -166,3 +167,32 @@ def test_scientific_audit_preserves_exact_prior_application_not_execution(operat
 def test_scientific_audit_application_registry_has_only_the_reviewed_operations():
     assert {entry.operation_id for entry in authority._SCIENTIFIC_AUDIT_PREDECESSORS} == set(_REVIEWED)
     assert len(authority._SCIENTIFIC_AUDIT_PREDECESSORS) == 46
+
+
+def test_pre_grouped_cv_profile_remains_readable_without_execution_authority():
+    from pathlib import Path
+
+    from spectra_sherpa.app.services.dag.executor_types import WorkflowNode
+    from spectra_sherpa.app.services.dag.validation_graph import assert_admitted_validation_graph
+    from spectra_sherpa.app.types import type_registry
+
+    if not type_registry.is_loaded:
+        type_registry.load(Path(__file__).resolve().parents[1] / "src/spectra_sherpa/app/types")
+
+    digest = "af74c1883601c4db7943953a864eb319794e19cebf5b303ef3f67ac858714336"
+    context = historical_contracts.HistoricalReconstructionContext(digest)
+    catalog = authority.inspection_predecessor_catalog(digest)
+    assert context.profile().digest == digest
+    for operation, archived in catalog["contracts"].items():
+        assert context.contract(operation, archived["digest"]).as_dict() == archived["payload"]
+    graph = context.reconstruct([WorkflowNode("model", "classification.plsda", {"n_components": 2})], [])
+    wire = graph.as_dict()
+    assert context.graph(wire).as_dict() == wire
+    with pytest.raises(ValidationGraphError, match="historical or noncanonical"):
+        assert_admitted_validation_graph(graph, require_live_runtime=False)
+    # Automatic PLS is already part of this preceding profile; its controls
+    # must not be mistaken for fields added after an older manual-only profile.
+    pls = context.reconstruct(
+        [WorkflowNode("pls", "model.fitted_pls", {"component_fit_mode": "one_standard_error"})], []
+    )
+    assert context.graph(pls.as_dict()).as_dict() == pls.as_dict()

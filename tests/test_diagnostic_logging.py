@@ -634,3 +634,54 @@ def test_configured_file_handler_preserves_redacted_fallback_and_recovers(
     assert "PRIVATE_" not in fallback
     isolated_log_handlers.warning("recovered")
     assert "recovered" in path.read_text()
+
+
+@pytest.mark.parametrize("failure", ["unlock", "descriptor_close", "stream_close"])
+def test_successful_write_cleanup_failure_does_not_replay_record(tmp_path, monkeypatch, capsys, failure):
+    from types import SimpleNamespace
+
+    path = tmp_path / "cleanup.log"
+    handler = LockedRotatingFileHandler(path, maxBytes=1024, backupCount=1)
+    real_close = os.close
+    real_open = handler._open
+    # Exercise the Windows stream-close path on every platform without relying
+    # on a real Windows lock; lock-failure semantics are covered separately.
+    monkeypatch.setattr(logging_module.sys, "platform", "win32")
+    monkeypatch.setattr(handler, "_acquire_lock", lambda fd: None)
+
+    def unlock(fd, mode, count):
+        if failure == "unlock":
+            raise OSError("PRIVATE_UNLOCK_PATH")
+
+    monkeypatch.setitem(sys.modules, "msvcrt", SimpleNamespace(locking=unlock, LK_UNLCK=0))
+
+    def close_fd(fd):
+        real_close(fd)
+        if failure == "descriptor_close":
+            raise OSError("PRIVATE_CLOSE_PATH")
+
+    monkeypatch.setattr(logging_module.os, "close", close_fd)
+
+    if failure == "stream_close":
+
+        class CloseFailure:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __getattr__(self, name):
+                return getattr(self.stream, name)
+
+            def close(self):
+                self.stream.close()
+                raise OSError("PRIVATE_STREAM_PATH")
+
+        monkeypatch.setattr(handler, "_open", lambda: CloseFailure(real_open()))
+    try:
+        handler.emit(logging.LogRecord("cleanup", logging.INFO, __file__, 1, "written-exactly-once", (), None))
+        assert path.read_text() == "written-exactly-once\n"
+        stderr = capsys.readouterr().err
+        assert "cleanup failed (OSError)" in stderr
+        assert "write failed" not in stderr and "written-exactly-once" not in stderr
+        assert "PRIVATE_" not in stderr
+    finally:
+        handler.close()

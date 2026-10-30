@@ -19,9 +19,9 @@ from spectra_sherpa.app.api.deps import get_current_user
 from spectra_sherpa.app.api.v1.routes import builder as builder_routes
 from spectra_sherpa.app.api.v1.routes.workflow_templates import (
     DataBindingSpec,
-    _adapt_pls_starter_to_source_assignment,
     _adapt_starter_cross_block_holdout,
     _adapt_starter_scaling_to_bound_role,
+    _adapt_starter_to_source_assignment,
     _enforce_bound_dataset_requirements,
     _normalize_binding_target_authority,
     _require_independent_classification_group,
@@ -171,11 +171,24 @@ def test_pls_starter_uses_explicit_csv_training_validation_assignment(tmp_path: 
     )
     profile = _source_assignment_profile(dataset)
     assert profile["source_assignment"]["validation_label"] == "Validation"
-    nodes = [{"node_type": "data.train_test_split", "parameters": {"split_method": "kennard_stone", "test_size": 0.25}}]
-    _adapt_pls_starter_to_source_assignment(
-        template=SimpleNamespace(slug="pls_calibration"), analysis_profile=profile, nodes=nodes
+    nodes = [
+        {
+            "node_id": "split",
+            "node_type": "data.train_test_split",
+            "parameters": {"split_method": "kennard_stone", "test_size": 0.25},
+        }
+    ]
+    _adapt_starter_to_source_assignment(
+        analysis_profile=profile,
+        nodes=nodes,
+        source_node_id="source",
+        edges=[{"from_node_id": "source", "to_node_id": "split"}],
     )
-    assert nodes[0]["parameters"] == {"split_method": "group_holdout", "held_out_groups": ["Validation"]}
+    assert nodes[0]["parameters"] == {
+        "split_method": "group_holdout",
+        "test_size": 0.25,
+        "held_out_groups": ["Validation"],
+    }
 
 
 @pytest.mark.parametrize("selection_scope", ["file_id", "file_ids"])
@@ -296,7 +309,8 @@ async def test_pls_starter_instantiates_with_csv_training_validation_assignment(
         return
     assert response.status_code == 201, response.text
     split = next(node for node in response.json()["nodes"] if node["node_type"] == "data.train_test_split")
-    assert split["parameters"] == {"split_method": "group_holdout", "held_out_groups": ["Validation"]}
+    assert split["parameters"]["split_method"] == "group_holdout"
+    assert split["parameters"]["held_out_groups"] == ["Validation"]
 
 
 def _builder_client() -> TestClient:

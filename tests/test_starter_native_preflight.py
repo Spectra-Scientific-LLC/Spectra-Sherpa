@@ -20,6 +20,7 @@ from tests.test_canonical_template_project_corpus import _bound_source, _templat
     [
         ("pls_calibration", 5),
         ("pls_calibration", 20),
+        ("pca", 20),
         ("classification_plsda", 20),
         ("knn_classification", 20),
         ("simca_classification", 20),
@@ -58,11 +59,22 @@ async def test_native_starter_population_is_checked_before_any_sheet_is_saved(
         binding["group_column"] = group_column
     await test_session.commit()
     project_id = project.id
+    if slug == "pls_calibration" and rows == 20 and group_column:
+        test_session.add(WorkflowTemplate(**_template_record("pca")))
+        await test_session.commit()
+        preview = await auth_client.post(
+            "/api/v1/workflow-templates/binding-compatibility-preview",
+            json={"project_id": project_id, "binding": binding},
+        )
+        assert preview.status_code == 200, preview.text
+        decisions = {d["template_slug"]: d for d in preview.json()["decisions"]}
+        assert decisions["pca"]["validation_preview"]["status"] != "refused"
+        assert decisions["pls_calibration"]["validation_preview"]["status"] == "refused"
     response = await auth_client.post(
         f"/api/v1/workflow-templates/{template.id}/instantiate",
         json={"workflow_name": "Native preview", "project_id": project.id, "data_bindings": {"data_1": binding}},
     )
-    if rows == 5 or group_column:
+    if rows == 5 or (group_column and slug != "pca"):
         assert response.status_code == 409, response.text
         detail = response.json()["detail"]
         assert "partition" in detail or "Automatic PLS selection needs" in detail or "Data Portfolio" in detail

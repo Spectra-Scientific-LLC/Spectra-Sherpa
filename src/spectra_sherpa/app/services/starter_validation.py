@@ -11,14 +11,17 @@ from typing import Any
 import numpy as np
 
 from spectra_sherpa.app.lib.workflow_population import source_population_outputs
+from spectra_sherpa.app.services.dag.io_contracts import resolve_target_names
 from spectra_sherpa.app.services.dag.nodes.data.split_planner import (
     bind_split_groups,
+    materialize_split_outputs,
     plan_train_test_split,
     prepare_split_source,
     require_independent_classification_groups,
     require_known_specimen_cross_block_plan,
 )
 from spectra_sherpa.app.services.dag.nodes.data.transforms import FilterSamplesNode, TrainTestSplitNode
+from spectra_sherpa.app.services.dag.supervision_binding import admit_attached_sample_table_supervision
 from spectra_sherpa.core.specimen_independence import independence_violations
 from spectra_sherpa.sdk.validate import make_classification_split_plan, make_split_plan
 
@@ -74,16 +77,26 @@ async def preview_starter_validation(
             continue
         node_id = str(node["node_id"])
         incoming = [edge for edge in edges if str(edge["to_node_id"]) == node_id]
-        # An explicit response branch needs its own aligned source admission;
-        # do not guess it from a single supplied dataset.
-        if len(incoming) != 1 or incoming[0].get("from_output", "default") != "default":
+        predictors = [edge for edge in incoming if edge.get("to_input", "X") in {"X", "default"}]
+        if len(predictors) != 1 or predictors[0].get("from_output", "default") != "default":
+            continue
+        predictor = predictors[0]
+        # The same source's target port is the embedded response authority.
+        # A genuinely separate target source remains explicitly unchecked.
+        others = [edge for edge in incoming if edge is not predictor]
+        if len(others) > 1 or any(
+            edge.get("to_input") != "y"
+            or edge.get("from_output") != "target"
+            or edge["from_node_id"] != predictor["from_node_id"]
+            for edge in others
+        ):
             continue
         try:
-            source = await source_for(str(incoming[0]["from_node_id"]))
+            source = await source_for(str(predictor["from_node_id"]))
             if source is missing:
                 continue
             p = TrainTestSplitNode.metadata.canonicalize_parameters(node.get("parameters", {}))
-            ds, matrix, labels, context, _ = prepare_split_source(source, None)
+            ds, matrix, labels, context, source_indices = prepare_split_source(source, None)
             if context is None or context.target_type not in (
                 {"categorical", "continuous"} if automatic_pls else {"categorical"}
             ):
@@ -128,22 +141,41 @@ async def preview_starter_validation(
             if labels is None or (labels.ndim > 1 and labels.shape[1] != 1):
                 return {"status": "refused", "reason": "Automatic PLS selection requires one continuous response."}
             try:
-                # Outer Training/Validation assignments are not specimen
-                # groups. Match the fitted node's attached-group authority for
-                # inner CV, retaining real groups but not the assignment label.
-                inner_groups = bind_split_groups(ds)
-                training_groups = None if inner_groups is None else inner_groups[plan.train_indices]
-                table = ds.sample_axis.sample_table if ds.sample_axis is not None else None
-                training_table = (
-                    {key: np.asarray(values)[plan.train_indices] for key, values in table.items()}
-                    if table is not None
-                    else None
+                # Materialize and re-admit the actual training partition using
+                # the same authority as execution. An outer assignment is not
+                # an inner specimen grouping, and receipts may change on slicing.
+                training = materialize_split_outputs(
+                    ds,
+                    matrix,
+                    labels,
+                    plan,
+                    node_id=node_id,
+                    target_context=context,
+                    groups=groups,
+                    source_indices=source_indices,
+                )["X_train"]
+                from spectra_sherpa.app.services.dag.nodes.modeling.component_validation import cv_unavailable_reason
+
+                reason = cv_unavailable_reason(training)
+                if reason:
+                    return {"status": "refused", "reason": f"Automatic PLS selection unavailable: {reason}"}
+                attached = admit_attached_sample_table_supervision(training)
+                training_groups = None if attached is None else attached.groups
+                training_table = training.sample_axis.sample_table if training.sample_axis is not None else None
+                target_names = (
+                    resolve_target_names(None, training)
+                    or (
+                        [context.selected_target or context.target_name]
+                        if context and (context.selected_target or context.target_name)
+                        else []
+                    )
+                    or parameters.get("target_names", [])
                 )
                 violations = independence_violations(
                     training_table,
                     n_samples=int(plan.train_indices.size),
                     target_type="continuous",
-                    target_names=[context.target_name] if context and context.target_name else [],
+                    target_names=target_names,
                     groups=training_groups,
                 )
                 if violations:
@@ -181,10 +213,37 @@ async def preview_starter_validation(
                     ),
                 }
             try:
-                # Same default split authority used by the PLS-DA component curve.
-                make_classification_split_plan(
-                    labels[plan.train_indices], groups=None if groups is None else groups[plan.train_indices]
+                # The fitted classifier reads its training supervision receipt,
+                # not the outer Training/Validation assignment labels.
+                training = materialize_split_outputs(
+                    ds,
+                    matrix,
+                    labels,
+                    plan,
+                    node_id=node_id,
+                    target_context=context,
+                    groups=groups,
+                    source_indices=source_indices,
+                )["X_train"]
+                attached = admit_attached_sample_table_supervision(training)
+                training_groups = None if attached is None else attached.groups
+                violations = independence_violations(
+                    training.sample_axis.sample_table if training.sample_axis is not None else None,
+                    n_samples=training.n_samples,
+                    target_type="categorical",
+                    target_names=resolve_target_names(None, training)
+                    or (
+                        [context.selected_target or context.target_name]
+                        if context and (context.selected_target or context.target_name)
+                        else []
+                    ),
+                    groups=training_groups,
                 )
+                if violations:
+                    item["component_cv"] = {"status": "unavailable", "reason": violations[0].message}
+                    previews.append(item)
+                    continue
+                make_classification_split_plan(labels[plan.train_indices], groups=training_groups)
                 item["component_cv"] = {"status": "population_feasible"}
             except ValueError:
                 item["component_cv"] = {

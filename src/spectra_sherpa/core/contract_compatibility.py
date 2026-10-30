@@ -1010,6 +1010,33 @@ _AUTOMATIC_PLS_APPLICATION_PREDECESSORS = tuple(
 )
 
 
+# The specimen-independence guard changes optional CV availability only. The
+# classifier fit, serialized state, and application mathematics are unchanged.
+# Exact reviewed predecessors are granted application, never old execution.
+_PLSDA_INDEPENDENCE_READERS = tuple(
+    SavedStateCompatibility(
+        "classification.plsda",
+        predecessor,
+        "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
+        "spectrasherpa.sherpa-plsda-state/5",
+    )
+    for predecessor in (
+        "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
+        "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+        "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+        "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
+        "526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
+        "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+        "7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
+        "85b2a1fd3938dee8a3a12f61397a07052883cd3f0bfa4d977151b600fe4992b6",
+        "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+        "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+        "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+        "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
+    )
+)
+
+
 def saved_state_predecessor_is_compatible(
     predecessor: object,
     consumer: str,
@@ -1044,6 +1071,7 @@ def saved_state_predecessor_is_compatible(
             *_PCA_DISPLAY_INPUT_REUSE_PREDECESSORS,
             *_HANDOFF_PRESENTATION_PREDECESSORS,
             *_AUTOMATIC_PLS_APPLICATION_PREDECESSORS,
+            *_PLSDA_INDEPENDENCE_READERS,
         )
         if entry.predecessor_digest == predecessor
         and entry.consumer_digest == consumer
@@ -1068,6 +1096,11 @@ def stateless_application_predecessor_is_compatible(operation: str, predecessor:
 
 def inspection_predecessor_catalog(profile_digest: str | None = None) -> dict:
     """Pinned read-only campaign profiles; not saved-state application aliases."""
+    if profile_digest == "af74c1883601c4db7943953a864eb319794e19cebf5b303ef3f67ac858714336":
+        raw = files("spectra_sherpa.core").joinpath("contract_predecessors_grouped_cv.json").read_bytes()
+        if hashlib.sha256(raw).hexdigest() != "a3b95a3510226e94cdcee16b50c8eb729ec033c8893bf08711b0548cd59e7619":
+            raise ValueError("trusted pre-grouped-CV inspection catalog digest mismatch")
+        return json.loads(raw)
     if profile_digest == "eec02d6f13ac5b5fa1af45dfea754b0c054faf1c92d75cf9af88ec74ac066cdb":
         raw = files("spectra_sherpa.core").joinpath("contract_predecessors_staging_20261029.json").read_bytes()
         if hashlib.sha256(raw).hexdigest() != "193ec28fe2034d819b3e12c0d66d5fd7cf618cc50170fcf4facf89828076e641":

@@ -346,15 +346,6 @@ def _binding_to_file_load_params(binding: "DataBindingSpec") -> dict[str, object
         if binding.display_name is not None:
             parameters["group_title"] = binding.display_name
         return parameters
-    if binding.group_column:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "This single-file source cannot retain the selected grouping column. "
-                "Save it as a Data Portfolio and launch the starter from that portfolio "
-                "to preserve specimen groups during validation."
-            ),
-        )
     assert binding.file_id is not None
     parameters: dict[str, object] = {
         "experiment_id": binding.experiment_id,
@@ -691,10 +682,11 @@ async def _persist_managed_candidate(
         nodes=managed_nodes,
         edges=managed_edges,
     )
-    _adapt_pls_starter_to_source_assignment(
-        template=template,
+    _adapt_starter_to_source_assignment(
         analysis_profile=bound_profiles[scientist_source_node_id],
         nodes=managed_nodes,
+        edges=managed_edges,
+        source_node_id=managed_source_node_id,
     )
 
     managed_workflow, managed_node_records, managed_edge_records = await persist_template_workflow(
@@ -1184,7 +1176,46 @@ def _binding_with_saved_selection(binding, dataset, selection, *, source_digest=
     return binding.model_copy(update={"target_authority": authority, "group_column": selection.group_column})
 
 
+def _starter_group_binding_refusal(nodes, edges, bindings):
+    """A native file cannot serialize a selected group; refuse only its consumers.
+
+    Keep exploration available. Group-consuming contracts and explicit splits
+    must retain the chosen grouping through a collection source instead.
+    """
+    by_id = {str(node["node_id"]): node for node in nodes}
+    outgoing = {}
+    for edge in edges:
+        outgoing.setdefault(str(edge["from_node_id"]), []).append(str(edge["to_node_id"]))
+    for source_id, binding in bindings.items():
+        if not binding.group_column or binding.file_ids is not None or binding.all_files:
+            continue
+        pending, visited = [str(source_id)], set()
+        while pending:
+            node_id = pending.pop()
+            if node_id in visited:
+                continue
+            visited.add(node_id)
+            node = by_id.get(node_id)
+            if node is None:
+                continue
+            metadata = node_registry.get_metadata(node["node_type"])
+            contract = metadata.resolved_execution_contract()
+            if node["node_type"] == "data.train_test_split" or (
+                contract is not None and contract.payload["group_access"] != "none"
+            ):
+                return (
+                    "This starter needs the selected grouping column for validation. "
+                    "Save the single-file source as a Data Portfolio and launch from it "
+                    "to retain specimen groups. Exploration starters remain available."
+                )
+            pending.extend(outgoing.get(node_id, ()))
+    return None
+
+
 async def _starter_validation_preview(nodes, edges, sources, bindings):
+    group_refusal = _starter_group_binding_refusal(nodes, edges, bindings)
+    if group_refusal:
+        return {"status": "refused", "reason": group_refusal}
     if not any(node["node_type"] == "data.train_test_split" for node in nodes):
         return {"status": "not_checked", "reason": "No held-out split requested."}
     supervised_preview = any(
@@ -1228,7 +1259,7 @@ async def _starter_validation_preview(nodes, edges, sources, bindings):
                     )
             prepared[node_id] = dataset
         except ValueError as exc:
-            return {"status": "refused", "reason": f"Classification source is not ready: {exc}"}
+            return {"status": "refused", "reason": f"Analysis source is not ready: {exc}"}
     return await preview_starter_validation(nodes, edges, prepared)
 
 
@@ -1264,7 +1295,7 @@ async def _require_starter_validation(nodes, edges, sources, bindings, *, valida
                     held_out_groups=held_out_groups,
                 )
             except ValueError as exc:
-                raise HTTPException(status_code=409, detail=f"Classification source is not ready: {exc}") from exc
+                raise HTTPException(status_code=409, detail=f"Analysis source is not ready: {exc}") from exc
 
 
 async def _validate_binding(
@@ -1745,21 +1776,51 @@ def _require_independent_classification_group(
             raise HTTPException(status_code=409, detail=violations[0].message)
 
 
-def _adapt_pls_starter_to_source_assignment(
-    *, template: WorkflowTemplate, analysis_profile: dict[str, Any], nodes: list[dict[str, Any]]
+def _adapt_starter_to_source_assignment(
+    *,
+    analysis_profile: dict[str, Any],
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    source_node_id: str,
 ) -> None:
-    """Preserve a scientist-confirmed source partition in the new PLS starter."""
+    """Preserve an explicit source partition at its first downstream splits.
 
+    Never apply another source's assignment, or replace partitions downstream
+    of the outer split (which may define inner validation).
+    """
     assignment = analysis_profile.get("source_assignment")
-    if template.slug != "pls_calibration" or not isinstance(assignment, dict):
+    if not isinstance(assignment, dict):
         return
-    for node in nodes:
+    by_id = {str(node["node_id"]): node for node in nodes}
+    outgoing = {}
+    for edge in edges:
+        # Source assignments belong to predictor rows, never a response-only
+        # edge or a secondary reference input from another source.
+        if edge.get("from_output", "default") != "default" or edge.get("to_input", "default") not in {
+            "default",
+            "X",
+            "input_data",
+        }:
+            continue
+        outgoing.setdefault(str(edge["from_node_id"]), []).append(str(edge["to_node_id"]))
+    pending, visited = list(outgoing.get(source_node_id, ())), set()
+    while pending:
+        node_id = pending.pop()
+        if node_id in visited:
+            continue
+        visited.add(node_id)
+        node = by_id.get(node_id)
+        if node is None:
+            continue
         if node.get("node_type") == "data.train_test_split":
             node["parameters"] = {
+                **node.get("parameters", {}),
                 "split_method": "group_holdout",
                 "held_out_groups": [assignment["validation_label"]],
             }
             node["label"] = "Source Training/Validation Split"
+            continue
+        pending.extend(outgoing.get(node_id, ()))
 
 
 def _adapt_starter_cross_block_holdout(nodes: list[dict[str, Any]], held_out_groups: list[str]) -> None:
@@ -2114,7 +2175,9 @@ async def preview_bound_source_compatibility(
                 continue
             source_node = next(node for node in nodes if str(node["node_id"]) == source_ids[0])
             _apply_binding_to_template_source(source_node, binding)
-            _adapt_pls_starter_to_source_assignment(template=template, analysis_profile=analysis_profile, nodes=nodes)
+            _adapt_starter_to_source_assignment(
+                analysis_profile=analysis_profile, nodes=nodes, edges=edges, source_node_id=source_ids[0]
+            )
             if payload.validation_goal == "known_specimen_cross_block":
                 _adapt_starter_cross_block_holdout(nodes, payload.held_out_groups)
             preview = await _starter_validation_preview(
@@ -2738,10 +2801,11 @@ async def instantiate_template(
                 nodes=nodes_data,
                 edges=edges_data,
             )
-            _adapt_pls_starter_to_source_assignment(
-                template=template,
+            _adapt_starter_to_source_assignment(
                 analysis_profile=analysis_profile,
                 nodes=nodes_data,
+                edges=edges_data,
+                source_node_id=node_id,
             )
             if payload.validation_goal == "known_specimen_cross_block":
                 _adapt_starter_cross_block_holdout(nodes_data, payload.held_out_groups)

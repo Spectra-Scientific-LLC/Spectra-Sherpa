@@ -1988,6 +1988,24 @@ export const useWorkflowStore = defineStore("workflow", () => {
   function updateNode(nodeId: string, updates: Partial<WorkflowNode>) {
     const node = nodes.value.find((n) => n.id === nodeId);
     if (node) {
+      if (updates.type !== undefined && updates.type !== node.type) {
+        const metadata = getNodeMetadata(updates.type);
+        if (!metadata) throw new Error("Load the node library before changing the model type.");
+        const parameters = metadata.parameters ?? [];
+        const declared = new Set(parameters.map(parameter => parameter.name));
+        if (updates.params && Object.keys(updates.params).some(name => !declared.has(name))) {
+          throw new Error("The replacement model contains settings from a different node type.");
+        }
+        // An operation change is an explicit new fit. Its own registered
+        // defaults replace the old bag; never carry PLS controls into PCR.
+        updates = {
+          ...updates,
+          label: updates.label ?? metadata.label,
+          params: updates.params ?? Object.fromEntries(parameters
+            .filter(parameter => parameter.default !== undefined)
+            .map(parameter => [parameter.name, JSON.parse(JSON.stringify(parameter.default))])),
+        };
+      }
       const changed = Object.entries(updates).some(([key, value]) => {
         const currentValue = node[key as keyof WorkflowNode];
         return !valuesEqual(currentValue, value);
