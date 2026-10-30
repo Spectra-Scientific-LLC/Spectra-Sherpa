@@ -51,6 +51,7 @@ from sklearn.decomposition import PCA  # type: ignore[import-untyped]
 from sklearn.model_selection import StratifiedGroupKFold, train_test_split  # type: ignore[import-untyped]
 from sklearn.utils.multiclass import type_of_target  # type: ignore[import-untyped]
 
+from spectra_sherpa.app.lib.array_identity import array_content_digest
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
 from spectra_sherpa.app.services.dag.class_labels import prepare_class_labels, prepare_declared_class_labels
 from spectra_sherpa.app.services.dag.io_contracts import (
@@ -157,17 +158,9 @@ def _unsigned_plan_payload(plan: SplitPlan) -> dict[str, object]:
     }
 
 
-def _array_content_digest(value: np.ndarray) -> str:
-    """Digest an admitted array with explicit shape, kind, and stable bytes."""
-
-    array = np.asarray(value)
-    identity: dict[str, object] = {"shape": list(array.shape)}
-    if np.issubdtype(array.dtype, np.number):
-        canonical = np.ascontiguousarray(array, dtype="<f8")
-        identity.update({"kind": "numeric_float64_le", "data_sha256": hashlib.sha256(canonical.tobytes()).hexdigest()})
-    else:
-        identity.update({"kind": "categorical_json", "values": array.tolist()})
-    return hashlib.sha256(_canonical_json(identity)).hexdigest()
+# Compatibility import for existing internal consumers; the shared public
+# helper owns the unchanged byte-level algorithm.
+_array_content_digest = array_content_digest
 
 
 def _plain_group(value: object) -> object:

@@ -99,22 +99,24 @@ describe('Comparison evaluation qualification', () => {
     wrapper.unmount();
   });
 
-  it('shows neutral arithmetic deltas without asserting an unqualified winner', () => {
+  it('keeps unqualified producer records separate without inventing metric deltas', () => {
     const wrapper = mount(ComparisonPanel, { props: {
-      runs: [run(1), run(2)], metricKeys: ['accuracy'], diff: { accuracy: { '1': 0.9, '2': 0.8588 } },
-      rankableMetrics: [],
+      runs: [run(1), run(2)], metricKeys: ['eval_1.r2', 'training_cv.r2'],
+      diff: { 'eval_1.r2': { '1': .996, '2': .9976 }, 'training_cv.r2': { '2': .9966 } }, rankableMetrics: [],
     }, global: { plugins: [PrimeVue] } });
-    const row = wrapper.findAll('tr').find(row => row.text().includes('Accuracy'));
-    expect(row).toBeDefined();
-    expect(row!.findAll('td').at(-1)!.text()).toBe('-0.0412');
+    const first = wrapper.get('table[aria-label="Recorded measures for Run 1"]');
+    const second = wrapper.get('table[aria-label="Recorded measures for Run 2"]');
+    expect(first.findAll('tbody tr')).toHaveLength(1);
+    expect(second.findAll('tbody tr')).toHaveLength(2);
+    expect(first.text()).toContain('0.9960');
+    expect(second.text()).toContain('0.9976');
+    expect(second.text()).toContain('0.9966');
+    expect(first.text()).not.toContain('Delta');
+    expect(first.findAll('tbody td')).toHaveLength(1);
     expect(wrapper.find('.metric-best, .delta-positive, .delta-negative').exists()).toBe(false);
     expect(wrapper.findAll('.matrix-section-row').map(section => section.text())).toEqual([
-      'Run context', 'Data & partition', 'Workflow', 'Results', 'Changed settings',
+      'Run context', 'Data & partition', 'Workflow', 'Qualified measures', 'Changed settings',
     ]);
-    expect(row!.find('.difference-neutral').exists()).toBe(true);
-    expect(wrapper.text()).not.toContain('Result pairing');
-    expect(wrapper.find('.result-correspondence').exists()).toBe(false);
-    expect(wrapper.find('.p-dropdown').exists()).toBe(false);
     wrapper.unmount();
   });
 

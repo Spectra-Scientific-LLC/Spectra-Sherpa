@@ -370,7 +370,7 @@ export const useReportStore = defineStore("report", () => {
         signal: request.signal,
       });
       if (!request.isCurrent()) return;
-      workflows.value = response.data
+      const options = response.data
         .filter((workflow) => (workflow.node_count ?? 0) > 0)
         .map((workflow) => {
           const originLabel =
@@ -381,9 +381,19 @@ export const useReportStore = defineStore("report", () => {
                 : "Origin unavailable";
           return {
             ...workflow,
-            display_label: `${workflow.name} — ${workflow.primary_data_source_name || "source identity unavailable"} · ${originLabel} · Sheet #${workflow.id}`,
+            display_label: `${workflow.name} — ${workflow.primary_data_source_name || "source identity unavailable"} · ${originLabel}`,
           };
         });
+      const labelCounts = new Map<string, number>();
+      for (const option of options) {
+        labelCounts.set(option.display_label, (labelCounts.get(option.display_label) ?? 0) + 1);
+      }
+      workflows.value = options.map((option) => ({
+        ...option,
+        display_label: (labelCounts.get(option.display_label) ?? 0) > 1
+          ? `${option.display_label} · Sheet ${option.id}`
+          : option.display_label,
+      }));
     } catch {
       if (request.isCurrent()) {
         workflows.value = [];

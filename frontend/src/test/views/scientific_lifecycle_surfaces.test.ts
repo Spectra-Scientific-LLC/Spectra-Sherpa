@@ -34,6 +34,7 @@ vi.mock("@/composables/useAppConfig", () => ({
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: mocks.toast }) }));
 const slot = { template: "<div><slot /></div>" };
 const stubs = {
+  SavedModelsForDeployment: true,
   Button: { props: ["label"], template: "<button @click=\"$emit('click')\">{{label}}</button>" },
   ResponsiveHeaderActions: slot,
   ContextualActions: true,

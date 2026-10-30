@@ -67,7 +67,9 @@ describe("Pro routes with operator-owned configuration", () => {
     expect(wrapper.find("table").exists()).toBe(false);
     expect(mocks.get).toHaveBeenCalledWith("/experiments", { params: { project_id: 3 } });
   });
-  it("keeps hosted Pro deployment on a Workbench without blocked requests", async () => {
+  it.each(["pro", "demo"])("keeps hosted %s deployment on a Workbench without blocked requests", async (profile) => {
+    mocks.profile.value = profile;
+    mocks.demo.value = profile === "demo";
     mocks.get.mockResolvedValue({ data: [] });
     const deploy = mount(DeployContent, { global: { stubs: {
       ResponsiveHeaderActions: { template: "<div><slot/></div>" }, Button: { props: ["label", "disabled"], template: '<button :disabled="disabled">{{label}}</button>'  },
@@ -83,8 +85,12 @@ describe("Pro routes with operator-owned configuration", () => {
     expect(deploy.find('button[title="Refresh"]').exists()).toBe(false);
     expect(mocks.fetchWatches).not.toHaveBeenCalled();
     expect(mocks.fetchDeployRuns).not.toHaveBeenCalled();
-    expect(mocks.get).not.toHaveBeenCalled();
-    mocks.get.mockClear();
+    expect(mocks.get).toHaveBeenCalledExactlyOnceWith("/models", {
+      params: { project_id: 3, offset: 0, limit: 25 }, signal: expect.any(AbortSignal),
+    });
+    deploy.unmount();
+  });
+  it("keeps Pro audit unavailable without blocked requests", async () => {
     const audit = mount(AuditContent, { global: { stubs: {
       AuditCapabilityStrip: true, AuditFilterChips: true, AuditEventsTable: true,
       AuditChainStatus: true, AuditReportPackResult: true,

@@ -51,6 +51,8 @@ def test_node_performance_proofs_use_the_shared_harness() -> None:
     non_node_timing_authorities = {
         Path("performance_contract.py"),
         Path("test_import_sanity.py"),
+        # Injects a fake clock to test HTTP log severity; no node timing proof.
+        Path("test_diagnostic_logging.py"),
         Path("test_performance_contract.py"),
         Path("services/audit/test_hot_path_overhead.py"),
     }

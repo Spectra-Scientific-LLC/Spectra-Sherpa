@@ -55,7 +55,8 @@ describe('Shared scientific comparison', () => {
     const wrapper = mount(ScientificComparison, { props: { evidence: evidence() } });
     expect(wrapper.get('[aria-label="Held-out validation"]').text()).toContain('Comparable: Matching held-out population');
     expect(wrapper.get('[aria-label="Held-out validation"]').text()).toContain('RMSEP');
-    expect(wrapper.get('[aria-label="Training CV"]').text()).toContain('Unavailable: Missing folds');
+    expect(wrapper.find('[aria-label="Training CV"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Unavailable: calibration, training cv, outlier challenge.');
     expect(wrapper.text()).toContain('Development: Unknown');
     expect(wrapper.text()).not.toContain('Development: 0');
     expect(wrapper.text()).toContain('Scientific basis');
@@ -110,5 +111,46 @@ it('shows population limitations in the initially expanded Summary', () => {
   expect(summary.props('collapsed')).toBe(false);
   expect(summary.text()).toContain('Independent population not verified');
   expect(summary.get('.p-panel-content').isVisible()).toBe(true);
+  wrapper.unmount();
+});
+
+ it('only gives a verdict and directional changes for comparable evidence with common units', async () => {
+   const value = evidence();
+   value.items.forEach(item => { item.sections.held_out.population = { verification: 'verified', limitations: [], units: 'ppm' }; });
+   const wrapper = mount(ScientificComparison, { props: { evidence: value } });
+   expect(wrapper.text()).toContain('Run 1 has lower held-out error: RMSEP 1.000 vs 2.000 ppm.');
+   expect(wrapper.find('td.worse').text()).toContain('worse');
+   value.pairs[0].sections.find(s => s.role === 'held_out')!.state = 'descriptive_only';
+   await wrapper.setProps({ evidence: structuredClone(value) });
+   expect(wrapper.find('.comparison-verdict').exists()).toBe(false);
+   expect(wrapper.find('td.worse').exists()).toBe(false);
+   wrapper.unmount();
+ });
+
+it('keeps actionable refusal explanations even when every role has no metrics', () => {
+  const value = evidence();
+  for (const item of value.items) for (const section of Object.values(item.sections)) {
+    section.state = 'unavailable'; section.metrics = {};
+  }
+  for (const section of value.pairs[0].sections) {
+    section.state = 'unavailable'; section.metric_values = {};
+    section.reason = 'Choose a recipe and repetition from this saved paired evaluation.';
+    section.next_action = 'Select the retained recipe.';
+  }
+  const wrapper = mount(ScientificComparison, { props: { evidence: value } });
+  expect(wrapper.get('.unavailable-reasons').text()).toContain('Choose a recipe and repetition');
+  expect(wrapper.get('.unavailable-reasons').text()).toContain('Select the retained recipe.');
+  expect(wrapper.find('.comparison-verdict').exists()).toBe(false);
+});
+
+it('formats very large and very small measures without changing retained data', () => {
+  const value = evidence();
+  value.items[0].sections.held_out.metrics = { rer: 9553577508788658, bias: -6.0364e-15 };
+  const wrapper = mount(ScientificComparison, { props: { evidence: value } });
+  const held = wrapper.get('[aria-label="Held-out validation"]');
+  expect(held.text()).toContain('9.55358e+15');
+  expect(held.text()).toContain('-6.03640e-15');
+  expect(held.text()).not.toContain('9553577508788658.0000');
+  expect(value.items[0].sections.held_out.metrics.bias).toBe(-6.0364e-15);
   wrapper.unmount();
 });

@@ -1417,6 +1417,13 @@
           "binding": {
             "$ref": "#/components/schemas/DataBindingSpec"
           },
+          "held_out_groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Held Out Groups",
+            "type": "array"
+          },
           "project_id": {
             "minimum": 1.0,
             "title": "Project Id",
@@ -1426,6 +1433,15 @@
             "default": false,
             "title": "Use Saved Analysis Selection",
             "type": "boolean"
+          },
+          "validation_goal": {
+            "default": "unseen_specimens",
+            "enum": [
+              "unseen_specimens",
+              "known_specimen_cross_block"
+            ],
+            "title": "Validation Goal",
+            "type": "string"
           }
         },
         "required": [

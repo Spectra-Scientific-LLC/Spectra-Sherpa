@@ -22,6 +22,7 @@ from spectra_sherpa.app.services.dag.meta_helpers import (
     inherit_origin_flags,
     inherit_sample_flags,
 )
+from spectra_sherpa.core import axis_semantics as axis_semantics_authority
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
     ManagedOptimizationEligibility,
@@ -401,18 +402,65 @@ def _compare_mcr_spectra_to_truth(
     selected_target_index: int = 0,
     selected_component_index: int = 0,
     component_labels: list[str] | None = None,
+    unavailable_reasons: list[str] | None = None,
 ) -> dict[str, Any] | None:
+    def unavailable(reason: str):
+        if unavailable_reasons is not None:
+            unavailable_reasons.append(reason)
+        logger.warning("MCR_SPECTRA_TRUTH_UNAVAILABLE: %s", reason)
+        return None
+
     truth = _ground_truth_spectra(input_ds)
     if truth is None:
         return None
     truth_spectra, truth_labels, truth_units, truth_x, truth_x_title, truth_x_units = truth
     if truth_spectra.shape[1] != St_data.shape[1]:
-        logger.debug(
-            "Skipping MCR St-vs-S comparison: St has %s features but ground truth S has %s.",
-            St_data.shape[1],
-            truth_spectra.shape[1],
+        return unavailable("Spectral truth comparison unavailable: feature counts differ.")
+
+    # Ground-truth values are comparable only on the same physical grid.
+    # Only coordinate reversal and floating-point representation noise are
+    # reconciled; no interpolation, shift, or unit conversion is inferred.
+    from spectra_sherpa.core.axis_semantics import axis_semantics, require_compatible_axis_semantics
+
+    axis = getattr(input_ds, "feature_axis", None)
+    try:
+        if axis is None or axis.values is None or truth_x is None:
+            return unavailable("Spectral truth comparison unavailable: a physical axis was not retained.")
+        require_compatible_axis_semantics(
+            axis_semantics(axis_class=type(axis).__name__, title=axis.title, units=axis.units, quantity=axis.quantity),
+            axis_semantics(axis_class="SpectralAxis", title=truth_x_title, units=truth_x_units),
+            context="MCR ground-truth spectra",
         )
-        return None
+        observed_grid, truth_grid = np.asarray(axis.values, dtype=float), np.asarray(truth_x, dtype=float)
+        if (
+            observed_grid.shape != (St_data.shape[1],)
+            or truth_grid.shape != observed_grid.shape
+            or not np.isfinite(observed_grid).all()
+            or not np.isfinite(truth_grid).all()
+        ):
+            return unavailable("Spectral truth comparison unavailable: coordinates are missing or non-finite.")
+        # Four ULPs bound arithmetic/serialization noise, not experimental
+        # resolution. Distinct neighbouring coordinates must remain distinct.
+        tolerance = 4 * np.maximum(np.abs(np.spacing(observed_grid)), np.abs(np.spacing(truth_grid)))
+        direct = np.all(np.abs(observed_grid - truth_grid) <= tolerance)
+        reverse_tolerance = 4 * np.maximum(np.abs(np.spacing(observed_grid)), np.abs(np.spacing(truth_grid[::-1])))
+        reversed_grid = np.all(np.abs(observed_grid - truth_grid[::-1]) <= reverse_tolerance)
+        monotone = np.all(np.diff(observed_grid) > 0) or np.all(np.diff(observed_grid) < 0)
+        distinct = len(observed_grid) < 2 or np.min(np.abs(np.diff(observed_grid))) > 2 * max(
+            tolerance.max(), reverse_tolerance.max()
+        )
+        if not monotone or not distinct or not (direct or reversed_grid):
+            return unavailable("Spectral truth comparison unavailable: physical coordinates differ.")
+        axis_alignment = "exact" if np.array_equal(observed_grid, truth_grid) else "floating_point_roundoff"
+        if not direct:
+            truth_spectra = truth_spectra[:, ::-1]
+            truth_grid = truth_grid[::-1]
+            axis_alignment = (
+                "reversed" if np.array_equal(observed_grid, truth_grid) else "reversed_floating_point_roundoff"
+            )
+        truth_x = truth_grid.tolist()
+    except (ValueError, TypeError):
+        return unavailable("Spectral truth comparison unavailable: axis quantities or units are incompatible.")
 
     n_components = St_data.shape[0]
     n_truth = truth_spectra.shape[0]
@@ -512,6 +560,7 @@ def _compare_mcr_spectra_to_truth(
     ]
     return {
         "type": "mcr_pure_spectra_ground_truth",
+        "axis_alignment": axis_alignment,
         "truth_units": truth_units,
         "truth_names": truth_labels,
         "truth_spectra": truth_spectra.tolist(),
@@ -1036,12 +1085,14 @@ class MCRNode(Node):
             selected_component_index=validation_component_index,
             component_labels=component_labels,
         )
+        spectra_recovery_unavailable: list[str] = []
         spectra_recovery_comparison = _compare_mcr_spectra_to_truth(
             St_data,
             input_ds,
             selected_target_index=validation_target_index,
             selected_component_index=validation_component_index,
             component_labels=component_labels,
+            unavailable_reasons=spectra_recovery_unavailable,
         )
         if ground_truth_comparison is not None and spectra_recovery_comparison is not None:
             ground_truth_comparison["spectra_recovery"] = spectra_recovery_comparison
@@ -1241,6 +1292,11 @@ class MCRNode(Node):
                 "mean_normalized_rmse"
             )
             diagnostics["ground_truth_spectra_recovery"] = spectra_recovery_comparison
+        if spectra_recovery_unavailable:
+            reason = " ".join(spectra_recovery_unavailable)
+            diagnostics["spectra_recovery_unavailable"] = reason
+            C_dataset.meta["spectra_recovery_unavailable"] = reason
+            St_dataset.meta["spectra_recovery_unavailable"] = reason
         C_dataset.meta.update({"quality_summary": quality_summary})
 
         return NodeResult(
@@ -1300,6 +1356,7 @@ bind_stable_execution_contract(
         modeling_core_utils,
         _artifact_builder,
         sample_identity_authority,
+        axis_semantics_authority,
     ),
     fitted_state_serializer=MCR_FITTED_STATE_SERIALIZER,
     deterministic=True,

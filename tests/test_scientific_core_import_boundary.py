@@ -99,3 +99,38 @@ def test_scientific_metadata_contract_import_does_not_load_orm() -> None:
 
 def test_retired_orm_metadata_module_is_absent() -> None:
     assert not (_SOURCE / "app" / "models" / "spectra_meta.py").exists()
+
+
+def test_worker_diagnostics_configure_without_loading_application_modules() -> None:
+    probe = "\n".join(
+        [
+            "import sys",
+            "from spectra_sherpa.core.diagnostic_logging import configure_logging",
+            "from spectra_sherpa.core.diagnostic_context import get_request_id, use_request_id",
+            "configure_logging()",
+            "with use_request_id('worker-probe'): assert get_request_id() == 'worker-probe'",
+            "assert get_request_id() is None",
+            "forbidden = ('spectra_sherpa.app', 'fastapi', 'starlette', 'sqlalchemy', 'pydantic_settings')",
+            "assert not any(name.startswith(forbidden) for name in sys.modules)",
+        ]
+    )
+    subprocess.run(
+        [sys.executable, "-c", probe],
+        check=True,
+        cwd=_SOURCE.parent,
+        env={**os.environ, "PYTHONPATH": str(_SOURCE.parent), "PYTHONNOUSERSITE": "1", "LOG_FILE_PATH": ""},
+    )
+
+
+def test_host_and_worker_correlation_share_one_context() -> None:
+    from spectra_sherpa.app.core.request_id import get_request_id as host_read
+    from spectra_sherpa.app.core.request_id import use_request_id as host_bind
+    from spectra_sherpa.core.diagnostic_context import get_request_id as worker_read
+    from spectra_sherpa.core.diagnostic_context import use_request_id as worker_bind
+
+    with host_bind("http-request"):
+        assert worker_read() == "http-request"
+        with worker_bind("node-request"):
+            assert host_read() == "node-request"
+        assert worker_read() == "http-request"
+    assert host_read() is None and worker_read() is None

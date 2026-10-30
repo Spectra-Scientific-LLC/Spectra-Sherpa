@@ -164,6 +164,38 @@ def canonical_search_space_from_request(
     *,
     historical_context: HistoricalReconstructionContext | None = None,
 ) -> CanonicalSearchSpace:
+    """Admit new fitted candidates, excluding controls used only by reporting."""
+    from spectra_sherpa.app.services.dag.managed_parameter_effects import (
+        inactive_pls_count,
+        is_reporting_only_parameter,
+    )
+
+    result = _canonical_search_space_from_request(baseline, request, historical_context=historical_context)
+    operations = {node.node_id: node.operation_id for node in baseline.graph.nodes}
+    if any(is_reporting_only_parameter(operations[slot.node_id], slot.parameter) for slot in result.mutable_slots):
+        raise CanonicalSearchSpaceError(
+            "PLS component-selection settings define the validation protocol and cannot be searched across trials. "
+            "Keep the component-selection protocol fixed across trials. For fixed LV comparisons, "
+            "use manual component_fit_mode and vary n_components."
+        )
+    nodes = {node.node_id: node for node in baseline.graph.nodes}
+    if any(
+        inactive_pls_count(operations[slot.node_id], slot.parameter, nodes[slot.node_id].parameters)
+        for slot in result.mutable_slots
+    ):
+        raise CanonicalSearchSpaceError(
+            "Automatic PLS selects its own latent-variable count. Use manual component_fit_mode "
+            "before searching fixed n_components values."
+        )
+    return result
+
+
+def _canonical_search_space_from_request(
+    baseline: CanonicalWorkbenchBaseline,
+    request: Mapping[str, object],
+    *,
+    historical_context: HistoricalReconstructionContext | None = None,
+) -> CanonicalSearchSpace:
     """Project an untrusted closed request into exact admitted candidates.
 
     No caller supplies a candidate graph.  Each variant starts from the saved
@@ -310,7 +342,8 @@ def canonical_search_space_from_record(
         selection_policy = _canonical_selection_policy.CanonicalSelectionPolicy.from_dict(strategy["selection_policy"])
     except (TypeError, ValueError) as exc:
         raise CanonicalSearchSpaceError("stored search selection policy is invalid") from exc
-    rebuilt = canonical_search_space_from_request(
+    # Retained records keep their original interpretation and exact digest.
+    rebuilt = _canonical_search_space_from_request(
         baseline,
         {
             "slots": slots,

@@ -37,6 +37,7 @@ def _write_process_log(
     *,
     calibration: list[np.ndarray] | None = None,
     test: list[np.ndarray] | None = None,
+    names: tuple[str, str, str] = ("cal-1", "cal-2", "test-1"),
 ) -> tuple[Path, list[np.ndarray], list[np.ndarray]]:
     calibration = calibration or [
         np.asarray([[1.0, 10.0], [3.0, 30.0]]),
@@ -50,9 +51,9 @@ def _write_process_log(
             "OESDATA": {
                 "INFORMATION": np.asarray(["Generated process log", ""]),
                 "calibration": _cells(calibration),
-                "calib_names": np.asarray(["cal-1", "cal-2"]),
+                "calib_names": np.asarray(names[:2]),
                 "test": _cells(test),
-                "test_names": np.asarray(["test-1"]),
+                "test_names": np.asarray(names[2:]),
                 "fault_names": np.asarray(["fault-a"]),
                 "wave_axis": np.linspace(250.0, 300.0, feature_count).reshape(1, -1),
             }
@@ -251,3 +252,14 @@ def test_registered_process_log_materialization_records_repeatable_explicit_aver
     ]
     assert first.dataset.scientific_digest == second.dataset.scientific_digest
     assert first.portable_reference["native_reader_contract"] == "spectrasherpa.matlab-process-log/1"
+
+
+def test_repeated_wafer_names_preserve_legacy_payload_without_qualifying_identity(tmp_path):
+    source, _, _ = _write_process_log(tmp_path / "replicates.mat", names=("S1", "S1", "S1"))
+    dataset = ingest(source).assets[0].dataset
+    assert dataset.sample_axis.labels == ["S1", "S1", "S1"]
+    assert dataset.sample_axis.sample_table["sample_id"] == ["S1", "S1", "S1"]
+    from spectra_sherpa.app.lib.comparison_identity import comparison_sample_ids
+
+    ids, reason = comparison_sample_ids(dataset)
+    assert ids is None and "legacy importer" in reason

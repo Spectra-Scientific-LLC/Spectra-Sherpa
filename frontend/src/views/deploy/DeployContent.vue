@@ -1,9 +1,9 @@
 <template>
   <section class="page-content deploy-content">
     <WorkspaceHeader title="Deploy" :actions="headerActionItems">
-      <ContextualActions v-if="!isHostedPro" :context="deployActionContext" />
+      <ContextualActions v-if="!isHostedDeployment" :context="deployActionContext" />
       <Button
-        v-if="!isHostedPro"
+        v-if="!isHostedDeployment"
         label="New Watch"
         icon="pi pi-plus"
         class="p-button-sm"
@@ -12,11 +12,13 @@
       />
     </WorkspaceHeader>
 
-    <section v-if="isHostedPro" class="hosted-pro-deploy" role="status">
+    <SavedModelsForDeployment />
+
+    <section v-if="isHostedDeployment" class="hosted-pro-deploy" role="status">
       <i class="pi pi-desktop" aria-hidden="true"></i>
       <h2>Deploy from a Workbench</h2>
       <p>
-        Hosted Pro provides model fitting and scientific review. Folder watches and prediction
+        Hosted deployments provide model fitting and scientific review. Folder watches and prediction
         history run on a Workbench, where you can import a signed application package and continue
         deployment.
       </p>
@@ -659,6 +661,7 @@ import ToggleButton from "primevue/togglebutton";
 import ProgressSpinner from "primevue/progressspinner";
 import { useToast } from "primevue/usetoast";
 
+import SavedModelsForDeployment from "./SavedModelsForDeployment.vue";
 import LabelChips from "@/components/LabelChips.vue";
 import ContextualActions from "@/components/ContextualActions.vue";
 import { useAdvisorStore } from "@/stores/advisor";
@@ -674,11 +677,11 @@ const deployStore = useDeployStore();
 const runsStore = useRunsStore();
 const projectStore = useProjectStore();
 const advisorStore = useAdvisorStore();
-const { appMode, siteProfile } = useAppConfig();
+const { appMode } = useAppConfig();
 const qcWatchId = ref<number | null>(null);
 const dryRunWatchId = ref<number | null>(null);
 const qcSnapshot = ref<Record<string, unknown> | null>(null);
-const isHostedPro = computed(() => appMode?.value === "enterprise" && siteProfile?.value === "pro");
+const isHostedDeployment = computed(() => appMode?.value === "enterprise");
 
 const tabIds = ["application", "watches", "history"] as const;
 const activeTab = ref<string>("application");
@@ -706,7 +709,7 @@ const DEPLOY_SUBSCOPE_TITLES: Record<string, string> = {
 };
 
 async function syncAdvisorForDeploySubtab(): Promise<void> {
-  if (isHostedPro.value) return;
+  if (isHostedDeployment.value) return;
   const projectId = projectStore.currentProjectId;
   if (projectId == null) return;
   const subscopeKey =
@@ -794,7 +797,7 @@ function watchArtifactOptions(watch: FolderWatch) {
 const route = useRoute();
 const router = useRouter();
 const deployActionContext = computed(() => {
-  if (isHostedPro.value) return null;
+  if (isHostedDeployment.value) return null;
   const projectId = projectStore.currentProjectId;
   const applicationHandle = selectedApplicationId.value;
   return projectId != null && applicationHandle
@@ -838,7 +841,7 @@ function inspectPrediction(prediction: BatchPredictionResult, projectId: number 
 let artifactRequest = 0;
 let routeBindingApplied = false;
 async function fetchArtifacts() {
-  if (isHostedPro.value) return;
+  if (isHostedDeployment.value) return;
   const request = ++artifactRequest;
   const projectId = projectStore.currentProjectId;
   applicationError.value = "";
@@ -966,7 +969,7 @@ function requestedApplicationId(): string | null {
 // Watch CRUD state
 const showCreateDialog = ref(false);
 const headerActionItems = computed(() => {
-  if (isHostedPro.value) return [];
+  if (isHostedDeployment.value) return [];
   return [
     {
       label: "New Watch",
@@ -1081,7 +1084,7 @@ watch(
     dryRunWatchId.value = null;
     selectedPrediction.value = null;
     deployStore.resetProjectScope?.();
-    if (mounted && !isHostedPro.value) void refreshAll();
+    if (mounted && !isHostedDeployment.value) void refreshAll();
   },
 );
 
@@ -1096,7 +1099,7 @@ onMounted(async () => {
   else await projectStore.ensureProjectForBrowserTab();
   if (disposed) return;
   mounted = true;
-  if (isHostedPro.value) return;
+  if (isHostedDeployment.value) return;
   const tab = String(route.query.tab || "application");
   activeTab.value =
     tab === "integrations"
@@ -1142,7 +1145,7 @@ watch(
 
 async function syncOperationalState() {
   const projectId = projectStore.currentProjectId;
-  if (!mounted || isHostedPro.value || projectId == null) return;
+  if (!mounted || isHostedDeployment.value || projectId == null) return;
   await Promise.all([
     deployStore.fetchWatches(projectId),
     deployStore.fetchDeployRuns(undefined, undefined, projectId),
@@ -1154,7 +1157,7 @@ async function syncOperationalState() {
   }
 }
 async function refreshAll() {
-  if (isHostedPro.value) return;
+  if (isHostedDeployment.value) return;
   const projectId = projectStore.currentProjectId;
   await syncOperationalState();
   if (!mounted || projectId == null || projectId !== projectStore.currentProjectId) return;

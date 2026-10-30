@@ -231,6 +231,7 @@ import DiagnosticAdvisor from "@/components/DiagnosticAdvisor.vue";
 import DatasetCurationPanel from "@/components/DatasetCurationPanel.vue";
 import { selectedSampleIds, type PcaReview, type ReviewRow } from "@/utils/sampleReview";
 import type { CurationSource } from "@/utils/datasetCuration";
+import { buildAxisLabel } from "@/utils/plotLabels";
 
 type SavedDiagnostics = {
   run_id: number;
@@ -499,11 +500,15 @@ const predictionTraces = computed(() =>
     (row) => row.predicted?.[responseIndex.value] ?? null,
   ),
 );
+const responseLabel = computed(() => buildAxisLabel(
+  review.value?.target_names?.[responseIndex.value] || "Response",
+  review.value?.target_units?.[responseIndex.value],
+));
 const predictionLayout = computed(() => ({
   ...baseLayout,
   title: "Predicted versus measured",
-  xaxis: { title: `Measured ${review.value?.target_names?.[responseIndex.value] || ""}` },
-  yaxis: { title: `Predicted ${review.value?.target_units?.[responseIndex.value] || ""}` },
+  xaxis: { title: `Measured ${responseLabel.value}` },
+  yaxis: { title: `Predicted ${responseLabel.value}` },
   uirevision: `saved-prediction:${review.value?.run_id}:${responseIndex.value}`,
 }));
 const residualTraces = computed(() =>
@@ -515,8 +520,8 @@ const residualTraces = computed(() =>
 const residualLayout = computed(() => ({
   ...baseLayout,
   title: "Residuals",
-  xaxis: { title: "Predicted" },
-  yaxis: { title: "Residual = measured − predicted" },
+  xaxis: { title: `Predicted ${responseLabel.value}` },
+  yaxis: { title: `Residual ${responseLabel.value} (measured − predicted)` },
   uirevision: `saved-residual:${review.value?.run_id}:${responseIndex.value}`,
 }));
 const loadingDetail = computed(() => {
@@ -542,7 +547,9 @@ const loadingLayout = computed(() => ({
   ...baseLayout,
   dragmode: "zoom",
   title: `${axisPrefix.value} ${loadingComponent.value + 1} loadings`,
-  xaxis: { title: loadingDetail.value?.feature_units || "Variable index" },
+  xaxis: { title: loadingDetail.value?.feature_values
+    ? buildAxisLabel("Fitted feature coordinate", loadingDetail.value.feature_units)
+    : "Variable index" },
   yaxis: { title: "Fitted loading" },
   uirevision: `saved-loadings:${review.value?.run_id}:${loadingComponent.value}`,
 }));

@@ -78,9 +78,12 @@ def test_exact_directional_application_compatibility(entry):
 
 def test_scientific_authority_compatibility_is_exact_and_classifies_current_custody():
     from spectra_sherpa.core.contract_compatibility import (
+        _AUTOMATIC_PLS_APPLICATION_PREDECESSORS,
         _DIAGNOSTIC_REFUSAL_PREDECESSORS,
         _FEATURE_PRESENTATION_PREDECESSORS,
+        _HANDOFF_PRESENTATION_PREDECESSORS,
         _PCA_DISPLAY_INPUT_REUSE_PREDECESSORS,
+        _PLSDA_INDEPENDENCE_READERS,
         _SCIENTIFIC_AUDIT_PREDECESSORS,
         _SCIENTIFIC_AUTHORITY_PREDECESSORS,
         _WORKFLOW_POPULATION_PREDECESSORS,
@@ -102,6 +105,17 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
     )
     current_entries = tuple(_PCA_DISPLAY_INPUT_REUSE_PREDECESSORS) + tuple(
         entry for entry in current_entries if entry.operation_id != "model.pca"
+    )
+    handoff_operations = {entry.operation_id for entry in _HANDOFF_PRESENTATION_PREDECESSORS}
+    current_entries = tuple(_HANDOFF_PRESENTATION_PREDECESSORS) + tuple(
+        entry for entry in current_entries if entry.operation_id not in handoff_operations
+    )
+    automatic_operations = {entry.operation_id for entry in _AUTOMATIC_PLS_APPLICATION_PREDECESSORS}
+    current_entries = tuple(_AUTOMATIC_PLS_APPLICATION_PREDECESSORS) + tuple(
+        entry for entry in current_entries if entry.operation_id not in automatic_operations
+    )
+    current_entries = tuple(_PLSDA_INDEPENDENCE_READERS) + tuple(
+        entry for entry in current_entries if entry.operation_id != "classification.plsda"
     )
     for entry in current_entries:
         current = node_registry.get_metadata(entry.operation_id).resolved_execution_contract()
@@ -146,14 +160,14 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         "model.parafac": "caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
         "classification.plsda": "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
         "model.load_apply": "272022dfaa41de8e593ed606612f4a3fd00d8fed2b0e8ca7080d33786bc43ee2",
-        "model.apply_fitted_linear_regression": "d78b114e9232c089d62045df8389531f24d24a20a8d94daf201063007c819665",
-        "model.apply_fitted_pcr": "f83e7ed65a6ab4f2efe14346e515fa57aa618fe268f68be0044bb538cc660428",
+        "model.apply_fitted_linear_regression": "520728c0451ffd8f5904ea5c3227c40698d601647365a6e38bebf69144d78e2c",
+        "model.apply_fitted_pcr": "f09403b8c0f41c32ea591a1761e9e8dfa57149746634c5748be9b27d876f228c",
         "model.apply_fitted_pls": "cd9c84a4d7b44d1768db8f627418c8e04899a2a1fb8b8aeb44016cbaa42df648",
-        "model.apply_fitted_svr": "755d8867e11d93d20d752af591cc995b180f559a10ecdbdd31c145ed1e92b320",
-        "model.fitted_linear_regression": "0ba997bbc87209703db011f38850ee82d93027bb72ab28db27aa108a8f9cca9a",
-        "model.fitted_pcr": "99359a3588dfe55e29fd32428ce896d1ca503e3472e8b17a5982ed24d72a0d0d",
-        "model.fitted_pls": "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
-        "model.fitted_svr": "b8ba060d1154848d0f96e25a0178c0c5eeff6658a4fc36de6ae3f7c82cb3f7ed",
+        "model.apply_fitted_svr": "265de5fa6c87e0629cffcaa742da2c84a1fc3ed848ac1c8750fbd7f83d640a58",
+        "model.fitted_linear_regression": "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
+        "model.fitted_pcr": "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
+        "model.fitted_pls": "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
+        "model.fitted_svr": "6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",
     }
     reviewed_changes = {
         "model.apply_fitted_linear_regression": [
@@ -211,6 +225,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
             "spectra_sherpa.app.services.dag.nodes.modeling.pls_core",
             "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
             "spectra_sherpa.app.services.dag.nodes.selection._vip",
+            "spectra_sherpa.core.specimen_independence",
         ],
         "model.fitted_svr": [
             "spectra_sherpa.app.lib.fitted_state",
@@ -253,6 +268,14 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
             "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
         ],
     }
+    reviewed_changes["model.fitted_pls"] = sorted(
+        [
+            *reviewed_changes["model.fitted_pls"],
+            "spectra_sherpa.app.lib.comparison_identity",
+            "spectra_sherpa.app.lib.sample_identity",
+            "spectra_sherpa.app.services.dag.regression_comparison",
+        ]
+    )
     for operation, archived in catalog["contracts"].items():
         current = node_registry.get_metadata(operation).resolved_execution_contract()
         assert current.digest == component_phase_digests.get(operation, catalog["current_contracts"][operation])

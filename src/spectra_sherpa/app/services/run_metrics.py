@@ -275,14 +275,13 @@ def comparable_results_by_node(results_summary: dict[str, Any] | None) -> dict[s
     return comparable
 
 
-def comparable_results_for_run(results_summary: dict[str, Any] | None) -> dict[str, Any]:
-    """Collapse run metrics for cross-run comparison without silent first-wins.
+def comparable_results_for_run(
+    results_summary: dict[str, Any] | None, *, qualify_producers: bool = False
+) -> dict[str, Any]:
+    """Project recorded scalars without conflating equal values across producers.
 
-    Most workflows expose one terminal model node, so metric rows should remain
-    unqualified (``cv_accuracy``, ``rmse``). When a run contains multiple nodes
-    emitting the same metric key, prefix only those conflicting rows with the
-    producing node id. That preserves node provenance without making the common
-    one-model comparison noisy.
+    Cross-run raw inventories always retain producer names. Scientific alignment
+    belongs to the qualified evidence projection, never a metric-name suffix.
     """
     by_node = comparable_results_by_node(results_summary)
     collapsed: dict[str, Any] = {}
@@ -292,7 +291,7 @@ def comparable_results_for_run(results_summary: dict[str, Any] | None) -> dict[s
         if not entries:
             continue
         first_value = entries[0][1]
-        if len(entries) == 1 or all(_metric_values_equal(first_value, value) for _, value in entries[1:]):
+        if len(entries) == 1 and not qualify_producers:
             collapsed[key] = first_value
             continue
         for node_id, value in entries:
@@ -300,17 +299,12 @@ def comparable_results_for_run(results_summary: dict[str, Any] | None) -> dict[s
     return collapsed
 
 
-def _metric_values_equal(left: Any, right: Any) -> bool:
-    """Return True when duplicate node metrics are semantically identical."""
-    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
-        return isfinite(float(left)) and isfinite(float(right)) and float(left) == float(right)
-    return left == right
-
-
 def comparison_response(runs: list[ExecutionRun], evaluation_selections=None) -> ComparisonResponse:
     from spectra_sherpa.app.services.scientific_comparison import compare_saved_run_evidence
 
-    comparable_by_run = {run.id: comparable_results_for_run(run.results_summary) for run in runs}
+    comparable_by_run = {
+        run.id: comparable_results_for_run(run.results_summary, qualify_producers=True) for run in runs
+    }
     metric_keys = sorted(
         {key for metrics in comparable_by_run.values() for key in metrics},
         key=lambda key: (

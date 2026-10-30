@@ -900,6 +900,47 @@ describe("Workflow Store node updates", () => {
     vi.clearAllMocks();
   });
 
+  it.each(["model.fitted_pcr", "model.fitted_svr", "model.fitted_linear_regression"])(
+    "replaces the PLS parameter bag when changing to %s", type => {
+      const store = useWorkflowStore();
+      store.nodeLibrary.set(type, { ...nodeLibraryNodes[0], node_type: type, label: "Replacement model",
+        parameters: [{ name: "scale", label: "Scale", param_type: "boolean", default: false }],
+      });
+      store.nodes = [{ id: "model", type: "model.fitted_pls", x: 0, y: 0,
+        params: { component_fit_mode: "one_standard_error", n_components: 3, scale: true } }];
+      store.updateNode("model", { type });
+      expect(store.nodes[0].params).toEqual({ scale: false });
+      expect(store.nodes[0].label).toBe("Replacement model");
+      expect(store.isWorkflowStale).toBe(true);
+    },
+  );
+
+  it("switches back to PLS with independent array defaults from the reactive catalog", () => {
+    const store = useWorkflowStore();
+    store.nodeLibrary.set("model.fitted_pls", { ...nodeLibraryNodes[0], node_type: "model.fitted_pls",
+      parameters: [{ name: "target_names", label: "Targets", param_type: "string_list", default: [] }],
+    });
+    store.nodes = [{ id: "model", type: "model.fitted_pcr", x: 0, y: 0, params: { n_components: 3 } }];
+    store.updateNode("model", { type: "model.fitted_pls" });
+    expect(store.nodes[0].params).toEqual({ target_names: [] });
+    (store.nodes[0].params.target_names as string[]).push("Moisture");
+    expect(store.nodeLibrary.get("model.fitted_pls")?.parameters[0].default).toEqual([]);
+  });
+
+  it("refuses explicitly inherited unsupported parameters without changing the node", () => {
+    const store = useWorkflowStore();
+    store.nodeLibrary.set("model.fitted_pcr", { ...nodeLibraryNodes[0], node_type: "model.fitted_pcr",
+      parameters: [{ name: "n_components", label: "Components", param_type: "number", default: 2 }],
+    });
+    store.nodes = [{ id: "model", type: "model.fitted_pls", x: 0, y: 0,
+      params: { component_fit_mode: "one_standard_error" } }];
+    expect(() => store.updateNode("model", { type: "model.fitted_pcr", params: { component_fit_mode: "one_standard_error" } }))
+      .toThrow("different node type");
+    expect(store.nodes[0].type).toBe("model.fitted_pls");
+    store.updateNode("model", { type: "model.fitted_pcr", params: { n_components: 4 } });
+    expect(store.nodes[0].params).toEqual({ n_components: 4 });
+  });
+
   it("ignores equivalent node updates so opening the inspector does not stale a run", () => {
     const store = useWorkflowStore();
     store.nodes = [

@@ -29,7 +29,7 @@ describe("Runs workspace", () => {
     m.project = { ensureProjectForBrowserTab: vi.fn(), currentProjectId: 1, currentProject: { id: 1, name: "Corn" } };
     m.runs = { runs: [], total: 0, selectedRunIds: new Set(), selectedCount: 0, runsLoading: false, comparison: null, loadError: null,
       fetchProjectRuns: vi.fn(), clearSelection: vi.fn() };
-    m.get.mockImplementation(async (path: string) => ({ data: path === "/deploy/capabilities" ? { privateBatchUpload: true } : [] }));
+    m.get.mockImplementation(async (path: string) => ({ data: path === "/deploy/capabilities" ? { privateBatchUpload: true } : path === "/runs" ? { runs: [], total: 0 } : [] }));
   });
   it("clears campaign evidence references when comparing newly selected saved runs", async () => {
     m.query = {tab: "run_history", evidence: "old-campaign-references", project: "1"};

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import replace
 from itertools import combinations
 from math import isfinite
@@ -29,6 +30,8 @@ from spectra_sherpa.app.schemas.scientific_comparison import (
 from spectra_sherpa.app.services.dag.out_of_fold_evidence import _normalized_split_plan
 from spectra_sherpa.app.services.run_evaluation_comparison import _evaluation
 from spectra_sherpa.sdk import validate as sdk_validate
+
+logger = logging.getLogger(__name__)
 
 ROLES = ("calibration", "training_cv", "held_out", "outlier_challenge")
 
@@ -68,17 +71,39 @@ def resolve_run_evidence(run: Any, selection: EvaluationSelection | None = None)
             return resolve_paired_evidence(run, reference, selection)
         except (ValueError, TypeError, KeyError, AttributeError, OSError, IndexError) as exc:
             return ResolvedComparisonEvidence(reference, label, unavailable_reason=str(exc))
-    from spectra_sherpa.app.services.retained_regression_comparison import retained_regression_evidence
+    from spectra_sherpa.app.services.retained_regression_comparison import (
+        RetainedComparisonUnavailable,
+        retained_regression_evidence,
+    )
 
+    inventory_complete = False
     try:
-        regression, retained_population = retained_regression_evidence(run)
-    except (ValueError, TypeError, KeyError, AttributeError, OSError):
-        regression, retained_population = (), PopulationSummary()
+        regression, retained_population, inventory_complete = retained_regression_evidence(run)
+    except RetainedComparisonUnavailable as exc:
+        regression, retained_population = (), PopulationSummary(limitations=[str(exc)])
+    except (ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
+        logger.warning("RETAINED_COMPARISON_UNAVAILABLE run_id=%s error_type=%s", run.id, type(exc).__name__)
+        regression, retained_population = (), PopulationSummary(
+            limitations=["Retained population evidence could not be verified; inspect individual run outputs."]
+        )
     try:
         evaluation = _evaluation(run, selection)
     except (ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
+        logger.warning("EVALUATION_UNAVAILABLE run_id=%s error_type=%s", run.id, type(exc).__name__)
         return ResolvedComparisonEvidence(
-            reference, label, regression, retained_population, unavailable_reason=str(exc)
+            reference,
+            label,
+            regression,
+            retained_population,
+            incomplete_roles=frozenset() if inventory_complete else frozenset({"calibration", "held_out"}),
+            unavailable_reason=" ".join(
+                dict.fromkeys(
+                    [
+                        "Retained evaluation evidence could not be read." if isinstance(exc, OSError) else str(exc),
+                        *retained_population.limitations,
+                    ]
+                )
+            ),
         )
     receipts = dict(evaluation.inputs)
     # These positions are qualified by the exact retained scientific input
@@ -109,6 +134,7 @@ def resolve_run_evidence(run: Any, selection: EvaluationSelection | None = None)
         label,
         (*regression, record),
         retained_population if retained_population.verification != "unknown" else population,
+        incomplete_roles=frozenset() if inventory_complete else frozenset({"calibration", "held_out"}),
     )
 
 
@@ -154,7 +180,7 @@ def _section(item: EvaluationEvidence) -> tuple[ScientificSection, EvaluationEvi
         computed = sdk_validate.metrics(item.observations, item.predictions).as_dict()
         metrics = {
             key: float(computed[key])
-            for key in ("rmse", "mae", "r2", "bias", "sep")
+            for key in ("rmse", "mae", "r2", "bias", "sep", "rer")
             if computed[key] is not None and isfinite(float(computed[key]))
         }
         # The unqualified fit-data role is never described as predictive
@@ -219,6 +245,13 @@ def compare_evidence(items: list[ResolvedComparisonEvidence]) -> EvidenceCompari
             candidates = [entry for entry in item.evaluations if entry.role == role]
             if len(candidates) == 1:
                 sections[role], records[role] = _section(candidates[0])
+                if role in item.incomplete_roles:
+                    sections[role].state = "descriptive_only"
+                    sections[role].reason = (
+                        "Comparison incomplete: not all retained outputs could be verified; "
+                        "the selected evaluation cannot be established as the only producer for this role."
+                    )
+                    records[role] = None
             else:
                 sections[role] = ScientificSection(
                     role=role,

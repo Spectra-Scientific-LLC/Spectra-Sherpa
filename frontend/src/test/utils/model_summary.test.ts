@@ -83,6 +83,22 @@ describe("model summary from retained records", () => {
     expect(summary.regression).toEqual([]);
   });
 
+  it("reports fitted components rather than the inactive automatic-mode parameter", () => {
+    const effective = { model_1: { component_fit_mode: "one_standard_error", n_components: 3 } };
+    const pending = buildModelSummary(plsDefinition, effective, []);
+    expect(pending.model?.settings).toEqual([["Components", "Automatic · fitted count not retained"]]);
+    const summary = buildModelSummary(plsDefinition, effective, [{
+      source: { nodeId: "model_1", port: "component_curve", kind: "component_selection" },
+      value: { schema_version: "spectrasherpa-pls-component-curve/1", selected_components: 5,
+        component_fit_mode: "one_standard_error", n_calibration: 38, response_names: ["Methane"],
+        response_units: ["ppm"], calibration: [{ components: 5, rmsec: [0.2] }],
+        cross_validation: { status: "unavailable", reason: "Not retained" } },
+    }]);
+    const card = mount(ModelSummaryCard, { props: { summary, compact: true } });
+    expect(card.text()).toContain("5 latent variables");
+    expect(card.text()).not.toContain("3 latent variables");
+  });
+
   it("uses the exact retained component curve, its executed split and its unavailable reason", () => {
     const base = {
       schema_version: "spectrasherpa-pls-component-curve/1", selected_components: 2, selected_in_curve: true,
@@ -102,6 +118,18 @@ describe("model summary from retained records", () => {
     const card = mount(ModelSummaryCard, { props: { summary: available } });
     expect(card.get('[aria-label="PLS component selection"]').text()).toMatch(/3-fold group kfold\s+across 4 independent groups/);
     expect(card.text()).toContain("one-standard-error suggestion: 1 LV");
+    expect(card.text()).not.toContain("Selected by training-fold CV");
+    const automatic = buildModelSummary(plsDefinition, null, [{ source, value: {
+      ...base, component_fit_mode: "one_standard_error", selected_components: 1,
+      cross_validation: { status: "available", method: "group_kfold", n_folds: 3,
+        rows: [{ components: 1, rmsecv: [1.0], q2: [0.6] }],
+        suggestions: [{ minimum_mean_fold_rmse: 2, one_standard_error: 1 }],
+      },
+    } }]);
+    expect(automatic.componentSelection?.automaticFit).toBe(true);
+    expect(mount(ModelSummaryCard, { props: { summary: automatic } }).text())
+      .toContain("Selected by training-fold CV (one-standard-error); refitted on training samples.");
+
     expect(card.findAll(".model-summary__selected-row")).toHaveLength(1);
     const unavailable = buildModelSummary(plsDefinition, null, [{ source, value: { ...base, cross_validation: {
       status: "unavailable", reason: "Upstream scaling was not replayed inside each fold."

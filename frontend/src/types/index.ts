@@ -186,6 +186,12 @@ export interface DatasetAnalysisReadinessReason {
 }
 
 export interface DatasetAnalysisReadinessDecision {
+  validation_preview?: {
+    status: "feasible" | "refused" | "not_checked";
+    reason?: string;
+    splits?: Array<{ node_id: string; split_digest: string; training_count: number; held_out_count: number;
+      component_cv?: { status: "population_feasible" | "unavailable"; reason?: string } }>;
+  };
   template_slug: string;
   template_name: string;
   category: string;

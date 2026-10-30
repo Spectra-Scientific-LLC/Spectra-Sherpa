@@ -832,3 +832,31 @@ async def test_calibration_only_preprocessing_applies_exact_state(kind, params):
     assert len(review["pls_explanations"]["rows"]) == 40
     assert review["pls_explanations"]["preprocessing"] == [kind]
     assert review["pls_explanations"]["rows"]["s39"][0]["prediction"] == review["rows"][-1]["predicted"][0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("evaluator", ["diagnostics.regression_evaluator", "diagnostics.labeled_regression_evaluator"])
+async def test_saved_review_allows_read_only_evaluation_sidecar_but_not_a_changed_test_branch(evaluator):
+    expected, _, results = await run()
+    graph = definition()
+    graph["nodes"].append({"node_id": "eval", "node_type": evaluator, "parameters": {}})
+    graph["edges"].extend(
+        [
+            {"from_node_id": "predict", "to_node_id": "eval", "from_output": "default", "to_input": "default"},
+            {"from_node_id": "split", "to_node_id": "eval", "from_output": "y_test", "to_input": "y_true"},
+        ]
+    )
+    if evaluator == "diagnostics.labeled_regression_evaluator":
+        graph["edges"].append(
+            {"from_node_id": "split", "to_node_id": "eval", "from_output": "X_test", "to_input": "sample_context"}
+        )
+    actual = await build_review_receipt(graph, results, "pls")
+    assert actual["rows"] == expected["rows"]
+    assert actual["full_test_statistics"] == expected["full_test_statistics"]
+    # Evaluators cannot replace or feed back into the actual application path.
+    changed = deepcopy(graph)
+    next(edge for edge in changed["edges"] if edge["to_node_id"] == "predict" and edge["to_input"] == "default")[
+        "from_node_id"
+    ] = "eval"
+    with pytest.raises(ValueError, match="test branch|exact calibration/test"):
+        review_path(changed, "pls")

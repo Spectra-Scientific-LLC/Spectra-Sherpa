@@ -563,7 +563,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     from spectra_sherpa.app.core.mode_policy import (
         requires_ws_auth as _requires_ws_auth,
     )
-    from spectra_sherpa.app.core.request_id import mint_request_id, use_request_id
+    from spectra_sherpa.app.core.request_id import diagnostic_identifier, mint_request_id, use_request_id
     from spectra_sherpa.app.services.ws_auth import (
         authenticate_ws_message,
         require_authenticated_action,
@@ -667,7 +667,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             inbound_id = payload.get("request_id") if isinstance(payload, dict) else None
             with use_request_id(str(inbound_id) if inbound_id else mint_request_id()):
                 action = payload.get("action") or payload.get("type")
-                logger.info("WS action received: %s", action)
+                logger.info("WS action received: %s", diagnostic_identifier(action))
 
                 if not await _admit_websocket_transport_event(
                     websocket,

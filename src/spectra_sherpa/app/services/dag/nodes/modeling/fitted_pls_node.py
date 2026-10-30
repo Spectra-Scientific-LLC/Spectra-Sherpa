@@ -9,7 +9,8 @@ from typing import Any, Mapping, cast
 import numpy as np
 
 import spectra_sherpa.app.services.dag.regression_comparison as regression_comparison
-from spectra_sherpa.app.lib import numerical_scaling, pca_numerics
+from spectra_sherpa.app.lib import comparison_identity, numerical_scaling, pca_numerics, sample_identity
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag.feature_axis_identity import (
     feature_axis_identity as _canonical_feature_axis_identity,
 )
@@ -43,6 +44,7 @@ from spectra_sherpa.app.services.dag.presentation_contract import (
 )
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.app.services.dag.supervision_binding import admit_attached_sample_table_supervision
+from spectra_sherpa.core import specimen_independence
 from spectra_sherpa.core.node_identity import node_contract_digest_is_compatible
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
@@ -159,6 +161,8 @@ def _canonical_pls_parameters(parameters: dict[str, object]) -> dict[str, object
         "one_standard_error",
     }:
         raise ValueError("PLS component selection rule is unsupported")
+    if parameters.get("component_fit_mode", "manual") not in {"manual", "one_standard_error"}:
+        raise ValueError("PLS component fit mode is unsupported")
     return parameters
 
 
@@ -237,6 +241,7 @@ class FittedPLSV2Node(Node):
             NodeParameter(
                 name="n_components",
                 label="Latent Variables",
+                visible_when={"component_fit_mode": ["manual"]},
                 param_type="number",
                 default=2,
                 min_value=1,
@@ -247,6 +252,23 @@ class FittedPLSV2Node(Node):
                     "an unidentifiable direction. Must not exceed min(training samples - 1, input features). "
                     "This choice is saved; the component CV curve is tuning evidence and must not use "
                     "the locked test cohort."
+                ),
+            ),
+            NodeParameter(
+                name="component_fit_mode",
+                label="Choose latent variables",
+                param_type="select",
+                default="manual",
+                options=[
+                    {"label": "Manual", "value": "manual"},
+                    {"label": "Automatic · one-standard-error", "value": "one_standard_error"},
+                ],
+                required=False,
+                hint=(
+                    "Manual uses Latent Variables. One-standard-error selects the smallest model "
+                    "within one standard error of the lowest mean fold RMSE, then refits on training "
+                    "samples only. Uses the component-curve maximum and folds; requires one response "
+                    "and qualified fold-local preprocessing. Held-out samples are never used."
                 ),
             ),
             NodeParameter(
@@ -458,8 +480,14 @@ class FittedPLSV2Node(Node):
     )
 
     def _fit_model_and_state(
-        self, input_data: Any, target: object, *, response_source: Any = None, response_is_embedded: bool = False
-    ) -> tuple[Any, np.ndarray, np.ndarray, PLSFit, dict[str, object]]:
+        self,
+        input_data: Any,
+        target: object,
+        *,
+        response_source: Any = None,
+        response_is_embedded: bool = False,
+        groups: Any = None,
+    ) -> tuple[Any, np.ndarray, np.ndarray, PLSFit, dict[str, object], dict[str, object] | None]:
         dataset = coerce_to_sherpa(input_data, input_name="input_data")
         X = to_numpy_2d(dataset, name="input_data", dtype=np.float64)
         if X.shape[0] < 2 or not np.isfinite(X).all():
@@ -481,12 +509,24 @@ class FittedPLSV2Node(Node):
         ):
             raise ValueError("n_components must be a positive whole number")
         components = int(component_value)
-        if components < 1 or components > min(X.shape[0] - 1, X.shape[1]):
-            raise ValueError("n_components exceeds the fitted PLS training rank")
         scale = params["scale"]
         if not isinstance(scale, bool):
             raise ValueError("scale must be a boolean")
+        selection_curve = None
+        if params["component_fit_mode"] == "one_standard_error":
+            if isinstance(response_source, SherpaDataset) and response_source is not dataset:
+                reason = component_validation.cv_unavailable_reason(response_source)
+                if reason:
+                    raise ValueError(f"Automatic PLS response selection unavailable: {reason}")
+            selection_curve = self._automatic_component_selection(
+                dataset, X, y, response_identity, params, groups=groups
+            )
+            components = cast(int, selection_curve["requested_components"])
+        if components < 1 or components > min(X.shape[0] - 1, X.shape[1]):
+            raise ValueError("n_components exceeds the fitted PLS training rank")
         model = fit_simpls(X, y, n_components=components, scale=scale)
+        if selection_curve is not None:
+            selection_curve["selected_components"] = model.n_components
         feature_offset = model.x_offset.reshape(1, -1)
         coefficients = model.coefficients
         prediction_offset = model.y_offset.reshape(1, -1)
@@ -525,9 +565,91 @@ class FittedPLSV2Node(Node):
             "x_explained_variance": model.x_explained_variance.tolist(),
             "y_explained_variance": model.y_explained_variance.tolist(),
         }
-        return dataset, X, y, model, state
+        return dataset, X, y, model, state, selection_curve
 
-    def fit_fitted_state(self, input_data: Any, target: object) -> dict[str, object]:
+    @staticmethod
+    def _curve_limits(params: Mapping[str, object]) -> tuple[int, int]:
+        curve_max, folds = params["component_curve_max"], params["component_cv_folds"]
+        if (
+            isinstance(curve_max, bool)
+            or not isinstance(curve_max, (int, float))
+            or not float(curve_max).is_integer()
+            or not 1 <= curve_max <= 20
+            or isinstance(folds, bool)
+            or not isinstance(folds, (int, float))
+            or not float(folds).is_integer()
+            or not 2 <= folds <= 10
+        ):
+            raise ValueError("PLS component curve limits require whole numbers within the declared bounds")
+        return int(curve_max), int(folds)
+
+    def _automatic_component_selection(
+        self,
+        dataset: SherpaDataset,
+        X: np.ndarray,
+        y: np.ndarray,
+        response_identity: dict[str, object],
+        params: Mapping[str, object],
+        *,
+        groups: Any = None,
+    ) -> dict[str, object]:
+        """Use the canonical fold curve for selection, including within outer folds.
+
+        No unavailable curve falls back to a fixed count. The caller performs
+        the final fit on this exact training population after selection.
+        """
+        if y.shape[1] != 1:
+            raise ValueError("Automatic PLS selection requires one response; use manual LV for multiresponse models")
+        maximum, folds = self._curve_limits(params)
+        reason = component_validation.cv_unavailable_reason(dataset)
+        if reason:
+            raise ValueError(f"Automatic PLS selection unavailable: {reason}")
+        attached = admit_attached_sample_table_supervision(dataset)
+        if attached is not None and attached.groups is not None:
+            if groups is not None and not np.array_equal(np.asarray(groups), np.asarray(attached.groups)):
+                raise ValueError("Automatic PLS selection groups differ from the bound dataset groups")
+            groups = attached.groups
+        violations = specimen_independence.independence_violations(
+            dataset.sample_axis.sample_table if dataset.sample_axis is not None else None,
+            n_samples=dataset.n_samples,
+            target_type="continuous",
+            target_names=cast(list[str], response_identity["names"] or []),
+            groups=groups,
+        )
+        if violations:
+            raise ValueError(f"Automatic PLS selection unavailable: {violations[0].message}")
+        curve = pls_component_curve.build_pls_component_curve(
+            X,
+            y,
+            selected_components=1,
+            maximum_components=min(maximum, X.shape[0] - 1, X.shape[1]),
+            scale=cast(bool, params["scale"]),
+            fit_model=fit_simpls,
+            response_names=cast(list[str] | None, response_identity["names"]),
+            response_units=cast(list[str | None], response_identity["units"]),
+            groups=groups,
+            cv_folds=folds,
+            selection_rule="one_standard_error",
+        )
+        cv = cast(dict[str, Any], curve["cross_validation"])
+        if cv.get("status") != "available":
+            raise ValueError(f"Automatic PLS selection unavailable: {cv.get('reason', 'qualified CV is required')}")
+        chosen = cv["suggestions"][0]["one_standard_error"]
+        curve.update(
+            selected_components=chosen,
+            requested_components=chosen,
+            selected_in_curve=True,
+            selection_rule_status="matches_curve",
+            selection_note=(
+                "One-standard-error CV selected the latent-variable count on training samples; "
+                "the final model was refitted on that training population. CV is tuning evidence, "
+                "not an independent estimate of prediction error."
+            ),
+            component_fit_mode="one_standard_error",
+        )
+        return curve
+
+    def fit_fitted_state(self, input_data: Any, target: object, *, groups: Any = None) -> dict[str, object]:
         """Fit once and return only the portable model state ABI."""
         dataset = coerce_to_sherpa(input_data, input_name="input_data")
         # The fold ABI supplies a positional response. Named response datasets
@@ -536,7 +658,9 @@ class FittedPLSV2Node(Node):
         values = bind_y(target, X=dataset, required=True, dataset_as_data=True, target_type="continuous")
         embedded = target is None
         source = dataset if embedded else target
-        return self._fit_model_and_state(dataset, values, response_source=source, response_is_embedded=embedded)[4]
+        return self._fit_model_and_state(
+            dataset, values, response_source=source, response_is_embedded=embedded, groups=groups
+        )[4]
 
     def validate_fitted_state(self, state: object) -> dict[str, object]:
         """Validate and normalize the sole closed numerical state ABI."""
@@ -713,7 +837,7 @@ class FittedPLSV2Node(Node):
         )
         embedded = y is None
         response_source = dataset if embedded else y
-        dataset, _X, target_matrix, model, state = self._fit_model_and_state(
+        dataset, _X, target_matrix, model, state, selection_curve = self._fit_model_and_state(
             dataset, target, response_source=response_source, response_is_embedded=embedded
         )
         from .saved_native_model import build_native_model_artifact
@@ -736,49 +860,45 @@ class FittedPLSV2Node(Node):
             artifact["metadata"]["reference_fit_context"] = {"calibration_rows": int(_X.shape[0])}
         explained_variance = np.column_stack((model.x_explained_variance, model.y_explained_variance))
         params = self._resolve_params()
-        curve_max = params["component_curve_max"]
-        folds = params["component_cv_folds"]
-        if (
-            isinstance(curve_max, bool)
-            or not isinstance(curve_max, (int, float))
-            or not float(curve_max).is_integer()
-            or not 1 <= curve_max <= 20
-            or isinstance(folds, bool)
-            or not isinstance(folds, (int, float))
-            or not float(folds).is_integer()
-            or not 2 <= folds <= 10
-        ):
-            raise ValueError("PLS component curve limits require whole numbers within the declared bounds")
-        attached = admit_attached_sample_table_supervision(dataset)
-        maximum = min(max(int(curve_max), min(model.n_components, 20)), min(_X.shape[0] - 1, _X.shape[1]))
-        curve_reason = component_validation.cv_unavailable_reason(dataset)
-        component_curve = pls_component_curve.build_pls_component_curve(
-            _X,
+        curve_max, folds = self._curve_limits(params)
+        if selection_curve is not None:
+            component_curve = selection_curve
+        else:
+            attached = admit_attached_sample_table_supervision(dataset)
+            maximum = min(max(int(curve_max), min(model.n_components, 20)), min(_X.shape[0] - 1, _X.shape[1]))
+            curve_reason = component_validation.cv_unavailable_reason(dataset)
+            component_curve = pls_component_curve.build_pls_component_curve(
+                _X,
+                target_matrix,
+                selected_components=model.n_components,
+                requested_components=int(state["n_components"]),
+                maximum_components=maximum,
+                scale=bool(state["scale"]),
+                fit_model=fit_simpls,
+                response_names=target_names,
+                response_units=cast(list[str | None], response_identity["units"]),
+                groups=None if attached is None else attached.groups,
+                cv_folds=int(folds),
+                cv_unavailable_reason=curve_reason,
+                selection_rule=str(params["component_selection_rule"]),
+            )
+        calibration_comparison = regression_comparison.build_regression_comparison(
             target_matrix,
-            selected_components=model.n_components,
-            requested_components=int(state["n_components"]),
-            maximum_components=maximum,
-            scale=bool(state["scale"]),
-            fit_model=fit_simpls,
-            response_names=target_names,
-            response_units=cast(list[str | None], response_identity["units"]),
-            groups=None if attached is None else attached.groups,
-            cv_folds=int(folds),
-            cv_unavailable_reason=curve_reason,
-            selection_rule=str(params["component_selection_rule"]),
+            predictions,
+            role="calibration",
+            target_names=target_names,
+            sample_dataset=dataset,
         )
+        if not embedded and isinstance(response_source, SherpaDataset):
+            # A typed predictor axis cannot certify a legacy response's origin.
+            regression_comparison.restrict_regression_sample_identity(calibration_comparison, response_source)
         return NodeResult(
             outputs={
                 "default": predictions,
                 "fitted_state": envelope,
                 "_model_artifact": artifact,
                 "vip_scores": np.asarray(state["vip_scores"], dtype=np.float64),
-                "calibration_comparison": regression_comparison.build_regression_comparison(
-                    target_matrix,
-                    predictions,
-                    role="calibration",
-                    target_names=target_names,
-                ),
+                "calibration_comparison": calibration_comparison,
                 "x_scores": np.asarray(model.x_scores, dtype=np.float64),
                 "x_loadings": np.asarray(model.x_loadings.T, dtype=np.float64),
                 "explained_variance": explained_variance,
@@ -840,7 +960,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.FITTED_MODEL,
     implementation_id="spectrasherpa.simpls.pls_regression",
-    implementation_version="9.0.0",
+    implementation_version="10.0.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(
         ManagedOptimizationEligibility.LOCAL,
@@ -855,6 +975,9 @@ bind_stable_execution_contract(
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/regression.md",
     implementation_modules=(
+        comparison_identity,
+        specimen_independence,
+        sample_identity,
         pca_numerics,
         numerical_scaling,
         component_validation,
@@ -875,6 +998,7 @@ bind_stable_execution_contract(
         "mdatools vipscores reference, https://mda.tools/docs/pls--variable-selection.html",
     ),
     target_access="fit_only",
+    group_access="fit_only",
     supervised_task="regression",
 )
 

@@ -153,3 +153,14 @@ exclusions on new observations. Applying a curated PCA or PLS artifact processes
 the new dataset's eligible rows, not the training dataset's row positions.
 
 For example, a PLS model trained on absorbance spectra from 4000-650 cm^-1 should not be applied blindly to transmittance spectra, truncated axes, different resolution, or spectra preprocessed outside the saved workflow contract.
+
+
+## Historical inspection catalogs
+
+The public package includes exact, digest-pinned contract catalogs so older
+retained records remain inspectable. The filename
+`contract_predecessors_staging_20261029.json` identifies the profile captured
+before automatic PLS selection; it contains contract data, not account data or
+credentials. Its historical name and bytes are retained intentionally. It is
+a read-only inspection authority, not a saved-model application alias or
+permission to replay an older fit with current code.

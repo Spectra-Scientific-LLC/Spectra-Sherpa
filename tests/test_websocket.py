@@ -652,3 +652,28 @@ def explicit_test_runtime_policy(monkeypatch):
     runtime_mode.register_runtime_mode(
         runtime_mode.RuntimeModePolicy(name="extension_test", implicit_loopback_identity=True)
     )
+
+
+def test_ws_untrusted_action_and_correlation_cannot_forge_log_lines(ws_client, monkeypatch, caplog):
+    import logging
+
+    from spectra_sherpa.app.core.request_id import diagnostic_identifier, install_request_id_log_factory
+
+    app_config.mode = "local"
+    _install_noop_async_session(monkeypatch)
+    monkeypatch.setattr(app_main, "get_client_host", lambda _request_or_ws: "127.0.0.1")
+    monkeypatch.setattr(
+        ws_auth_mod,
+        "get_user_from_credentials",
+        AsyncMock(return_value=SimpleNamespace(id=42, is_superuser=False, is_active=True)),
+    )
+    install_request_id_log_factory()
+    caplog.set_level(logging.INFO, logger="spectra_sherpa.app.main")
+    action, correlation = "ping\nFORGED_EVENT", "client\nFORGED_CORRELATION"
+    with ws_client.websocket_connect("/ws") as ws:
+        ws.send_json({"action": action, "request_id": correlation})
+        assert ws.receive_json() == {"type": "error", "detail": "Unknown action"}
+    records = [r for r in caplog.records if r.getMessage().startswith("WS action received:")]
+    assert len(records) == 1
+    assert records[0].getMessage() == f"WS action received: {diagnostic_identifier(action)}"
+    assert records[0].request_id == diagnostic_identifier(correlation)

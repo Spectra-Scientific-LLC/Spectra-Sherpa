@@ -18,3 +18,9 @@ export function portfolioDetail(
     group ? `Group: ${portfolioFieldLabel(group)}` : "No grouping",
   ].join(" · ");
 }
+
+/** Preserve both source and distinguishing revision suffix in a narrow tab. */
+export function sheetTabLabel(name: string): string {
+  const chars = Array.from(name);
+  return chars.length > 32 ? `${chars.slice(0, 11).join("")}…${chars.slice(-20).join("")}` : name;
+}

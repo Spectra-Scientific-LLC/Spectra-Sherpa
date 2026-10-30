@@ -46,6 +46,9 @@ class ResolvedComparisonEvidence:
     population: PopulationSummary = field(default_factory=PopulationSummary)
     unavailable_reason: str | None = None
     dataset_use: dict[str, Any] | None = None
+    # An incomplete producer inventory cannot prove that one surviving output
+    # is the only candidate. Keep its values descriptive, never paired.
+    incomplete_roles: frozenset[EvaluationRole] = field(default_factory=frozenset)
 
 
 ComparisonEvidenceProvider = Callable[

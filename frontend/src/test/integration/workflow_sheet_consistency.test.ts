@@ -79,7 +79,10 @@ const nodeLibraryResponse: NodeLibraryResponse = {
       category: "regression",
       label: "PLS",
       description: "",
-      parameters: [],
+      parameters: [
+        { name: "n_components", label: "Number of Components", param_type: "number", default: 2 },
+        { name: "component_fit_mode", label: "Component Fit Mode", param_type: "select", default: "manual" },
+      ],
       input_types: ["SherpaDataset"],
       output_type: "PLSModel",
       input_ports: [
@@ -256,9 +259,15 @@ describe("Workflow sheet frontend consistency", () => {
     expect(workbookStore.activeSheet?.workflowId).toBe(20);
     expect(workflowStore.workflowId).toBe(20);
 
-    workflowStore.updateNode("model_1", {
+    expect(() => workflowStore.updateNode("model_1", {
       type: "model.fitted_pls",
       params: { n_components: 2, validation: "venetian_blinds" },
+    })).toThrow("settings from a different node type");
+    expect(workflowStore.nodes.find((node) => node.id === "model_1")?.type).toBe("model.pca");
+
+    workflowStore.updateNode("model_1", {
+      type: "model.fitted_pls",
+      params: { n_components: 2, component_fit_mode: "manual" },
     });
     workflowStore.setEdges([]);
     workflowStore.addEdge({
@@ -289,7 +298,7 @@ describe("Workflow sheet frontend consistency", () => {
           expect.objectContaining({
             node_id: "model_1",
             node_type: "model.fitted_pls",
-            parameters: { n_components: 2, validation: "venetian_blinds" },
+            parameters: { n_components: 2, component_fit_mode: "manual" },
           }),
         ]),
         edges: [

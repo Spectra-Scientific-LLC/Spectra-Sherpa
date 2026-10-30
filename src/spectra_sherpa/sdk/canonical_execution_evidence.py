@@ -485,7 +485,7 @@ def _validate_first_profile_parameters(
     try:
         metadata = node_registry.get_metadata(operation_id)
         if historical_context is not None and operation_id == "model.fitted_pls":
-            additions = {"component_selection_rule", "component_curve_max", "component_cv_folds"}
+            additions = historical_context.added_pls_parameters()
             if additions.intersection(parameters):
                 raise CanonicalExecutionEvidenceError("historical PLS trace contains post-profile controls")
             defaults = {p.name: p.default for p in metadata.parameters if p.name in additions}

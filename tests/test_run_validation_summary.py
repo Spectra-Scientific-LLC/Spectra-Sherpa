@@ -448,3 +448,34 @@ def test_feature_table_report_does_not_claim_missing_spectral_units():
     )
     summary = validation_summary(run, {"nodes": [{"node_id": "source", "node_type": "data.file_load"}], "edges": []})
     assert not any(row["label"].startswith("Spectral") for row in summary["rows"])
+
+
+def test_split_cap_is_typed_and_stops_before_later_files(monkeypatch):
+    from spectra_sherpa.app.services import run_validation_summary as module
+
+    run, definition = split_run()
+    # First plan is valid. The second source cannot be read within the cap.
+    first = next(iter(run.evidence_completeness["outputs"]["split"].values()))
+    run.evidence_completeness["outputs"]["later"] = {"X_train": {**first, "byte_count": 17 * 1024 * 1024}}
+    definition["nodes"].append({"node_id": "later", "node_type": "data.train_test_split"})
+    read = module.read_output
+    opened = []
+    monkeypatch.setattr(
+        module, "read_output", lambda owner, item: (opened.append(item.byte_count), read(owner, item))[1]
+    )
+    errors = []
+    plans = module._split_summaries(run, definition, on_read_error=lambda *args: errors.append(args))
+    assert len(plans) == 1 and plans[0]["node"] == "split"
+    assert len(errors) == 1 and isinstance(errors[0][2], module.ValidationReadBudgetExceeded)
+    assert all(size < 16 * 1024 * 1024 for size in opened)
+    with pytest.raises(module.ValidationReadBudgetExceeded):
+        module._split_summaries(run, definition)
+
+
+def test_validation_cap_without_partial_callback_still_refuses():
+    from spectra_sherpa.app.services.run_validation_summary import ValidationReadBudgetExceeded
+
+    evidence = retention.retain_run_outputs(1, {"large": {"default": {"report": True}}}, {})
+    evidence["outputs"]["large"]["default"]["byte_count"] = 17 * 1024 * 1024
+    with pytest.raises(ValidationReadBudgetExceeded):
+        list(_validation_output_values(SimpleNamespace(user_id=1), RunEvidence.model_validate(evidence)))

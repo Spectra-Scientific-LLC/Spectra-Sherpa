@@ -87,7 +87,7 @@
               <template #empty>
                 <div class="object-empty">No runs match this filter.</div>
               </template>
-              <Column selectionMode="multiple" headerStyle="width: 3rem" />
+              <Column selectionMode="multiple" headerStyle="width: 3rem" :pt="{ rowCheckbox: runSelectionAccessibility }" />
 
               <Column field="name" header="Name" sortable style="min-width: 220px">
                 <template #body="{ data }">
@@ -147,7 +147,7 @@
                 </template>
               </Column>
 
-              <Column header="Uses" style="min-width: 100px">
+              <Column v-if="runsStore.runs.some(run => run.attempted_artifact_uids?.length)" header="Uses" style="min-width: 100px">
                 <template #body="{ data }">
                   <span v-if="data.attempted_artifact_uids?.length">{{ data.attempted_artifact_uids.length }} {{ data.attempted_artifact_uids.length === 1 ? 'model' : 'models' }}</span>
                   <span v-else class="muted-dash">—</span>
@@ -170,12 +170,14 @@
 
         <TabPanel header="Inspect">
           <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" ref="inspectContent" :actions-target="inspectActionsTarget" @renamed="refreshRuns" />
-          <WorkspaceState v-else kind="empty" variant="page" message="Choose a run in History.">
+          <WorkspaceState v-else-if="latestInspectionLoading" kind="loading" variant="page" message="Opening the latest run…" />
+          <WorkspaceState v-else :kind="latestInspectionError ? 'error' : 'empty'" variant="page" :message="latestInspectionError || 'Choose a run in History.'">
             <Button label="Open History" icon="pi pi-arrow-left" class="p-button-text" @click="activeTabId = 'run_history'" />
           </WorkspaceState>
         </TabPanel>
         <TabPanel header="Compare">
-          <EvidenceComparisonView v-if="typeof route.query.evidence === 'string' && projectStore.currentProjectId" :project-id="projectStore.currentProjectId" :encoded-references="route.query.evidence" />
+          <WorkspaceState v-if="runsStore.comparisonLoading" kind="loading" variant="page" message="Reading retained runs and checking comparable samples, validation roles and units…" />
+          <EvidenceComparisonView v-else-if="typeof route.query.evidence === 'string' && projectStore.currentProjectId" :project-id="projectStore.currentProjectId" :encoded-references="route.query.evidence" />
           <ComparisonPanel
             v-else-if="runsStore.comparison"
             :runs="runsStore.comparison.runs"
@@ -538,6 +540,7 @@ import type { ExecutionRunSummary, ReferenceValueEvidence, RunListItem } from "@
 import { useAuthStore } from "@/stores/auth";
 import { useDemoMode } from "@/composables/useDemoMode";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 
 interface ModelSummary {
   artifact_uid: string;
@@ -754,6 +757,10 @@ const activeTabId = computed({
     delete query.node;
     delete query.view;
     delete query.presentation;
+    if (id === "inspect" && !inspectedRunId.value) {
+      void openLatestInspection(query);
+      return;
+    }
     void router.push({ path: id === 'inspect' && inspectedRunId.value ? `/runs/${inspectedRunId.value}` : '/runs', query });
   },
 });
@@ -785,6 +792,13 @@ function persistActiveRunsTab(): void {
 }
 
 const activeProjectName = computed(() => projectStore.currentProject?.name ?? "—");
+
+function runSelectionAccessibility(options: { parent?: { props?: { value?: RunListItem } } }) {
+  const run = options.parent?.props?.value;
+  return { input: { "aria-label": run
+    ? `Select run ${run.id}: ${run.display_name || run.name}`
+    : "Select run" } };
+}
 
 const selectedRows = computed({
   get: () => runsStore.runs.filter((run) => runsStore.selectedRunIds.has(run.id)),
@@ -891,6 +905,33 @@ const selectedModelMetricRows = computed(() => {
 
 // Inspecting a provenance link never changes checkbox selection.
 const route = useRoute();
+const latestInspectionLoading = ref(false);
+const latestInspectionError = ref<string | null>(null);
+const latestInspectionScope = useScopedRequest(
+  () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId, activeTab.value, route.fullPath],
+  () => { latestInspectionLoading.value = false; latestInspectionError.value = null; },
+);
+async function openLatestInspection(query: typeof route.query = { ...route.query, tab: "inspect" }): Promise<void> {
+  const projectId = projectStore.currentProjectId;
+  if (projectId == null || route.params?.runId || inspectedRunId.value) return;
+  const request = latestInspectionScope.begin();
+  latestInspectionLoading.value = true;
+  latestInspectionError.value = null;
+  try {
+    const { data } = await api.get<{ runs: Array<{ id: number }> }>("/runs", {
+      signal: request.signal,
+      params: { project_id: projectId, offset: 0, limit: 1, sort_by: "executed_at", sort_order: "desc" },
+    });
+    if (!request.isCurrent()) return;
+    const id = data.runs[0]?.id;
+    if (id != null) inspectedRunId.value = String(id);
+    await router.push({ path: id == null ? "/runs" : `/runs/${id}`, query });
+  } catch {
+    if (request.isCurrent()) latestInspectionError.value = "The latest run could not be loaded. Open History to retry.";
+  } finally {
+    if (request.isCurrent()) latestInspectionLoading.value = false;
+  }
+}
 
 async function applyArtifactDeepLink(): Promise<void> {
   ++overviewSelectionRequest;
@@ -955,6 +996,7 @@ onMounted(async () => {
   restoringRunList = false;
   applyArtifactDeepLink();
   applyRunDeepLink();
+  if (activeTab.value === TAB_INSPECT && !inspectedRunId.value && !route.query.run) void openLatestInspection();
   void syncAdvisorForModelsTab();
 });
 

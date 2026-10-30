@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import numpy as np
 
+from spectra_sherpa.app.lib import array_identity
 from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
@@ -930,6 +931,7 @@ bind_stable_execution_contract(
         dag_meta_helpers,
         data_utils,
         split_planner,
+        array_identity,
         sample_preparation,
         sample_subset_supervision,
         supervision_binding,

@@ -435,6 +435,15 @@ describe("PlotsPanel", () => {
     expect(wrapper.findAllComponents({ name: "PlotlyChart" })).toHaveLength(3);
   });
 
+  it("keeps unavailable spectral-truth scoring visible without hiding MCR plots", () => {
+    const reason = "Spectral truth comparison unavailable: a physical axis was not retained.";
+    const { wrapper } = factory({ nodeTypeKey: "model.mcr_als", nodeOutput: { metadata: {
+      spectra_recovery_unavailable: reason,
+    } } as any, mcrSpectraData: [{ x: [1, 2], y: [3, 4] }] }, { mcrSpectra: true });
+    expect(wrapper.findAll('[role="status"]').some(item => item.text() === reason)).toBe(true);
+    expect(wrapper.findAllComponents({ name: "PlotlyChart" }).length).toBeGreaterThan(0);
+  });
+
   it.each(["model.mcr_als", "model.nmf", "model.ica"])(
     "shows the component-concentration profile and heatmap for %s",
     (nodeTypeKey) => {

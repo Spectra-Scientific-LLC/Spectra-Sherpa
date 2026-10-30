@@ -10,6 +10,8 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from spectra_sherpa.app.lib.comparison_identity import comparison_sample_ids
+from spectra_sherpa.app.lib.sample_identity import sample_ids
 from spectra_sherpa.sdk.validate import metrics
 
 REGRESSION_COMPARISON_SCHEMA = "spectrasherpa-regression-comparison/1"
@@ -58,6 +60,7 @@ def build_regression_comparison(
     role: str,
     target_names: Sequence[str] | None = None,
     sample_labels: Sequence[str] | None = None,
+    sample_dataset: object | None = None,
 ) -> dict[str, object]:
     """Return a closed long-form comparison for one or more responses."""
 
@@ -97,7 +100,7 @@ def build_regression_comparison(
                     "role": role,
                 }
             )
-    return {
+    comparison = {
         "schema_version": REGRESSION_COMPARISON_SCHEMA,
         "statistics": build_regression_statistics(actual, estimates, target_names=names),
         "shape": [len(rows), 6],
@@ -111,6 +114,75 @@ def build_regression_comparison(
             "residual_definition": "reference_minus_predicted",
         },
     }
+
+    if sample_dataset is not None:
+        bind_regression_sample_axis(comparison, sample_dataset)
+    return comparison
+
+
+def bind_regression_sample_axis(comparison: dict, dataset: object) -> None:
+    """Attach the producer's exact sample axis without replacing identity with labels.
+
+    Callers must establish dataset lineage, not choose an arbitrary equal-sized
+    source. Executor callers use only the graph-verified split branch.
+    """
+    metadata = comparison["metadata"]
+    count, targets = metadata["n_samples"], metadata["n_targets"]
+    if getattr(dataset, "n_samples", None) != count or len(comparison["data"]) != count * targets:
+        raise ValueError("Regression sample axis must match the comparison population")
+    ids, identity_reason = comparison_sample_ids(dataset)
+    declared_ids = metadata.get("sample_ids")
+    # Origin qualification can withhold otherwise well-formed IDs. That is
+    # not a contradiction; compare the actual typed values when available.
+    try:
+        observed_ids = sample_ids(dataset)
+    except ValueError:
+        observed_ids = None
+    if declared_ids is not None and observed_ids is not None and declared_ids != observed_ids:
+        raise ValueError("Regression comparison sample identities disagree with the verified population")
+    # Rebinding cannot manufacture the origin proof a producer did not retain.
+    identity_reason = metadata.get("sample_identity_unavailable") or identity_reason
+    if identity_reason is not None:
+        ids = None
+    labels = getattr(getattr(dataset, "sample_axis", None), "labels", None)
+    if labels is not None and len(labels) != count:
+        raise ValueError("Regression sample labels must match the comparison population")
+    # Labels are presentation, never authority. A blank label must not invalidate
+    # valid typed identity or stop numerical execution.
+    if labels is not None:
+        labels = [
+            label if isinstance(label, str) and label.strip() else ids[index] if ids is not None else str(index + 1)
+            for index, label in enumerate(labels)
+        ]
+    elif ids is not None:
+        labels = ids
+    if labels is not None:
+        for index, row in enumerate(comparison["data"]):
+            row["sample"] = labels[index // targets]
+    metadata["sample_identity"] = (
+        "typed_sample_id" if ids is not None else "display_labels" if labels is not None else "row_position"
+    )
+    if identity_reason is not None:
+        metadata.pop("sample_ids", None)
+        metadata["sample_identity"] = "unavailable"
+        metadata["sample_identity_unavailable"] = identity_reason
+    elif ids is not None:
+        metadata["sample_ids"] = ids
+
+
+def restrict_regression_sample_identity(comparison: dict, dataset: object) -> None:
+    """Preserve a prediction operand's refusal, never grant reference identity.
+
+    Prediction IDs cannot establish the origin of an array-only reference. A
+    known limitation must nevertheless survive later graph qualification.
+    Exact identity/order joins remain the evaluator's strict input check.
+    """
+    _, reason = comparison_sample_ids(dataset)
+    if reason is not None:
+        metadata = comparison["metadata"]
+        metadata.pop("sample_ids", None)
+        metadata["sample_identity"] = "unavailable"
+        metadata.setdefault("sample_identity_unavailable", reason)
 
 
 __all__ = ["REGRESSION_COMPARISON_SCHEMA", "build_regression_comparison"]

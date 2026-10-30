@@ -69,7 +69,7 @@
       />
       <WorkspaceContextItem
         v-if="activeTab === TAB_MY_DATASET"
-        label="Dataset"
+        label="Data Portfolio"
         :value="dataPortfolioName"
         wrap
         >{{ dataPortfolioDetail }}</WorkspaceContextItem
@@ -165,6 +165,7 @@
     >
       <!-- ======================== IMPORT TAB ======================== -->
       <TabPanel header="Import">
+        <WorkspaceState v-if="importing" kind="loading" message="Importing and verifying the selected data…" />
         <p v-if="qualified" role="status">
           Import a local catalog reference or select an exact registered file you have acquired.
           Automatic provider downloads are unavailable.
@@ -1305,6 +1306,7 @@
             <div v-once id="active-dataset-display-settings" class="dataset-display-settings-target" />
           </div>
           <DataContentsPanel
+            :focus-target="route.query.focus === 'target'"
             :scope-key="JSON.stringify(dataScopeIdentity())"
             :show-data-story="false"
             display-settings-target="#active-dataset-display-settings"
@@ -2448,8 +2450,12 @@ interface DataDraftSnapshot {
   };
   my_dataset?: {
     plot_file_selections: Record<number, PlotFileSelection>;
+    inspection?: { experiment_id: number; files_key: string; asset_id: string | null; exact: boolean };
   };
 }
+
+let restoredInspection: NonNullable<DataDraftSnapshot["my_dataset"]>["inspection"] | null = null;
+const inspectionFilesKey = (experimentId: number) => JSON.stringify(plotFileSelections.value[experimentId] ?? null);
 
 function dataActiveTabStorageKey(): string {
   return `${DATA_ACTIVE_TAB_PREFIX}_${authStore.user?.id ?? "local"}_${
@@ -2893,6 +2899,10 @@ function dataDraftSnapshot(): DataDraftSnapshot {
     },
     my_dataset: {
       plot_file_selections: cloneJson(plotFileSelections.value),
+      ...(dataStore.activeExperimentId != null ? { inspection: {
+        experiment_id: dataStore.activeExperimentId, files_key: inspectionFilesKey(dataStore.activeExperimentId),
+        asset_id: inspectionAssetId.value, exact: exactInspectionSelection.value,
+      } } : {}),
     },
   };
 }
@@ -2942,6 +2952,13 @@ function applyDataDraft(raw: unknown): void {
         if (files.length) restoredSelections[experimentId] = files;
       }
       plotFileSelections.value = restoredSelections;
+      const saved = draft.my_dataset.inspection;
+      if (saved && Number.isInteger(saved.experiment_id) && saved.experiment_id > 0 &&
+          typeof saved.files_key === "string" && (saved.asset_id === null || typeof saved.asset_id === "string") &&
+          typeof saved.exact === "boolean" && (saved.exact || saved.asset_id !== null) &&
+          saved.files_key === inspectionFilesKey(saved.experiment_id)) {
+        restoredInspection = saved;
+      }
     }
   } finally {
     dataDraftHydrating = false;
@@ -2949,6 +2966,7 @@ function applyDataDraft(raw: unknown): void {
 }
 
 function restoreDataDraft(key = dataDraftStorageKey()): void {
+  restoredInspection = null;
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return;
@@ -4266,8 +4284,26 @@ function isDefiniteImportRefusal(error: unknown): boolean {
   return status !== undefined && [400, 403, 404, 409, 413, 422].includes(status);
 }
 
+const referenceImportScope = useScopedRequest(
+  () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId],
+  () => {
+    importing.value = false;
+    pendingRegisteredReference.value = null;
+    for (const name of Object.keys(registeredImportState)) delete registeredImportState[name];
+  },
+  { abortOnInvalidate: false },
+);
 async function onImportSelectedDatasets(): Promise<boolean> {
-  if (selectedRefDatasets.size === 0) return false;
+  if (selectedRefDatasets.size === 0 || importing.value) return false;
+  const request = referenceImportScope.begin();
+  const projectId = projectStore.currentProjectId;
+  const name = resolvedImportDatasetName.value;
+  const sources = [...selectedRefDatasets];
+  const datasets = sources.map((key) => {
+    const [source, ...rest] = key.split("::");
+    return { source, name: rest.join("::"), overrides: refOverrides[key]
+      ? JSON.parse(JSON.stringify(refOverrides[key])) as PreparedDataOverrides : null };
+  });
   importing.value = true;
   let createdExperimentId: number | null = null;
   const starterIntent = pendingAnalysisStarterIntent();
@@ -4276,23 +4312,18 @@ async function onImportSelectedDatasets(): Promise<boolean> {
     // typed name (or a sensible default if blank), then ingests the
     // selected references into it. The user no longer has to pre-create a
     // dataset via the dialog.
-    const name = resolvedImportDatasetName.value;
     const created = await dataStore.createExperiment(
-      name,
-      undefined,
-      projectStore.currentProjectId,
-      { source_kind: "catalog_reference", reference_sources: Array.from(selectedRefDatasets) },
+      name, undefined, projectId,
+      { source_kind: "catalog_reference", reference_sources: sources },
     );
     createdExperimentId = created.id;
-
-    const datasets = Array.from(selectedRefDatasets).map((key) => {
-      const [source, ...rest] = key.split("::");
-      return { source, name: rest.join("::"), overrides: refOverrides[key] ?? null };
-    });
+    if (!request.isCurrent()) return false;
     const result = await dataStore.importReferenceDatasets(created.id, datasets);
+    if (!request.isCurrent()) return false;
     const admittedExperimentId = result.experiment_id ?? created.id;
     if (admittedExperimentId !== created.id) {
       await dataStore.deleteExperiment(created.id);
+      if (!request.isCurrent()) return false;
     }
     createdExperimentId = null;
     if (starterIntent) {
@@ -4309,6 +4340,7 @@ async function onImportSelectedDatasets(): Promise<boolean> {
       }
     }
     await dataStore.selectExperiment(admittedExperimentId);
+    if (!request.isCurrent()) return false;
     toast.add({
       severity: "success",
       summary: "Import Complete",
@@ -4317,14 +4349,18 @@ async function onImportSelectedDatasets(): Promise<boolean> {
         : `Imported ${result.imported} file(s) into "${name}"`,
       life: 3000,
     });
-    selectedRefDatasets.clear();
-    importDatasetName.value = "";
+    if (sources.length === selectedRefDatasets.size && sources.every(key => selectedRefDatasets.has(key))) {
+      selectedRefDatasets.clear();
+      importDatasetName.value = "";
+    }
     await refreshProjectContext();
+    if (!request.isCurrent()) return false;
     activeTab.value = TAB_MY_DATASET;
     persistActiveDataTab();
     await showExperimentContents(admittedExperimentId);
-    return true;
+    return request.isCurrent();
   } catch (err: unknown) {
+    if (!request.isCurrent()) return false;
     if (createdExperimentId !== null && isDefiniteImportRefusal(err)) {
       try {
         await dataStore.deleteExperiment(createdExperimentId);
@@ -4332,6 +4368,7 @@ async function onImportSelectedDatasets(): Promise<boolean> {
         // Preserve the original failure.
       }
     }
+    if (!request.isCurrent()) return false;
     toast.add({
       severity: "error",
       summary: "Import Failed",
@@ -4340,7 +4377,7 @@ async function onImportSelectedDatasets(): Promise<boolean> {
     });
     return false;
   } finally {
-    importing.value = false;
+    if (request.isCurrent()) importing.value = false;
   }
 }
 
@@ -4358,7 +4395,7 @@ async function onRegisteredReferenceSelection(event: Event): Promise<void> {
   const dataset = pendingRegisteredReference.value;
   input.value = "";
   pendingRegisteredReference.value = null;
-  if (!files.length || !dataset) return;
+  if (!files.length || !dataset || importing.value) return;
 
   const requiredFiles = dataset.dataset_package?.artifact_ids.length ?? 1;
   if (files.length !== requiredFiles) {
@@ -4373,6 +4410,9 @@ async function onRegisteredReferenceSelection(event: Event): Promise<void> {
     return;
   }
 
+  const request = referenceImportScope.begin();
+  const projectId = projectStore.currentProjectId;
+  importing.value = true;
   registeredImportState[dataset.name] = {
     status: "importing",
     message: `Verifying ${files.length} provider file${files.length === 1 ? "" : "s"} — importing ${dataset.label}`,
@@ -4383,7 +4423,7 @@ async function onRegisteredReferenceSelection(event: Event): Promise<void> {
     const created = await dataStore.createExperiment(
       dataset.label,
       dataset.description || undefined,
-      projectStore.currentProjectId,
+      projectId,
       {
         source_kind: "user_acquired_registered_reference",
         ...(packaged
@@ -4393,22 +4433,28 @@ async function onRegisteredReferenceSelection(event: Event): Promise<void> {
       },
     );
     createdExperimentId = created.id;
+    if (!request.isCurrent()) return;
     const result = await dataStore.importRegisteredReference(
       created.id,
       packaged ? { packageId: packaged.package_id } : { projectionId: dataset.name },
       files,
     );
+    if (!request.isCurrent()) return;
     const admittedExperimentId = result.experiment_id ?? created.id;
     if (admittedExperimentId !== created.id) {
       await dataStore.deleteExperiment(created.id);
+      if (!request.isCurrent()) return;
     }
     createdExperimentId = null;
     await dataStore.selectExperiment(admittedExperimentId);
+    if (!request.isCurrent()) return;
     await refreshProjectContext();
+    if (!request.isCurrent()) return;
     activeTab.value = TAB_MY_DATASET;
     persistActiveDataTab();
     const initialFileIds = result.initial_file_ids ?? [];
     await showExperimentContents(admittedExperimentId, initialFileIds[0] ?? null);
+    if (!request.isCurrent()) return;
     if (initialFileIds.length) {
       const initialIds = new Set(initialFileIds);
       const initialViews = result.files
@@ -4416,6 +4462,7 @@ async function onRegisteredReferenceSelection(event: Event): Promise<void> {
         .map(({ id, file_path, stage }) => ({ id, file_path, stage }));
       setExperimentPlotSelection(admittedExperimentId, initialViews);
       await loadPlottedDatasets();
+      if (!request.isCurrent()) return;
     }
     registeredImportState[dataset.name] = {
       status: "ready",
@@ -4432,6 +4479,7 @@ async function onRegisteredReferenceSelection(event: Event): Promise<void> {
       life: 4000,
     });
   } catch (error: unknown) {
+    if (!request.isCurrent()) return;
     if (createdExperimentId !== null && isDefiniteImportRefusal(error)) {
       try {
         await dataStore.deleteExperiment(createdExperimentId);
@@ -4439,6 +4487,7 @@ async function onRegisteredReferenceSelection(event: Event): Promise<void> {
         // The server owns cleanup truth; never obscure the admission refusal.
       }
     }
+    if (!request.isCurrent()) return;
     const message = getErrorMessage(
       error,
       `This file does not match the registered ${dataset.label} reference file. ` +
@@ -4446,6 +4495,8 @@ async function onRegisteredReferenceSelection(event: Event): Promise<void> {
     );
     registeredImportState[dataset.name] = { status: "error", message };
     toast.add({ severity: "error", summary: "Reference Refused", detail: message, life: 7000 });
+  } finally {
+    if (request.isCurrent()) importing.value = false;
   }
 }
 
@@ -4852,24 +4903,23 @@ async function inspectLatestProjectFile(
     await projectStore.fetchProject(projectStore.currentProjectId);
   }
 
-  const experiments = [...(projectStore.currentProject?.experiments || [])].sort(
-    (left, right) => right.id - left.id,
-  );
+  const experiments = projectStore.currentProject?.experiments || [];
+  const candidates: Array<{ experimentId: number; file: ExperimentFile }> = [];
   for (const experiment of experiments) {
     if (!isCurrent()) return false;
-    await dataStore.selectExperiment(experiment.id);
+    const { data: files } = await api.get<ExperimentFile[]>(`/experiments/${experiment.id}/files`);
     if (!isCurrent()) return false;
-    const latestFile = sortFilesNewestFirst(dataStore.experimentFiles)[0];
-    if (!latestFile) {
-      continue;
-    }
-
-    await showExperimentContents(experiment.id);
+    for (const file of files) candidates.push({ experimentId: experiment.id, file });
+  }
+  const latest = sortFilesNewestFirst(candidates.map(entry => entry.file))[0];
+  const winner = candidates.find(entry => entry.file === latest);
+  if (winner) {
+    await dataStore.selectExperiment(winner.experimentId);
     if (!isCurrent()) return false;
-    await onInspectFile(latestFile, { updateRoute: false, tabChoiceCurrent });
+    await showExperimentContents(winner.experimentId);
     if (!isCurrent()) return false;
-    activateDataTab(TAB_MY_DATASET, tabChoiceCurrent);
-    return true;
+    await onInspectFile(winner.file, { tabChoiceCurrent });
+    return isCurrent();
   }
 
   return false;
@@ -4961,6 +5011,28 @@ async function applyRouteExploreState(ticket = navigation.route.begin(), tabChoi
         if (requestedView) await showDatasetView(requestedView);
         else
           datasetViewError.value = "The requested named definition is unavailable in this dataset.";
+      } else if (query.focus === "target" && typeof query.targetFiles === "string") {
+        const stage = query.targetStage;
+        const ids = query.targetFiles === "all" ? null : query.targetFiles.split(",").map(Number);
+        const available = dataStore.experimentFiles.filter(file => file.stage === stage);
+        const files = ids == null ? available : ids.map(id => available.find(file => file.id === id));
+        if (!["raw", "preprocessed", "synthetic"].includes(String(stage)) || !files.length ||
+            files.some(file => !file) || (ids && (new Set(ids).size !== ids.length || ids.some(id => !Number.isInteger(id) || id <= 0)))) {
+          datasetViewError.value = "The starter's exact file selection is unavailable. Review the source files.";
+          return;
+        }
+        selectedDatasetView.value = null;
+        setExperimentPlotSelection(experimentId, files.map(file => ({ id: file!.id, file_path: file!.file_path, stage: file!.stage })));
+        const admitted = await showExperimentContents(experimentId, null, typeof query.targetAsset === "string" ? query.targetAsset : null, true);
+        if (!ticket.isCurrent() || !admitted) return;
+        persistDataDraftNow();
+        // One navigation handoff: a later user selection must not be undone by
+        // reapplying these source parameters. Normal Data draft restoration owns it.
+        const nextQuery = { ...route.query };
+        delete nextQuery.targetFiles;
+        delete nextQuery.targetStage;
+        delete nextQuery.targetAsset;
+        await replaceDataRoute({ path: "/data", query: nextQuery });
       } else if (query.viewId === "default") {
         await showDefaultDatasetView();
       }
@@ -4987,7 +5059,8 @@ async function applyRouteDataState(tabChoiceCurrent = navigation.captureTabChoic
   const ticket = navigation.route.begin();
   const requestedTab = routeTabIndex(query.tab);
   const starterIntent = pendingAnalysisStarterIntent();
-  if (starterIntent?.imported_experiment_id != null && (requestedTab === null || requestedTab === TAB_MY_DATASET)) {
+  const explicitSelection = query.experimentId != null || query.experiment != null || query.fileId != null || query.viewId != null;
+  if (!explicitSelection && starterIntent?.imported_experiment_id != null && (requestedTab === null || requestedTab === TAB_MY_DATASET)) {
     const importedExperiment = dataStore.experiments.find(
       (experiment) => experiment.id === starterIntent.imported_experiment_id,
     );
@@ -5003,7 +5076,7 @@ async function applyRouteDataState(tabChoiceCurrent = navigation.captureTabChoic
     // A deleted dataset must not permanently suppress the starter import.
     clearImportedAnalysisStarterMarker(starterIntent);
   }
-  if (tabChoiceCurrent() && (requestedTab === null || requestedTab === TAB_IMPORT) && applyAnalysisStarterIntent()) {
+  if (!explicitSelection && tabChoiceCurrent() && (requestedTab === null || requestedTab === TAB_IMPORT) && applyAnalysisStarterIntent()) {
     activateDataTab(TAB_IMPORT, tabChoiceCurrent);
     return;
   }
@@ -5302,6 +5375,19 @@ function workflowExperimentIds(): number[] {
 }
 
 function workflowSelectionForExperiment(experimentId: number): PlotFileSelection {
+  const portfolio = experimentId === dataStore.activeExperimentId ? currentPortfolioView.value : null;
+  if (portfolio) {
+    if (portfolio.selection.selected_file_ids == null) return null;
+    // sourcePortfolioView has verified the same file membership. Preserve the
+    // saved order too: its digest binds a sequence, not just a set of IDs.
+    const selected = plotFileSelections.value[experimentId];
+    if (Array.isArray(selected)) {
+      const byId = new Map(selected.map((file) => [file.id, file]));
+      return portfolio.selection.selected_file_ids.map((id) => ({
+        ...byId.get(id)!, stage: portfolio.selection.stage,
+      }));
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(plotFileSelections.value, experimentId)) {
     return plotFileSelections.value[experimentId];
   }
@@ -5345,11 +5431,14 @@ async function goToWorkflow(addNode?: string) {
     const requestedTarget = analysisChoice.value.target;
     const requestedAsset = inspectionAssetId.value;
     try {
-      await dataStore.inspectExperimentRawFiles(
-        experimentId,
-        inspectionAssetId.value,
-        workflowSelection?.map((file) => file.id),
-      );
+      const portfolio = currentPortfolioView.value;
+      if (portfolio) {
+        await dataStore.inspectExperimentRawFiles(experimentId, null, null, portfolio);
+      } else {
+        await dataStore.inspectExperimentRawFiles(
+          experimentId, inspectionAssetId.value, workflowSelection?.map((file) => file.id),
+        );
+      }
       await nextTick();
       if (!ticket.isCurrent()) return;
       if (
@@ -5466,6 +5555,11 @@ async function goToWorkflow(addNode?: string) {
     datasets = workflowIds.map((experimentId) => {
       const experiment = dataStore.experiments.find((item) => item.id === experimentId);
       const selection = workflowSelectionForExperiment(experimentId);
+      const stage = workflowSelectionStage(
+        experimentId === dataStore.activeExperimentId && currentPortfolioView.value
+          ? currentPortfolioView.value.selection.stage
+          : selection === null ? originalSourceFiles.value[0]?.stage ?? "" : selection[0].stage,
+      );
       return {
         experiment_id: experimentId,
         dataset_name:
@@ -5473,7 +5567,7 @@ async function goToWorkflow(addNode?: string) {
             ? currentPortfolioView.value.name
             : (experiment?.name ?? `Dataset ${experimentId}`),
         selection: selection === null ? "all" : "subset",
-        selected_file_count: selection === null ? (experiment?.file_count ?? 0) : selection.length,
+        selected_file_count: selection === null ? dataStore.experimentFiles.filter(file => file.stage === stage).length : selection.length,
         file_ids: selection === null ? null : selection.map((file) => file.id),
         file_paths: selection === null ? null : selection.map((file) => file.file_path),
         asset_id: experimentId === dataStore.activeExperimentId ? inspectionAssetId.value : null,
@@ -5483,7 +5577,7 @@ async function goToWorkflow(addNode?: string) {
               dataset_view_sha256: currentPortfolioView.value.selection_sha256,
             }
           : {}),
-        stage: workflowSelectionStage(selection === null ? "raw" : selection[0].stage),
+        stage,
       };
     });
   } catch (error) {
@@ -5712,6 +5806,9 @@ watch(
     route.query.fileId,
     route.query.viewId,
     route.query.focus,
+    route.query.targetFiles,
+    route.query.targetStage,
+    route.query.targetAsset,
     route.query.fromTemplate,
   ],
   () => {
@@ -6153,7 +6250,13 @@ async function showExperimentContents(
   preferredFileId: number | null = null,
   preferredAssetId: string | null = null,
   exactSelection = false,
-) {
+): Promise<boolean> {
+  const restored = restoredInspection;
+  if (preferredFileId === null && preferredAssetId === null && !exactSelection &&
+      restored?.experiment_id === experimentId && restored.files_key === inspectionFilesKey(experimentId)) {
+    preferredAssetId = restored.asset_id;
+    exactSelection = restored.exact;
+  }
   exactInspectionSelection.value = exactSelection;
   const ticket = inspection.contents.begin();
   dataStore.clearCatalogExploration();
@@ -6194,7 +6297,7 @@ async function showExperimentContents(
         inspection.inventory(experimentId, file.id),
       ),
     );
-    if (!ticket.isCurrent()) return;
+    if (!ticket.isCurrent()) return false;
     inspectionWarnings.value = uniqueAssetWarnings(
       inventories.flatMap((inventory) => inventory.assets),
     );
@@ -6215,12 +6318,15 @@ async function showExperimentContents(
         );
       }
       if (preferredAssetId) {
-        await onInspectionAssetChange();
-        if (!ticket.isCurrent()) return;
+        const admitted = await onInspectionAssetChange();
+        if (!admitted) return false;
+        if (!ticket.isCurrent()) return false;
         if (dataStore.fileInfo)
           await loadPlottedDatasets(new Map([[experimentId, dataStore.fileInfo]]));
+        if (!ticket.isCurrent()) return false;
       }
-      return;
+      if (preferredAssetId) restoredInspection = null;
+      return Boolean(preferredAssetId && dataStore.fileInfo);
     }
     inspectionAssets.value = inventories[0]?.assets ?? [];
     inspectionAssetId.value = preferredAssetId;
@@ -6249,7 +6355,7 @@ async function showExperimentContents(
           : null,
       );
     }
-    if (!ticket.isCurrent()) return;
+    if (!ticket.isCurrent()) return false;
     if (
       (loadWholeCollection || sourceFiles.length === 1) &&
       selectedStage === originalSourceFiles.value[0]?.stage &&
@@ -6281,7 +6387,7 @@ async function showExperimentContents(
         preferredAssetId,
         selectedViewIds,
       );
-      if (!ticket.isCurrent()) return;
+      if (!ticket.isCurrent()) return false;
     }
     if (
       (loadWholeCollection || !explicitViewSelection) &&
@@ -6301,8 +6407,11 @@ async function showExperimentContents(
     }
     cacheFileSampleLabels(experimentId, inspectedDataset);
     await loadPlottedDatasets(new Map([[experimentId, inspectedDataset]]));
+    if (!ticket.isCurrent()) return false;
+    restoredInspection = null;
+    return Boolean(inspectedDataset);
   } catch {
-    if (!ticket.isCurrent()) return;
+    if (!ticket.isCurrent()) return false;
     inspectionWarnings.value = [];
     toast.add({
       severity: "error",
@@ -6311,6 +6420,7 @@ async function showExperimentContents(
         dataStore.fileInfoError || "Could not inspect the scientific results in this dataset.",
       life: 6000,
     });
+    return false;
   }
 }
 
@@ -6337,7 +6447,7 @@ let initialContentsSelectionPending: number | null = null;
 async function ensureInitialContentsSelection() {
   if (
     initialContentsSelectionPending === dataStore.activeExperimentId ||
-    dataStore.fileInfo ||
+    (dataStore.fileInfo && restoredInspection?.experiment_id !== dataStore.activeExperimentId) ||
     dataStore.catalogDatasetInfo ||
     dataStore.experimentFilesLoading ||
     dataStore.experimentFilesRefusal ||
@@ -6788,10 +6898,10 @@ async function onInspectFile(file: ExperimentFile, options: { updateRoute?: bool
   }
 }
 
-async function onInspectionAssetChange() {
+async function onInspectionAssetChange(): Promise<boolean> {
   const selection = pendingInspection.value;
   const assetId = inspectionAssetId.value;
-  if (!selection || !assetId) return;
+  if (!selection || !assetId) return false;
   const ticket = inspection.selection.begin();
   try {
     if (selection.kind === "file") {
@@ -6801,7 +6911,7 @@ async function onInspectionAssetChange() {
         selection.experimentId,
         assetId,
       );
-      if (!ticket.isCurrent()) return;
+      if (!ticket.isCurrent()) return false;
       cacheFileSampleLabels(
         selection.experimentId,
         dataStore.fileInfo,
@@ -6821,8 +6931,10 @@ async function onInspectionAssetChange() {
       }
       cacheFileSampleLabels(selection.experimentId, dataStore.fileInfo);
     }
+    return ticket.isCurrent() && Boolean(dataStore.fileInfo);
   } catch {
     // The store exposes the exact preview error in the Contents panel.
+    return false;
   }
 }
 

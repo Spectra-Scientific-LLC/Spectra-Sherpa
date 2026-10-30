@@ -26,6 +26,22 @@ Dataset**. On Workflow, choose **Analysis Starter**, then the suggested template
 Where hosted Guidance is available and enabled, its task-specific buttons point
 to these same controls; they do not perform the import or run an analysis.
 
+If a starter needs a response or class label, **Set target in My Dataset** opens
+Sample details for that source selection. The selected files, processing stage
+and result asset are retained; a named portfolio is reopened by its saved
+identity. Choose the target there, then return to Analysis Starter. This does
+not silently change the target in an existing workflow.
+
+For supported classification starter paths, admission checks the actual active
+rows after source inclusion and sample filtering using the same partition
+planner as execution. An impossible training/test partition is refused before
+a workflow is created. A warning that component CV is unavailable means the
+training population cannot support the required class representation in every
+fold; it is not a model-quality verdict. Unsupported upstream transformations
+remain subject to execution-time validation. Fixed-component starters retain
+their declared component count; a diagnostic CV curve alone does not refit or
+automatically select a different model.
+
 ## Dataset
 
 A dataset is a named selection of data, views, target, and optional groups that
@@ -49,6 +65,12 @@ acquisition order and matching rules for a dataset. A plan is not measured data:
 review and publish a proposed measured-sample table separately before using
 its metadata in analysis.
 
+The **Data Portfolio** name appears above My Dataset, on the workflow sheet,
+and in Analysis Starter while templates are offered. A saved portfolio carries
+its selected source stage (raw, synthetic, or preprocessed), files, response,
+and grouping. Choosing **Show** restores that definition; it does not silently
+turn a synthetic or preprocessed selection into raw data.
+
 ## Workflow
 
 A workflow is a directed graph of nodes. Data nodes feed preprocessing nodes, model nodes, validation nodes, plots, tables, reports, and exports.
@@ -65,6 +87,21 @@ scientific calibration, preprocessing, and validation sheets remain usable.
 
 A run is one execution of a workflow. Open **Runs** to review saved executions.
 Results are the outputs and diagnostics produced by nodes within a run.
+
+### Comparing scientific results
+
+Compare aligns measures within their recorded evaluation role: calibration,
+training cross-validation, or held-out validation. Evaluator node names do not
+define the role. A paired difference requires matching sample identity,
+response, units, and evaluation conditions; equal values or row counts are not
+proof that two populations match.
+
+**Recorded node measures** preserves producer-specific values separately,
+including equal values from different nodes, without implying a paired ranking.
+Older runs without retained typed sample IDs remain inspectable but cannot
+establish a matching population from their display labels. Regression tables
+retain original sample names in the actual evaluation order; names are separate
+from the typed sample IDs used for scientific matching.
 
 ## Models and artifacts
 

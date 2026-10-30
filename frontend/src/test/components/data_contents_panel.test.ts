@@ -178,6 +178,16 @@ function sourceCollection(fileCount: number, manifestDigest = "a".repeat(64)) {
 }
 
 describe("DataContentsPanel", () => {
+  it("opens Sample details when the starter sends the user to choose a target", async () => {
+    mocks.dataStore.fileInfo = { n_samples: 3, n_features: 2, data: [[1,2],[3,4],[5,6]],
+      y_axis: { labels: ["A", "B", "C"] }, metadata: { contents_file_count: 1 } };
+    const wrapper = mount(DataContentsPanel, { props: { focusTarget: true } });
+    await flushPromises();
+    expect(wrapper.get(".focused-dataset-details").attributes("open")).toBeDefined();
+    expect(wrapper.get('[aria-label="Sample details"]').attributes("tabindex")).toBe("-1");
+    wrapper.unmount();
+  });
+
   beforeEach(() => {
     resetDataStore();
   });
@@ -373,6 +383,20 @@ describe("DataContentsPanel", () => {
     expect(wrapper.get("[role='alert'].analysis-replication-warning").text()).toContain(
       "Server-owned specimen warning",
     );
+    wrapper.unmount();
+  });
+
+  it("formats numeric annotations with shared precision while preserving exact hover values and IDs", () => {
+    mocks.dataStore.fileInfo = {
+      n_samples: 2, n_features: 3,
+      y_axis: { labels: ["s1", "s2"], sample_table: { sample_id: ["s1", "s2"], concentration: [150.00000000000003, 1e-8] } },
+      metadata: { source_collection: sourceCollection(2) },
+    };
+    const wrapper = mount(DataContentsPanel);
+    const table = wrapper.get("[aria-label='Collection sample table']");
+    expect(table.get('td[title="150.00000000000003"]').text()).toBe("150.000");
+    expect(table.get('td[title="1e-8"]').text()).toBe("1.00000e-8");
+    expect(table.get('td[title="s1"]').text()).toBe("s1");
     wrapper.unmount();
   });
 

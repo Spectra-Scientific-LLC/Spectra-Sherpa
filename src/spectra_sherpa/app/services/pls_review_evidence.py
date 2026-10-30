@@ -26,6 +26,14 @@ from spectra_sherpa.sdk.runtime import execute_workflow_async, operation_workflo
 
 SHARED_SCALE = "preprocess.shared_reference_scale"
 PLS_PREPROCESSORS = PREPROCESSORS | {SHARED_SCALE}
+# Evaluators consume predictions and reference/context data; they do not
+# transform the held-out branch used to apply the fitted model. Their outputs
+# may feed presentation nodes, but any edge back into computation is still
+# rejected by the exact calibration/test graph comparison below.
+PLS_REVIEW_TERMINALS = TERMINALS | {
+    "diagnostics.regression_evaluator",
+    "diagnostics.labeled_regression_evaluator",
+}
 
 
 def _split_preprocessing(definition, path, split, model_id, predictor):
@@ -63,7 +71,7 @@ def _split_preprocessing(definition, path, split, model_id, predictor):
             for edge in edges
             if edge["from_node_id"] == current
             and edge.get("from_output", "default") == output
-            and nodes[edge["to_node_id"]]["node_type"] not in TERMINALS
+            and nodes[edge["to_node_id"]]["node_type"] not in PLS_REVIEW_TERMINALS
         ]
         if len(outgoing) != 1:
             raise ValueError("Held-out preprocessing needs one unchanged test branch.")
@@ -93,10 +101,10 @@ def _split_preprocessing(definition, path, split, model_id, predictor):
     actual = {
         (edge["from_node_id"], edge.get("from_output", "default"), edge["to_node_id"], edge.get("to_input", "default"))
         for edge in edges
-        if nodes[edge["to_node_id"]]["node_type"] not in TERMINALS
+        if nodes[edge["to_node_id"]]["node_type"] not in PLS_REVIEW_TERMINALS
     }
     if actual != expected or len(actual) != len(
-        [edge for edge in edges if nodes[edge["to_node_id"]]["node_type"] not in TERMINALS]
+        [edge for edge in edges if nodes[edge["to_node_id"]]["node_type"] not in PLS_REVIEW_TERMINALS]
     ):
         raise ValueError("Held-out PLS review requires the exact calibration/test application graph.")
 
@@ -151,7 +159,7 @@ def review_path(definition: dict, model_id: str):
             "external preprocessing needs a fitted application path. "
             "Calibration-only review supports scale, normalize, smooth and derivative."
         )
-    extras = [n for key, n in nodes.items() if key not in seen and n["node_type"] not in TERMINALS]
+    extras = [n for key, n in nodes.items() if key not in seen and n["node_type"] not in PLS_REVIEW_TERMINALS]
     if split:
         predictions = [n for n in extras if n["node_type"] in {"model.predict_regression", "model.apply_fitted_pls"}]
         if len(predictions) != 1:

@@ -40,6 +40,9 @@
     </div>
 
     <div class="topbar-center">
+      <details class="connection-status">
+        <summary>{{ connectionLabel }}</summary>
+        <div class="connection-details">
       <!-- Basic availability; detailed provenance is shown separately. -->
       <div class="provenance-indicators" aria-label="Current project availability">
         <button
@@ -88,6 +91,8 @@
           <span class="status-tooltip">{{ computeStatus.tooltip }}</span>
         </div>
       </div>
+        </div>
+      </details>
     </div>
 
     <div class="topbar-right">
@@ -180,7 +185,7 @@ const llmStore = useLlmStore();
 const authStore = useAuthStore();
 const router = useRouter();
 const { backendConnected } = useBackendStatus();
-const { appMode, hasLLMConfigured, reloadConfig } = useAppConfig();
+const { appMode, siteProfile, hasLLMConfigured, reloadConfig } = useAppConfig();
 const notificationDrawerVisible = ref(false);
 const aboutVisible = ref(false);
 
@@ -233,7 +238,8 @@ const chatToggleTitle = computed(() =>
   props.chatCollapsed ? "Open chat panel" : "Collapse chat panel",
 );
 
-// Status indicator computed properties (Traffic Lights)
+const connectionLabel = computed(() => `${appMode.value === "local" ? "Local" : siteProfile.value === "demo" ? "Hosted demo" : "Hosted"} · ${backendConnected.value ? "connected" : "server unavailable"}`);
+// Readiness details stay available behind the labeled status chip.
 const backendStatus = computed(() => {
   if (backendConnected.value) {
     return { class: "status-green", tooltip: "Backend: Connected" };
@@ -388,6 +394,11 @@ const onProjectChange = async () => {
 </script>
 
 <style scoped>
+.connection-status { position: relative; font-size: .8rem; }
+.connection-status > summary { cursor: pointer; border: 1px solid var(--surface-border); border-radius: 1rem; padding: .3rem .65rem; list-style: none; }
+.connection-status > summary::after { content: " ▾"; }
+.connection-details { position: absolute; right: 0; top: calc(100% + .4rem); z-index: 1000; padding: 1rem; display: grid; gap: .75rem; background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: .5rem; }
+
 .topbar {
   display: flex;
   align-items: center;

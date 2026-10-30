@@ -10,7 +10,7 @@
       <p v-if="!available">{{ unavailableMessage }}</p>
       <p v-else-if="!ready">{{ unavailableReason || (sourceKey ? "Finishing dataset details…" : "Choose a dataset to review its story.") }}</p>
       <ChatMarkdown v-else-if="dataStore.dataStoryText" :source="dataStore.dataStoryText" />
-      <p v-else-if="loading">Reviewing the selected spectra and sample metadata…</p>
+      <p v-else-if="loading">Reviewing the selected data and sample metadata…</p>
       <p v-else>Generate a story for this dataset.</p>
     </div>
     <div v-if="available" class="data-story-question">
@@ -22,7 +22,7 @@
         @keydown.enter="regenerate"
       />
       <Button
-        label="Regenerate"
+        :label="dataStore.dataStoryText ? 'Regenerate' : 'Generate'"
         icon="pi pi-sparkles"
         class="p-button-sm"
         :loading="loading"
@@ -56,31 +56,23 @@ const unavailableMessage = computed(() => appMode.value === "local"
   ? "Configure a local chat endpoint in Settings to generate a Data Story."
   : "Data Story is unavailable for this deployment.");
 const loading = computed(() => dataStore.dataStoryLoading);
-let attemptedKey: string | null = null;
 let displayedKey: string | null = null;
 
 function requestStory(force = false): void {
   void dataStore.generateDataStory(props.inspectedSource, { cacheKey: props.sourceKey, force });
 }
 
-watch(
-  () => [props.sourceKey, props.ready, available.value, loading.value] as const,
-  ([key, ready, enabled, busy]) => {
-    if (key !== displayedKey) {
-      displayedKey = key;
-      attemptedKey = null;
-      dataStore.invalidateDataStory();
-    }
-    if (!key || !ready || !enabled || busy || attemptedKey === key) return;
-    attemptedKey = key;
-    requestStory();
-  },
-  { immediate: true },
-);
+// Changing a source invalidates stale prose; readiness and navigation never
+// authorize an external model call. Only the Generate action does.
+watch(() => props.sourceKey, (key) => {
+  if (key !== displayedKey) {
+    displayedKey = key;
+    dataStore.invalidateDataStory();
+  }
+}, { immediate: true });
 
 function regenerate(): void {
   if (!props.sourceKey || !props.ready || !available.value || loading.value) return;
-  attemptedKey = props.sourceKey;
   requestStory(true);
 }
 </script>
@@ -92,7 +84,7 @@ function regenerate(): void {
   border-radius: 8px;
   display: flex;
   flex-direction: column;
-  height: 260px;
+  max-height: 320px;
   margin-bottom: 16px;
   padding: 16px;
 }
@@ -111,6 +103,6 @@ function regenerate(): void {
 .data-story-body p { margin: 10px 0; }
 .data-story-question input { flex: 1; min-width: 0; }
 @media (max-width: 640px) {
-  .data-story-card { height: auto; min-height: 260px; }
+  .data-story-card { max-height: none; }
 }
 </style>

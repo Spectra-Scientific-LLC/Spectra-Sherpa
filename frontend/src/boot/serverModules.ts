@@ -1,3 +1,4 @@
+import ProjectUnavailable from "@/views/ProjectUnavailable.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
@@ -424,6 +425,9 @@ export async function bootServerModules(
     );
   }
 
+  if (!router.hasRoute("project-unavailable")) {
+    router.addRoute({ path: "/project-unavailable", name: "project-unavailable", component: ProjectUnavailable });
+  }
   const identity = useAuthStore();
   if (config.value?.implicitIdentity === true && !identity.user) await identity.initializeActor();
   stopExtensions?.();
@@ -439,8 +443,11 @@ export async function bootServerModules(
     if (linked !== null) {
       const id = Number(linked);
       if (!/^[1-9][0-9]*$/.test(linked) || !Number.isSafeInteger(id) || !await project.fetchProject(id)) {
-        serverModuleLoadFailed.value = { module: "project", error: "The linked project is unavailable." };
-        return;
+        // A refused project is a navigation failure, not a missing identity
+        // module. Clear the stale workspace and keep the authenticated shell.
+        project.currentProjectId = null;
+        project.currentProject = null;
+        await router.replace({ name: "project-unavailable" });
       }
     } else {
       await project.ensureProjectForBrowserTab();

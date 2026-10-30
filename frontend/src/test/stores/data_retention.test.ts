@@ -24,6 +24,21 @@ function setScope(userId: number, projectId: number) {
 }
 
 describe("data store state retention", () => {
+  it.each([false, true])("exact portfolio inspection never falls back to transient selectors (refused=%s)", async (refused) => {
+    setScope(7, 12);
+    const store = useDataStore();
+    const view = { id: 5, selection_sha256: "a".repeat(64) };
+    if (refused) vi.mocked(api.post).mockRejectedValueOnce(new Error("Saved data portfolio changed"));
+    else vi.mocked(api.post).mockResolvedValueOnce({ data: { n_samples: 20, n_features: 4, metadata: { contents_stage: "preprocessed" } } });
+    const operation = store.inspectExperimentRawFiles(44, "stale-asset", [103], view);
+    if (refused) await expect(operation).rejects.toThrow("Saved data portfolio changed");
+    else await operation;
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(api.post).toHaveBeenCalledWith("/builder/file-info", {
+      experiment_id: 44, dataset_view_id: 5, dataset_view_sha256: view.selection_sha256,
+    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+
   it("inspects a project file through the canonical one-member collection loader", async () => {
     setActivePinia(createPinia());
     setScope(7, 12);

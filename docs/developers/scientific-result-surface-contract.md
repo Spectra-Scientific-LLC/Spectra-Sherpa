@@ -741,6 +741,20 @@ converted at the ingestion boundary with collision checks; the identity reader
 does not silently equate integer `1` with string `"1"`. Display labels and
 categorical class values are separate contracts and are not restricted by this.
 
+Optional regression comparison annotation must not fail completed numerical
+evaluation merely because observation identity is unavailable. It retains the
+results and an explicit limitation; actual identity joins and contradictory
+ordered IDs still refuse. Rebinding cannot promote an unavailable annotation
+to typed identity or leave authoritative IDs alongside an unavailable reason.
+
+Historical Eigenvector DSO and process-log payloads retain their original
+label-derived columns so existing saved selections keep their source digests.
+Without independently retained identity-origin proof, those sources (including
+mixed collections containing them) cannot qualify paired-population comparison.
+This conservative limitation can also withhold later attached IDs whose origin
+cannot be distinguished in the retained lineage. Do not infer identity from
+label uniqueness or equality, rewrite old receipts, or fabricate replacement IDs.
+
 Node help continues to use the execution contract's `help_reference`.
 Methodology help uses a named topic from `frontend/src/utils/documentation.ts`;
 free-form component URLs and frontend rewrites of backend sentences are not

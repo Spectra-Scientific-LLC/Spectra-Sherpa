@@ -261,6 +261,7 @@ embedded :model-value="true"
             </div>
           </template>
 
+          <p v-if="mcrSpectraUnavailable" class="no-plot-message" role="status">{{ mcrSpectraUnavailable }}</p>
           <!-- MCR-ALS / SIMPLISMA -->
           <template
             v-if="state.nodeTypeKey === 'model.mcr_als' || state.nodeTypeKey === 'model.simplisma'"
@@ -1469,6 +1470,7 @@ embedded :model-value="true"
 </template>
 
 <script setup lang="ts">
+import { spectralTruthLimitation } from "@/utils/scientificPlotState";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import { computed, inject, ref, watch } from "vue";
@@ -1601,6 +1603,10 @@ type McrCandidatePair = {
 const selectedMcrCandidate = ref(0);
 const selectedLibraryCandidateKeys = ref<string[]>([]);
 const selectedLibrarySample = ref<string | number | null>(null);
+
+const mcrSpectraUnavailable = computed(() =>
+  spectralTruthLimitation(state.value.nodeTypeKey, state.value.nodeOutput?.metadata),
+);
 
 const mcrGroundTruthComparison = computed<Record<string, any> | null>(() => {
   if (state.value.nodeTypeKey !== "model.mcr_als") return null;

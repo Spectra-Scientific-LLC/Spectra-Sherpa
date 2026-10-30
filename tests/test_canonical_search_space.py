@@ -256,3 +256,22 @@ def test_declared_margin_is_bound_into_the_search_space_identity() -> None:
     assert canonical_search_space_from_record(baseline, strict.as_dict()).digest == strict.digest
     with pytest.raises(CanonicalSearchSpaceError):
         canonical_search_space_from_record(baseline, {**strict.as_dict(), "minimum_improvement": 0.0})
+
+
+@pytest.mark.parametrize(
+    "parameter,value",
+    [("component_selection_rule", "one_standard_error"), ("component_curve_max", 15), ("component_cv_folds", 4)],
+)
+def test_reporting_only_pls_grid_is_refused_prospectively_without_breaking_saved_records(parameter, value):
+    from spectra_sherpa.app.services.dag.canonical_search_space import _canonical_search_space_from_request
+
+    baseline = _baseline()
+    request = {
+        "slots": [{"node_id": "model", "parameter": parameter, "values": [value]}],
+        "validation_budget": 2,
+        "minimum_improvement": 0.0,
+    }
+    old = _canonical_search_space_from_request(baseline, request)
+    assert canonical_search_space_from_record(baseline, old.as_dict()).as_dict() == old.as_dict()
+    with pytest.raises(CanonicalSearchSpaceError, match="validation protocol"):
+        canonical_search_space_from_request(baseline, request)

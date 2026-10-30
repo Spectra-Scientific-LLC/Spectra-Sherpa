@@ -4886,6 +4886,8 @@ export interface components {
          */
         BindingCompatibilityPreviewRequest: {
             binding: components["schemas"]["DataBindingSpec"];
+            /** Held Out Groups */
+            held_out_groups?: string[];
             /** Project Id */
             project_id: number;
             /**
@@ -4893,6 +4895,12 @@ export interface components {
              * @default false
              */
             use_saved_analysis_selection?: boolean;
+            /**
+             * Validation Goal
+             * @default unseen_specimens
+             * @enum {string}
+             */
+            validation_goal?: "unseen_specimens" | "known_specimen_cross_block";
         };
         /** Body_attach_collection_definition_endpoint_api_v1_experiments__experiment_id__collection_definition_put */
         Body_attach_collection_definition_endpoint_api_v1_experiments__experiment_id__collection_definition_put: {

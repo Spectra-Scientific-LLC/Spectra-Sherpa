@@ -38,6 +38,7 @@
       <h4>Latent variables <MethodHelp topic="componentSelection" label="Component selection" /></h4>
       <p>Selected: <strong>{{ summary.componentSelection.selectedComponents }} LV</strong> ·
         {{ summary.componentSelection.nCalibration }} calibration samples · {{ summary.componentSelection.scaling.replace(/_/g, ' ') }}.</p>
+      <p v-if="summary.componentSelection.automaticFit">Selected by training-fold CV (one-standard-error); refitted on training samples.</p>
       <details><summary>Component choice</summary>
         {{ summary.componentSelection.selectionRule.replace(/_/g, ' ') }} · {{ summary.componentSelection.selectionRuleStatus.replace(/_/g, ' ') }}
         <span v-if="summary.componentSelection.splitDigest"> · Split {{ summary.componentSelection.splitDigest }}</span>

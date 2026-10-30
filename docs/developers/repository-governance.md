@@ -44,8 +44,11 @@ verified by the publication tool.
 ## Copy policy
 
 Use the [glossary](../concepts/glossary.md). The initial gate deliberately checks
-only three product phrases: “Execute workflow” → “Run workflow”, “Data Portfolio”
-→ “Dataset”, and “Short scientific summary” → “Short summary”.
+two obsolete product phrases: “Execute workflow” → “Run workflow” and
+“Short scientific summary” → “Short summary”. **Data Portfolio** is the approved
+name for the saved analysis selection on My Dataset, Workflow, and Analysis Starter;
+Dataset continues to name the underlying scientific data. This terminology decision
+changes the rule, not the zero-occurrence baseline.
 
 `python scripts/check_user_copy.py` scans Vue text, selected static attributes,
 quoted literals in bound attributes/interpolations and frontend JavaScript or
@@ -55,7 +58,7 @@ methodology, T², Q, RMSEC/RMSECV/RMSEP) and identifiers are not rewritten.
 Runtime-composed strings, backend copy, other docs and translations remain
 outside this gate; it does not evaluate code or claim complete prose coverage.
 
-The three-phrase inventory has been burned down to **zero**. The baseline must
+The prohibited-phrase inventory has been burned down to **zero**. The baseline must
 remain empty; editing it to match new occurrences fails the check. The explicit
 baseline-writing option refuses to record violations. This gate runs through
 `make evidence-check` in public CI as well as the lightweight copy check.
