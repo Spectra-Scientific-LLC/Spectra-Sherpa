@@ -194,3 +194,28 @@ describe("provider-independent parsed Data Story facts", () => {
     expect(facts.omitted_for_input_limit).toBeDefined();
   });
 });
+
+
+describe("complete multi-view source stories", () => {
+  it("retains incompatible views separately without inventing distinct specimens", () => {
+    const views = [21, 129, 71].map((features, index) => ({
+      ...source, title: `Metal Etch view ${index}`, n_samples: 80, n_features: features,
+      metadata: { ...source.metadata, path: '/private/source', password: 'private' },
+    }));
+    const context = buildDataStoryContext({ source_views: views });
+    expect(context.facts.view_count).toBe(3);
+    expect(context.facts.n_samples).toBeUndefined();
+    expect(context.facts.population_note).toContain('Do not sum');
+    expect((context.facts.source_views as Record<string, unknown>[]).map(view => view.n_features)).toEqual([21, 129, 71]);
+    expect(JSON.stringify(context)).not.toContain('/private/source');
+    expect(JSON.stringify(context)).not.toContain('password');
+    expect(localStoryMessage({ source_views: views }, '')).toContain(JSON.stringify(context.facts));
+  });
+  it("bounds large packages without dropping a view", () => {
+    const views = Array.from({length: 16}, (_, index) => ({...source, title: `view ${index}`, description: 'a'.repeat(800)}));
+    const { facts } = buildDataStoryContext({source_views: views});
+    expect((facts.source_views as unknown[])).toHaveLength(16);
+    expect(JSON.stringify(facts).length).toBeLessThanOrEqual(12000);
+    expect(facts.omitted_for_input_limit).toBeDefined();
+  });
+});

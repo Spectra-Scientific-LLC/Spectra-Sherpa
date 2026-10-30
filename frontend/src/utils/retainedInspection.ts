@@ -4,6 +4,17 @@ import { toRaw } from "vue";
 // This is a receipt of an actual complete-source inspection, not a shape-based
 // inference. Weak keys retain no extra dataset after its workspace releases it.
 const completeSources = new WeakMap<object, string>();
+const completePackages = new WeakMap<object, { scope: string; views: SherpaDatasetDict[] }>();
+
+/** A source-package receipt follows the retained modeling object across navigation. */
+export function retainCompletePackage(dataset: SherpaDatasetDict, views: SherpaDatasetDict[], scope: string): void {
+  completePackages.set(toRaw(dataset), { scope, views });
+}
+
+export function retainedCompletePackage(dataset: SherpaDatasetDict | null | undefined, scope: string): SherpaDatasetDict[] | null {
+  const receipt = dataset && completePackages.get(toRaw(dataset));
+  return receipt?.scope === scope ? receipt.views : null;
+}
 
 export function retainCompleteSource(dataset: SherpaDatasetDict, scope: string): void {
   completeSources.set(toRaw(dataset), scope);
@@ -44,6 +55,7 @@ export function clearRetainedInspection(dataset: object | null): void {
   if (dataset) {
     requests.delete(dataset);
     completeSources.delete(toRaw(dataset));
+    completePackages.delete(toRaw(dataset));
   }
 }
 const workspaces = new WeakMap<

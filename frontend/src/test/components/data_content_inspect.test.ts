@@ -2067,6 +2067,61 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     expect(mocks.dataStore.activateFile).toHaveBeenCalledWith(second.id, second.file_path);
   });
 
+  it.each([
+    ['Corn', ['corn-m5', 'corn-mp5', 'corn-mp6'], [700, 700, 700]],
+    ['Metal Etch', ['metal-etch-machine', 'metal-etch-oes', 'metal-etch-rfm'], [21, 129, 71]],
+  ])('inspects every %s source view separately without replacing the selected modeling view', async (_name, stems, dimensions) => {
+    const first = mocks.dataStore.experimentFiles[0];
+    mocks.dataStore.experimentFiles = (stems as string[]).map((stem, index) => ({...first, id: 22 + index, file_path: `raw/${stem}.mat`}));
+    mocks.dataStore.experiments[0].file_count = 3;
+    const selected = {n_samples: 80, n_features: dimensions[0], data: [[1]], metadata: {contents_file_count: 1}};
+    mocks.dataStore.inspectExperimentRawFiles.mockImplementation(async () => {
+      mocks.dataStore.fileInfo = selected;
+      return selected;
+    });
+    vi.mocked(api.post).mockImplementation(async (_url, body: any) => ({data: {
+      n_samples: 80, n_features: dimensions[(body.file_ids?.[0] ?? 22) - 22], data: [[1]],
+      metadata: {contents_file_count: 1},
+    }})) as never;
+    const wrapper = mountDataContent(); await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    await vm.showExperimentContents(11); await flushPromises();
+    const story = vm.dataStoryInspectedSource as unknown as {source_views: Array<{n_features: number}>};
+    expect(story.source_views.map(view => view.n_features)).toEqual(dimensions);
+    expect(mocks.dataStore.fileInfo).toEqual(selected);
+    for (const id of [22, 23, 24]) expect(api.post).toHaveBeenCalledWith('/builder/file-info',
+      {experiment_id: 11, file_ids: [id]}, expect.objectContaining({signal: expect.any(AbortSignal)}));
+    wrapper.unmount();
+    const restored = mountDataContent(); await flushPromises();
+    const restoredStory = (restored.vm as unknown as DataContentVm).dataStoryInspectedSource as unknown as {source_views: Array<{n_features: number}>};
+    expect(restoredStory.source_views.map(view => view.n_features)).toEqual(dimensions);
+    restored.unmount();
+  });
+
+  it.each([false, true])("does not certify an old package response after inventory changes (restore original: %s)", async (restoreOriginal) => {
+    const original = mocks.dataStore;
+    mocks.dataStore = reactive(original);
+    const first = mocks.dataStore.experimentFiles[0];
+    mocks.dataStore.experimentFiles = ['corn-m5', 'corn-mp5', 'corn-mp6'].map((stem, index) => ({...first, id: 22 + index, file_path: `raw/${stem}.mat`}));
+    const selected = {n_samples: 80, n_features: 700, data: [[1]], metadata: {contents_file_count: 1}};
+    mocks.dataStore.fileInfo = selected;
+    mocks.dataStore.inspectExperimentRawFiles.mockImplementation(async () => selected);
+    let finish!: (value: unknown) => void;
+    const pending = new Promise(resolve => { finish = resolve; });
+    vi.mocked(api.post).mockImplementation(async (_url, body: any) =>
+      body.file_ids?.[0] === 24 ? pending : {data: selected}) as never;
+    const wrapper = mountDataContent(); await flushPromises();
+    try {
+      const vm = wrapper.vm as unknown as DataContentVm;
+      const showing = vm.showExperimentContents(11); await flushPromises();
+      const priorFiles = mocks.dataStore.experimentFiles;
+      mocks.dataStore.experimentFiles = mocks.dataStore.experimentFiles.slice(0, 2);
+      if (restoreOriginal) mocks.dataStore.experimentFiles = priorFiles;
+      await flushPromises(); finish({data: selected}); await showing; await flushPromises();
+      expect(vm.dataStoryInspectedSource).toBeNull();
+    } finally { wrapper.unmount(); mocks.dataStore = original; }
+  });
+
   it("retains verified complete source facts across route return, not an arbitrary retained preview", async () => {
     const source = {
       n_samples: 2, n_features: 3, data: [[1, 2, 3], [4, 5, 6]],

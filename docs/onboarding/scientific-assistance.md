@@ -36,6 +36,18 @@ from typing a basic chat message; review [privacy](../support/privacy.md) before
 sharing scientific metadata. The generated narrative does not replace the data
 table or its recorded units.
 
+For a source package such as Corn or Metal Etch, Data Story inspects every source
+view separately. The story can describe different instruments, feature spaces and
+acquisition settings without concatenating their matrices. Row counts stay per view:
+multiple views can measure the same specimens, so their counts are not a total
+number of independent samples. The selected modeling view remains unchanged.
+
+Generate is enabled only when the complete source inspection is available. A partial
+plot preview is not enough. The inspected source summary survives navigation within
+the same account and project; changes to the source inventory invalidate it.
+Generation remains on demand, with bounded metadata and explicit omissions when
+secondary details do not fit the input limit.
+
 Managed project-aware Advisor is a separate hosted feature, not local basic chat.
 
 ## Ask a question tied to the evidence

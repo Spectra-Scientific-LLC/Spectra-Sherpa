@@ -700,17 +700,22 @@ export const useSherpaStore = defineStore("sherpa", () => {
     return createSherpaMessage(
       "assistant",
       [
-        "Welcome to Sherpa Advisor. Quick tour:",
-        "",
-        "1. **Dashboard** — start a new analysis or return to recent work.",
-        "2. **Project** — review project context, files, and Advisor memory.",
-        "3. **Data** — import, upload, synthesize, or stage library datasets.",
-        "4. **Workflows** — build and run chemometric pipelines.",
-        "5. **Runs** — inspect model runs, metrics, outputs, and saved models.",
-        "6. **Deploy** — package validated workflows for reuse.",
-        "7. **Report** — turn results into shareable analysis notes.",
-        "",
-        "Use **Settings** for keys and integrations. Ask me as you go; I can explain choices, diagnose runs, and suggest next steps.",
+        "Welcome to Sherpa Advisor. Quick tour:", "",
+        ...[
+          "**Dashboard** — start a new analysis or return to recent work.",
+          "**Project** — review project context, files, and Advisor memory.",
+          appMode.value === "enterprise" && siteProfile.value === "demo"
+            ? "**Data** — import reference datasets, synthesize spectra, and explore library sources. Demo accepts approved public datasets; personal-file uploads are unavailable."
+            : "**Data** — import, upload, synthesize, or stage library datasets.",
+          "**Workflows** — build and run chemometric pipelines.",
+          "**Runs** — inspect model runs, metrics, outputs, and saved models.",
+          ...(appConfig.value?.features?.managedCampaigns ? ["**Optimize** — compare preprocessing and model settings using a consistent validation setup."] : []),
+          appMode.value === "enterprise"
+            ? "**Deploy** — local folder watching is unavailable in the cloud application. Saved models remain available in Runs."
+            : "**Deploy** — package validated workflows for reuse.",
+          "**Report** — turn results into shareable analysis notes.",
+        ].map((text, index) => `${index + 1}. ${text}`),
+        "", "Use **Settings** for keys and integrations. Ask me as you go; I can explain choices, diagnose runs, and suggest next steps.",
       ].join("\n"),
     );
   }

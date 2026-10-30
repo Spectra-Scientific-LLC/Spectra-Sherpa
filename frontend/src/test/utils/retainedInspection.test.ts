@@ -4,6 +4,8 @@ import {
   retainedInspection,
   retainedDatasetWorkspace,
   retainCompleteSource,
+  retainCompletePackage,
+  retainedCompletePackage,
   retainedCompleteSource,
 } from "@/utils/retainedInspection";
 
@@ -19,6 +21,21 @@ describe("retained inspection reads", () => {
     expect(retainedCompleteSource(source, "user1:project5:experiment3:files4")).toBeNull();
     clearRetainedInspection(source);
     expect(retainedCompleteSource(source, scope)).toBeNull();
+  });
+  it("invalidates package receipts on object, source scope, refresh and account changes", () => {
+    const owner = {};
+    const dataset = {n_samples: 1, n_features: 1, data: [[1]]};
+    const views = [dataset, {...dataset}];
+    retainedDatasetWorkspace(owner, 'user1:project1').set(1, dataset);
+    retainCompletePackage(dataset, views, 'user1:project1:files-a');
+    expect(retainedCompletePackage(dataset, 'user1:project1:files-a')).toBe(views);
+    expect(retainedCompletePackage({...dataset}, 'user1:project1:files-a')).toBeNull();
+    expect(retainedCompletePackage(dataset, 'user1:project1:files-b')).toBeNull();
+    retainedDatasetWorkspace(owner, 'user2:project1');
+    expect(retainedCompletePackage(dataset, 'user1:project1:files-a')).toBeNull();
+    retainCompletePackage(dataset, views, 'user2:project1:files-a');
+    clearRetainedInspection(dataset);
+    expect(retainedCompletePackage(dataset, 'user2:project1:files-a')).toBeNull();
   });
   it("retains workspace sources across routes and clears them on scope changes", () => {
     const owner = {};

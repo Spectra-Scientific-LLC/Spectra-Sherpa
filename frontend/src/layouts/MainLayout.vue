@@ -57,7 +57,6 @@
           @toggle-nav="toggleNav"
           @toggle-chat="toggleChat"
         />
-        <ProductMap v-if="appMode === 'enterprise' && siteProfile === 'demo'" compact />
         <main class="content">
           <router-view />
         </main>
@@ -100,7 +99,6 @@ import GuidanceGlowOverlay from "@/components/guidance/GuidanceGlowOverlay.vue";
 import GuidanceToast from "@/components/guidance/GuidanceToast.vue";
 import SherpaUpgradeModal from "@/components/SherpaUpgradeModal.vue";
 import DemoUpgradeModal from "@/components/DemoUpgradeModal.vue";
-import ProductMap from "@/components/ProductMap.vue";
 
 import Sidebar from "@/components/Sidebar.vue";
 import Topbar from "@/components/Topbar.vue";

@@ -1,5 +1,5 @@
 import { attentionSnapshot, type ActiveAttention } from "@/lib/sherpaAttention";
-import { guidanceReadyActions } from "@/lib/guidanceReadyActions";
+import { guidanceReadyActions, guidanceReadyContexts } from "@/lib/guidanceReadyActions";
 import { onBeforeUnmount, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useAppConfig } from "@/composables/useAppConfig";
@@ -23,6 +23,7 @@ interface ActivityPayload {
   active_attention?: ActiveAttention;
   workflow_id?: number;
   ready_actions?: string[];
+  ready_contexts?: Record<string, string>;
 }
 
 export function useActivityTracker() {
@@ -43,6 +44,7 @@ export function useActivityTracker() {
   }
 
   async function send(kind: GuidanceActivityKind, extras: Partial<ActivityPayload> = {}): Promise<void> {
+    guidanceStore.refreshActionContexts();
     if (!canTrack()) return;
     let ws = llmStore.wsRef;
     if (ws?.readyState !== WebSocket.OPEN) {
@@ -60,6 +62,7 @@ export function useActivityTracker() {
       kind,
       active_attention: attentionSnapshot(),
       ready_actions: guidanceReadyActions(),
+      ready_contexts: guidanceReadyContexts(),
       route: route.path,
       project_id: projectId,
       scope_node_id: scopeNodeId,

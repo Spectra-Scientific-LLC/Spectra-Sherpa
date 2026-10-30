@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   isFeatureEnabled: vi.fn((feature: string) => feature === "sherpaGuidance"),
   guidanceStore: {
     isEnabled: true,
+    refreshActionContexts: vi.fn(),
     acknowledgeActionClick: vi.fn().mockResolvedValue(undefined),
   },
   wsSend: vi.fn(),
