@@ -2164,6 +2164,33 @@ async def preview_bound_source_compatibility(
             for template in templates
         ],
     )
+    # A typed target in the source profile is an available column, not the
+    # scientist's selection. Match create-time admission before offering Start.
+    if binding.target_authority is None and binding.target_binding is None:
+        by_slug = {template.slug: template for template in templates}
+        for decision in readiness["decisions"]:
+            template = by_slug[decision["template_slug"]]
+            source_ids = [
+                str(node["node_id"])
+                for node in template.template_data.get("nodes", [])
+                if node["node_type"] == "data.file_load"
+            ]
+            if decision["status"] == "compatible" and any(
+                _binding_consumes_target(template, node_id)
+                and _required_separate_target_type(template, node_id) is None
+                for node_id in source_ids
+            ):
+                readiness["counts"][decision["display_status"]] -= 1
+                readiness["counts"]["needs_target"] += 1
+                decision.update(status="needs_input", display_status="needs_target")
+                decision["reason_codes"].append("target_missing")
+                decision["reasons"].append(
+                    {
+                        "code": "target_missing",
+                        "message": "Select a response or class label in My Dataset.",
+                        "role": None,
+                    }
+                )
     if admitted_datasets:
         by_slug = {template.slug: template for template in templates}
         for decision in readiness["decisions"]:

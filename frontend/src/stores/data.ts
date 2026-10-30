@@ -1,7 +1,7 @@
 import { sherpaResponseTimeoutMs } from "@/lib/sherpaTimeouts";
 import { clearRetainedDatasetWorkspace } from "@/utils/retainedInspection";
 import { streamLocalDataStory } from "@/lib/localDataStory";
-import { buildDataStoryContext } from "@/lib/dataStoryFacts";
+import { buildDataStoryContext, type DataStorySource } from "@/lib/dataStoryFacts";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
@@ -1189,7 +1189,7 @@ export const useDataStore = defineStore("data", () => {
   };
 
   const generateDataStory = async (
-    inspectedSource?: SherpaDatasetDict | null,
+    inspectedSource?: DataStorySource | null,
     options?: { cacheKey?: string | null; force?: boolean },
   ) => {
     const cacheKey = options?.cacheKey;

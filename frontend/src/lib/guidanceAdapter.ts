@@ -19,6 +19,7 @@ export interface GuidanceNotification {
   body?: string | null;
   action_id?: string | null;
   action_version?: number | null;
+  action_context?: string | null;
   confidence: number;
   source: string;
   created_at: string;

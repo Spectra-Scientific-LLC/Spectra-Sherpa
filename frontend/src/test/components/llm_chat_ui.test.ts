@@ -584,7 +584,9 @@ describe("ChatPanel", () => {
     await sherpaTab!.trigger("click");
     await flushPromises();
 
-    await wrapper.find('[aria-label="Start new Sherpa conversation"]').trigger("click");
+    expect(wrapper.find('[aria-label="Start new Sherpa conversation"]').exists()).toBe(false);
+    const topicMenu = wrapper.findAllComponents(MenuStub).find(menu => menu.props('model').some((item: any) => item.label === 'New conversation'))!;
+    await (topicMenu.props('model')[0].command as () => Promise<void>)();
     await flushPromises();
 
     expect(mocks.advisorStore.createTopic).toHaveBeenCalledWith({ title: "Topic 1" });
@@ -606,7 +608,9 @@ describe("ChatPanel", () => {
     await sherpaTab!.trigger("click");
     await flushPromises();
 
-    await wrapper.find('[aria-label="Start new Sherpa conversation"]').trigger("click");
+    expect(wrapper.find('[aria-label="Start new Sherpa conversation"]').exists()).toBe(false);
+    const topicMenu = wrapper.findAllComponents(MenuStub).find(menu => menu.props('model').some((item: any) => item.label === 'New conversation'))!;
+    await (topicMenu.props('model')[0].command as () => Promise<void>)();
     await flushPromises();
 
     expect(mocks.advisorStore.createTopic).not.toHaveBeenCalled();
@@ -640,13 +644,15 @@ describe("ChatPanel", () => {
     await sherpaTab!.trigger("click");
     await flushPromises();
 
-    const newButton = wrapper.find('[aria-label="Start new Sherpa conversation"]');
-    await newButton.trigger("click");
-    await newButton.trigger("click");
+    const topicMenu = wrapper.findAllComponents(MenuStub).find(menu => menu.props('model').some((item: any) => item.label === 'New conversation'))!;
+    const start = topicMenu.props('model')[0].command as () => Promise<void>;
+    const first = start();
+    await start();
 
     expect(mocks.advisorStore.createTopic).toHaveBeenCalledTimes(1);
 
     resolveCreateTopic({ id: 202, conversation_id: null });
+    await first;
     await flushPromises();
 
     expect(mocks.advisorStore.setActiveTopic).toHaveBeenCalledWith(202);

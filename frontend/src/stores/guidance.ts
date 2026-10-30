@@ -28,6 +28,8 @@ export interface GuidanceEvent {
   body?: string | null;
   action_id?: string | null;
   action_version?: number | null;
+  action_context?: string | null;
+  project_id?: number | null;
   rule_id: string;
   confidence: number;
   expires_at: string;
@@ -116,6 +118,7 @@ export const useGuidanceStore = defineStore("guidance", () => {
 
   async function handleEvent(event: GuidanceEvent): Promise<void> {
     if (!settings.value.guidance_enabled) return;
+    if (event.action_id?.startsWith("review_optimization_") && !contextMatches(event.action_id, event.action_context)) return;
     const shouldShowToast = canShowToast.value && (event.kind === "toast" || event.kind === "both");
     const shouldShowGlow =
       canShowGlow.value && (event.kind === "glow" || event.kind === "both") && _actionVersionMatches(event);
@@ -166,7 +169,7 @@ export const useGuidanceStore = defineStore("guidance", () => {
     }
     notifications.value.unshift({
       id: event.notification_id,
-      project_id: useProjectStore().currentProjectId,
+      project_id: event.project_id ?? useProjectStore().currentProjectId,
       advisor_node_id: null,
       rule_id: event.rule_id,
       kind: event.kind,
@@ -174,6 +177,7 @@ export const useGuidanceStore = defineStore("guidance", () => {
       body: event.body,
       action_id: event.action_id,
       action_version: event.action_version,
+      action_context: event.action_context,
       confidence: event.confidence,
       source: event.source,
       created_at: new Date().toISOString(),
@@ -187,7 +191,7 @@ export const useGuidanceStore = defineStore("guidance", () => {
   function _mergeNotification(update: GuidanceNotification): void {
     const index = notifications.value.findIndex((item) => item.id === update.id);
     if (index >= 0) {
-      notifications.value[index] = update;
+      notifications.value[index] = { ...update, action_context: notifications.value[index].action_context };
     } else {
       notifications.value.unshift(update);
     }
@@ -224,7 +228,7 @@ export const useGuidanceStore = defineStore("guidance", () => {
     const action = resolveGuidanceAction(toast.action_id);
     const projectId = notifications.value.find(item => item.id === toast.notification_id)?.project_id ?? useProjectStore().currentProjectId;
     await acknowledgeNotification(toast.notification_id, "clicked");
-    await runGuidanceAction(action, projectId);
+    await runGuidanceAction(action, projectId, toast.action_context);
   }
 
   async function acknowledgeActionClick(actionId: string): Promise<void> {
@@ -241,7 +245,7 @@ export const useGuidanceStore = defineStore("guidance", () => {
   async function clickNotification(notification: GuidanceNotification): Promise<void> {
     const action = resolveGuidanceAction(notification.action_id);
     await acknowledgeNotification(notification.id, "clicked");
-    await runGuidanceAction(action, notification.project_id);
+    await runGuidanceAction(action, notification.project_id, notification.action_context);
   }
 
   function unavailable(message: string): false {
@@ -250,8 +254,19 @@ export const useGuidanceStore = defineStore("guidance", () => {
     return false;
   }
 
-  async function runGuidanceAction(action: ReturnType<typeof resolveGuidanceAction>, sourceProject = useProjectStore().currentProjectId): Promise<boolean> {
+  function contextMatches(actionId: string, context?: string | null): boolean {
+    const target = findActionTarget(actionId);
+    return !!context && target?.dataset.guidanceContext === context;
+  }
+  function refreshActionContexts(): void {
+    for (const event of [activeToast.value, activeGlow.value]) {
+      if (event?.action_id?.startsWith("review_optimization_") && !contextMatches(event.action_id, event.action_context)) _clearActive(event.notification_id);
+    }
+  }
+  async function runGuidanceAction(action: ReturnType<typeof resolveGuidanceAction>, sourceProject = useProjectStore().currentProjectId, context?: string | null): Promise<boolean> {
     if (!action) return false;
+    if (action.actionId.startsWith("review_optimization_") && !contextMatches(action.actionId, context))
+      return unavailable("This suggestion belongs to an earlier campaign result. Review the current ranking.");
     const projectId = useProjectStore().currentProjectId;
     if (sourceProject != null && sourceProject !== projectId) return unavailable("This suggestion belongs to another project. Reopen that project first.");
     const sameProject = () => useProjectStore().currentProjectId === projectId;
@@ -321,7 +336,7 @@ export const useGuidanceStore = defineStore("guidance", () => {
   async function runAction(actionId: string): Promise<boolean> {
     const action = resolveGuidanceAction(actionId);
     if (!action) return false;
-    return runGuidanceAction(action);
+    return runGuidanceAction(action, useProjectStore().currentProjectId, findActionTarget(actionId)?.dataset.guidanceContext);
   }
 
   function _waitForAdvisorScope(
@@ -365,7 +380,15 @@ export const useGuidanceStore = defineStore("guidance", () => {
     loading.value = true;
     error.value = null;
     try {
-      notifications.value = await listGuidanceNotifications(options);
+      const refreshed = await listGuidanceNotifications(options);
+      // Contexts are ephemeral: retain only a matching notification received
+      // in this session, never infer an old notification's binding from the DOM.
+      const live = new Map(notifications.value.map(item => [item.id, item]));
+      notifications.value = refreshed.map(item => {
+        const previous = live.get(item.id);
+        return previous?.action_id === item.action_id && previous?.project_id === item.project_id && previous.action_context
+          ? { ...item, action_context: previous.action_context } : item;
+      });
     } catch (err) {
       error.value = err instanceof Error ? err.message : "Failed to load guidance notifications.";
     } finally {
@@ -396,5 +419,6 @@ export const useGuidanceStore = defineStore("guidance", () => {
     clickNotification,
     dismissNotification,
     runAction,
+    refreshActionContexts,
   };
 });

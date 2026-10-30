@@ -364,8 +364,8 @@ describe("MainLayout chat panel defaults", () => {
   });
 
   it.each([
-    ['local', null, false], ['enterprise', 'demo', true], ['enterprise', 'pro', false],
-  ] as const)('shows the compact product map only for Demo (%s / %s)', (mode, profile, visible) => {
+    ['local', null, false], ['enterprise', 'demo', false], ['enterprise', 'pro', false],
+  ] as const)('does not repeat the product map on workspace pages (%s / %s)', (mode, profile, visible) => {
     mocks.appMode.value = mode;
     mocks.siteProfile.value = profile;
     const wrapper = mount(MainLayout, mainLayoutMountOptions);

@@ -33,6 +33,8 @@ export interface GuidanceActionMeta {
 }
 
 export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
+  review_optimization_candidate: { actionId: "review_optimization_candidate", actionVersion: 1, label: "Review candidate", clickTarget: "review_optimization_candidate" },
+  review_optimization_plateau: { actionId: "review_optimization_plateau", actionVersion: 1, label: "Review stopping point", clickTarget: "review_optimization_plateau" },
   open_analysis_starters: {
     actionId: "open_analysis_starters",
     actionVersion: 1,

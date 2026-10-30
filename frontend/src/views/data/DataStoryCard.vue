@@ -40,12 +40,12 @@ import InputText from "primevue/inputtext";
 import ChatMarkdown from "@/components/ChatMarkdown.vue";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDataStore } from "@/stores/data";
-import type { SherpaDatasetDict } from "@/types";
+import type { DataStorySource } from "@/lib/dataStoryFacts";
 
 const props = defineProps<{
   sourceKey: string | null;
   ready: boolean;
-  inspectedSource?: SherpaDatasetDict | null;
+  inspectedSource?: DataStorySource | null;
   unavailableReason?: string | null;
 }>();
 const dataStore = useDataStore();

@@ -49,13 +49,6 @@
           <span class="tab-label">{{ activeTabLabel }}</span>
         </div>
         <div class="panel-topbar-actions">
-          <span
-            v-if="activeTab === 'sherpa' && sherpaScopeBreadcrumb"
-            class="sherpa-scope-breadcrumb"
-            :title="`Sherpa Advisor scope: ${sherpaScopeBreadcrumb}`"
-          >
-            {{ sherpaScopeBreadcrumb }}
-          </span>
           <div v-if="qualified && activeTab === 'sherpa'" class="sherpa-conversation-picker">
             <select aria-label="Project conversations" :value="sherpaStore.currentConversationId ?? ''"
               @focus="sherpaStore.refreshConversations()"
@@ -97,14 +90,6 @@
                 </div>
               </template>
             </Menu>
-            <Button
-              icon="pi pi-plus"
-              class="p-button-text p-button-sm llm-settings-btn"
-              :disabled="isCreatingSherpaTopic"
-              aria-label="Start new Sherpa conversation"
-              @click="startNewSherpaConversation"
-              v-tooltip.bottom="'New Sherpa conversation'"
-            />
           </div>
           <div v-if="activeTab === 'llm'" class="sherpa-conversation-picker">
             <Button
@@ -501,33 +486,6 @@ const { isDemoMode } = useDemoMode();
 const isCreatingSherpaTopic = ref(false);
 
 const llmSupplier = computed(() => store.currentConfig?.provider ?? undefined);
-
-// R3 — Sherpa scope breadcrumb.  Reads the active memory node and
-// renders ``Tab › subscope`` (e.g. "Workflow › Sheet 1", "Data › Explore").
-// Hidden when no node is active (e.g. before a project is selected).
-const TAB_DISPLAY: Record<string, string> = {
-  project: "Project",
-  data: "Data",
-  workflow: "Workflow",
-  experiments: "Experiments",
-  deploy: "Deploy",
-  report: "Report",
-};
-
-function _formatSubscope(subscope: string, title: string | null): string {
-  if (title) return title;
-  if (subscope.startsWith("sheet:")) return `Sheet ${subscope.slice(6)}`;
-  if (subscope.startsWith("trial:")) return "Trial";
-  return subscope.charAt(0).toUpperCase() + subscope.slice(1);
-}
-
-const sherpaScopeBreadcrumb = computed<string | null>(() => {
-  const node = advisorStore.activeNode;
-  if (!node) return null;
-  const tab = TAB_DISPLAY[node.tab_key] ?? node.tab_key;
-  const sub = _formatSubscope(node.subscope_key, node.title);
-  return `${tab} › ${sub}`;
-});
 
 const userMessage = ref("");
 const messageContainer = ref<HTMLDivElement | null>(null);
@@ -1565,7 +1523,8 @@ const collapsed = computed(() => props.collapsed);
 .panel-topbar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   gap: 12px;
   padding: 8px 12px;
   background: var(--ss-surface-subtle);
@@ -1589,7 +1548,7 @@ const collapsed = computed(() => props.collapsed);
 .panel-topbar-actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   margin-left: auto;
   min-width: 0;

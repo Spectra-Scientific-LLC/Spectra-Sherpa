@@ -1,3 +1,5 @@
+import type { SherpaDatasetDict } from "@/types";
+export type DataStorySource = SherpaDatasetDict | { source_views: SherpaDatasetDict[] };
 import { summarizeDatasetAxis } from "@/utils/datasetAxisSets";
 
 type StoryFacts = Record<string, unknown>;
@@ -193,6 +195,28 @@ function acquisitionSummary(metadata: StoryFacts): StoryFacts | null {
 
 /** Shared parsed facts for BYOK and hosted narration; transport adds no projection. */
 export function buildDataStoryFacts(dataset: StoryFacts): StoryFacts {
+  if (Array.isArray(dataset.source_views)) {
+    const views = dataset.source_views;
+    if (!views.length || views.length > 16) throw new Error("Data Story supports packages with one to sixteen inspected views.");
+    const facts: StoryFacts = {
+      scope: "complete source package, with each view inspected independently",
+      view_count: views.length,
+      population_note: "Views may measure the same specimens. Do not sum their row counts or assume aligned samples without recorded identity evidence.",
+      source_views: views.map(view => buildDataStoryFacts(object(view))),
+    };
+    if (JSON.stringify(facts).length > MAX_FACTS_CHARS) {
+      // Preserve every view's scientific shape, axes, acquisition and target
+      // names. Drop secondary detail evenly, never entire views silently.
+      facts.source_views = (facts.source_views as StoryFacts[]).map(view => Object.fromEntries(
+        ["dataset", "source", "technique", "is_spectra", "is_time_series", "shape", "n_samples", "n_features", "units", "data_role", "targets", "acquisition"]
+          .map(key => [key, view[key]]).concat([["x_axis", Object.fromEntries(
+            ["min", "max", "count", "units"].map(key => [key, object(view.x_axis)[key]]))]]),
+      ));
+      facts.omitted_for_input_limit = ["secondary per-view metadata and distributions"];
+    }
+    if (JSON.stringify(facts).length > MAX_FACTS_CHARS) throw new Error("The complete package summary exceeds the Data Story input limit.");
+    return facts;
+  }
   const axis = object(dataset.x_axis);
   const axisSummary = summarizeDatasetAxis(dataset.x_axis, {
     min: axis.min ?? dataset.wavelength_min, max: axis.max ?? dataset.wavelength_max,

@@ -51,11 +51,13 @@ def _targeted_template_data() -> dict:
     }
 
 
+@pytest.mark.parametrize("available_target", [False, True])
 @pytest.mark.asyncio
 async def test_bound_source_preview_readmits_active_sheet_before_offering_starter(
     auth_client: AsyncClient,
     test_session: AsyncSession,
     test_user: User,
+    available_target: bool,
 ) -> None:
     template = WorkflowTemplate(
         slug="bound_preview_regression",
@@ -73,8 +75,8 @@ async def test_bound_source_preview_readmits_active_sheet_before_offering_starte
         "primary_role": "X_features",
         "modality": "features",
         "technique": "ML/Statistics",
-        "target_type": None,
-        "target_fields": [],
+        "target_type": "continuous" if available_target else None,
+        "target_fields": ["Moisture"] if available_target else [],
         "identity_fields": [],
         "group_fields": [],
         "ordered_samples": False,
@@ -96,7 +98,8 @@ async def test_bound_source_preview_readmits_active_sheet_before_offering_starte
     validate.assert_awaited_once()
     decision = next(item for item in response.json()["decisions"] if item["template_slug"] == template.slug)
     assert decision["status"] == "needs_input"
-    assert decision["reason_codes"] == ["continuous_target_missing"]
+    assert decision["reason_codes"] == (["target_missing"] if available_target else ["continuous_target_missing"])
+    assert decision["display_status"] == "needs_target"
 
 
 @pytest.mark.asyncio

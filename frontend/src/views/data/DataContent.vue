@@ -1679,6 +1679,8 @@ import {
   clearRetainedInspection,
   retainedInspection,
   retainCompleteSource,
+  retainCompletePackage,
+  retainedCompletePackage,
   retainedCompleteSource,
   retainedDatasetWorkspace,
 } from "@/utils/retainedInspection";
@@ -3208,12 +3210,17 @@ const activeSelectedFiles = computed(() => {
 const dataStoryFiles = computed(() => originalSourceFiles.value);
 const storyContentsReadyFor = ref<SherpaDatasetDict | null>(null);
 const sourceStoryInspection = ref<{
+  views?: SherpaDatasetDict[];
   experimentId: number;
   filesKey: string;
   dataset: SherpaDatasetDict;
 } | null>(null);
 const dataStoryInspectedSource = computed(() => {
+  const retainedViews = retainedCompletePackage(dataStore.fileInfo, completeSourceScope());
+  if (retainedViews) return { source_views: retainedViews };
   const saved = sourceStoryInspection.value;
+  if (saved?.experimentId === dataStore.activeExperimentId && saved.filesKey === originalSourceFilesKey.value && saved.views?.length &&
+      saved.views.every(view => retainedCompleteSource(view, completeSourceScope()))) return { source_views: saved.views };
   const candidate = saved?.experimentId === dataStore.activeExperimentId &&
     saved.filesKey === originalSourceFilesKey.value ? saved.dataset :
     residentDatasets.get(dataStore.activeExperimentId!) ?? dataStore.fileInfo;
@@ -3310,19 +3317,23 @@ const originalSourceFilesKey = computed(() =>
     .map((file) => `${file.id}:${file.stage}:${file.file_size_bytes ?? "?"}`)
     .join("|"),
 );
+let sourceInventoryGeneration = 0;
 watch(
   () => [dataStore.activeExperimentId, originalSourceFilesKey.value],
   () => {
+    sourceInventoryGeneration += 1;
+    clearRetainedInspection(dataStore.fileInfo);
     storyContentsReadyFor.value = null;
     sourceStoryInspection.value = null;
   },
+  { flush: "sync" },
 );
 const originalSourceSampleCount = computed(() => {
   const id = dataStore.activeExperimentId;
   if (id == null || !originalSourceFilesKey.value) return null;
   const receipt = sourceSampleCounts.value[id];
   return receipt?.filesKey === originalSourceFilesKey.value ? receipt.count :
-    dataStoryInspectedSource.value?.n_samples ?? null;
+    (dataStoryInspectedSource.value && "n_samples" in dataStoryInspectedSource.value ? dataStoryInspectedSource.value.n_samples : null);
 });
 
 const sourceCountRequests = useScopedRequest(() => [
@@ -6259,6 +6270,10 @@ async function showExperimentContents(
   }
   exactInspectionSelection.value = exactSelection;
   const ticket = inspection.contents.begin();
+  const sourceFilesKey = originalSourceFilesKey.value;
+  const sourceScope = completeSourceScope();
+  const sourceGeneration = sourceInventoryGeneration;
+  const sourceCurrent = () => ticket.isCurrent() && sourceInventoryGeneration === sourceGeneration && completeSourceScope() === sourceScope;
   dataStore.clearCatalogExploration();
   inspectionWarnings.value = [];
   try {
@@ -6297,7 +6312,7 @@ async function showExperimentContents(
         inspection.inventory(experimentId, file.id),
       ),
     );
-    if (!ticket.isCurrent()) return false;
+    if (!sourceCurrent()) return false;
     inspectionWarnings.value = uniqueAssetWarnings(
       inventories.flatMap((inventory) => inventory.assets),
     );
@@ -6320,10 +6335,10 @@ async function showExperimentContents(
       if (preferredAssetId) {
         const admitted = await onInspectionAssetChange();
         if (!admitted) return false;
-        if (!ticket.isCurrent()) return false;
+        if (!sourceCurrent()) return false;
         if (dataStore.fileInfo)
           await loadPlottedDatasets(new Map([[experimentId, dataStore.fileInfo]]));
-        if (!ticket.isCurrent()) return false;
+        if (!sourceCurrent()) return false;
       }
       if (preferredAssetId) restoredInspection = null;
       return Boolean(preferredAssetId && dataStore.fileInfo);
@@ -6355,21 +6370,38 @@ async function showExperimentContents(
           : null,
       );
     }
-    if (!ticket.isCurrent()) return false;
-    if (
+    if (!sourceCurrent()) return false;
+    // Inspect registered views independently: a source package may have
+    // incompatible feature spaces or repeated specimens across instruments.
+    if (registeredPackageSelection && selectedStage === originalSourceFiles.value[0]?.stage) {
+      try {
+        const views: SherpaDatasetDict[] = [];
+        for (const file of sourceFiles) {
+          const { data: view } = await api.post<SherpaDatasetDict>("/builder/file-info", {
+            experiment_id: experimentId, file_ids: [file.id],
+          }, { signal: ticket.signal });
+          if (!sourceCurrent()) return false;
+          if (Number(view.metadata?.contents_file_count) !== 1) throw new Error("Incomplete source view inspection");
+          views.push(view);
+        }
+        if (views.length === sourceFiles.length && views.length) {
+          for (const view of views) retainCompleteSource(view, sourceScope);
+          retainCompletePackage(inspectedDataset, views, sourceScope);
+          sourceStoryInspection.value = { experimentId, filesKey: sourceFilesKey, dataset: views[0], views };
+        }
+      } catch {
+        if (!sourceCurrent()) return false;
+        sourceStoryInspection.value = null;
+        // The modeling view remains usable. Never narrate a partial package as complete.
+      }
+    } else if (
       (loadWholeCollection || sourceFiles.length === 1) &&
       selectedStage === originalSourceFiles.value[0]?.stage &&
-      inspectedDataset &&
       Number(inspectedDataset.metadata?.contents_file_count) === sourceFiles.length &&
-      (originalSourceSampleCount.value == null ||
-        inspectedDataset.n_samples === originalSourceSampleCount.value)
+      (originalSourceSampleCount.value == null || inspectedDataset.n_samples === originalSourceSampleCount.value)
     ) {
-      retainCompleteSource(inspectedDataset, completeSourceScope());
-      sourceStoryInspection.value = {
-        experimentId,
-        filesKey: originalSourceFilesKey.value,
-        dataset: inspectedDataset,
-      };
+      retainCompleteSource(inspectedDataset, sourceScope);
+      sourceStoryInspection.value = { experimentId, filesKey: sourceFilesKey, dataset: inspectedDataset };
     }
     if (
       loadWholeCollection &&
@@ -6387,7 +6419,7 @@ async function showExperimentContents(
         preferredAssetId,
         selectedViewIds,
       );
-      if (!ticket.isCurrent()) return false;
+      if (!sourceCurrent()) return false;
     }
     if (
       (loadWholeCollection || !explicitViewSelection) &&
@@ -6407,11 +6439,11 @@ async function showExperimentContents(
     }
     cacheFileSampleLabels(experimentId, inspectedDataset);
     await loadPlottedDatasets(new Map([[experimentId, inspectedDataset]]));
-    if (!ticket.isCurrent()) return false;
+    if (!sourceCurrent()) return false;
     restoredInspection = null;
     return Boolean(inspectedDataset);
   } catch {
-    if (!ticket.isCurrent()) return false;
+    if (!sourceCurrent()) return false;
     inspectionWarnings.value = [];
     toast.add({
       severity: "error",

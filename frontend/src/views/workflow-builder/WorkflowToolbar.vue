@@ -36,17 +36,13 @@
     <div v-if="!isCollapsed && viewMode === 'add'" class="toolbar-content">
       <!-- Search category - always first, auto-focused on mount -->
       <div class="section section-search" data-testid="section-search">
-        <div class="section-header static">
-          <span>Search</span>
-          <i class="pi pi-search"></i>
-        </div>
         <div class="search-box">
           <input
             ref="searchInputRef"
             v-model="searchQuery"
             type="text"
             class="search-input"
-            placeholder="Filter nodes by name…"
+            placeholder="Search nodes…"
             aria-label="Search nodes"
             data-testid="toolbar-search-input"
           />

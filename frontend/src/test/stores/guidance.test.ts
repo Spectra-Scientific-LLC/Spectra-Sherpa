@@ -168,7 +168,7 @@ describe("guidance store", () => {
     expect(mocks.routerPush).not.toHaveBeenCalled();
   });
 
-  it.each(Object.values(GUIDANCE_ACTIONS).filter(action => action.actionId !== "open_analysis_starters"))("keeps the project for $actionId without submitting scientific work", async (action) => {
+  it.each(Object.values(GUIDANCE_ACTIONS).filter(action => action.actionId !== "open_analysis_starters" && !action.actionId.startsWith("review_optimization_")))("keeps the project for $actionId without submitting scientific work", async (action) => {
     if (action.expectedScope) mocks.advisorActiveNode.value = { id: 1, project_id: 7, tab_key: action.expectedScope.tabKey, subscope_key: action.expectedScope.subscopeKey ?? "" };
     const target = document.createElement("button");
     target.dataset.action = action.clickTarget ?? "import_data";
@@ -181,6 +181,40 @@ describe("guidance store", () => {
     expect(destination.query[action.route === "/workflow" ? "project_id" : "project"]).toBe("7");
     if (action.query) expect(destination.query).toMatchObject(action.query);
     expect(clicked).toHaveBeenCalledTimes(action.clickTarget ? 1 : 0);
+  });
+
+  it('keeps a live notification context when the drawer refreshes, without authorizing historical entries', async () => {
+    mocks.currentRoute.value.path = '/campaigns';
+    const target = document.createElement('button');
+    target.dataset.action = 'review_optimization_candidate'; target.dataset.guidanceContext = 'campaign-a-result-1';
+    const clicked = vi.fn(); target.onclick = clicked; document.body.append(target);
+    const store = useGuidanceStore(); await store.loadSettings();
+    await store.handleEvent(makeEvent({action_id: target.dataset.action, action_context: target.dataset.guidanceContext}));
+    const { action_context: _context, ...persisted } = store.notifications[0];
+    mocks.apiGet.mockResolvedValueOnce({data: [persisted, {...persisted, id: 124}]});
+    await store.loadNotifications();
+    expect(store.notifications[0].action_context).toBe(target.dataset.guidanceContext);
+    expect(store.notifications[1].action_context).toBeUndefined();
+    await store.clickNotification(store.notifications[0]); expect(clicked).toHaveBeenCalledOnce();
+    await store.clickNotification(store.notifications[1]); expect(clicked).toHaveBeenCalledOnce();
+  });
+
+  it('refuses an old campaign-result suggestion and invalidates its toast after navigation', async () => {
+    mocks.currentRoute.value.path = '/campaigns';
+    const target = document.createElement('button');
+    target.dataset.action = 'review_optimization_candidate'; target.dataset.guidanceContext = 'campaign-a-result-1';
+    const clicked = vi.fn(); target.onclick = clicked; document.body.append(target);
+    const store = useGuidanceStore(); await store.loadSettings();
+    const event = {...makeEvent(), action_id: target.dataset.action, action_context: target.dataset.guidanceContext};
+    await store.handleEvent(event);
+    expect(store.activeToast).not.toBeNull();
+    target.dataset.guidanceContext = 'campaign-b-result-2';
+    store.refreshActionContexts(); expect(store.activeToast).toBeNull();
+    await store.clickNotification(store.notifications[0]);
+    expect(clicked).not.toHaveBeenCalled();
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+    expect(await store.runAction('review_optimization_candidate')).toBe(true);
+    expect(clicked).toHaveBeenCalledOnce();
   });
 
   it("refuses a stale-project suggestion instead of acting in the newly selected project", async () => {
