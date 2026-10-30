@@ -2,7 +2,7 @@
   <div v-if="actions.length || error" class="contextual-actions">
     <Button v-for="action in actions" :key="action.key" :label="action.label" :icon="action.icon"
       :loading="running === action.key" :disabled="running !== null" @click="execute(action.key)" />
-    <p v-if="error" role="alert">{{ error }}</p>
+    <p v-if="error && showError" role="alert">{{ error }}</p>
   </div>
 </template>
 
@@ -13,7 +13,7 @@ import { actionContextRevision, setActionContext, useContextualActions, type Act
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
 
-const props = defineProps<{ context: ActionContext | null }>();
+const props = withDefaults(defineProps<{ context: ActionContext | null; showError?: boolean }>(), { showError: true });
 const { actions, error, running, execute } = useContextualActions();
 const auth = useAuthStore();
 const project = useProjectStore();

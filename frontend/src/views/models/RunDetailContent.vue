@@ -24,10 +24,11 @@
         </select>
         <Button :label="action.label" :icon="action.icon" :title="action.title" :aria-label="action.ariaLabel || action.label" class="p-button-text p-button-sm" :disabled="action.disabled" @click="action.command?.()" />
       </template>
+      <ContextualActions :show-error="false" :context="!loading && !error && detail && detail.run.project_id === project.currentProjectId && project.currentProjectId != null
+        ? { surface: 'run', projectId: project.currentProjectId, runId: detail.run.id } : null" />
     </div>
     </Teleport>
-      <ContextualActions :context="!loading && !error && detail && detail.run.project_id === project.currentProjectId && project.currentProjectId != null
-        ? { surface: 'run', projectId: project.currentProjectId, runId: detail.run.id } : null" />
+    <p v-if="contextualError" role="alert">{{ contextualError }}</p>
     <WorkspaceState v-if="error" kind="error" variant="page" :message="error">
       <Button icon="pi pi-refresh" label="Retry" class="p-button-text p-button-sm" @click="loadRun()" />
     </WorkspaceState>
@@ -261,6 +262,7 @@ import SavedValue from './SavedValue.vue';
 import { downloadCsv, downloadJson } from '@/utils/download';
 import { applicationTrustView, retainedNodeTrustView, type ApplicationTrustView } from '@/utils/applicationTrust';
 import ContextualActions from '@/components/ContextualActions.vue';
+import { useContextualActions } from '@/composables/useContextualActions';
 import ValidationLedger from '@/components/ValidationLedger.vue';
 import ModelSummaryCard from '@/components/ModelSummaryCard.vue';
 import { buildModelSummary, primaryModelNode, summarySources, type ModelSummary, type PresentationContracts } from '@/utils/modelSummary';
@@ -350,12 +352,16 @@ const headerActions = computed<RunAction[]>(() => {
     items: artifacts.length > 1 ? artifacts.map(uid => ({ label: uid, command: () => { producedArtifactUid.value = uid; openProducedModel(); } })) : undefined });
   return actions;
 });
-const headerMenuActions = computed(() => headerActions.value.map(action => {
+const { actions: contextualActions, running: contextualRunning, error: contextualError, execute: executeContextualAction } = useContextualActions();
+const headerMenuActions = computed(() => [...headerActions.value.map(action => {
   if (!action.items) return action;
   // Opening a submenu is navigation between choices, not an artifact choice.
   const { command: _command, ...submenu } = action;
   return { ...submenu, disabled: !detail.value?.run.project_id };
-}));
+}), ...contextualActions.value.map(action => ({
+  label: action.label, icon: action.icon, disabled: contextualRunning.value !== null,
+  command: () => { void executeContextualAction(action.key); },
+}))]);
 defineExpose({ headerActions: headerMenuActions });
 const runNameDraft = ref('');
 const runNameSaving = ref(false);

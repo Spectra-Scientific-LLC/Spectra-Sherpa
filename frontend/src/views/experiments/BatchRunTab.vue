@@ -1,34 +1,38 @@
 <template>
   <div class="batch-run-tab">
-    <fieldset :disabled="submitting || loading">
-      <legend>Execution mode <MethodHelp topic="batch" label="Batch execution modes" /></legend>
-      <label><input v-model="mode" type="radio" value="apply_model" /> Apply trained model — no refit</label>
-      <label><input v-model="mode" type="radio" value="run_workflow" /> Run workflow — train/evaluate</label>
-    </fieldset>
+    <Panel header="Execution mode" toggleable>
+      <template #header><span class="p-panel-title">Execution mode <MethodHelp topic="batch" label="Batch execution modes" /></span></template>
+      <fieldset :disabled="submitting || loading" aria-label="Execution mode">
+        <label><input v-model="mode" type="radio" value="apply_model" /> Apply trained model — no refit</label>
+        <label><input v-model="mode" type="radio" value="run_workflow" /> Run workflow — train/evaluate</label>
+      </fieldset>
+    </Panel>
     <p v-if="error" role="alert" class="batch-error">{{ error }}</p>
     <p v-if="loading" role="status">Loading project workflows and dataset definitions…</p>
     <div class="batch-selections">
-      <fieldset :disabled="submitting || loading">
-        <legend>Workflows</legend>
-        <div v-for="workflow in availableWorkflows" :key="workflow.id" class="selection-item">
-          <label><input v-model="selectedWorkflowIds" type="checkbox" :value="workflow.id" /> {{ workflow.name }}</label>
-          <div v-if="mode === 'apply_model' && selectedWorkflowIds.includes(workflow.id)" class="model-choices">
-            <label v-for="artifact in modelsFor(workflow.id)" :key="artifact.artifact_uid">
-              <input v-model="selectedArtifactUids" type="checkbox" :value="artifact.artifact_uid" />
-              {{ artifact.display_name || artifact.name }} <small>{{ modelContext(artifact) }}</small>
-            </label>
-            <small v-if="!modelsFor(workflow.id).length">No fitted model is available. Use train/evaluate first.</small>
+      <Panel header="Workflows" toggleable>
+        <fieldset :disabled="submitting || loading" aria-label="Workflows">
+          <div v-for="workflow in availableWorkflows" :key="workflow.id" class="selection-item">
+            <label><input v-model="selectedWorkflowIds" type="checkbox" :value="workflow.id" /> {{ workflow.name }}</label>
+            <div v-if="mode === 'apply_model' && selectedWorkflowIds.includes(workflow.id)" class="model-choices">
+              <label v-for="artifact in modelsFor(workflow.id)" :key="artifact.artifact_uid">
+                <input v-model="selectedArtifactUids" type="checkbox" :value="artifact.artifact_uid" />
+                {{ artifact.display_name || artifact.name }} <small>{{ modelContext(artifact) }}</small>
+              </label>
+              <small v-if="!modelsFor(workflow.id).length">No fitted model is available. Use train/evaluate first.</small>
+            </div>
           </div>
-        </div>
-        <p v-if="!loading && !availableWorkflows.length">No eligible workflows for this mode. Train a model first, or choose train/evaluate.</p>
-      </fieldset>
-      <fieldset :disabled="submitting || loading">
-        <legend>Dataset definitions</legend>
-        <label v-for="definition in definitions" :key="definition.key" class="selection-item">
-          <input v-model="selectedDefinitionKeys" type="checkbox" :value="definition.key" /> {{ definition.label }}
-        </label>
-        <p v-if="!loading && !definitions.length">No dataset definitions in this project.</p>
-      </fieldset>
+          <p v-if="!loading && !availableWorkflows.length">No eligible workflows for this mode. Train a model first, or choose train/evaluate.</p>
+        </fieldset>
+      </Panel>
+      <Panel header="Dataset definitions" toggleable>
+        <fieldset :disabled="submitting || loading" aria-label="Dataset definitions">
+          <label v-for="definition in definitions" :key="definition.key" class="selection-item">
+            <input v-model="selectedDefinitionKeys" type="checkbox" :value="definition.key" /> {{ definition.label }}
+          </label>
+          <p v-if="!loading && !definitions.length">No dataset definitions in this project.</p>
+        </fieldset>
+      </Panel>
     </div>
     <section aria-label="Batch combinations" class="batch-combinations">
       <h4>Combinations ({{ combinations.length }})</h4>
@@ -66,6 +70,7 @@
 </template>
 
 <script setup lang="ts">
+import Panel from "primevue/panel";
 import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import Button from "primevue/button";
@@ -236,7 +241,7 @@ async function handleSubmit() {
 <style scoped>
 .batch-run-tab { display: flex; flex-direction: column; gap: 1rem; }
 .batch-selections { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
-fieldset { border: 1px solid var(--surface-border); border-radius: 8px; padding: 1rem; }
+fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
 label { display: flex; align-items: baseline; gap: .6rem; padding: .35rem 0; }
 input { accent-color: var(--primary-color); }
 .model-choices { padding-left: 1.5rem; }

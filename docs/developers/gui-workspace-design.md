@@ -70,7 +70,9 @@ change scientific evidence, permission checks, pagination or export contents.
 Inspect links each produced artifact to its exact selection under Models;
 promotion review belongs to Models, not the run's inspection actions.
 Inspect navigation actions share the Runs header's Export row and responsive
-action menu. Summary, Results and Validation use independent collapsible Panels;
+action menu, including contributed Optimize actions. Batch uses the same
+collapsible Panels for execution mode, workflows and dataset definitions; these
+start expanded and inherit the shared surface theme. Summary, Results and Validation use independent collapsible Panels;
 section navigation does not change the identity or content of retained evidence.
 Keep compact fitted-population context and consequential limitations outside
 those sections. PCA uses "fitted samples", not a predictive calibration label;
