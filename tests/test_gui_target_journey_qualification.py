@@ -124,7 +124,7 @@ async def test_breast_cancer_import_keeps_categorical_readiness_through_run_and_
             "project_id": project.id,
             "binding": {
                 "experiment_id": experiment.id,
-                "file_id": source_file["id"],
+                "file_ids": [source_file["id"]],
                 "stage": "raw",
             },
         },
@@ -135,10 +135,11 @@ async def test_breast_cancer_import_keeps_categorical_readiness_through_run_and_
     assert readiness_body["profile"]["target_fields"] == ["target"]
     decisions = {item["template_slug"]: item for item in readiness_body["decisions"]}
     assert {slug: decisions[slug]["display_status"] for slug in decisions} == {
-        "classification_plsda": "compatible",
-        "knn_classification": "compatible",
-        "simca_classification": "compatible",
+        "classification_plsda": "needs_target",
+        "knn_classification": "needs_target",
+        "simca_classification": "needs_target",
     }
+    assert all("target_missing" in decision["reason_codes"] for decision in decisions.values())
 
     loaded = await load_project_dataset(
         test_session,
@@ -149,6 +150,28 @@ async def test_breast_cancer_import_keeps_categorical_readiness_through_run_and_
     )
     authority = issue_target_authority(loaded.dataset, column="target", target_type="categorical")
     authority_dict = authority.canonical_dict()
+    # Available source labels do not select a target on the scientist's behalf.
+    # Preview and creation must qualify the same explicit target authority.
+    selected_readiness = await auth_client.post(
+        "/api/v1/workflow-templates/binding-compatibility-preview",
+        json={
+            "project_id": project.id,
+            "binding": {
+                "experiment_id": experiment.id,
+                "file_ids": [source_file["id"]],
+                "stage": "raw",
+                "target_authority": authority_dict,
+            },
+        },
+    )
+    assert selected_readiness.status_code == 200, selected_readiness.text
+    selected_decisions = {item["template_slug"]: item for item in selected_readiness.json()["decisions"]}
+    assert {slug: decision["display_status"] for slug, decision in selected_decisions.items()} == {
+        "classification_plsda": "compatible",
+        "knn_classification": "compatible",
+        "simca_classification": "compatible",
+    }
+    assert selected_readiness.json()["binding"]["target_authority"] == authority_dict
     ensure_type_registry_loaded()
     instantiated = await auth_client.post(
         f"/api/v1/workflow-templates/{templates[0].id}/instantiate",
