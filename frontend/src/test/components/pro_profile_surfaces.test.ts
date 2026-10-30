@@ -78,6 +78,10 @@ describe("Pro routes with operator-owned configuration", () => {
       Dialog: true, DataTable: true, Column: true,
     } } });
     await flushPromises();
+    (deploy.vm as unknown as { activeTab: string }).activeTab = "history";
+    await flushPromises();
+    expect(deploy.get('[aria-label="Deployment context"]').text()).toContain("Application");
+    expect(deploy.get('[aria-label="Deployment context"]').text()).not.toContain("Prediction History");
     expect(deploy.text()).toContain("Deploy from a Workbench");
     expect(deploy.text()).toContain("Folder watches and prediction history run on a Workbench");
     expect(deploy.text()).not.toContain("Released applications");

@@ -151,7 +151,7 @@ describe("GuidanceToast (Deploy + Report flows)", () => {
     await wrapper.find(".guidance-toast__primary").trigger("click");
     await flushPromises();
 
-    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/deploy", query: { project: "7" }, hash: undefined });
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/deploy", query: { tab: "watches", project: "7" }, hash: undefined });
     expect(buttonClickSpy).toHaveBeenCalledTimes(1);
     expect(mocks.apiPatch).toHaveBeenCalledWith(
       "/guidance/notifications/501",

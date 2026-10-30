@@ -58,6 +58,11 @@ Show the actual save-destination name in each source subtab's context, derived
 from the same value as its save handler. Multi-well exposes its configured-well
 count and dirty state there; a clean plan needs no disabled Save/status row.
 
+Deploy follows the same header, subtitle and subtab structure as Runs. Saved
+models belong to Application; New Watch belongs to Folder Watches. Prediction
+History shows retained predictions. Hosted deployments keep the Workbench
+handoff and do not expose local watch controls.
+
 ## Scientific context and copy
 
 Runs has one workspace header, context strip and subtab navigation. Reuse
