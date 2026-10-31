@@ -61,7 +61,12 @@ an otherwise valid held-out comparison. Unknown population counts are not zero.
 **Comparable** means the relevant retained population, response and evaluation
 conditions match. **Descriptive only** means you may inspect values but cannot
 claim a paired improvement. **Common evaluation needed** names a mismatch.
-**Unavailable** identifies missing or invalid retained evidence.
+**Unavailable** means this comparison role could not be qualified. Read its
+reason: evidence may be missing or invalid, or the evaluation family may not
+yet be supported. Classification evaluation ranking is not currently supported;
+the saved classification results remain available for individual inspection.
+An unsupported comparison does not mean those runs lack recorded metrics, and
+inspecting their metrics does not establish a qualified ranking.
 
 Some externally supplied evaluations retain verified aggregate scores and
 paired partition receipts, but no individual predictions. They can support an
