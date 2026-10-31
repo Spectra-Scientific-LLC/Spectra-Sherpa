@@ -48,6 +48,14 @@ Vue effect scope. Project-scoped stores register their reset with
 `projectScopeRegistry`; registration also ends with the owning scope.
 Session changes invalidate project-owned state even when object IDs repeat.
 
+Advisor conversation state also belongs to the selected project in OSS, Demo
+and Pro. An admitted Dashboard project selection clears the previous displayed
+conversation, pending replies and in-memory fallback snapshots immediately,
+without waiting for another page to establish a memory scope. This does not
+delete retained history: returning to a project reloads its authorized topic
+through that profile's existing transport. A same-project refresh preserves the
+current conversation.
+
 ### Renewal is not a new login
 
 Use `auth.sessionRevision`, not the bearer-token string, in workspace identity.
