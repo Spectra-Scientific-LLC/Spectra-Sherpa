@@ -111,7 +111,7 @@ from spectra_sherpa.sdk.fitted_state_custody import (
 def test_exact_application_predecessor_only(operation: str, serializer: str, previous: str, current: str) -> None:
     workflow_consumers = {
         "model.pca": "3832e1488a123217d7068bcf33dae7aa982b5665dec00c402cfb034fd11064c4",
-        "classification.plsda": "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
+        "classification.plsda": "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
         "model.fitted_pls": "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
         "model.fitted_linear_regression": "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
         "model.fitted_pcr": "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",

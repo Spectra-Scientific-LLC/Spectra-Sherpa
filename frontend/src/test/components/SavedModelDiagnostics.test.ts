@@ -51,6 +51,39 @@ const plotStub = {
 };
 
 describe("saved model diagnostic workbench", () => {
+  it("displays duplicate retained labels but selects only exact IDs and escapes Plotly text", async () => {
+    const labeled = {
+      ...receipt,
+      rows: receipt.rows.map((row, i) => ({ ...row, display_label: i < 2 ? "Sample <&>" : "source-a:1" })),
+    };
+    const original = JSON.stringify(labeled);
+    apiGet.mockResolvedValue({ data: {
+      run_id: 42, node_id: "fit", receipt: labeled,
+      decision: { marked: [], excluded: [], heldout_excluded: [] }, review_revision: 0,
+    } });
+    const wrapper = mount(SavedModelDiagnostics, {
+      props: { artifactUid: "saved-labels", projectId: 9, workflowId: 7, nodeId: "fit" },
+      global: { stubs: { PlotlyChart: plotStub, PcaExplanation: true, PlsApplicability: true,
+        PlsExplanation: true, DiagnosticAdvisor: true, DatasetCurationPanel: true } },
+    });
+    await flushPromises();
+    const boxes = wrapper.findAll('input[aria-label="Select sample Sample <&>"]');
+    expect(boxes).toHaveLength(2);
+    expect(wrapper.findAll("td").filter((cell) => cell.text() === "Sample <&>")).toHaveLength(2);
+    const chart = wrapper.findAllComponents({ name: "PlotlyChart" })[0];
+    const traces = chart.props("data");
+    expect(traces.flatMap((trace: {customdata: string[]}) => trace.customdata)).toContain("source-b:1");
+    expect(traces.flatMap((trace: {text: string[]}) => trace.text)).toContain("Sample &lt;&amp;&gt;");
+    expect(traces[0].hovertemplate).toContain("%{text}");
+    await boxes[1].setValue(true);
+    expect(chart.props("selectedPointIds")).toEqual(["source-b:1"]);
+    expect(boxes[0].element).toHaveProperty("checked", false);
+    chart.vm.$emit("selected", { points: [{ text: "Sample <&>" }] });
+    await flushPromises();
+    expect(chart.props("selectedPointIds")).toEqual([]);
+    expect(JSON.stringify(labeled)).toBe(original);
+    wrapper.unmount();
+  });
   it("uses exact source-run rows and links chart selection to the table", async () => {
     apiGet.mockResolvedValue({
       data: {

@@ -27,7 +27,10 @@ async def test_real_plsda_fit_artifact_and_retained_diagnostics_roundtrip(monkey
     dataset = SherpaDataset(
         X=matrix,
         feature_axis=SpectralAxis(values=np.linspace(1000, 1700, 8), units="cm-1"),
-        sample_axis=SampleAxis(labels=[f"obs-{i}" for i in range(len(labels))]),
+        sample_axis=SampleAxis(
+            labels=[f"Display {i}" for i in range(len(labels))],
+            sample_table={"sample_id": [f"obs-{i}" for i in range(len(labels))]},
+        ),
         target=labels,
         target_context=TargetContext(target_type="categorical", target_names=["class"]),
     )

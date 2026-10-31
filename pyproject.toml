@@ -7,6 +7,7 @@ readme = "README.md"
 license = "AGPL-3.0"
 packages = [{include = "spectra_sherpa", from = "src"}]
 include = [
+    { path = "src/spectra_sherpa/core/contract_predecessors_plsda_identity.json", format = ["sdist", "wheel"] },
     { path = "src/spectra_sherpa/core/contract_predecessors_preprocessing.json", format = ["sdist", "wheel"] },
     { path = "src/spectra_sherpa/core/contract_predecessors_staging_20261011.json", format = ["sdist", "wheel"] },
     { path = "src/spectra_sherpa/core/contract_predecessors_v060.json", format = ["sdist", "wheel"] },

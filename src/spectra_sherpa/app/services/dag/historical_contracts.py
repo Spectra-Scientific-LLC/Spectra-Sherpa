@@ -108,7 +108,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "classification.plsda": (
         "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-        "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
+        "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
@@ -183,7 +183,7 @@ def historical_port_topology(graph: HistoricalValidationGraph) -> dict[str, obje
 _PRE_AUTOMATIC_PLS_CONSUMERS = {
     "classification.plsda": (
         "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
-        "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
+        "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
     ),
     "model.fitted_linear_regression": (
         "e67835fc9e93b0a1b5dcc306ed3cfcbbcae86eb515af3f7b730fe48cc1d79782",
@@ -204,11 +204,36 @@ _PRE_AUTOMATIC_PLS_CONSUMERS = {
 }
 
 
+def _require_plsda_identity_inspection(
+    operation: str, contract: NodeExecutionContract, current: NodeExecutionContract
+) -> None:
+    # This profile already has the current ports and PLS parameters.
+    # Never inherit the older classifier-output/schema exceptions.
+    if (operation, contract.digest, current.digest) != (
+        "classification.plsda",
+        "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
+        "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
+    ):
+        raise ValidationGraphError("unqualified pre-diagnostic-identity inspection consumer")
+    ignored = {"implementation_components", "implementation_digest"}
+    if {k: v for k, v in contract.payload.items() if k not in ignored} != {
+        k: v for k, v in current.payload.items() if k not in ignored
+    }:
+        raise ValidationGraphError("pre-diagnostic-identity scientific declarations changed")
+
+
 class HistoricalReconstructionContext:
     """One packaged predecessor authority; callers cannot supply contracts."""
 
     def __init__(self, profile_digest: str | None = None):
         self._catalog = inspection_predecessor_catalog(profile_digest)
+
+    @property
+    def predates_plsda_diagnostic_identity(self) -> bool:
+        return (
+            self._catalog["profile"]["profile_digest"]
+            == "d82af6a5a5b9922b1c57531d3ce9d121ad6e7c6f80ee3dc6bb24119f6b2f24c9"
+        )
 
     @property
     def predates_automatic_pls(self) -> bool:
@@ -232,7 +257,7 @@ class HistoricalReconstructionContext:
         )
 
     def added_pls_parameters(self) -> set[str]:
-        if self.predates_preprocessing_expansion or self.predates_grouped_cv:
+        if self.predates_plsda_diagnostic_identity or self.predates_preprocessing_expansion or self.predates_grouped_cv:
             return set()
         if self.predates_automatic_pls:
             return {"component_fit_mode"}
@@ -283,6 +308,22 @@ class HistoricalReconstructionContext:
         wire["graph_digest"] = validation_graph_identity_digest({k: v for k, v in wire.items() if k != "graph_digest"})
         return self.graph(wire)
 
+    def _archived_contract(self, operation: str, digest: str) -> dict | None:
+        catalog = self._catalog
+        archived = catalog["contracts"].get(operation) or catalog.get("profile_contracts", {}).get(operation)
+        if (
+            archived is None
+            and not self.predates_plsda_diagnostic_identity
+            and catalog["profile"]["operations"].get(operation) == digest
+        ):
+            # Reuse an already integrity-pinned payload; do not mint another
+            # historical catalog just because this profile omitted its bytes.
+            staging = inspection_predecessor_catalog("9f37d08a914c3e276859c0ba10b5d2187d5d5ba4ff85f6d00b35cba23e7369f4")
+            candidate = staging["contracts"].get(operation) or staging.get("profile_contracts", {}).get(operation)
+            if candidate is not None and candidate["digest"] == digest:
+                archived = candidate
+        return archived
+
     def contract(self, operation: str, digest: str) -> NodeExecutionContract:
         catalog = self._catalog
         try:
@@ -291,14 +332,7 @@ class HistoricalReconstructionContext:
             raise ValidationGraphError("historical operation is not locally recognized") from exc
         if current is None:
             raise ValidationGraphError("historical operation lacks a current structural authority")
-        archived = catalog["contracts"].get(operation) or catalog.get("profile_contracts", {}).get(operation)
-        if archived is None and catalog["profile"]["operations"].get(operation) == digest:
-            # Reuse an already integrity-pinned payload; do not mint another
-            # historical catalog just because this profile omitted its bytes.
-            staging = inspection_predecessor_catalog("9f37d08a914c3e276859c0ba10b5d2187d5d5ba4ff85f6d00b35cba23e7369f4")
-            candidate = staging["contracts"].get(operation) or staging.get("profile_contracts", {}).get(operation)
-            if candidate is not None and candidate["digest"] == digest:
-                archived = candidate
+        archived = self._archived_contract(operation, digest)
         if archived is None:
             if catalog["profile"]["operations"].get(operation) != digest or current.digest != digest:
                 raise ValidationGraphError("unknown historical operation/contract identity")
@@ -306,6 +340,9 @@ class HistoricalReconstructionContext:
         contract = NodeExecutionContract.from_dict(archived["payload"])
         if contract.digest != archived["digest"] or contract.digest != digest:
             raise ValidationGraphError("unknown historical operation/contract identity")
+        if self.predates_plsda_diagnostic_identity:
+            _require_plsda_identity_inspection(operation, contract, current)
+            return contract
         if self.predates_preprocessing_expansion or self.predates_grouped_cv:
             reviewed = {
                 "model.fitted_pls": (
@@ -318,7 +355,7 @@ class HistoricalReconstructionContext:
                         if self.predates_grouped_cv
                         else "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824"
                     ),
-                    "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
+                    "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
                 ),
             }
             if current.digest != digest and reviewed.get(operation) != (digest, current.digest):

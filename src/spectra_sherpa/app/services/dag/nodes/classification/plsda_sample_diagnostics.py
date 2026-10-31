@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 
 from spectra_sherpa.app.lib.pls_diagnostic_terms import row_terms as _row_terms
+from spectra_sherpa.app.lib.sample_identity import sample_ids
 from spectra_sherpa.app.services.dag.nodes.modeling import pls_applicability
 
 SCHEMA = "spectrasherpa-plsda-sample-diagnostics/1"
@@ -32,14 +33,21 @@ def build_sample_diagnostics(core: dict[str, Any]) -> dict[str, Any]:
     k = artifact.effective_n_components
     if n > MAX_OBSERVATIONS or p > MAX_FEATURES or n * p * k > MAX_WORK:
         raise ValueError("PLS-DA sample diagnostics exceed the bounded calculation budget")
+    identities = sample_ids(dataset)
+    if identities is None or len(identities) != n:
+        raise ValueError("PLS-DA calibration diagnostics require exact typed sample_id values")
+    # Labels are optional presentation text, never identity or uniqueness proof.
     sample_axis = dataset.sample_axis
-    if sample_axis is None or sample_axis.labels is None:
-        raise ValueError("PLS-DA calibration observation IDs are unavailable")
-    identities = list(sample_axis.labels)
-    if len(identities) != n or any(not isinstance(x, str) or not x for x in identities):
-        raise ValueError("PLS-DA calibration observation IDs are unavailable")
-    if len(set(identities)) != n:
-        raise ValueError("PLS-DA calibration observation IDs are duplicated")
+    labels = None if sample_axis is None else sample_axis.labels
+    display_labels = (
+        {
+            identity: label
+            for identity, label in zip(identities, labels, strict=True)
+            if isinstance(label, str) and label.strip() and len(label.encode("utf-8")) <= 512
+        }
+        if labels is not None
+        else {}
+    )
     if artifact.screening is None:
         raise ValueError("PLS-DA fitted state has no calibration screening reference")
     screening = pls_applicability.validate_screening(artifact.screening, features=p, components=k, samples=n)
@@ -73,6 +81,7 @@ def build_sample_diagnostics(core: dict[str, Any]) -> dict[str, Any]:
             rows.append(
                 {
                     "id": identity,
+                    **({"display_label": display_labels[identity]} if identity in display_labels else {}),
                     "class": str(core["labels"][start + j]),
                     "role": "calibration",
                     "scores": scores[j].tolist(),
@@ -88,6 +97,7 @@ def build_sample_diagnostics(core: dict[str, Any]) -> dict[str, Any]:
     result = {
         "schema_version": SCHEMA,
         "model_kind": "plsda",
+        "identity_field": "sample_id",
         "source_execution_digest": dataset.scientific_digest,
         "fitted_state_sha256": hashlib.sha256(
             json.dumps(state, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()

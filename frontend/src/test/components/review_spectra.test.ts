@@ -116,3 +116,16 @@ describe("Exact spectral curve identity", () => {
     wrapper.unmount();
   });
 });
+
+
+it("renders bounded spectral labels but looks up values and selects with full IDs", () => {
+  const rows: ReviewRow[] = ["id-a", "id-b"].map((id) => ({ id, display_label: "Same <&>", role: "calibration", group: "Batch", scores: null, t2: null, q: null }));
+  const w = mount(ReviewSpectra, { props: { rows, selected: [], marked: [], masked: [], colors: new Map([["Batch", "#123456"]]),
+    spectra: { x: [100], units: "nm", variable_count: 1, display_count: 1, rows: { "id-a": [1], "id-b": [2] } } },
+    global: { stubs: { PlotlyChart: { props: ["data"], template: "<div/>" } } } });
+  const traces = w.findComponent(PlotlyChart).props("data");
+  expect(traces.map((trace: { name: string }) => trace.name)).toEqual(["Same &lt;&amp;&gt;", "Same &lt;&amp;&gt;"]);
+  expect(traces.map((trace: { customdata: string[] }) => trace.customdata)).toEqual([["id-a"], ["id-b"]]);
+  expect(traces.map((trace: { y: number[] }) => trace.y)).toEqual([[1], [2]]);
+  w.unmount();
+});

@@ -447,6 +447,9 @@ async def build_review_receipt(definition, results, model_id):
                 raise ValueError("Split values/targets differ from the retained source.")
     else:
         full_source, test_ids = baseline, []
+    from .review_display_labels import review_display_labels
+
+    display_labels = review_display_labels(full_source, sample_ids(full_source))
     from spectra_sherpa.app.services.dag.supervision_binding import admit_attached_sample_table_supervision
 
     supervision = admit_attached_sample_table_supervision(full_source)
@@ -511,6 +514,7 @@ async def build_review_receipt(definition, results, model_id):
         rows.append(
             {
                 "id": identity,
+                **({"display_label": display_labels[identity]} if identity in display_labels else {}),
                 "role": "excluded_projected" if identity in excluded else "calibration",
                 "group": grouped.get(
                     identity,
@@ -562,6 +566,7 @@ async def build_review_receipt(definition, results, model_id):
             rows.append(
                 {
                     "id": identity,
+                    **({"display_label": display_labels[identity]} if identity in display_labels else {}),
                     "role": "held_out_test",
                     "group": grouped.get(
                         identity,

@@ -133,12 +133,12 @@
             <td>
               <input
                 type="checkbox"
-                :aria-label="`Select sample ${row.id}`"
+                :aria-label="`Select sample ${reviewRowLabel(row)}`"
                 :checked="selectedSet.has(row.id)"
                 @change="toggle(row.id)"
               />
             </td>
-            <td>{{ row.id }}</td>
+            <td :title="row.id">{{ reviewRowLabel(row) }}</td>
             <td :style="{ color: groupColors.get(row.group) }">{{ row.group }}</td>
             <td>{{ roleLabel(row) }}{{ marked.has(row.id) ? " · marked outlier" : "" }}</td>
             <td>{{ number(row.t2) }}</td>
@@ -216,6 +216,8 @@
 </template>
 
 <script setup lang="ts">
+import { reviewRowLabel } from "@/utils/sampleReview";
+import { escapeScientificText } from "@/utils/validationReportPlots";
 import { useAuthStore } from "@/stores/auth";
 import { useScopedRequest } from "@/composables/useScopedRequest";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
@@ -381,7 +383,8 @@ function traces(x: (row: ReviewRow) => number | null, y: (row: ReviewRow) => num
     x: rows.map(x),
     y: rows.map(y),
     customdata: rows.map((row) => row.id),
-    hovertemplate: "%{customdata}<br>x=%{x:.4g}<br>y=%{y:.4g}<extra>%{fullData.name}</extra>",
+    text: rows.map((row) => escapeScientificText(reviewRowLabel(row))),
+    hovertemplate: "%{text}<br>x=%{x:.4g}<br>y=%{y:.4g}<extra>%{fullData.name}</extra>",
     marker: {
       color: groupColors.value.get(rows[0].group),
       size: 8,
@@ -564,7 +567,7 @@ function toggle(id: string) {
 const filteredRows = computed(() =>
   (review.value?.rows || []).filter(
     (row) =>
-      row.id.toLowerCase().includes(query.value.toLowerCase()) &&
+      (reviewRowLabel(row).toLowerCase().includes(query.value.toLowerCase()) || row.id.toLowerCase().includes(query.value.toLowerCase())) &&
       (!selectedOnly.value || selectedSet.value.has(row.id)),
   ),
 );

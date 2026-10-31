@@ -22,6 +22,7 @@ from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.schemas.workflow_data_selection import WorkflowSourceSelection
 from spectra_sherpa.app.services.dag.nodes.data.transforms import FilterSamplesNode
+from spectra_sherpa.app.services.dag.nodes.modeling.pca_nodes import PCANode
 from spectra_sherpa.app.services.dag.nodes.preprocessing.scale_node import ScaleNode
 from spectra_sherpa.app.services.experiments import experiment_dir
 from spectra_sherpa.app.services.model_application import load_project_dataset
@@ -77,7 +78,9 @@ async def test_catalog_import_collection_fit_and_saved_diagnostics(
     np.testing.assert_array_equal(direct.X, reference.data)
     np.testing.assert_array_equal(direct.target, expected_targets)
     assert direct.feature_axis.labels == list(reference.feature_names)
-    assert direct.sample_axis.labels is None  # identity is not a display-label fallback
+    display_labels = [f"Sample {index + 1}" for index in range(len(reference.data))]
+    assert direct.sample_axis.labels == display_labels
+    assert set(display_labels).isdisjoint(ids)
     assert "specimen_id" not in direct.sample_axis.sample_table
     assert direct.target_context.class_names == sorted(reference.target_names)
     assert direct.target_context.target_type == "categorical"
@@ -90,10 +93,23 @@ async def test_catalog_import_collection_fit_and_saved_diagnostics(
     roundtrip.write_text(exported["content"], encoding="utf-8")
     recovered = load_csv_as_sherpa(roundtrip)
     assert sample_ids(recovered) == ids
+    assert recovered.sample_axis.labels == display_labels
     np.testing.assert_array_equal(recovered.X, direct.X)
     np.testing.assert_array_equal(recovered.target, direct.target)
-    recovered.sample_axis.labels = [f"Renamed {index}" for index in range(len(ids))]
+    renamed_axis = recovered.sample_axis
+    renamed_axis.labels = [f"Renamed {index}" for index in range(len(ids))]
+    recovered.sample_axis = renamed_axis
+    assert recovered.sample_axis.labels == renamed_axis.labels
     assert sample_ids(recovered) == ids
+    # Display labels do not change the exact PCA fitted state or its digest.
+    unlabeled = direct.copy()
+    unlabeled_axis = unlabeled.sample_axis
+    unlabeled_axis.labels = None
+    unlabeled.sample_axis = unlabeled_axis
+    assert unlabeled.sample_axis.labels is None
+    pca = PCANode("label-invariance", {"n_components": "3", "standardized": True})
+    fitted = pca.fit_fitted_state(direct)
+    assert fitted == pca.fit_fitted_state(unlabeled) == pca.fit_fitted_state(recovered)
     order = np.array([len(ids) - 1, 0, 2])
     reordered = recovered[order]
     assert sample_ids(reordered) == [ids[index] for index in order]
@@ -112,6 +128,7 @@ async def test_catalog_import_collection_fit_and_saved_diagnostics(
     assert loaded.file_ids == [fid]
     assert loaded.dataset.meta["source_collection"]["files"][0]["sha256"] == original_sha
     assert sample_ids(loaded.dataset) == ids
+    assert loaded.dataset.sample_axis.labels == display_labels
     np.testing.assert_array_equal(loaded.dataset.X, reference.data)
     np.testing.assert_array_equal(loaded.dataset.target, expected_targets)
     binding = source_parameters(
@@ -150,6 +167,7 @@ async def test_catalog_import_collection_fit_and_saved_diagnostics(
     assert receipt["model_kind"] == "pca"
     assert receipt["identity_field"] == "sample_id"
     assert [row["id"] for row in receipt["rows"]] == ids
+    assert [row["display_label"] for row in receipt["rows"]] == display_labels
     assert receipt["n_calibration"] == len(reference.data)
     assert saved.json()["run_id"] == run.id
     assert (await auth_client.get(endpoint)).json() == saved.json()
@@ -157,6 +175,7 @@ async def test_catalog_import_collection_fit_and_saved_diagnostics(
     assert reloaded.source_manifest_sha256 == loaded.source_manifest_sha256
     assert reloaded.scientific_collection_sha256 == loaded.scientific_collection_sha256
     assert sample_ids(reloaded.dataset) == ids
+    assert reloaded.dataset.sample_axis.labels == display_labels
     assert path.read_bytes() == original_bytes
     assert hashlib.sha256(path.read_bytes()).hexdigest() == original_sha
 

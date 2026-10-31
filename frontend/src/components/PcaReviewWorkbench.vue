@@ -362,12 +362,12 @@
               <td>
                 <input
                   type="checkbox"
-                  :aria-label="`Select sample ${row.id}`"
+                  :aria-label="`Select sample ${reviewRowLabel(row)}`"
                   :checked="selectedSet.has(row.id)"
                   @change="toggle(row.id)"
                 />
               </td>
-              <td>{{ row.id }}</td>
+              <td :title="row.id">{{ reviewRowLabel(row) }}</td>
               <td :style="{ color: groupColors.get(row.group) }">{{ row.group }}</td>
               <td>{{ roleLabel(row) }}{{ marked.has(row.id) ? " · ◇ Marked outlier" : "" }}</td>
               <td>{{ number(isPls ? (row.reference?.[targetIndex] ?? null) : row.t2) }}</td>
@@ -408,6 +408,8 @@
 </template>
 
 <script setup lang="ts">
+import { reviewRowLabel } from "@/utils/sampleReview";
+import { escapeScientificText } from "@/utils/validationReportPlots";
 import MethodHelp from "@/components/MethodHelp.vue";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
@@ -560,7 +562,7 @@ const filteredRows = computed(() =>
   (review.value?.rows || [])
     .filter(
       (r) =>
-        r.id.toLowerCase().includes(query.value.toLowerCase()) &&
+        (reviewRowLabel(r).toLowerCase().includes(query.value.toLowerCase()) || r.id.toLowerCase().includes(query.value.toLowerCase())) &&
         (!selectedOnly.value || selectedSet.value.has(r.id)),
     )
     .slice()
@@ -597,7 +599,8 @@ function traces(x: (r: ReviewRow) => number | null, y: (r: ReviewRow) => number 
     x: rows.map(x),
     y: rows.map(y),
     customdata: rows.map((r) => r.id),
-    hovertemplate: "%{customdata}<br>x=%{x:.4g}<br>y=%{y:.4g}<extra>%{fullData.name}</extra>",
+    text: rows.map((r) => escapeScientificText(reviewRowLabel(r))),
+    hovertemplate: "%{text}<br>x=%{x:.4g}<br>y=%{y:.4g}<extra>%{fullData.name}</extra>",
     marker: {
       color: groupColors.value.get(rows[0].group),
       size: 8,

@@ -1,7 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { selectedSampleIds, selectionIndices } from "@/utils/sampleReview";
+import { reviewRowLabel, selectedSampleIds, selectionIndices } from "@/utils/sampleReview";
 
 describe("exact sample selection", () => {
+  it("keeps optional duplicate GUI labels separate from full identities and old fallback", () => {
+    expect(reviewRowLabel({ id: "full:a", display_label: "full:b" })).toBe("full:b");
+    expect(reviewRowLabel({ id: "full:b", display_label: "full:b" })).toBe("full:b");
+    expect(reviewRowLabel({ id: "historical" })).toBe("historical");
+    expect(reviewRowLabel({ id: "full:a", display_label: "   " })).toBe("full:a");
+    expect(selectedSampleIds({ points: [{ text: "full:b" }] }, new Set(["full:b"]))).toEqual([]);
+  });
   it("never recovers identity from plot positions or display text", () => {
     const allowed = new Set(["id-a", "id-b"]);
     expect(

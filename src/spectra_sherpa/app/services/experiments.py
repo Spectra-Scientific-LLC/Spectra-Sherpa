@@ -640,6 +640,9 @@ async def import_reference_dataset(
                 f"{SAMPLE_METADATA_CSV_PREFIX}sample_id",
                 [f"sklearn:{name}:{revision}:row:{index + 1}" for index in range(len(df))],
             )
+            # The existing plain sample column supplies editable display labels,
+            # separately from typed identity and after the table revision hash.
+            df.insert(1, "sample", [f"Sample {index + 1}" for index in range(len(df))])
 
             csv_name = f"sklearn_{name}.csv"
             csv_path = raw_dir / csv_name

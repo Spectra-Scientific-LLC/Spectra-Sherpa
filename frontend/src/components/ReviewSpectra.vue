@@ -35,6 +35,8 @@
   </section>
 </template>
 <script setup lang="ts">
+import { reviewRowLabel } from "@/utils/sampleReview";
+import { escapeScientificText } from "@/utils/validationReportPlots";
 import { computed, ref } from "vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 import type { ReviewRow, SpectralDisplay } from "@/utils/sampleReview";
@@ -69,12 +71,13 @@ const traces = computed(() =>
   visibleRows.value.map((row) => ({
     type: "scatter",
     mode: "lines+markers",
-    name: row.id,
+    name: escapeScientificText(reviewRowLabel(row)),
     showlegend: false,
     x: props.spectra.x,
     y: props.spectra.rows[row.id],
     customdata: props.spectra.x.map(() => row.id),
-    hovertemplate: "%{customdata}<br>%{x}: %{y:.5g}<extra></extra>",
+    text: props.spectra.x.map(() => escapeScientificText(reviewRowLabel(row))),
+    hovertemplate: "%{text}<br>%{x}: %{y:.5g}<extra></extra>",
     line: {
       color: props.colors.get(row.group),
       width: 1,

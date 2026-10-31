@@ -2,6 +2,8 @@ import type { ReviewCurationSource } from "./datasetCuration";
 /** Exact identities only. Plot positions, labels and trace numbers are never keys. */
 export interface ReviewRow {
   id: string;
+  /** Optional retained GUI text, never a selection/join/decision identity. */
+  display_label?: string;
   role: "calibration" | "excluded_projected" | "held_out_test";
   group: string;
   reference?: number[];
@@ -16,6 +18,15 @@ export interface ReviewRow {
   screening_status?: "outside_global_screen" | "within_global_screen" | "unavailable";
   applicability_unavailable_reason?: string | null;
   projection_error?: string;
+}
+/** Old receipts and unavailable labels retain their exact ID fallback. */
+export function reviewRowLabel(
+  row: Pick<ReviewRow, "id" | "display_label"> | undefined,
+  fallbackId = "",
+): string {
+  return typeof row?.display_label === "string" && row.display_label.trim()
+    ? row.display_label
+    : row?.id ?? fallbackId;
 }
 export interface RegressionStatistics {
   targets: Array<{

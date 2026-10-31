@@ -193,12 +193,19 @@ recorded exclusions can be restored without authorizing new label-based decision
 New project imports of the built-in Wine, Iris and Breast Cancer tables persist
 typed observation IDs through the CSV sample-metadata contract. IDs name the
 catalog dataset, its feature/target table revision and a row in that revision.
+Separate neutral display labels (`Sample 1`, `Sample 2`, …) are not part of
+the ID revision and can change without changing observation identity.
 Identical imports retain the same IDs; changed values or row order establish a
 different revision. These are catalog observation identities, not evidence of
 independent specimens or new acquisitions. This applies only to newly
 materialized files: existing imports and saved runs are unchanged. For an older
 import without typed IDs, attach a sample table with explicit IDs or import a new
 source with typed IDs, then rerun to obtain a new diagnostic review receipt.
+
+New retained PCA/PLS reviews may include the source's display label for GUI
+tables and plots. Labels can repeat; selections and decisions still use the
+full typed ID. Older receipts without labels remain readable with their exact
+IDs, without rewriting history. These GUI labels do not extend Advisor evidence.
 
 Loadings describe variables in a component, not selected-sample T²/Q contributions.
 Influence limits use all fitted components, with limits appropriate to calibration
