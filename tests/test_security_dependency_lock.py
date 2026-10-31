@@ -30,7 +30,7 @@ def test_python_lock_retains_reviewed_security_floors_and_scp_authority() -> Non
         "jupyterlab": "4.5.10",
         "mistune": "3.3.0",
         "pillow": "12.3.0",
-        "pypdf": "6.21.2",
+        "pypdf": "6.21.4",
         "nbconvert": "7.17.2",  # GHSA-pjvx-prjx-h659: extracted-output path traversal
         "setuptools": "84.1.0",  # GHSA-xmj3-9gf7-h52w: Windows legacy-wheel path escape
         "soupsieve": "2.8.4",
@@ -128,7 +128,9 @@ def test_pypdf_install_paths_exclude_versions_before_the_reviewed_security_floor
         assert Version("6.20.1") not in constraint
         assert Version("6.21.0") not in constraint
         assert Version("6.21.1") not in constraint
-        assert Version("6.21.2") in constraint
+        assert Version("6.21.2") not in constraint
+        assert Version("6.21.3") not in constraint
+        assert Version("6.21.4") in constraint
         assert _python_versions()["pypdf"] in constraint
         assert Version("7.0.0") not in constraint
 

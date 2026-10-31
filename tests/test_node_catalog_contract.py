@@ -207,8 +207,14 @@ def test_census_classifies_the_entire_catalog_against_the_managed_optimization_p
     assert eligible == profile.operation_ids
     assert census["aggregates"]["managed_optimization_profile_eligible"] == len(eligible)
     assert census["aggregates"]["outside_managed_optimization_profile"] == len(rows) - len(eligible)
-    assert census["aggregates"]["managed_optimization_profile_eligible"] == 18
-    assert census["aggregates"]["outside_managed_optimization_profile"] == 85
+    assert census["aggregates"]["managed_optimization_profile_eligible"] == 22
+    assert census["aggregates"]["outside_managed_optimization_profile"] == 81
+    assert {
+        "preprocess.clip_range",
+        "baseline.rubberband",
+        "preprocess.cosmic_ray",
+        "preprocess.clip_floor",
+    } <= eligible
     assert "diagnostics.labeled_regression_evaluator" in rows.keys() - eligible
     assert census["aggregates"]["managed_optimization_profile_contract_drift"] == 0
     assert census["aggregates"]["contracted_nodes"] == baseline["aggregates"]["contracted_nodes"]
