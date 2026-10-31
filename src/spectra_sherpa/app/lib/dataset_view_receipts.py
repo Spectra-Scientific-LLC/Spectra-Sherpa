@@ -135,18 +135,55 @@ def materialize_selection_receipt(loaded: LoadedProjectDataset, receipt: dict) -
     """Verify and apply a saved definition's target/group selection once."""
     from dataclasses import replace
 
-    verify_selection_receipt(loaded, receipt)
     authority = admit_target_authority(receipt.get("target_authority"))
+    table = getattr(loaded.dataset.sample_axis, "sample_table", None)
+    registered_reference = (
+        authority is not None
+        and isinstance(loaded.dataset.get_extra("reference.projection_id"), str)
+        and isinstance(table, dict)
+        and authority.column in table
+    )
+    if registered_reference:
+        from spectra_sherpa.app.lib.registered_reference_collection_identity import (
+            validate_registered_reference_collection_identity,
+        )
+
+        # Re-admit raw custody before any target attachment, including the
+        # receipt's target/group check. A self-consistent supervision binding
+        # does not prove the original X. Derived selections need their original
+        # source again; never reseal them or discard their annotation columns.
+        validate_registered_reference_collection_identity(loaded.dataset.meta.get("source_collection"), loaded.dataset)
+    verify_selection_receipt(loaded, receipt)
     dataset = loaded.dataset
     if authority is not None:
         dataset = attach_selected_target_dataset(
             loaded.dataset,
             target_type=authority.target_type,
             target_column=authority.column,
-            group_column=receipt.get("group_column") or "",
+            # Select a native response independently of groups so table-based
+            # group attachment cannot hide disagreement with that response.
+            group_column="" if registered_reference else receipt.get("group_column") or "",
             node_id="dataset-view-application",
             target_authority=authority,
         )
+        if registered_reference:
+            from spectra_sherpa.app.services.dag.supervision_binding import (
+                attach_sample_table_supervision,
+            )
+
+            supervised = attach_sample_table_supervision(
+                loaded.dataset,
+                target_type=authority.target_type,
+                target_column=authority.column,
+                group_column=receipt.get("group_column") or None,
+                node_id="dataset-view-application",
+                target_authority=authority,
+            )
+            # Native responses and annotation columns are two retained views
+            # of the same selected values, not interchangeable fallbacks.
+            if not np.array_equal(dataset.target, supervised.target):
+                raise ValueError("Saved native response differs from its registered sample-table target")
+            dataset = supervised
     if receipt.get("schema_version") == CURATED_VIEW_SCHEMA:
         from spectra_sherpa.app.services.dag.nodes.data.sample_preparation import filter_samples_dataset
 

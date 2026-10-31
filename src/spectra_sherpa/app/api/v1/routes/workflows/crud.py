@@ -54,6 +54,7 @@ from spectra_sherpa.app.services.project_data_sources import (
 )
 from spectra_sherpa.app.services.run_params import build_workflow_version_snapshot
 from spectra_sherpa.app.services.tools.builtin.workflow import validate_dag_spec_for_parent
+from spectra_sherpa.app.services.workflow_data_selections import cloned_selection_revisions
 
 logger = logging.getLogger(__name__)
 
@@ -782,6 +783,7 @@ async def duplicate_workflow(
         select(Workflow)
         .where(Workflow.id == workflow_id, Workflow.user_id == user_id)
         .options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
+        .with_for_update()
     )
     source_result = await session.execute(source_query)
     source = source_result.scalar_one_or_none()
@@ -847,16 +849,15 @@ async def duplicate_workflow(
         # A copy of a campaign-candidate sheet keeps the same validation scope.
         fold_validation_plan=source.fold_validation_plan,
         sheet_order=(max_order if max_order is not None else -1) + 1,
+        nodes=[],
+        edges=[],
     )
-    session.add(duplicate)
-    await session.flush()
 
     node_dicts = list(admission.nodes)
     edge_dicts = list(admission.edges)
 
     for node_data in node_dicts:
         node = WorkflowNode(
-            workflow_id=duplicate.id,
             node_id=node_data["node_id"],
             node_type=node_data["node_type"],
             label=node_data.get("label"),
@@ -865,20 +866,24 @@ async def duplicate_workflow(
             position_x=node_data.get("position_x"),
             position_y=node_data.get("position_y"),
         )
-        session.add(node)
+        duplicate.nodes.append(node)
 
     for edge_data in edge_dicts:
         edge = WorkflowEdge(
-            workflow_id=duplicate.id,
             from_node_id=edge_data["from_node_id"],
             to_node_id=edge_data["to_node_id"],
             from_output=edge_data.get("from_output", "default"),
             to_input=edge_data.get("to_input", "default"),
         )
-        session.add(edge)
+        duplicate.edges.append(edge)
 
     duplicate.integrity_hash = compute_workflow_hash(nodes=node_dicts, edges=edge_dicts)
-    await sync_workflow_data_sources(duplicate, session, source.nodes)
+    duplicate.data_selection_revisions = await cloned_selection_revisions(
+        session, source=source, duplicate=duplicate, user_id=user_id
+    )
+    session.add(duplicate)
+    await session.flush()
+    await sync_workflow_data_sources(duplicate, session, duplicate.nodes)
     await ensure_sheet_advisor_channel(duplicate, session, duplicate.tab_color)
     await session.commit()
 

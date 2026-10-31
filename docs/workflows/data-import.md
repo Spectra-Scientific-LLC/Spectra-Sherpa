@@ -153,6 +153,16 @@ the portfolio records which selection an analysis should use. Different saved
 selections can feed different workflow sheets. Changing the current preview does
 not rewrite earlier runs or silently rebind an existing workflow.
 
+Duplicating a sheet keeps its verified Data Portfolio selection and records a
+new binding for the copy; the original sheet's selection history stays intact.
+If that portfolio is no longer available, choose a current portfolio before
+duplicating the sheet.
+
+For registered reference data, selecting a response preserves the full sample
+table and original source identity. When both native responses and table columns
+provide that response, their values must agree; selection does not silently
+replace conflicting reference values.
+
 For plate-based work, [Multi-well](multi-well.md) supplies the acquisition plan;
 its matches become measured metadata only after a separate review and publication.
 
