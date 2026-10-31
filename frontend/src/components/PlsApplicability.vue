@@ -96,12 +96,12 @@
           >Applicability sample
           <select v-model="sample" aria-label="Applicability sample">
             <option value="">Select an observation</option>
-            <option v-for="id in selected" :key="id" :value="id">{{ id }}</option>
+            <option v-for="id in selected" :key="id" :value="id">{{ reviewRowLabel(review.rows.find((row) => row.id === id), id) }}</option>
           </select></label
         >
         <template v-if="observation">
           <p>
-            <strong>{{ sample }}</strong> · {{ roleLabel(observation) }} ·
+            <strong>{{ reviewRowLabel(review.rows.find((row) => row.id === sample), sample) }}</strong> · {{ roleLabel(observation) }} ·
             {{ plsScreeningLabel(observation) }}.
           </p>
           <p>
@@ -227,6 +227,8 @@
   </section>
 </template>
 <script setup lang="ts">
+import { reviewRowLabel } from "@/utils/sampleReview";
+import { escapeScientificText } from "@/utils/validationReportPlots";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { computed, ref, watch } from "vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
@@ -344,7 +346,8 @@ function traces(
     x: rows.map(x),
     y: rows.map(y),
     customdata: rows.map((row) => row.id),
-    hovertemplate: "%{customdata}<br>x=%{x:.5g}<br>y=%{y:.5g}<extra>%{fullData.name}</extra>",
+    text: rows.map((row) => escapeScientificText(reviewRowLabel(row))),
+    hovertemplate: "%{text}<br>x=%{x:.5g}<br>y=%{y:.5g}<extra>%{fullData.name}</extra>",
     marker: {
       color: props.colors.get(rows[0].group),
       size: 8,

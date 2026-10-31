@@ -161,3 +161,16 @@ describe("PLS exact-fit explanations", () => {
     w.unmount();
   });
 });
+
+
+it("uses display labels in explanation selectors and cards without changing lookup IDs", async () => {
+  const w = view(["a", "b"]);
+  await w.setProps({ rows: rows.map((row) => ({ ...row, display_label: "Same <label>" })) });
+  await flushPromises();
+  const options = w.findAll('select[aria-label="Sample to explain"] option');
+  expect(options.slice(1).map((option) => option.text())).toEqual(["Same <label>", "Same <label>"]);
+  expect(options.slice(1).map((option) => option.attributes("value"))).toEqual(["a", "b"]);
+  await w.get('select[aria-label="Sample to explain"]').setValue("b");
+  expect(w.find("strong").text()).toBe("Same <label>");
+  w.unmount();
+});

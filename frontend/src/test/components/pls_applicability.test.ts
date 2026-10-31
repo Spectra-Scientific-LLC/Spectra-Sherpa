@@ -150,3 +150,17 @@ describe("PLS predictor-space workbench", () => {
     w.unmount();
   });
 });
+
+
+it("uses optional observation labels for applicability text while keeping chart and selector IDs", async () => {
+  const w = view();
+  const review = plsReview();
+  review.rows = review.rows.map((row) => ({ ...row, display_label: "Same <&>" }));
+  await w.setProps({ review });
+  const options = w.findAll("select option").filter((option) => ["a", "b", "c"].includes(option.attributes("value")));
+  expect(options.map((option) => option.text())).toEqual(["Same <&>", "Same <&>", "Same <&>"]);
+  const traces = w.findAllComponents(PlotlyChart)[0].props("data");
+  expect(traces.flatMap((trace: { customdata: string[] }) => trace.customdata)).toEqual(["a", "b", "c"]);
+  expect(traces.flatMap((trace: { text: string[] }) => trace.text)).toEqual(["Same &lt;&amp;&gt;", "Same &lt;&amp;&gt;", "Same &lt;&amp;&gt;"]);
+  w.unmount();
+});

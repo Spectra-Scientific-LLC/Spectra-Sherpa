@@ -37,6 +37,16 @@ class FittedStateCustodyCapability:
 
 _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingProxyType(
     {
+        # Typed diagnostic IDs affect retained review output only, not fitted state.
+        (
+            "spectrasherpa.sherpa-plsda-state/5",
+            "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Typed diagnostic IDs preserve the fitted arrays, serializer and application mathematics.",
+        ),
         # Exact current producers; older custody classifications remain intact.
         (
             "spectrasherpa.model-artifact.pca/3",

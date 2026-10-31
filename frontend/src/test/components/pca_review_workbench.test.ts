@@ -58,6 +58,21 @@ beforeEach(() => {
   });
 });
 describe("PCA review workbench", () => {
+  it("sends full IDs for duplicate-labelled observations, never labels", async () => {
+    const data = receipt();
+    mocks.get.mockResolvedValue({ data: { ...data, rows: data.rows.map((row) => ({ ...row, display_label: "Same" })) } });
+    const wrapper = mount(PcaReviewWorkbench, options);
+    await flushPromises();
+    const boxes = wrapper.findAll('input[aria-label="Select sample Same"]');
+    expect(boxes).toHaveLength(3);
+    await boxes[1].setValue(true);
+    await wrapper.get('input[maxlength="1000"]').setValue("Review only");
+    await button(wrapper, "Mark as outlier").trigger("click");
+    await flushPromises();
+    expect(mocks.post).toHaveBeenCalledWith("/workflows/12/sample-review/pca", expect.objectContaining({ sample_ids: ["b"] }));
+    expect(JSON.stringify(mocks.post.mock.calls)).not.toContain("display_label");
+    wrapper.unmount();
+  });
   it("links lasso to the other plot and keyboard table, then persists an explicit mark", async () => {
     const wrapper = mount(PcaReviewWorkbench, options);
     await flushPromises();

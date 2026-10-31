@@ -132,6 +132,9 @@ async def build_review_receipt(definition: dict, results: dict, pca_id: str) -> 
     path, insertion_edge = review_path(definition, pca_id)
     baseline = _dataset(results, insertion_edge["from_node_id"])
     ids = sample_ids(baseline)
+    from .review_display_labels import review_display_labels
+
+    display_labels = review_display_labels(baseline, ids)
     collection = _dataset(results, path[0]["node_id"]).meta.get("source_collection", {})
     if len(collection.get("files", [])) != 1:
         from spectra_sherpa.app.lib.collection_assembly import verified_source_observations
@@ -212,6 +215,7 @@ async def build_review_receipt(definition: dict, results: dict, pca_id: str) -> 
         rows.append(
             {
                 "id": identity,
+                **({"display_label": display_labels[identity]} if identity in display_labels else {}),
                 "role": "calibration" if i is not None else "excluded_projected",
                 "group": str(classes[len(rows)]) if classes is not None else "Calibration",
                 **(

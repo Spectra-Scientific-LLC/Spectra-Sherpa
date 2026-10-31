@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { assertMatrix, closeDialog, downloadTable, plotData } from "./assertions";
+import { assertIdentity, assertLabelledMatrixCsv, assertMatrix, closeDialog, downloadTable, plotData } from "./assertions";
 import { readFile } from "node:fs/promises";
 import { createDataset, instantiate, runWorkflow } from "./journeys";
 
@@ -26,10 +26,18 @@ test("Iris: import, execute and independently inspect retained scientific surfac
   const scores = result.results.model_1.default.data;
   expect(scores).toHaveLength(150);
   expect(scores[0]).toHaveLength(3);
-  assertMatrix(
-    csv.slice(1).map((row) => row.slice(1).map(Number)),
-    scores,
-  );
+  const sourceAxis = result.results.data_1.default.y_axis;
+  const scoreOutput = result.results.model_1.default;
+  const labels = Array.from({ length: 150 }, (_, index) => `Sample ${index + 1}`);
+  expect(sourceAxis.labels).toEqual(labels);
+  expect(scoreOutput.y_axis.labels).toEqual(labels);
+  expect(sourceAxis.sample_table.sample_id).toHaveLength(150);
+  expect(new Set(sourceAxis.sample_table.sample_id).size).toBe(150);
+  assertIdentity(scoreOutput.y_axis.sample_table.sample_id, sourceAxis.sample_table.sample_id);
+  const ratios: number[] = scoreOutput.metadata.explained_variance_ratio;
+  expect(ratios).toHaveLength(3);
+  const columns = ratios.map((ratio, index) => `PC${index + 1} (${(ratio * 100).toFixed(1)}%)`);
+  assertLabelledMatrixCsv(csv, scores, labels, columns);
   await closeDialog(page);
   await page.getByRole("button", { name: "Quick Plot", exact: true }).click();
   await page.getByRole("dialog").locator(".plot-type-dropdown").click();

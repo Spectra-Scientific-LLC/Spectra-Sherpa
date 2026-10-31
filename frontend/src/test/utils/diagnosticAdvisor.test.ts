@@ -23,6 +23,16 @@ const scope = (): DiagnosticScope => ({
   sample_aliases: { S1: "Observation A" },
 });
 describe("diagnostic Advisor custody on the client", () => {
+  it("does not add GUI display labels to Advisor references or replace selected IDs", () => {
+    const labeled = {
+      ...review,
+      rows: review.rows.map((row) => ({ ...row, display_label: "GUI-only private label" })),
+    };
+    const reference = diagnosticReference(review, 8, "pca", ["a"], 0, [], null);
+    expect(diagnosticReference(labeled, 8, "pca", ["a"], 0, [], null)).toEqual(reference);
+    expect(reference.selected_ids).toEqual(["a"]);
+    expect(JSON.stringify(reference)).not.toContain("GUI-only");
+  });
   it("uses complete-cohort references for a large selection and rejects invented or duplicate membership", () => {
     const big = {
       ...review,

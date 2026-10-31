@@ -78,12 +78,12 @@
             <td>
               <input
                 type="checkbox"
-                :aria-label="`Select sample ${row.id}`"
+                :aria-label="`Select sample ${reviewRowLabel(row)}`"
                 :checked="selectedSet.has(row.id)"
                 @change="toggle(row.id)"
               />
             </td>
-            <td>{{ row.id }}</td>
+            <td :title="row.id">{{ reviewRowLabel(row) }}</td>
             <td>{{ row.class }}</td>
             <td>{{ number(row.t2) }}</td>
             <td>{{ number(row.q) }}</td>
@@ -105,7 +105,7 @@
         <button type="button" :disabled="page + 1 >= pages" @click="page++">Next</button>
       </div>
       <template v-if="focused">
-        <h4>Why {{ focused.id }} has this T²/Q</h4>
+        <h4 :title="focused.id">Why {{ reviewRowLabel(focused) }} has this T²/Q</h4>
         <p>
           Q = {{ number(focused.q) }} {{ receipt.q_units }}; T² = {{ number(focused.t2) }}
           {{ receipt.t2_units }}. Reference: {{ receipt.reference_population }} (n={{
@@ -172,7 +172,8 @@ import PlotlyChart from "@/components/PlotlyChart.vue";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { requestAdvisorPrompt } from "@/lib/advisorPromptActions";
 import { useSherpaStore } from "@/stores/sherpa";
-import { selectedSampleIds } from "@/utils/sampleReview";
+import { reviewRowLabel, selectedSampleIds } from "@/utils/sampleReview";
+import { escapeScientificText } from "@/utils/validationReportPlots";
 
 type Terms = {
   variables: [number, number, number | null][];
@@ -182,6 +183,7 @@ type Terms = {
 };
 type Row = {
   id: string;
+  display_label?: string;
   class: string;
   role: string;
   scores: number[];
@@ -370,10 +372,11 @@ function traces(x: (r: Row) => number | null, y: (r: Row) => number | null) {
     x: rows.map(x),
     y: rows.map(y),
     customdata: rows.map((r) => r.id),
+    text: rows.map((r) => escapeScientificText(reviewRowLabel(r))),
     marker: { color: classColors.value.get(label), size: 8 },
     selected: { marker: { size: 12, opacity: 1 } },
     unselected: { marker: { opacity: 0.25 } },
-    hovertemplate: "%{customdata}<br>x=%{x:.4g}<br>y=%{y:.4g}<extra>%{fullData.name}</extra>",
+    hovertemplate: "%{text}<br>x=%{x:.4g}<br>y=%{y:.4g}<extra>%{fullData.name}</extra>",
   }));
 }
 const scoreTraces = computed(() =>
@@ -466,7 +469,7 @@ const t2TermTraces = computed(() => [
 const qTermLayout = computed(() => ({
   ...layout,
   dragmode: "zoom",
-  title: `Selected-sample Q terms — ${focused.value?.id || ""}`,
+  title: `Selected-sample Q terms — ${escapeScientificText(reviewRowLabel(focused.value ?? undefined))}`,
   xaxis: { title: receipt.value?.feature_units || "Fitted variable" },
   yaxis: { title: `Q contribution (${receipt.value?.q_units || ""})` },
   uirevision: `plsda-q-terms:${props.artifactUid}:${focused.value?.id}`,
@@ -474,7 +477,7 @@ const qTermLayout = computed(() => ({
 const t2TermLayout = computed(() => ({
   ...layout,
   dragmode: "zoom",
-  title: `Selected-sample signed T² terms — ${focused.value?.id || ""}`,
+  title: `Selected-sample signed T² terms — ${escapeScientificText(reviewRowLabel(focused.value ?? undefined))}`,
   xaxis: { title: receipt.value?.feature_units || "Fitted variable" },
   yaxis: { title: `Signed T² contribution (${receipt.value?.t2_units || ""})` },
   uirevision: `plsda-t2-terms:${props.artifactUid}:${focused.value?.id}`,
@@ -489,6 +492,7 @@ function toggle(id: string) {
 }
 const filtered = computed(() =>
   (receipt.value?.rows || []).filter((row) =>
+    reviewRowLabel(row).toLowerCase().includes(query.value.toLowerCase()) ||
     row.id.toLowerCase().includes(query.value.toLowerCase()),
   ),
 );

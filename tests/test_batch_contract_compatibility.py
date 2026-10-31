@@ -83,6 +83,7 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
         _FEATURE_PRESENTATION_PREDECESSORS,
         _HANDOFF_PRESENTATION_PREDECESSORS,
         _PCA_DISPLAY_INPUT_REUSE_PREDECESSORS,
+        _PLSDA_DIAGNOSTIC_IDENTITY_PREDECESSORS,
         _PLSDA_INDEPENDENCE_READERS,
         _PREPROCESSING_APPLICATION_PREDECESSORS,
         _SCIENTIFIC_AUDIT_PREDECESSORS,
@@ -121,6 +122,9 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
     promoted = {entry.operation_id for entry in _PREPROCESSING_APPLICATION_PREDECESSORS}
     current_entries = tuple(_PREPROCESSING_APPLICATION_PREDECESSORS) + tuple(
         entry for entry in current_entries if entry.operation_id not in promoted
+    )
+    current_entries = tuple(_PLSDA_DIAGNOSTIC_IDENTITY_PREDECESSORS) + tuple(
+        entry for entry in current_entries if entry.operation_id != "classification.plsda"
     )
     for entry in current_entries:
         current = node_registry.get_metadata(entry.operation_id).resolved_execution_contract()

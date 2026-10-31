@@ -14,11 +14,12 @@ export interface ValidationFigure {
   predicted?: number[];
   residual?: number[];
 }
-const escape = (s: unknown) =>
+export const escapeScientificText = (s: unknown) =>
   String(s).replace(
     /[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
   );
+const escape = escapeScientificText;
 
 export function validationFigureSvg(figure: ValidationFigure): string {
   const x = figure.observed,

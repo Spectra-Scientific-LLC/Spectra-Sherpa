@@ -16,7 +16,7 @@
         >Sample to explain
         <select v-model="sample" aria-label="Sample to explain">
           <option value="">Select a sample</option>
-          <option v-for="id in selected" :key="id" :value="id">{{ id }}</option>
+          <option v-for="id in selected" :key="id" :value="id">{{ reviewRowLabel(rows.find((row) => row.id === id), id) }}</option>
         </select>
       </label>
       <label
@@ -35,7 +35,7 @@
       </p>
       <template v-if="row">
         <p>
-          <strong>{{ sample }}</strong> · {{ role }}
+          <strong>{{ reviewRowLabel(rows.find((row) => row.id === sample), sample) }}</strong> · {{ role }}
         </p>
         <p v-if="observation?.role === 'held_out_test'" role="note">
           Held-out inspection: using this explanation to tune the model makes subsequent development
@@ -100,7 +100,7 @@
         </div>
       </template>
       <p v-else-if="sample" role="status">
-        Explanation unavailable for {{ sample }}:
+        Explanation unavailable for {{ reviewRowLabel(rows.find((row) => row.id === sample), sample) }}:
         {{ observation?.projection_error || "No exact projected observation was retained." }}
       </p>
       <p v-else role="status">Select an observation to see its prediction contributions.</p>
@@ -168,6 +168,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { reviewRowLabel } from "@/utils/sampleReview";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { computed, ref, watch } from "vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";

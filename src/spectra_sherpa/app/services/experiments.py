@@ -609,6 +609,7 @@ async def import_reference_dataset(
             )
 
         elif source == "sklearn":
+            from spectra_sherpa.app.lib.portable_csv import SAMPLE_METADATA_CSV_PREFIX
             from spectra_sherpa.app.lib.sklearn_info import _LOADERS, SKLEARN_CATALOG
 
             if name not in SKLEARN_CATALOG:
@@ -627,6 +628,21 @@ async def import_reference_dataset(
                 df["target"] = [target_names[t] for t in bunch.target]
             else:
                 df["target"] = bunch.target
+
+            # Declare observation identity only when materializing a new source.
+            # The existing CSV metadata transport restores this typed column;
+            # plain labels are never promoted by a reader. Scope row identities
+            # to the exact catalog table revision, not an account, path, class,
+            # specimen or acquisition. Repeated imports are not new specimens.
+            revision = _sha256(df.to_csv(index=False, lineterminator="\n").encode("utf-8"))
+            df.insert(
+                0,
+                f"{SAMPLE_METADATA_CSV_PREFIX}sample_id",
+                [f"sklearn:{name}:{revision}:row:{index + 1}" for index in range(len(df))],
+            )
+            # The existing plain sample column supplies editable display labels,
+            # separately from typed identity and after the table revision hash.
+            df.insert(1, "sample", [f"Sample {index + 1}" for index in range(len(df))])
 
             csv_name = f"sklearn_{name}.csv"
             csv_path = raw_dir / csv_name

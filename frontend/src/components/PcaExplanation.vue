@@ -13,13 +13,13 @@
         >Sample to explain
         <select v-model="sample" aria-label="Sample to explain">
           <option value="">Select a sample</option>
-          <option v-for="id in selected" :key="id" :value="id">{{ id }}</option>
+          <option v-for="id in selected" :key="id" :value="id">{{ reviewRowLabel(rows.find((row) => row.id === id), id) }}</option>
         </select>
       </label>
       <p>{{ detail.reference_count }} calibration samples · {{ components }} components · {{ detail.space }}</p>
       <template v-if="row">
         <p>
-          <strong>{{ sample }}</strong> · {{ role }} · Full Q: {{ format(row.q_total) }} · Full T²:
+          <strong>{{ reviewRowLabel(rows.find((row) => row.id === sample), sample) }}</strong> · {{ role }} · Full Q: {{ format(row.q_total) }} · Full T²:
           {{ format(row.t2_total) }}
         </p>
         <p>{{ row.variables.length }} / {{ detail.feature_count }} variables shown · top Q and |T²| contributions</p>
@@ -82,7 +82,7 @@
         </div>
       </template>
       <p v-else-if="sample" role="status">
-        Explanation unavailable for {{ sample }}:
+        Explanation unavailable for {{ reviewRowLabel(rows.find((row) => row.id === sample), sample) }}:
         {{ projectionError || "No exact projected observation was retained." }}
       </p>
       <p v-else role="status">Select an observation to see its variable contributions.</p>
@@ -127,6 +127,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { reviewRowLabel } from "@/utils/sampleReview";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { computed, ref, watch } from "vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";

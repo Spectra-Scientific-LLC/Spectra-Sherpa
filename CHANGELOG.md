@@ -11,6 +11,21 @@ Candidate metadata is stamped `0.6.4` so final qualification can identify the
 intended release. This draft has no publication date and does not establish a
 PyPI release, completed qualification, desktop installer or hosted rollout.
 
+### Catalog observation identity and review labels
+
+- New Wine, Iris and Breast Cancer catalog imports carry typed observation IDs
+  separately from readable sample labels. These IDs identify source rows; they
+  do not establish independent specimens. Existing files, models and receipts
+  are not rewritten.
+- New PCA/PLS review receipts can retain display labels while selections and
+  requests continue to use full typed IDs. Older receipts fall back to their
+  recorded IDs. The PLS-DA diagnostic correction also uses typed IDs rather than
+  display labels; its producer and compatibility qualification remain pending.
+- Application of affected existing models requires reviewed exact predecessor
+  compatibility; this draft does not claim that qualification is complete.
+  Supported older campaign profiles remain view-only, subject to retained
+  evidence checks. New rounds require a new campaign under the current profile.
+
 ### Managed preprocessing and source custody
 
 - Managed profile 9 adds Rubberband, Cosmic Ray Removal, Clip Feature Range

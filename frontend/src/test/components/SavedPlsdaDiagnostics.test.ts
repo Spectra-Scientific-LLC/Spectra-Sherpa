@@ -85,7 +85,72 @@ const plotStub = {
 };
 
 describe("saved PLS-DA diagnostics", () => {
+  it("displays duplicate source labels while keeping exact IDs for selection, terms and Advisor references", async () => {
+    advisorPrompt.mockClear();
+    const label = '<Sample, "shared" | &>';
+    const escaped = '&lt;Sample, &quot;shared&quot; | &amp;&gt;';
+    const labelled = {
+      ...structuredClone(receipt),
+      rows: receipt.rows.map((row) => ({ ...structuredClone(row), display_label: label })),
+    };
+    const original = JSON.stringify(labelled);
+    apiGet.mockResolvedValue({
+      data: { run_id: 42, node_id: "fit", receipt_sha256: "a".repeat(64), receipt: labelled },
+    });
+    const wrapper = mount(SavedPlsdaDiagnostics, {
+      props: { artifactUid: "saved-labels", projectId: 9, nodeId: "fit", workflowId: 7 },
+      global: { stubs: { PlotlyChart: plotStub } },
+    });
+    await flushPromises();
+    const rows = wrapper.findAll("tbody tr");
+    expect(rows.map((row) => row.findAll("td")[1].text())).toEqual([label, label]);
+    expect(rows.map((row) => row.findAll("td")[1].attributes("title"))).toEqual(["a:1", "b:1"]);
+    const boxes = wrapper.findAll('input[type="checkbox"]');
+    expect(boxes.map((box) => box.attributes("aria-label"))).toEqual([
+      `Select sample ${label}`, `Select sample ${label}`,
+    ]);
+    expect(wrapper.find("sample").exists()).toBe(false);
+    for (const plot of wrapper.findAllComponents({ name: "PlotlyChart" })) {
+      const traces = plot.props("data");
+      expect(traces.map((trace: { customdata: string[] }) => trace.customdata)).toEqual([["a:1"], ["b:1"]]);
+      expect(traces.map((trace: { text: string[] }) => trace.text)).toEqual([[escaped], [escaped]]);
+      expect(traces[0].hovertemplate).toContain("%{text}");
+    }
+    await boxes[1].setValue(true);
+    expect(boxes[0].element).toHaveProperty("checked", false);
+    expect(boxes[1].element).toHaveProperty("checked", true);
+    expect(wrapper.get("h4").text()).toBe(`Why ${label} has this T²/Q`);
+    expect(wrapper.get("h4").attributes("title")).toBe("b:1");
+    const plots = wrapper.findAllComponents({ name: "PlotlyChart" });
+    expect(plots[0].props("selectedPointIds")).toEqual(["b:1"]);
+    expect(plots[2].props("data")[0].y).toEqual([0.2, 0.1]);
+    expect(plots[3].props("data")[0].y).toEqual([4, 2]);
+    expect(plots[2].props("layout").title).toBe(`Selected-sample Q terms — ${escaped}`);
+    expect(plots[3].props("layout").title).toBe(`Selected-sample signed T² terms — ${escaped}`);
+    await wrapper.findAll("button").find((b) => b.text().includes("Explain this sample"))!.trigger("click");
+    expect(advisorPrompt.mock.lastCall?.[1].diagnosticScope.reference).toEqual({
+      kind: "saved_plsda", artifact_uid: "saved-labels", workflow_id: 7, run_id: 42,
+      node_id: "fit", receipt_sha256: "a".repeat(64), selected_ids: ["b:1"],
+      select_all: false, variable_ids: [],
+    });
+    await wrapper.get('input[type="search"]').setValue("shared");
+    expect(wrapper.findAll("tbody tr")).toHaveLength(2);
+    await wrapper.get('input[type="search"]').setValue("b:1");
+    expect(wrapper.findAll("tbody tr")).toHaveLength(1);
+    plots[0].vm.$emit("selected", { points: [{ customdata: label }] });
+    await wrapper.vm.$nextTick();
+    expect(plots[0].props("selectedPointIds")).toEqual([]);
+    plots[0].vm.$emit("selected", { points: [{ customdata: "a:1" }] });
+    await wrapper.vm.$nextTick();
+    expect(plots[0].props("selectedPointIds")).toEqual(["a:1"]);
+    expect(wrapper.get("h4").attributes("title")).toBe("a:1");
+    expect(wrapper.findAllComponents({ name: "PlotlyChart" })[2].props("data")[0].y).toEqual([0.1, 0.1]);
+    expect(JSON.stringify(labelled)).toBe(original);
+    wrapper.unmount();
+  });
+
   it("links a selected classifier row to exact additive variable terms", async () => {
+    advisorPrompt.mockClear();
     apiGet.mockResolvedValue({
       data: { run_id: 42, node_id: "fit", receipt_sha256: "a".repeat(64), receipt },
     });

@@ -45,7 +45,7 @@ _READ_ONLY_CONSUMERS = {
     "model.apply_fitted_linear_regression": "520728c0451ffd8f5904ea5c3227c40698d601647365a6e38bebf69144d78e2c",
     "model.apply_fitted_pcr": "f09403b8c0f41c32ea591a1761e9e8dfa57149746634c5748be9b27d876f228c",
     "model.apply_fitted_svr": "265de5fa6c87e0629cffcaa742da2c84a1fc3ed848ac1c8750fbd7f83d640a58",
-    "classification.plsda": "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
+    "classification.plsda": "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
     "model.fitted_pls": "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
     "model.fitted_linear_regression": "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
     "model.fitted_pcr": "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
@@ -129,6 +129,9 @@ def test_scientific_audit_preserves_exact_prior_application_not_execution(operat
     latest.update({entry.operation_id: entry.consumer_digest for entry in authority._PLSDA_INDEPENDENCE_READERS})
     latest.update(
         {entry.operation_id: entry.consumer_digest for entry in authority._PREPROCESSING_APPLICATION_PREDECESSORS}
+    )
+    latest.update(
+        {entry.operation_id: entry.consumer_digest for entry in authority._PLSDA_DIAGNOSTIC_IDENTITY_PREDECESSORS}
     )
     assert contract.digest == latest.get(operation, current)
     serializer = contract.payload["fitted_state_serializer"]

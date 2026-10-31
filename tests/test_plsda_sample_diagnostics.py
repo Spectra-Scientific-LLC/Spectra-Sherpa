@@ -19,7 +19,10 @@ def _core(per_class: int = 12):
     dataset = SherpaDataset(
         X=matrix,
         feature_axis=SpectralAxis(values=np.linspace(1000, 1700, 8), units="cm-1"),
-        sample_axis=SampleAxis(labels=[f"obs-{i}" for i in range(len(labels))]),
+        sample_axis=SampleAxis(
+            labels=[f"Display {i}" for i in range(len(labels))],
+            sample_table={"sample_id": [f"obs-{i}" for i in range(len(labels))]},
+        ),
         target=labels,
         target_context=TargetContext(target_type="categorical", target_names=["class"]),
     )
@@ -47,13 +50,15 @@ def test_selected_terms_reconstruct_fitted_sample_t2_and_q() -> None:
 
 def test_duplicate_observation_identity_is_refused() -> None:
     core = _core()
-    labels = list(core["dataset"].sample_axis.labels)
-    labels[1] = labels[0]
-    core["dataset"].sample_axis = SampleAxis(labels=labels)
+    axis = core["dataset"].sample_axis
+    ids = list(axis.sample_table["sample_id"])
+    ids[1] = ids[0]
+    axis.sample_table = {"sample_id": ids}
+    core["dataset"].sample_axis = axis
     try:
         build_sample_diagnostics(core)
     except ValueError as exc:
-        assert "duplicated" in str(exc)
+        assert "sample_id" in str(exc) and "unique" in str(exc)
     else:
         raise AssertionError("Duplicate observation identity was admitted")
 
@@ -81,7 +86,10 @@ def test_small_reference_fit_keeps_unavailable_screens_unknown_to_advisor() -> N
     dataset = SherpaDataset(
         X=matrix,
         feature_axis=SpectralAxis(values=np.arange(4), units="cm-1"),
-        sample_axis=SampleAxis(labels=["a1", "b1", "a2", "b2"]),
+        sample_axis=SampleAxis(
+            labels=["Display 1", "Display 2", "Display 3", "Display 4"],
+            sample_table={"sample_id": ["a1", "b1", "a2", "b2"]},
+        ),
         target=labels,
         target_context=TargetContext(target_type="categorical", target_names=["class"]),
     )

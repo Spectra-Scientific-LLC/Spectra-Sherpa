@@ -1105,6 +1105,34 @@ _PREPROCESSING_APPLICATION_PREDECESSORS = tuple(
 )
 
 
+# Typed diagnostic identities change only the fit producer source closure.
+# Keep direct application-only pairs; no reverse or transitive inference.
+_PLSDA_DIAGNOSTIC_IDENTITY_PREDECESSORS = tuple(
+    SavedStateCompatibility(
+        "classification.plsda",
+        predecessor,
+        "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
+        "spectrasherpa.sherpa-plsda-state/5",
+    )
+    for predecessor in (
+        "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
+        "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+        "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+        "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
+        "526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
+        "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+        "7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
+        "85b2a1fd3938dee8a3a12f61397a07052883cd3f0bfa4d977151b600fe4992b6",
+        "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+        "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+        "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+        "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
+        "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
+        "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
+    )
+)
+
+
 def saved_state_predecessor_is_compatible(
     predecessor: object,
     consumer: str,
@@ -1141,6 +1169,7 @@ def saved_state_predecessor_is_compatible(
             *_AUTOMATIC_PLS_APPLICATION_PREDECESSORS,
             *_PREPROCESSING_APPLICATION_PREDECESSORS,
             *_PLSDA_INDEPENDENCE_READERS,
+            *_PLSDA_DIAGNOSTIC_IDENTITY_PREDECESSORS,
         )
         if entry.predecessor_digest == predecessor
         and entry.consumer_digest == consumer
@@ -1165,6 +1194,11 @@ def stateless_application_predecessor_is_compatible(operation: str, predecessor:
 
 def inspection_predecessor_catalog(profile_digest: str | None = None) -> dict:
     """Pinned read-only campaign profiles; not saved-state application aliases."""
+    if profile_digest == "d82af6a5a5b9922b1c57531d3ce9d121ad6e7c6f80ee3dc6bb24119f6b2f24c9":
+        raw = files("spectra_sherpa.core").joinpath("contract_predecessors_plsda_identity.json").read_bytes()
+        if hashlib.sha256(raw).hexdigest() != "8180787692c1f5162a0e8b0077dca5cfc530bfc8b1bbf7babe0050936dd5364d":
+            raise ValueError("trusted pre-diagnostic-identity inspection catalog digest mismatch")
+        return json.loads(raw)
     if profile_digest == "a90673771ee6f54d95591e8eb9cd56470dca68dae5a319a58936552d77a96140":
         raw = files("spectra_sherpa.core").joinpath("contract_predecessors_preprocessing.json").read_bytes()
         if hashlib.sha256(raw).hexdigest() != "2396b86869d660efd2a0bea2899c231d3ee87300dc750afefee6f6997d05fb14":

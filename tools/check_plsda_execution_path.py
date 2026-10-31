@@ -85,13 +85,13 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
     # PCA review applies only the just-executed ScaleNode state to exclusions.
     # No fit or classifier call is admitted; sample-local replay uses the SDK DAG.
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/pca_review_evidence.py": (
-        ("apply_fitted_state", 183, 33),
+        ("apply_fitted_state", 186, 33),
     ),
     # PLS review checks both executed branches against the exact ScaleNode
     # state and applies it to exclusions; no refit or classifier path is added.
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/pls_review_evidence.py": (
         ("apply_fitted_state", 415, 17),
-        ("apply_fitted_state", 716, 25),
+        ("apply_fitted_state", 721, 25),
     ),
     # Model-aware prediction dispatches only admitted regression producers and never fits.
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/predict_regression_node.py": (
