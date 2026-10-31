@@ -1,5 +1,6 @@
 """The project beacon reports explicit choices and newest generated evidence."""
 
+from copy import deepcopy
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -20,8 +21,9 @@ from spectra_sherpa.app.services.model_store import ModelArtifactIntegrityError
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("default_file_ids", [[11], None], ids=["explicit-default", "captured-all-default"])
 async def test_current_project_provenance_keeps_newest_failed_run_and_checks_named_dataset(
-    auth_client, test_session, test_user, monkeypatch
+    auth_client, test_session, test_user, monkeypatch, default_file_ids
 ):
     project = Project(user_id=test_user.id, name="Corn")
     test_session.add(project)
@@ -42,7 +44,7 @@ async def test_current_project_provenance_keeps_newest_failed_run_and_checks_nam
 
     async def load(_session, *, user_id, experiment_id, stage, file_ids, asset_id):
         assert user_id == test_user.id and experiment_id == experiment.id
-        assert stage == "raw" and file_ids == [11] and asset_id is None
+        assert stage == "raw" and file_ids in ([11], default_file_ids) and asset_id is None
         return LoadedProjectDataset(
             dataset=SimpleNamespace(
                 n_samples=2,
@@ -159,7 +161,7 @@ async def test_current_project_provenance_keeps_newest_failed_run_and_checks_nam
 
     default = await auth_client.post(
         choices_url,
-        json={"kind": "dataset", "experiment_id": experiment.id, "selected_file_ids": [11]},
+        json={"kind": "dataset", "experiment_id": experiment.id, "selected_file_ids": default_file_ids},
     )
     assert default.status_code == 201, default.text
     current_default = {item["kind"]: item for item in (await auth_client.get(url)).json()["records"]}
@@ -296,6 +298,133 @@ def test_model_training_link_rejects_other_cohort_in_same_experiment():
     selection["dataset_view_sha256"] = "c" * 64
     assert _run_uses_dataset_choice(run, choice)
     selection["scientific_collection_sha256"] = "e" * 64
+    assert not _run_uses_dataset_choice(run, choice)
+
+
+@pytest.fixture
+def wine_source_choice():
+    """QA25's null selection versus run692's frozen [982], with synthetic hashes.
+
+    These are source-binding facts, not a claim that all 178 rows trained the model.
+    No deployed receipt or historical record is modified or imported by this fixture.
+    """
+    receipt = {
+        "stage": "raw",
+        "selected_file_ids": None,
+        "file_ids": [982],
+        "asset_id": None,
+        "source_manifest_sha256": "a" * 64,
+        "collection_definition_sha256": None,
+        "scientific_collection_sha256": "b" * 64,
+        "target_authority": {
+            "schema_version": "spectrasherpa-target-authority/1",
+            "column": "target",
+            "target_type": "categorical",
+            "units": None,
+            "source_digest": "b" * 64,
+        },
+        "group_column": None,
+        "n_samples": 178,
+        "included_count": 178,
+    }
+    choice = SimpleNamespace(
+        selected_experiment_id=200,
+        selected_dataset_view_id=25,
+        selected_digest=receipt_sha256(receipt),
+        selected_definition=receipt,
+    )
+    selection = {
+        **{
+            key: deepcopy(value)
+            for key, value in receipt.items()
+            if key not in {"file_ids", "n_samples", "included_count"}
+        },
+        "experiment_id": 200,
+        "selected_file_ids": [982],
+        "dataset_view_id": 25,
+        "dataset_view_sha256": choice.selected_digest,
+    }
+    run = SimpleNamespace(
+        source_metadata={"data_selection_revisions": [{"selection": selection}]},
+        results_summary={"partition_1": {"n_train": 134, "n_test": 44}},
+    )
+    return run, choice, selection
+
+
+def test_model_training_link_matches_qa25_captured_files_without_rewriting_history(wine_source_choice):
+    run, choice, _selection = wine_source_choice
+    before = deepcopy((run, choice))
+    assert _run_uses_dataset_choice(run, choice)
+    assert (run, choice) == before
+    assert receipt_sha256(choice.selected_definition) == choice.selected_digest
+    assert run.results_summary["partition_1"] == {"n_train": 134, "n_test": 44}
+
+
+@pytest.mark.parametrize("files", [[983], [], [982, 983]])
+def test_model_training_link_refuses_changed_or_additional_files(wine_source_choice, files):
+    run, choice, selection = wine_source_choice
+    selection["selected_file_ids"] = files
+    assert not _run_uses_dataset_choice(run, choice)
+
+
+@pytest.mark.parametrize("files", [[983, 982], [982]])
+def test_model_training_link_refuses_reordered_or_partial_captured_scope(wine_source_choice, files):
+    run, choice, selection = wine_source_choice
+    choice.selected_definition["file_ids"] = [982, 983]
+    choice.selected_digest = receipt_sha256(choice.selected_definition)
+    selection["dataset_view_sha256"] = choice.selected_digest
+    selection["selected_file_ids"] = files
+    assert not _run_uses_dataset_choice(run, choice)
+
+
+def test_model_training_link_never_widens_explicit_receipt_to_all_files(wine_source_choice):
+    run, choice, selection = wine_source_choice
+    choice.selected_definition["selected_file_ids"] = [982]
+    choice.selected_digest = receipt_sha256(choice.selected_definition)
+    selection["dataset_view_sha256"] = choice.selected_digest
+    selection["selected_file_ids"] = None
+    assert not _run_uses_dataset_choice(run, choice)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("experiment_id", 201),
+        ("stage", "preprocessed"),
+        ("asset_id", "another-asset"),
+        ("source_manifest_sha256", "c" * 64),
+        ("collection_definition_sha256", "c" * 64),
+        ("scientific_collection_sha256", "c" * 64),
+        ("target_authority", None),
+        (
+            "target_authority",
+            {
+                "schema_version": "spectrasherpa-target-authority/1",
+                "column": "other_target",
+                "target_type": "categorical",
+                "units": None,
+                "source_digest": "b" * 64,
+            },
+        ),
+        ("group_column", "specimen"),
+        ("dataset_view_id", 26),
+        ("dataset_view_sha256", "c" * 64),
+    ],
+)
+def test_model_training_link_keeps_every_other_binding_check(wine_source_choice, field, value):
+    run, choice, selection = wine_source_choice
+    assert _run_uses_dataset_choice(run, choice)
+    selection[field] = value
+    assert not _run_uses_dataset_choice(run, choice)
+
+
+@pytest.mark.parametrize("missing", ["run_selection", "receipt_selection", "captured_files"])
+def test_model_training_link_missing_file_scope_fails_closed(wine_source_choice, missing):
+    run, choice, selection = wine_source_choice
+    if missing == "run_selection":
+        del selection["selected_file_ids"]
+    else:
+        del choice.selected_definition["selected_file_ids" if missing == "receipt_selection" else "file_ids"]
     assert not _run_uses_dataset_choice(run, choice)
 
 

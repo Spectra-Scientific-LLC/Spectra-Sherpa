@@ -67,9 +67,54 @@ function variancePercent(fraction: number): string {
   return fraction < 1 && Number(rounded) >= 100 ? "<100%" : `${rounded}%`;
 }
 
+/** Project the calibration aliases emitted beside classification_metrics_contract
+ * (dag/nodes/classification/core_utils.py), not aliases inferred from a node name.
+ * Never borrow authority from another output, producer or evaluation population.
+ */
+function isDeclaredClassificationReportAlias(value: unknown, parts: string[]): boolean {
+  const reportIndex = parts.indexOf("classification_report");
+  if (reportIndex < 0 || parts.slice(0, reportIndex).some(part => !["default", "metadata", "extra"].includes(part))) return false;
+  const record = (item: unknown): Record<string, unknown> => item && typeof item === "object" && !Array.isArray(item)
+    ? item as Record<string, unknown> : {};
+  let container = record(value);
+  const containers = [container];
+  for (const part of parts.slice(0, reportIndex)) {
+    container = record(container[part]);
+    containers.push(container);
+  }
+  const contract = record(container.metrics);
+  const splits = record(contract.splits);
+  const scope = "calibration_fit_diagnostics_not_validation_evidence";
+  if (contract.schema_version !== 1 || contract.task_type !== "classification"
+    || contract.evidence_scope !== scope || contract.primary_split !== "train"
+    || Object.keys(splits).length !== 1 || Object.keys(splits)[0] !== "train"
+    || (container.evidence_scope !== undefined && container.evidence_scope !== scope)) return false;
+  const report = record(container.classification_report);
+  const classes = contract.classes;
+  const aggregates = ["accuracy", "macro avg", "weighted avg", "micro avg", "samples avg"];
+  const reportClasses = Object.keys(report).filter(key => !aggregates.includes(key));
+  if (!Array.isArray(classes) || !classes.length || new Set(classes).size !== classes.length
+    || classes.some(label => typeof label !== "string" || aggregates.includes(label) || !reportClasses.includes(label))
+    || reportClasses.length !== classes.length) return false;
+  const suffix = parts.slice(reportIndex + 1);
+  const macroMetrics: Record<string, string> = { precision: "precision_macro", recall: "recall_macro", "f1-score": "f1_macro" };
+  const metric = suffix.length === 1 && suffix[0] === "accuracy" ? "accuracy"
+    : suffix.length === 2 && suffix[0] === "macro avg" ? macroMetrics[suffix[1]] : undefined;
+  if (!metric) return false; // Class detail, support and weighted/micro averages are distinct facts.
+  const alias = suffix.length === 1 ? report.accuracy : record(report["macro avg"])[suffix[1]];
+  const canonical = record(splits.train)[metric];
+  // Agreement is a consistency check AFTER scope/domain/metric qualification.
+  // Compare retained numbers before display rounding; preserve contradictions.
+  return typeof canonical === "number" && Number.isFinite(canonical) && alias === canonical
+    // Flattened training copies can veto suppression, never establish authority.
+    && containers.every(item => item[`train_${metric}`] === undefined || item[`train_${metric}`] === canonical);
+}
+
 export function keyResultRows(value: unknown, descriptors?: Record<string, ScientificValueDescriptor>): Row[] {
+  const payload = value;
   return (reportGroups({ result: value })[0]?.[1] ?? []).flatMap(([path, value]) => {
     const parts = path.split(" / ");
+    if (isDeclaredClassificationReportAlias(payload, parts)) return [];
     // Lineage, source annotations and authority records belong to detailed
     // evidence, not paper-style endpoints (even when their leaves say "units").
     if (parts.some(part => /^(?:scientific_projection|provenance|processing_history|target_context|selected_authority|target_authority|dataset_package|annotation_table|parameters|recipe|model|fitted_state|diagnostic_state|evaluations|quality|component_curve)(?:\[\d+\])?$/i.test(part))) return [];
