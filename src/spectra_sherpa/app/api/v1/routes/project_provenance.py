@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session, require_project
 from spectra_sherpa.app.contracts.project_provenance import hosted_project_provenance
+from spectra_sherpa.app.lib.dataset_view_receipts import selection_file_ids_match
 from spectra_sherpa.app.models.canonical_project_artifact import CanonicalProjectArtifact
 from spectra_sherpa.app.models.dataset_view import DatasetView
 from spectra_sherpa.app.models.execution_run import ExecutionRun
@@ -88,7 +89,7 @@ def _utc(value: datetime) -> datetime:
 
 
 def _run_uses_dataset_choice(run: ExecutionRun, choice: ProjectChoiceEvent) -> bool:
-    """Require the run's frozen source revision to match the whole active cohort."""
+    """Match the frozen source binding, not the downstream training/test populations."""
 
     receipt = choice.selected_definition
     metadata = run.source_metadata
@@ -101,10 +102,16 @@ def _run_uses_dataset_choice(run: ExecutionRun, choice: ProjectChoiceEvent) -> b
     selection = revision.get("selection") if isinstance(revision, dict) else None
     if not isinstance(selection, dict):
         return False
+    try:
+        # All-files views may freeze their captured ordered members for execution.
+        # Use the same directional authority as workflow admission and loading.
+        if not selection_file_ids_match(receipt, selection["selected_file_ids"]):
+            return False
+    except KeyError:
+        return False  # Missing scope evidence is not an explicit all-files choice.
     expected = {
         "experiment_id": choice.selected_experiment_id,
         "stage": receipt.get("stage"),
-        "selected_file_ids": receipt.get("selected_file_ids"),
         "asset_id": receipt.get("asset_id"),
         "source_manifest_sha256": receipt.get("source_manifest_sha256"),
         "collection_definition_sha256": receipt.get("collection_definition_sha256"),
