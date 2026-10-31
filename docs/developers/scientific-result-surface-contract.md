@@ -104,6 +104,17 @@ consume those fields rather than parsing English headings. Historical summaries
 without these fields retain their facts locally; unclassified rows are not sent
 as aggregate-only context.
 
+Short reports may omit `classification_report` accuracy and macro-average
+aliases only beside the same container's canonical classification metrics
+(`classification/core_utils.py::classification_metrics_contract`): version 1,
+calibration-fit scope, training as the sole split, and the same declared class
+domain. The corresponding retained training metric must be present and agree
+before rounding; a conflicting flattened training scalar keeps the alias visible.
+This is presentation only; per-class values, weighted averages,
+support counts, and distinct metrics such as balanced accuracy versus macro
+recall remain visible. Missing, ambiguous or contradictory authority preserves
+the aggregate rows. Detailed reports retain the original records.
+
 Resolve units for the exact response and saved upstream branch through
 `core/target_units.py`. The structured `unit_context` distinguishes recorded,
 missing and ambiguous units. Missing selected authority must not be replaced by

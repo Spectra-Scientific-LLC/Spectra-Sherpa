@@ -29,6 +29,118 @@ function fixture(): ReportData {
   };
 }
 
+// Run692's retained KNN calibration shape: the dataset metadata and extra
+// carry a sklearn class report beside core_utils.classification_metrics_contract.
+// Only public aggregate values are needed; no sample rows or model state.
+function wineClassificationFixture() {
+  const train = { accuracy: 0.9925373134328358, balanced_accuracy: 0.9938271604938271,
+    f1_macro: 0.9931394168504323, precision_macro: 0.9925925925925926, recall_macro: 0.9938271604938271 };
+  const classificationReport = {
+    class_0: { precision: 44 / 45, recall: 1, "f1-score": 88 / 89, support: 44 },
+    class_1: { precision: 1, recall: 53 / 54, "f1-score": 106 / 107, support: 54 },
+    class_2: { precision: 1, recall: 1, "f1-score": 1, support: 36 },
+    accuracy: train.accuracy,
+    "macro avg": { precision: train.precision_macro, recall: train.recall_macro, "f1-score": train.f1_macro, support: 134 },
+    "weighted avg": { precision: 0.9927031509121061, recall: train.accuracy, support: 134 },
+  };
+  const metrics = { schema_version: 1, task_type: "classification", primary_split: "train",
+    evidence_scope: "calibration_fit_diagnostics_not_validation_evidence", classes: ["class_0", "class_1", "class_2"],
+    splits: { train } };
+  const metadata = { metrics, classification_report: classificationReport, train_accuracy: train.accuracy,
+    train_balanced_accuracy: train.balanced_accuracy, train_precision_macro: train.precision_macro,
+    train_recall_macro: train.recall_macro, train_f1_macro: train.f1_macro };
+  const data = fixture();
+  data.workflowName = "Wine KNN";
+  const run = data.runs![0];
+  run.id = 692;
+  run.name = "Wine KNN run692";
+  run.evidence_gaps = [];
+  run.validation_summary = { schema_version: "spectrasherpa-readable-validation/1", run_id: 692,
+    rows: [{ label: "Training samples", value: "134" }, { label: "Test samples", value: "44" }] };
+  run.saved_definition = { nodes: [{ node_id: "model_1", node_type: "classification.knn", label: "Train KNN" },
+    { node_id: "eval_1", node_type: "diagnostics.classification_evaluator", label: "Held-out evaluation" }] };
+  run.params_snapshot = { model_1: { scale: true } };
+  run.results_summary = { model_1: { default: { metadata, extra: structuredClone(metadata) }, metrics },
+    eval_1: { metrics: { schema_version: "spectrasherpa.classification-evaluation/1",
+      accuracy: 41 / 44, macro_precision: 0.9278846153846154, macro_recall: 0.9330065359477123,
+      labels: ["class_0", "class_1", "class_2"], confusion_matrix: [[15, 0, 0], [0, 15, 2], [0, 1, 11]] } } };
+  run.diagnostics = { model_1: { classification_metrics: metrics } };
+  return { data, metadata, metrics, train };
+}
+
+it("projects run692 training aggregate aliases once, preserving classes, weighted averages and held-out evidence", () => {
+  const { data } = wineClassificationFixture();
+  const original = JSON.stringify(data);
+  const groups = scientificSummaryGroups(data);
+  const rows = groups.flatMap(group => group.rows);
+  expect(rows).not.toContainEqual(["classification_report / Accuracy", "0.9925"]);
+  expect(rows.some(([label]) => label.startsWith("classification_report / macro avg / ") && label !== "classification_report / macro avg / Class support")).toBe(false);
+  for (const label of ["Training Accuracy", "Training Macro precision", "Training Macro recall", "Training Macro F1", "Training Balanced accuracy"]) {
+    expect(rows.filter(row => row[0] === label)).toHaveLength(1);
+  }
+  expect(rows).toContainEqual(["classification_report / class_1 / Recall", "0.9815"]);
+  expect(rows).toContainEqual(["classification_report / macro avg / Class support", "134"]);
+  expect(rows).toContainEqual(["classification_report / weighted avg / Recall", "0.9925"]);
+  expect(rows).toContainEqual(["Accuracy", "0.9318"]);
+  expect(groups.some(group => group.table?.rows.some(row => JSON.stringify(row) === JSON.stringify(["class_1", "0", "15", "2"])))).toBe(true);
+  for (const generate of [generateProvenanceReport, generateMarkdownReport]) {
+    const output = generate(data).replaceAll("\\_", "_");
+    expect(output).not.toContain("classification_report / Accuracy");
+    expect(output).toContain("class_1");
+    expect(output).toContain("Autoscaled");
+  }
+  expect(JSON.stringify(data)).toBe(original);
+  data.reportMode = "detailed";
+  for (const generate of [generateProvenanceReport, generateMarkdownReport]) expect(generate(data).replaceAll("\\_", "_")).toContain("classification_report / accuracy");
+});
+
+it.each(["missing", "wrong-scope", "owner-scope", "wrong-task", "wrong-version", "wrong-primary", "different-classes", "multiple-populations", "other-producer", "other-output", "missing-metric", "conflicting-value"])(
+  "retains classification report aggregates with %s authority even when displayed values coincide", condition => {
+    const { data, metadata, metrics } = wineClassificationFixture();
+    // Isolate one metadata occurrence, so a different producer/container cannot qualify it.
+    data.runs![0].results_summary = { model_1: { default: { metadata } } };
+    data.runs![0].diagnostics = null;
+    if (condition === "missing" || condition === "other-producer" || condition === "other-output") {
+      delete (metadata as Partial<typeof metadata>).metrics;
+      if (condition === "other-producer") data.runs![0].results_summary.other = { metrics };
+      if (condition === "other-output") data.runs![0].results_summary.model_1.other_output = { metrics };
+    } else if (condition === "wrong-scope") metrics.evidence_scope = "held_out_test";
+    else if (condition === "owner-scope") Object.assign(metadata, { evidence_scope: "held_out_test" });
+    else if (condition === "wrong-task") metrics.task_type = "regression";
+    else if (condition === "wrong-version") metrics.schema_version = 2;
+    else if (condition === "wrong-primary") metrics.primary_split = "test";
+    else if (condition === "different-classes") metrics.classes = ["class_0", "class_1", "unassigned"];
+    else if (condition === "multiple-populations") Object.assign(metrics.splits, { test: { ...metrics.splits.train } });
+    else if (condition === "missing-metric") delete (metrics.splits.train as Partial<typeof metrics.splits.train>).accuracy;
+    else metadata.classification_report.accuracy += 0.00000001; // Still rounds to 0.9925.
+    expect(scientificSummaryGroups(data).flatMap(group => group.rows)).toContainEqual(["classification_report / Accuracy", "0.9925"]);
+  },
+);
+
+it("keeps numerically equal training, weighted and held-out metrics distinct", () => {
+  const { data, train } = wineClassificationFixture();
+  data.runs![0].results_summary.eval_1.metrics.accuracy = train.accuracy;
+  const rows = scientificSummaryGroups(data).flatMap(group => group.rows);
+  expect(rows).toContainEqual(["Training Accuracy", "0.9925"]);
+  expect(rows).toContainEqual(["Accuracy", "0.9925"]);
+  expect(rows).toContainEqual(["classification_report / weighted avg / Recall", "0.9925"]);
+  expect(rows).toContainEqual(["Training Balanced accuracy", "0.9938"]);
+  expect(rows).toContainEqual(["Training Macro recall", "0.9938"]);
+});
+
+it.each(["root", "metadata"])("keeps report aggregates when %s training scalars contradict their canonical copy", location => {
+  const { data, metadata } = wineClassificationFixture();
+  const model = { default: { metadata }, ...(location === "root" ? { train_accuracy: 0.75, train_precision_macro: 0.8 } : {}) };
+  if (location === "metadata") Object.assign(metadata, { train_accuracy: 0.75, train_precision_macro: 0.8 });
+  data.runs![0].results_summary = { model_1: model };
+  data.runs![0].diagnostics = null;
+  const rows = scientificSummaryGroups(data).flatMap(group => group.rows);
+  expect(rows).toContainEqual(["Training Accuracy", "0.75"]);
+  expect(rows).toContainEqual(["classification_report / Accuracy", "0.9925"]);
+  expect(rows).toContainEqual(["Training Macro precision", "0.8"]);
+  expect(rows).toContainEqual(["classification_report / macro avg / Precision", "0.9926"]);
+});
+
 describe("deterministic short scientific report", () => {
   it("keeps fitted PCR component count beside requested settings and regression metrics", () => {
     const data = fixture();
