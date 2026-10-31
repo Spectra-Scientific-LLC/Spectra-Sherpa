@@ -12,6 +12,7 @@ import spectra_sherpa.app.services.dag.nodes.data.loaders  # noqa: F401
 import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
 import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
 import spectra_sherpa.app.services.dag.nodes.regression_evaluator_node  # noqa: F401
+import spectra_sherpa.app.services.dag.nodes.time_series  # noqa: F401
 from spectra_sherpa.app.services.dag import managed_optimization_profile as managed_optimization_profile_module
 from spectra_sherpa.app.services.dag import validation_graph as validation_graph_module
 from spectra_sherpa.app.services.dag.executor_types import WorkflowEdge, WorkflowNode
@@ -212,9 +213,9 @@ def test_local_canonical_grammar_remains_broader_than_managed_resource_envelope(
     )
 
 
-def test_nonreplayable_rubberband_never_enters_managed_scoring() -> None:
+def test_time_series_trend_never_enters_spectral_managed_scoring() -> None:
     with pytest.raises(ValidationGraphError, match="local-only"):
-        admit_validation_graph([WorkflowNode("rubberband", "baseline.rubberband", {})], [])
+        admit_validation_graph([WorkflowNode("trend", "time_series.trend_removal", {"method": "linear"})], [])
 
 
 def test_serialized_graph_rejects_parameter_mutation_without_its_bound_graph_digest() -> None:
@@ -314,11 +315,15 @@ def test_managed_parameter_projection_exposes_the_same_interval_only_subset() ->
 def test_first_party_profile_is_closed_versioned_and_binds_each_registered_contract() -> None:
     profile = managed_optimization_profile()
     assert profile.profile_id == "first_party_pls"
-    assert profile.profile_version == "8"
+    assert profile.profile_version == "9"
     assert len(profile.digest) == 64
     assert profile.operation_ids == {
         "preprocess.smooth",
         "baseline.penalized_ls",
+        "baseline.rubberband",
+        "preprocess.clip_range",
+        "preprocess.clip_floor",
+        "preprocess.cosmic_ray",
         "preprocess.derivative",
         "preprocess.emsc",
         "preprocess.msc",
@@ -434,7 +439,7 @@ def test_admission_reports_contract_identity_separately_from_runtime(monkeypatch
 
 
 def test_offline_inspection_does_not_re_admit_a_local_only_contract() -> None:
-    node = WorkflowNode("rubberband", "baseline.rubberband", {})
+    node = WorkflowNode("trend", "time_series.trend_removal", {"method": "linear"})
 
     with pytest.raises(ValidationGraphError, match="local-only"):
         admit_validation_graph([node], [], require_live_runtime=False)
@@ -452,3 +457,9 @@ def test_admission_rejects_pls_when_its_native_numpy_runtime_drifts(monkeypatch)
         match=r"pls managed runtime attestation failed: first_party_pls requires numpy==1\.26\.4; observed 1\.27\.0",
     ):
         _admit_contract(WorkflowNode("pls", "model.fitted_pls", {}))
+
+
+def test_rubberband_is_admitted_for_sample_local_managed_scoring():
+    graph = admit_validation_graph([WorkflowNode("rubberband", "baseline.rubberband", {})], [])
+    assert graph.nodes[0].operation_id == "baseline.rubberband"
+    assert graph.nodes[0].contract.payload["lifecycle_kind"] == "stateless_transform"

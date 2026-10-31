@@ -224,8 +224,15 @@ class HistoricalReconstructionContext:
             == "a90673771ee6f54d95591e8eb9cd56470dca68dae5a319a58936552d77a96140"
         )
 
+    @property
+    def predates_grouped_cv(self) -> bool:
+        return (
+            self._catalog["profile"]["profile_digest"]
+            == "af74c1883601c4db7943953a864eb319794e19cebf5b303ef3f67ac858714336"
+        )
+
     def added_pls_parameters(self) -> set[str]:
-        if self.predates_preprocessing_expansion:
+        if self.predates_preprocessing_expansion or self.predates_grouped_cv:
             return set()
         if self.predates_automatic_pls:
             return {"component_fit_mode"}
@@ -299,14 +306,18 @@ class HistoricalReconstructionContext:
         contract = NodeExecutionContract.from_dict(archived["payload"])
         if contract.digest != archived["digest"] or contract.digest != digest:
             raise ValidationGraphError("unknown historical operation/contract identity")
-        if self.predates_preprocessing_expansion:
+        if self.predates_preprocessing_expansion or self.predates_grouped_cv:
             reviewed = {
                 "model.fitted_pls": (
                     "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
                     "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
                 ),
                 "classification.plsda": (
-                    "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
+                    (
+                        "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236"
+                        if self.predates_grouped_cv
+                        else "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824"
+                    ),
                     "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
                 ),
             }

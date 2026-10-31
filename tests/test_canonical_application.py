@@ -402,20 +402,22 @@ def test_legacy_application_plan_is_rejected_before_it_can_execute() -> None:
     "operation, parameters",
     [
         ("preprocess.clip_range", {"minimum": 1000.0, "maximum": 1800.0, "exclude_range": False}),
+        ("preprocess.clip_range", {"minimum": 1200.0, "maximum": 1600.0, "exclude_range": True}),
         ("baseline.rubberband", {}),
         ("preprocess.cosmic_ray", {"window": 7, "zscore": 3.0}),
         ("preprocess.clip_floor", {"floor": 0.0}),
     ],
 )
 @pytest.mark.parametrize("descending_axis", [False, True])
+@pytest.mark.parametrize("n_samples", [12, 24])
 def test_promoted_preprocessing_validates_refits_and_builds_application(
-    operation, parameters, descending_axis, tmp_path
+    operation, parameters, descending_axis, n_samples, tmp_path
 ):
     # Rubberband makes the endpoints constant. Preserve the scientific refusal
     # to autoscale constant features; use mean-centered PLS for this pipeline.
     capsule, artifact = _capsule_and_artifact(
         stateless_preprocess=(operation, parameters),
-        n_samples=24,
+        n_samples=n_samples,
         include_scale=False,
         descending_axis=descending_axis,
         model_parameters={"n_components": 2, "scale": False},
@@ -464,6 +466,7 @@ def test_promoted_preprocessing_validates_refits_and_builds_application(
     "operation, parameters",
     [
         ("preprocess.clip_range", {"minimum": 1000.0, "maximum": 1800.0, "exclude_range": False}),
+        ("preprocess.clip_range", {"minimum": 1200.0, "maximum": 1600.0, "exclude_range": True}),
         ("baseline.rubberband", {}),
         ("preprocess.cosmic_ray", {"window": 7, "zscore": 3.0}),
         ("preprocess.clip_floor", {"floor": 0.0}),
@@ -501,3 +504,46 @@ def test_rubberband_keeps_constant_endpoint_autoscaling_refusal():
     model = node_registry.create_node("model.fitted_pls", "model", {"n_components": 2, "scale": True})
     with pytest.raises(ValueError, match="SIMPLS cannot autoscale constant X column"):
         model.fit_fitted_state(corrected, target)
+
+
+@pytest.mark.parametrize("field", ["projection", "reconstruction"])
+def test_artifact_reader_rejects_dotted_parameter_field_alias(field):
+    from spectra_sherpa.sdk.canonical_fitted_artifact import CanonicalFittedArtifactError
+
+    _capsule, artifact = _capsule_and_artifact(
+        n_samples=12,
+        include_scale=False,
+        stateless_preprocess=("preprocess.clip_range", {"minimum": 1000.0, "maximum": 1800.0, "exclude_range": False}),
+        model_parameters={"n_components": 2, "scale": False},
+    )
+    manifest = artifact.as_dict()
+    state = json.loads(artifact.state_bytes["model"])
+    assert state["features"] == state["reference_samples"] == 12
+    state[f"diagnostic_state.{field}"] = state["diagnostic_state"][field]
+    raw = json.dumps(state, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode()
+    member = next(item for item in manifest["state_members"] if item["node_id"] == "model")
+    member["state_content_digest"] = hashlib.sha256(raw).hexdigest()
+    manifest["artifact_digest"] = _digest({key: value for key, value in manifest.items() if key != "artifact_digest"})
+    states = {**artifact.state_bytes, "model": raw}
+    with pytest.raises(CanonicalFittedArtifactError, match="sample-level rows"):
+        CanonicalFittedArtifact.from_serialized(
+            json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(), states
+        )
+
+
+def test_parameter_shape_custody_does_not_establish_scientific_screening_validity():
+    from spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node import FittedPLSV2Node
+    from spectra_sherpa.sdk.canonical_fitted_artifact import _validate_data_free_state
+
+    _capsule, artifact = _capsule_and_artifact(
+        n_samples=12,
+        include_scale=False,
+        stateless_preprocess=("preprocess.clip_range", {"minimum": 1000.0, "maximum": 1800.0, "exclude_range": False}),
+        model_parameters={"n_components": 2, "scale": False},
+    )
+    state = json.loads(artifact.state_bytes["model"])
+    FittedPLSV2Node("check", {}).validate_fitted_state(state)
+    state["diagnostic_state"]["q_limit"] = -1.0
+    _validate_data_free_state(state, serializer=state["serializer"])
+    with pytest.raises(ValueError, match="screening q_limit"):
+        FittedPLSV2Node("check", {}).validate_fitted_state(state)

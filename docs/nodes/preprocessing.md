@@ -27,15 +27,20 @@ The expanded managed profile includes **Clip Feature Range**, **Rubberband**,
 smoothing, derivatives, scaling, MSC, EMSC, OSC and penalized baseline operations.
 Each proposed recipe runs through the canonical nodes during validation and full
 refit. Its canonical application package repeats the recorded preprocessing on
-new spectra; it does not fit corrections on prediction samples.
+new spectra. Sample-local corrections are recomputed independently for each
+incoming spectrum; no population-fitted correction is relearned from prediction
+samples.
 
 - **Clip Feature Range:** bounds use the measured axis units and must stay inside
-  the source range for campaign proposals. Keep/remove intervals preserve axis
+  the source range for new or edited campaign intervals. An unchanged seed
+  interval may surround the source range (for example 400–4000 on 650–4000 data). Keep/remove intervals preserve axis
   order. Removing an internal band does not make the remaining coordinates
   uniformly spaced; operations requiring a uniform grid can still refuse it.
 - **Rubberband:** correction uses each spectrum's lower convex envelope. Endpoints
   can become constant; autoscaled PLS can refuse them. Mean-centered PLS avoids
-  scaling those constant columns.
+  scaling those constant columns. The proposal compiler refuses a known constant-
+  endpoint path into autoscaled PLS before spending a trial; it does not mistake
+  standalone Scale / Center's safe constant-variable handling for that refusal.
 - **Cosmic Ray Removal:** removes local spikes with the recorded window and
   threshold. Review narrow real peaks before accepting a correction.
 - **Clip Floor:** enforces a declared intensity floor. This is appropriate when
