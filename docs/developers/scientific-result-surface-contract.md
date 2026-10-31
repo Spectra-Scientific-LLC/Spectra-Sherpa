@@ -65,6 +65,12 @@ The UI must preserve:
 
 A renderer should consume a typed result or presentation contract. It should not infer meaning from node names or array shape.
 
+Confusion-matrix Data View preserves the declared actual/reference class row
+identities and predicted class column order alongside the retained counts.
+Class names remain intact, including punctuation and long names; sample-label
+splitting or compaction must not change them. Explicit invalid axis labels or
+contradictory dimension roles must not fall back to similarly sized sample labels.
+
 #### Declared context relationships
 
 - `ScientificPresentation.input_binding` names the input axis to preserve.
