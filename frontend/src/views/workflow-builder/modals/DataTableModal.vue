@@ -187,8 +187,8 @@ import Button from "primevue/button";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import SampleSelectionMap from "@/components/SampleSelectionMap.vue";
-import { isAuditField, scientificMetadata, scientificColumnLabel, scientificResponseUnit } from "@/utils/scientificDisplay";
-import { isProjectedScientificKind } from "@/utils/scientificPresentation";
+import { isAuditField, scientificMetadata, scientificColumnLabel, scientificRecordColumnKeys, scientificRecordColumnLabel, scientificStructuredCell, scientificResponseUnit } from "@/utils/scientificDisplay";
+import { isProjectedScientificKind, projectedPresentationIdentity } from "@/utils/scientificPresentation";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";
 import { classificationMetricRows } from "@/utils/scientificMetricRows";
 import { scientificMatrixColumns, scientificMatrixRowLabels } from "@/utils/scientificMatrixColumns";
@@ -563,17 +563,6 @@ const matrixColumnLabels = computed(() => {
   return scientificMatrixColumns(output, width);
 });
 
-function peakColumnLabel(key: string, metadata: Record<string, any>): string {
-  const unit = typeof metadata.x_units === "string" ? ` (${metadata.x_units})` : "";
-  const names: Record<string, string> = {
-    consensus_peak_id: "Peak", median_pos: `Median position${unit}`, min_pos: `Minimum position${unit}`,
-    max_pos: `Maximum position${unit}`, median_half_prominence_width: `Half-prominence width${unit}`,
-    detection_count: "Detections", sample_count: "Samples", detection_fraction: "Detection fraction",
-    median_height: "Median height", median_absolute_window_integral: "Absolute window integral",
-  };
-  return names[key] ?? key.replace(/_/g, " ");
-}
-
 // Build table columns
 const tableColumns = computed(() => {
   const output = inspectedOutput.value;
@@ -609,17 +598,7 @@ const tableColumns = computed(() => {
     if (!isPlotlyFormat.value && Array.isArray(metadata.column_names) && metadata.column_names.length > 0) {
       orderedKeys = metadata.column_names.map((k: any) => String(k));
     } else {
-      const seen = new Set<string>();
-      for (const row of data) {
-        if (row && typeof row === "object" && !Array.isArray(row)) {
-          for (const key of Object.keys(row)) {
-            if (!seen.has(key)) {
-              seen.add(key);
-              orderedKeys.push(key);
-            }
-          }
-        }
-      }
+      orderedKeys = scientificRecordColumnKeys(data);
     }
 
     for (const key of orderedKeys) {
@@ -634,7 +613,7 @@ const tableColumns = computed(() => {
       }
       columns.push({
         field: key,
-        header: scientificColumnLabel(key, metadata, metadata.type === "PeakFinding" ? peakColumnLabel(key, metadata) : key),
+        header: scientificRecordColumnLabel(key, metadata, projectedPresentationIdentity(output)?.kind),
         width: isNumeric ? "120px" : "160px",
         isNumeric,
       });
@@ -931,13 +910,8 @@ const displayMetadata = computed(() => {
 
 function formatValue(value: any, isNumeric: boolean): string {
   if (value === null || value === undefined) return "-";
-  if (typeof value === "object") {
-    if (Array.isArray(value) && value.some(item => item !== null && typeof item === "object")) {
-      return `${value.length} records (hover for details)`;
-    }
-    const text = JSON.stringify(value);
-    return text.length > 100 ? `${text.slice(0, 100)}…` : text;
-  }
+  const structured = scientificStructuredCell(value);
+  if (structured !== null) return structured;
   if (isNumeric && typeof value === "number") {
     if (Number.isNaN(value)) return "NaN";
     if (!Number.isFinite(value)) return value > 0 ? "∞" : "-∞";

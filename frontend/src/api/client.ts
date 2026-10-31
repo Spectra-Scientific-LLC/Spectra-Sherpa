@@ -207,7 +207,18 @@ api.interceptors.response.use(response => {
     traceGui(traceOperation(response.config.url, response.config.method), "ok", {
       status: response.status, elapsed_ms: Math.min(3600000, Math.round(performance.now() - (traceStarts.get(response.config) ?? performance.now()))),
     });
-    if (response.headers["x-sherpa-gui-trace"] === "1") enableGuiTrace(body => api.post("/logs/workspace-events", body));
+    if (response.headers["x-sherpa-gui-trace"] === "1") enableGuiTrace((body, current) => api.post("/logs/workspace-events", body, {
+      // Axios request interceptors are asynchronous: a queue-time check alone
+      // cannot bind this body to the actor selected at actual dispatch. Keep
+      // default serialization and check again synchronously at the adapter edge.
+      transformRequest: [
+        ...(Array.isArray(api.defaults.transformRequest) ? api.defaults.transformRequest : api.defaults.transformRequest ? [api.defaults.transformRequest] : []),
+        function (data) {
+          if (!current()) throw new axios.CanceledError("Diagnostic scope superseded", this);
+          return data;
+        },
+      ],
+    }));
   }
   return response;
 }, error => {

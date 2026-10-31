@@ -1,6 +1,7 @@
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, h, nextTick, onUnmounted, reactive } from "vue";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { enableGuiTrace, flushGuiTrace, resetGuiTrace } from "@/lib/guiTrace";
 import { WorkflowValidationError } from "@/utils/errors";
 import {
   dataSelectionReceiptStorageKey,
@@ -15,6 +16,7 @@ const lifecycleCounts = reactive({
 });
 
 const workbookStore = reactive({
+  isLoading: false,
   sheets: [
     {
       kind: "workflow",
@@ -740,6 +742,41 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     );
     expect(uvTab.text()).not.toContain("Pending: Wine");
     uvTab.unmount();
+  });
+
+  it("traces each rendered loading predicate after flush and deduplicates unchanged snapshots", async () => {
+    resetGuiTrace();
+    const send = vi.fn().mockResolvedValue(undefined);
+    enableGuiTrace(send);
+    projectStore.currentProjectId = null;
+    let finish!: () => void;
+    projectStore.selectProject.mockImplementationOnce(async (id: number) => {
+      await new Promise<void>(resolve => { finish = resolve; });
+      projectStore.currentProjectId = id;
+    });
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    const snapshots = async () => {
+      await flushGuiTrace();
+      return send.mock.calls.flatMap(([body]) => body.events).filter(e => e.operation === "workflow_loading");
+    };
+    expect(wrapper.find('[aria-label="Loading workflow"]').exists()).toBe(true);
+    expect((await snapshots()).at(-1)).toMatchObject({ state: "start", workbook_context_ready: false, workbook_loading: false, workflow_loading: false });
+    finish(); await flushPromises();
+    expect(wrapper.find('[aria-label="Loading workflow"]').exists()).toBe(false);
+    expect((await snapshots()).at(-1)).toMatchObject({ state: "ok", workbook_context_ready: true, workbook_loading: false, workflow_loading: false, workflow_id: 101 });
+    for (const [store, field] of [[workbookStore, "workbook_loading"], [workflowStore, "workflow_loading"]] as const) {
+      store.isLoading = true; await nextTick();
+      expect(wrapper.find('[aria-label="Loading workflow"]').exists()).toBe(true);
+      expect((await snapshots()).at(-1)).toMatchObject({ state: "start", [field]: true });
+      const count = (await snapshots()).length;
+      store.isLoading = true; await nextTick();
+      expect((await snapshots()).length).toBe(count);
+      store.isLoading = false; await nextTick();
+      expect(wrapper.find('[aria-label="Loading workflow"]').exists()).toBe(false);
+      expect((await snapshots()).at(-1)).toMatchObject({ state: "ok", [field]: false });
+    }
+    wrapper.unmount(); resetGuiTrace();
   });
 
   it("resolves a pending receipt after a cold tab hydrates its routed project", async () => {

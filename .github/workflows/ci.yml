@@ -151,11 +151,59 @@ jobs:
           fi
 
       - name: Run tests
+        id: public_tests
         env:
+          PYTEST_ADDOPTS: --durations=0 --durations-min=0
           PUBLICATION_TEST_POSTGRES_URL: ${{ matrix.os == 'ubuntu-latest' && matrix.install_profile == 'postgres' && 'postgresql+asyncpg://postgres@127.0.0.1:5432/postgres' || '' }}
           REQUIRE_PUBLICATION_POSTGRES: ${{ matrix.os == 'ubuntu-latest' && matrix.install_profile == 'postgres' && '1' || '0' }}
         run: |
-          poetry run python scripts/run_public_tests.py
+          set -o pipefail
+          mkdir -p ci-test-timings
+          poetry run python scripts/run_public_tests.py 2>&1 | tee ci-test-timings/pytest.log
+
+      - name: Record backend test timing context
+        if: always()
+        env:
+          MATRIX_OS: ${{ matrix.os }}
+          INSTALL_PROFILE: ${{ matrix.install_profile }}
+          TEST_OUTCOME: ${{ steps.public_tests.outcome }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import platform
+          import subprocess
+          from pathlib import Path
+
+          output = Path("ci-test-timings")
+          output.mkdir(exist_ok=True)
+          log = output / "pytest.log"
+          metadata = {
+              "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "event_sha": os.environ.get("GITHUB_SHA"),
+              "run_id": os.environ.get("GITHUB_RUN_ID"),
+              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+              "event_name": os.environ.get("GITHUB_EVENT_NAME"),
+              "matrix_os": os.environ["MATRIX_OS"],
+              "install_profile": os.environ["INSTALL_PROFILE"],
+              "runner_os": os.environ.get("RUNNER_OS"),
+              "runner_arch": os.environ.get("RUNNER_ARCH"),
+              "python_version": platform.python_version(),
+              "test_outcome": os.environ["TEST_OUTCOME"],
+              "pytest_log_sha256": hashlib.sha256(log.read_bytes()).hexdigest() if log.is_file() else None,
+          }
+          (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload backend test timings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-test-timings-${{ matrix.os }}-${{ matrix.install_profile }}-${{ github.run_attempt }}
+          path: ci-test-timings/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Public evidence and governance check
         if: matrix.os == 'ubuntu-latest' && matrix.install_profile == 'base'

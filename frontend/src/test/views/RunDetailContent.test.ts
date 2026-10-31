@@ -2,11 +2,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils';
 import { reactive } from 'vue';
 import { createRouter, createMemoryHistory } from 'vue-router';
+import PrimeVue from 'primevue/config';
+import PlotlyChart from '@/components/PlotlyChart.vue';
+import QuickPlotModal from '@/views/workflow-builder/modals/QuickPlotModal.vue';
+import { useDisplayPreferences } from '@/composables/useDisplayPreferences';
+import { retainedPeakFixture, retainedPeakScaleFixture, retainedPeakPrimaryFixture } from '@/test/fixtures/retainedPeakTable';
 import RunDetailContent from '@/views/models/RunDetailContent.vue';
 import { registerContextualActions, removeContextualActions } from '@/composables/useContextualActions';
 import { runProjectScopeResets } from '@/stores/projectScopeRegistry';
 
 const { get, patch, switchScope, downloadJson, downloadCsv } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn(), switchScope: vi.fn().mockResolvedValue(null), downloadJson: vi.fn(), downloadCsv: vi.fn() }));
+vi.mock('plotly.js-cartesian-dist-min', () => ({ default: {
+  react: vi.fn().mockResolvedValue(undefined), relayout: vi.fn().mockResolvedValue(undefined),
+  restyle: vi.fn().mockResolvedValue(undefined), purge: vi.fn(), Plots: { resize: vi.fn() },
+} }));
 vi.mock("@/utils/download", () => ({ downloadJson, downloadCsv }));
 vi.mock('@/api/client', () => ({ default: { get, patch } }));
 vi.mock('@/stores/advisor', () => ({ useAdvisorStore: () => ({ switchScope }) }));
@@ -44,15 +53,16 @@ beforeEach(() => {
   });
 });
 afterEach(() => { for (const wrapper of mounted) wrapper.unmount(); mounted = []; });
-async function open(query = '?project=1&view=Results&node=pca&offset=50', realContext = false) {
+async function open(query = '?project=1&view=Results&node=pca&offset=50', realContext = false, realPlot = false, realChart = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/runs/:runId', component: RunDetailContent }, { path: '/runs', component: { template: '<div />' } }, { path: '/report', component: { template: '<div />' } }] });
   await router.push(`/runs/42${query}`);
   await router.isReady();
-  const wrapper = mount(RunDetailContent, { global: { plugins: [router], stubs: {
+  const wrapper = mount(RunDetailContent, { global: { plugins: realPlot ? [router, PrimeVue] : [router], stubs: {
     Button: { props: ['label'], template: '<button @click="$emit(\'click\')">{{label}}<slot /></button>' },
     ModelPromotionReview: { props: ['artifactUid'], template: '<div class="promotion-dialog">{{artifactUid}}</div>' },
     SelectButton: true, ProgressSpinner: true, Dropdown: true, ContextualActions: !realContext,
-    QuickPlotModal: { name: 'QuickPlotModal', props: ['nodeOutput', 'nodeType', 'nodeLabel'], template: '<div class="saved-plot">{{ nodeLabel }}</div>' },
+    PlotlyChart: !realChart,
+    QuickPlotModal: realPlot ? false : { name: 'QuickPlotModal', props: ['nodeOutput', 'nodeType', 'nodeLabel'], template: '<div class="saved-plot">{{ nodeLabel }}</div>' },
   } } });
   mounted.push(wrapper);
   await flushPromises();
@@ -817,4 +827,203 @@ describe('Inspect contributed header actions', () => {
       removeContextualActions('inspect-header-test');
     }
   });
+});
+
+
+function installRetainedPeaks(saved: ReturnType<typeof retainedPeakFixture> | ReturnType<typeof retainedPeakPrimaryFixture>) {
+  const primary = 'per_spectrum' in saved ? saved : null;
+  get.mockImplementation(async (url: string) => {
+    if (url.endsWith('/evidence')) return { data: { run: { id: 42, project_id: 1, workflow_id: 7, status: 'completed', name: 'Synthetic peak run', run_kind: 'data' },
+      evidence: { qualification: 'qualified', outputs: {
+        __workflow__: { definition: { state: 'exact', storage: 'file' } },
+        __diagnostics__: { _scientific_presentations: { state: 'exact', storage: 'file' }, _scientific_values: { state: 'exact', storage: 'file' } },
+        peak: { ...(primary ? { per_spectrum: { state: 'exact', storage: 'file' } } : {}), peaks: { state: 'exact', storage: 'file' }, plots: { state: 'exact', storage: 'file' } },
+      } }, node_statuses: { peak: 'completed' } } };
+    if (url.endsWith('/__workflow__/definition')) return { data: { value: { schema_version: 1,
+      nodes: [{ node_id: 'peak', node_type: 'analysis.peak_finding', label: 'Peak Detection', parameters: {} }], edges: [] } } };
+    if (url.endsWith('/_scientific_presentations')) return { data: { value: { peak: { contract_digest: 'synthetic-contract', contract: saved.contract } } } };
+    if (url.endsWith('/_scientific_values')) return { data: { value: { peak: { ...(primary ? { per_spectrum: primary.perSpectrumDescriptor } : {}), peaks: saved.descriptor } } } };
+    if (url.endsWith('/peak/per_spectrum') && primary) return { data: { value: primary.per_spectrum } };
+    if (url.endsWith('/peak/peaks')) return { data: { value: saved.peaks } };
+    if (url.endsWith('/peak/plots')) return { data: { value: saved.plots } };
+    throw new Error(`Unexpected request ${url}`);
+  });
+}
+
+it('renders retained Peak Table through the real RunDetail and embedded QuickPlot handoff', async () => {
+  const saved = retainedPeakFixture();
+  const before = structuredClone(saved);
+  installRetainedPeaks(saved);
+  const { wrapper, router } = await open('?project=1&view=Results&node=peak&presentation=peak_table', false, true);
+  const plot = () => wrapper.getComponent(QuickPlotModal);
+  const vm = () => plot().vm as unknown as {
+    displayDataShape: { rows: number; cols: number; rowLabel: string; colLabel: string };
+    viewMode: string; availablePlots: Array<{ key: string; label: string }>;
+    displayPlotData: unknown[]; dataPreview: unknown[]; previewRowLimit: number; previewTotalRows: number;
+  };
+  expect(vm().displayDataShape).toMatchObject({ rows: 1, cols: 23, rowLabel: 'consensus group', colLabel: 'columns' });
+  vm().viewMode = 'data';
+  await flushPromises();
+  const headers = plot().findAll('thead th').map(cell => cell.text());
+  expect(headers).toContain('Median position (cm-1)');
+  expect(headers).toContain('Half-prominence width (cm-1)');
+  expect(headers).toContain('Detections');
+  expect(headers).toContain('Samples');
+  expect(headers).toContain('Detection fraction');
+  const cells = plot().findAll('tbody tr')[0].findAll('td');
+  expect(cells[headers.indexOf('Detections')].text()).toBe('1');
+  expect(cells[headers.indexOf('Samples')].text()).toBe('1');
+  expect(plot().text()).not.toContain('[object Object]');
+  const nested = cells[headers.indexOf('Constituent detections')];
+  expect(nested.text()).toBe('1 record (hover for details)');
+  expect(nested.find('span[title]').attributes('title')).toContain('1200.123456789');
+  await router.replace({ query: { project: '1', view: 'Results', node: 'peak' } });
+  await flushPromises();
+  expect(vm().availablePlots).toEqual([{ key: 'scientific_visualization:peak_finding', label: 'Spectra with Peaks' }]);
+  expect(vm().displayPlotData).toHaveLength(2);
+  expect(vm().dataPreview).toHaveLength(vm().previewRowLimit);
+  expect(vm().previewTotalRows).toBe(3736);
+  expect(plot().text()).not.toContain('No retained table');
+  expect(saved).toEqual(before);
+});
+
+
+it('keeps retained Peak Table columns and units across later records and bounded pages', async () => {
+  const preferences = useDisplayPreferences();
+  const originalLimit = preferences.maxRows;
+  preferences.maxRows = 100;
+  try {
+    const saved = retainedPeakFixture();
+    const first = saved.peaks.data[0];
+    saved.peaks.data = Array.from({ length: 101 }, () => structuredClone(first));
+    Object.assign(saved.peaks.data[1], { later_height: 0.125 });
+    Object.assign(saved.peaks.data[100], { final_position: 1234.5, later_height: 0.25 });
+    Object.assign(saved.peaks.metadata.column_units, { later_height: 'absorbance', final_position: 'cm-1' });
+    saved.peaks.metadata.n_consensus_peaks = 101;
+    saved.descriptor.shape = [101];
+    saved.descriptor.dimensions[0].size = 101;
+    const before = structuredClone(saved);
+    installRetainedPeaks(saved);
+    const { wrapper } = await open('?project=1&view=Results&node=peak&presentation=peak_table', false, true);
+    const plot = wrapper.getComponent(QuickPlotModal);
+    const vm = plot.vm as unknown as {
+      displayDataShape: { rows: number; cols: number };
+      viewMode: string; previewFirst: number; dataPreview: unknown[];
+    };
+    expect(vm.displayDataShape).toMatchObject({ rows: 101, cols: 25 });
+    vm.viewMode = 'data';
+    await flushPromises();
+    const headers = () => plot.findAll('thead th').map(cell => cell.text());
+    const firstHeaders = headers();
+    expect(firstHeaders.slice(-2)).toEqual(['later height (absorbance)', 'final position (cm-1)']);
+    expect(firstHeaders).toHaveLength(vm.displayDataShape.cols + 1); // Display-only row number.
+    expect(plot.findAll('tbody tr')).toHaveLength(100);
+    expect(vm.dataPreview).toHaveLength(100);
+    expect(plot.find('.display-subset-indicator').text()).toBe('Subset');
+    expect(plot.find('.data-summary').text()).toContain('1–100 of 101 rows');
+    const cells = plot.findAll('tbody tr')[1].findAll('td');
+    expect(cells[firstHeaders.indexOf('later height (absorbance)')].text()).toBe('0.125000');
+    expect(cells[firstHeaders.indexOf('final position (cm-1)')].text()).toBe('—');
+    vm.previewFirst = 100;
+    await flushPromises();
+    expect(headers()).toEqual(firstHeaders);
+    expect(plot.findAll('tbody tr')).toHaveLength(1);
+    const finalCells = plot.find('tbody tr').findAll('td');
+    expect(finalCells[firstHeaders.indexOf('final position (cm-1)')].text()).toBe('1234.50');
+    expect(plot.find('.data-summary').text()).toContain('101–101 of 101 rows');
+    expect(saved).toEqual(before);
+  } finally {
+    preferences.maxRows = originalLimit;
+  }
+});
+
+
+it('keeps producer-shaped 27 × 1868 retained peak overlays available above 50,000 source points', async () => {
+  const saved = retainedPeakScaleFixture();
+  const before = structuredClone(saved);
+  installRetainedPeaks(saved);
+  const { wrapper } = await open('?project=1&view=Results&node=peak', false, true, true);
+  const plot = wrapper.getComponent(QuickPlotModal);
+  const vm = plot.vm as unknown as {
+    availablePlots: Array<{ key: string; label: string }>;
+    plotData: Array<{ mode: string; x: number[]; y: number[] }>;
+    displayPlotData: Array<{ mode: string; x: number[]; y: number[] }>;
+    viewMode: string; dataPreview: unknown[]; previewRowLimit: number; previewTotalRows: number;
+  };
+  expect(vm.availablePlots).toEqual([{ key: 'scientific_visualization:peak_finding', label: 'Spectra with Peaks' }]);
+  expect(vm.plotData).toHaveLength(55); // 27 spectra, 27 detections, one consensus trace.
+  expect(vm.plotData.filter(trace => trace.mode === 'lines')).toHaveLength(27);
+  expect(vm.plotData.filter(trace => trace.mode === 'lines').every(trace => trace.x.length === 1868 && trace.y.length === 1868)).toBe(true);
+  expect(vm.displayPlotData.length).toBeGreaterThan(0);
+  expect(vm.displayPlotData.filter(trace => trace.mode === 'lines')).toHaveLength(27);
+  const chart = plot.getComponent(PlotlyChart);
+  const chartVm = chart.vm as unknown as {
+    displayed: { data: Array<{ mode: string; x: number[] }>; omitted: number };
+    contextText: string;
+  };
+  const shownMarkers = chartVm.displayed.data.filter(trace => trace.mode === 'markers')
+    .reduce((count, trace) => count + trace.x.length, 0);
+  expect(shownMarkers).toBe(vm.previewRowLimit);
+  expect(chartVm.displayed.omitted).toBe(2964 + 1080 - vm.previewRowLimit);
+  expect(chartVm.displayed.data.filter(trace => trace.mode === 'lines')
+    .reduce((count, trace) => count + trace.x.length, 0)).toBe(50436);
+  expect(chart.find('.display-subset-indicator').text()).toBe('Subset');
+  expect(chartVm.contextText).toContain(`${chartVm.displayed.omitted} plotted observations`);
+  vm.viewMode = 'data';
+  await flushPromises();
+  expect(vm.previewTotalRows).toBe(27 * 1868 + 2964 + 1080);
+  expect(vm.dataPreview).toHaveLength(vm.previewRowLimit);
+  expect(plot.findAll('tbody tr')).toHaveLength(vm.previewRowLimit);
+  expect(plot.text()).toContain('Plot coordinates');
+  expect(plot.text()).not.toContain('No retained table');
+  expect(saved).toEqual(before);
+});
+
+
+it('renders the declared peak overlay when the retained primary port is a mixed-unit per-spectrum matrix', async () => {
+  const preferences = useDisplayPreferences();
+  const previousLimit = preferences.maxRows;
+  preferences.maxRows = 100;
+  try {
+    const saved = retainedPeakPrimaryFixture();
+    const before = structuredClone(saved);
+    installRetainedPeaks(saved);
+    const { wrapper, router } = await open('?project=1&view=Results&node=peak', false, true);
+    const raw = (wrapper.vm as unknown as { rawNodeOutput: { primary_port: string; metadata: Record<string, unknown> } }).rawNodeOutput;
+    expect(raw.primary_port).toBe('per_spectrum');
+    expect(raw.metadata).toMatchObject({ data_role: 'X_features', 'sherpa.data_role': 'X_features',
+      data_modality: 'features', 'sherpa.data_modality': 'features' });
+    expect(Object.keys(raw.metadata.column_units as object)).toHaveLength(4320);
+    const plot = () => wrapper.getComponent(QuickPlotModal);
+    const vm = () => plot().vm as unknown as {
+      availablePlots: Array<{ key: string; label: string }>;
+      displayPlotData: Array<{ mode: string; x: number[] }>;
+      displayDataShape: { rows: number; cols: number };
+      viewMode: string; previewTotalRows: number; previewRowLimit: number; selectedPlotKey: string;
+      plotLayout: { yaxis: { title: string } };
+    };
+    expect(vm().availablePlots).toEqual([{ key: 'scientific_visualization:peak_finding', label: 'Spectra with Peaks' }]);
+    expect(vm().displayPlotData).toHaveLength(55);
+    expect(vm().displayPlotData.filter(trace => trace.mode === 'lines').reduce((n, trace) => n + trace.x.length, 0)).toBe(50436);
+    expect(plot().text()).not.toContain('No data to display');
+    vm().viewMode = 'data';
+    await flushPromises();
+    expect(vm().previewTotalRows).toBe(54480);
+    expect(plot().findAll('tbody tr')).toHaveLength(vm().previewRowLimit);
+    await router.replace({ query: { project: '1', view: 'Results', node: 'peak', presentation: 'peak_table' } });
+    await flushPromises();
+    expect(vm().displayDataShape).toMatchObject({ rows: 1080, cols: 23 });
+    expect(plot().findAll('thead th').map(cell => cell.text())).toContain('Median position (cm-1)');
+    await router.replace({ query: { project: '1', view: 'Results', node: 'peak', presentation: 'per_spectrum' } });
+    await flushPromises();
+    expect(vm().availablePlots).toHaveLength(4320);
+    expect(vm().availablePlots.every(option => option.key.startsWith('table_column:'))).toBe(true);
+    expect(vm().plotLayout.yaxis.title).toBe('peak_position_1 (cm-1)');
+    vm().selectedPlotKey = 'table_column:1';
+    await flushPromises();
+    expect(vm().plotLayout.yaxis.title).toBe('magnitude_at_peak_1 (absorbance)');
+    expect(saved).toEqual(before);
+  } finally {
+    preferences.maxRows = previousLimit;
+  }
 });

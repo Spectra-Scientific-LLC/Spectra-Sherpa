@@ -6,6 +6,7 @@ import type {
 } from "@/types";
 import type { NodeOutput, PortOutput } from "@/utils/nodeOutput";
 import rendererAuthority from "@/utils/scientific-presentation-renderers.json";
+import { scientificRecordColumnKeys } from "@/utils/scientificDisplay";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";
 
 export interface ResolvedScientificPresentation {
@@ -278,6 +279,12 @@ export const scientificEvidenceShape = (
   output: NodeOutput | null | undefined,
 ): ScientificEvidenceShape | null => {
   const identity = projectedPresentationIdentity(output);
+  if (identity?.kind === "peak_table" && Array.isArray(output?.data)
+    && output.data.every(row => row && typeof row === "object" && !Array.isArray(row))) {
+    return { rows: output.data.length,
+      cols: scientificRecordColumnKeys(output.data).length,
+      rowLabel: output.data.length === 1 ? "consensus group" : "consensus groups", colLabel: "columns" };
+  }
   if (identity?.kind === "t2_q_diagnostics") {
     const rows = t2QDiagnosticRows(output?.presentation_value, output?.metadata || {});
     return { rows: rows.length, cols: rows.length > 0 ? 2 : 0,
@@ -348,8 +355,10 @@ export const projectScientificPresentation = (
   if (sourcePort !== output.primary_port) {
     // The primary output's axes do not describe another result merely because
     // it shares a node (e.g. held-out targets, centroids, or pure spectra).
+    // Matrix roles and column units likewise belong to their own port, not a sibling plot/table.
     for (const key of ["sample_labels", "source_labels", "labels", "sample_table", "include_mask",
-      "wavenumbers", "x_axis", "y_axis", "feature_names", "x_title", "x_units", "y_title", "y_units", "scientific_matrix_role"]) {
+      "wavenumbers", "x_axis", "y_axis", "feature_names", "x_title", "x_units", "y_title", "y_units", "scientific_matrix_role",
+      "data_role", "sherpa.data_role", "data_modality", "sherpa.data_modality", "column_names", "column_units"]) {
       delete parentMetadata[key];
     }
   }

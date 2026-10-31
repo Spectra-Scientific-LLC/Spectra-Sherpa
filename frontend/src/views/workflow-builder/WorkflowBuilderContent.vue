@@ -386,7 +386,8 @@
 <script setup lang="ts">
 import { newIdempotencyKey } from "@/utils/idempotency";
 /* eslint-disable @typescript-eslint/no-explicit-any -- builder canvas mixes generic node-library metadata with loose drag/drop payloads. */
-import { ref, computed, provide, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { ref, computed, provide, watch, watchPostEffect, onMounted, onUnmounted, nextTick } from "vue";
+import { captureGuiTrace } from "@/lib/guiTrace";
 import { useConfirmAction } from "@/composables/useConfirmAction";
 import { storeToRefs } from "pinia";
 import Button from "primevue/button";
@@ -534,6 +535,21 @@ const projectSelectionUnavailable = ref(false);
 const workflowContextLoading = computed(() =>
   !workbookContextReady.value || workbookStore.isLoading || workflowStore.isLoading,
 );
+// Diagnostic snapshots follow the rendered predicate. Equal tuples produce no
+// extra events; session changes drop queued observations of the previous owner.
+let previousLoadingTrace: readonly unknown[] | undefined;
+watchPostEffect(() => {
+  const values = [workbookContextReady.value, workbookStore.isLoading, workflowStore.isLoading,
+    projectStore.currentProjectId, workflowStore.workflowId, authStore.user?.id, authStore.sessionRevision] as const;
+  if (previousLoadingTrace && values.every((value, index) => Object.is(value, previousLoadingTrace?.[index]))) return;
+  previousLoadingTrace = values;
+  const [ready, workbookLoading, workflowLoading, projectId, workflowId, actor, revision] = values;
+  const emit = captureGuiTrace(() => authStore.user?.id === actor && authStore.sessionRevision === revision);
+  emit("workflow_loading", !ready || workbookLoading || workflowLoading ? "start" : "ok", {
+    workbook_context_ready: ready, workbook_loading: Boolean(workbookLoading), workflow_loading: Boolean(workflowLoading),
+    project_id: projectId, workflow_id: workflowId,
+  });
+});
 // Warn once per current issue, via the canonical toast → notification centre
 // path. Autosave preflight must not turn the workspace header into an error log.
 let notifiedWorkflow: number | null = null;
