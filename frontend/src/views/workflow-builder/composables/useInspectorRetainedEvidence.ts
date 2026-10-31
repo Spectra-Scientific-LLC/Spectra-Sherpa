@@ -98,11 +98,24 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
     quickPlotEvidenceError.value = "";
     exactQuickPlotOutput.value = null;
     exactQuickPlotInputs.value = null;
-    const read = async (sourceNodeId: string, port: string): Promise<unknown> => {
+    const qualifiedNodePorts = new Set<string>();
+    const read = async (sourceNodeId: string, port: string, metadataCompanion = false): Promise<unknown> => {
       const response = await api.get(
         `/runs/${runId}/outputs/${encodeURIComponent(sourceNodeId)}/${encodeURIComponent(port)}`,
         { params: { project_id: projectId }, signal: ticket.signal },
       );
+      if (sourceNodeId === nodeId && response.data.evidence?.state === "exact" && response.data.evidence.storage === "file") {
+        qualifiedNodePorts.add(port);
+      }
+      if (metadataCompanion) {
+        // The endpoint owns the run/project binding and verifies retained bytes.
+        // A summary or failed companion must not supply scientific context.
+        const { value, evidence } = response.data;
+        if (evidence?.state !== "exact" || evidence.storage !== "file" ||
+          !value || typeof value !== "object" || Array.isArray(value)) {
+          throw new Error("Exact retained metadata is unavailable");
+        }
+      }
       return response.data.value;
     };
     try {
@@ -120,13 +133,18 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
       // Preserve the existing combined PCA view using only same-run companions.
       const summaryPorts = view === "plot" && selected?.presentation.kind === "pca_scores"
         ? ["variable_correlations", "explained_variance", "loadings"].filter(port => source?.ports?.[port]) : [];
+      // buildNodeOutput merges result.metadata into the original primary output.
+      // Rehydrate that same companion, never the compact summary's metadata or
+      // primary specimen labels for an independently selected secondary port.
+      const primaryMetadata = view !== "detail" && source?.ports?.metadata && source.primary_port &&
+        sourcePorts.includes(source.primary_port) ? ["metadata"] : [];
       const retainedPorts = view === "detail" && !source ? [] : [...new Set([
         ...(view !== "table" && source?.metadata.workflow_population ? ["__workflow_population"] : []),
         // Retain the original primary context when plotting another port.
         // Otherwise rebuilding a one-port node changes shared model labels.
         ...(view === "plot" && source?.primary_port ? [source.primary_port] : []),
         ...sourcePorts, ...(binding ? [binding[0]] : []), ...summaryPorts, ...(labelsField ? [labelsField] : []),
-      ])];
+      ])].filter(port => !primaryMetadata.includes(port));
       let connections = options.inputs();
       if (view === "table") {
         connections = inputBinding ? connections.filter(connection => (connection.toPort || "default") === inputBinding[0]) : [];
@@ -163,13 +181,32 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
       if (!ticket.isCurrent()) return null;
       const contract = source?.presentation_contract;
       const diagnostics = source?.metadata?.diagnostics;
+      const outputPorts = options.metadata.value?.output_ports;
+      const descriptors = options.descriptors(nodeId);
       // Same normalizer used by node-detail/useNodeOutput. This surface carries
       // a contract, not a complete ExecutedPresentationRecord; never fabricate one.
-      exactQuickPlotOutput.value = source ? buildNodeOutput(
-        Object.fromEntries(outputs), options.metadata.value?.output_ports,
+      const rebuild = () => source ? buildNodeOutput(
+        Object.fromEntries(outputs), outputPorts,
         diagnostics && typeof diagnostics === "object" ? diagnostics as Record<string, unknown> : null,
-        options.descriptors(nodeId), contract,
+        descriptors, contract,
       ) : null;
+      let restored = rebuild();
+      if (primaryMetadata.length && source?.primary_port) {
+        // The canonical normalizer gives inline primary metadata precedence.
+        // A qualified primary containing every companion field is already
+        // self-contained (e.g. Library Comparison); the duplicate need not exist.
+        // Summary values establish neither identity nor fallback content here.
+        const fields = Object.keys(source.ports?.metadata.metadata ?? {});
+        const inline = restored?.ports?.[source.primary_port]?.metadata ?? {};
+        const selfContained = qualifiedNodePorts.has(source.primary_port) && fields.length > 0 &&
+          fields.every(key => Object.prototype.hasOwnProperty.call(inline, key));
+        if (!selfContained) {
+          outputs.push(["metadata", await read(nodeId, "metadata", true)]);
+          if (!ticket.isCurrent()) return null;
+          restored = rebuild();
+        }
+      }
+      exactQuickPlotOutput.value = restored;
       if (exactQuickPlotOutput.value && source?.model_id) {
         exactQuickPlotOutput.value.model_id = source.model_id;
       }
