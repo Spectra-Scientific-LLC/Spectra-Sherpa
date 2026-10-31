@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from spectra_sherpa.app.core import logging as logging_module
 from spectra_sherpa.app.core.logging import LockedRotatingFileHandler, RedactingFormatter, configure_logging
 from spectra_sherpa.app.core.request_id import RequestIDMiddleware, get_request_id, use_request_id
+from tests.process_helpers import owned_children
 
 
 def test_redaction_covers_interpolation_exception_and_existing_console(monkeypatch):
@@ -75,12 +76,13 @@ logger=logging.getLogger('child');logger.setLevel(logging.INFO);logger.addHandle
 for i in range(60): logger.info('worker=%s row=%s Bearer SECRET',sys.argv[2],i)
 handler.close()
 """
-    children = [
-        subprocess.Popen([sys.executable, "-c", script, str(path), str(index)], env=os.environ.copy())
-        for index in range(2)
-    ]
-    for child in children:
-        assert child.wait(timeout=30) == 0
+    with owned_children() as children:
+        for index in range(2):
+            children.append(
+                subprocess.Popen([sys.executable, "-c", script, str(path), str(index)], env=os.environ.copy())
+            )
+        for child in children:
+            assert child.wait(timeout=30) == 0
     before = path.read_text()
     assert len(before.splitlines()) == 120
     assert "SECRET" not in before
@@ -94,6 +96,24 @@ handler.close()
     handler.close()
     assert {file.name for file in tmp_path.iterdir()} <= {"api.log", "api.log.lock", "api.log.1", "api.log.2"}
     assert all(file.stat().st_size < 1200 for file in tmp_path.glob("api.log*"))
+
+
+@pytest.mark.parametrize("failure", ["launch", "exit", "timeout"])
+def test_logging_child_ownership_survives_partial_launch_and_failed_wait(tmp_path, failure):
+    expected = {"launch": FileNotFoundError, "exit": AssertionError, "timeout": subprocess.TimeoutExpired}[failure]
+    children = []
+    with pytest.raises(expected):
+        with owned_children() as children:
+            children.append(subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"]))
+            if failure == "launch":
+                children.append(subprocess.Popen([str(tmp_path / "missing-executable")]))
+            elif failure == "exit":
+                children.append(subprocess.Popen([sys.executable, "-c", "raise SystemExit(7)"]))
+                assert children[1].wait(timeout=5) == 0
+            else:
+                children[0].wait(timeout=0.05)
+    assert children
+    assert all(child.returncode is not None for child in children)
 
 
 def test_worker_context_is_correlated_and_cleared(monkeypatch, caplog):

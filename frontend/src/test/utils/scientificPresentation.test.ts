@@ -85,12 +85,30 @@ describe("scientific presentation resolver", () => {
   it("does not borrow primary sample identities or spectral axes for another output", () => {
     const resolved = resolveScientificPresentation(metadata, output)!;
     const projected = projectScientificPresentation({ ...output, metadata: {
+      data_role: "X_features", "sherpa.data_role": "X_features", data_modality: "features", "sherpa.data_modality": "features", column_names: ["primary_column"], column_units: { primary_column: "nm" },
       sample_labels: ["training-row"], wavenumbers: [1000], x_units: "nm", diagnostics: { algorithm: "test" },
     } }, resolved);
     expect(projected?.metadata).not.toHaveProperty("sample_labels");
     expect(projected?.metadata).not.toHaveProperty("wavenumbers");
     expect(projected?.metadata).not.toHaveProperty("x_units");
     expect(projected?.metadata.diagnostics).toEqual({ algorithm: "test" });
+    for (const key of ["data_role", "sherpa.data_role", "data_modality", "sherpa.data_modality", "column_names", "column_units"]) expect(projected?.metadata).not.toHaveProperty(key);
+  });
+  it.each([false, true])("preserves the selected port's own role and column units (primary: %s)", (primary) => {
+    const resolved = resolveScientificPresentation(metadata, output)!;
+    const own = { data_role: "X_features", "sherpa.data_role": "X_features",
+      data_modality: "features", "sherpa.data_modality": "features", column_names: ["position", "height"],
+      column_units: { position: "cm-1", height: "absorbance" } };
+    const source = { ...output, primary_port: primary ? resolved.sourcePort : "default", metadata: {
+      data_role: "X_spectra", "sherpa.data_role": "X_spectra", data_modality: "spectra", "sherpa.data_modality": "spectra", column_names: ["unrelated"], column_units: { unrelated: "nm" },
+      diagnostics: { algorithm: "retained" },
+    } };
+    const before = structuredClone(source);
+    const projected = projectScientificPresentation(source, { ...resolved,
+      portOutput: { ...resolved.portOutput, metadata: own } });
+    expect(projected?.metadata).toMatchObject({ ...own, diagnostics: { algorithm: "retained" } });
+    expect(projected?.metadata.column_units).toEqual(own.column_units);
+    expect(source).toEqual(before);
   });
   it.each([["A", "B", "C"], ["A"]])("uses exact response class labels, never inherited LV labels: %j", (...classes) => {
     const resolved = resolveScientificPresentation(metadata, output)!;

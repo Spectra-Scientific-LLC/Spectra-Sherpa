@@ -18,6 +18,7 @@ from websockets.exceptions import InvalidStatus
 from websockets.sync.client import connect
 
 import spectra_sherpa
+from tests.process_helpers import ReadinessLine, finish_pipe_reader, reap_children
 
 
 @pytest.mark.parametrize("stop_mode", ["eof", "shutdown", "startup_failure"])
@@ -48,9 +49,12 @@ def test_real_desktop_readiness_authorization_and_shutdown(tmp_path, stop_mode):
         assert child.stdin is not None and child.stdout is not None
 
         def read_frames():
-            for line in child.stdout:
-                frames.put(line)
-            frames.put(None)
+            try:
+                for line in child.stdout:
+                    frames.put(line)
+            finally:
+                child.stdout.close()  # Reader owns the buffer until it stops.
+                frames.put(None)
 
         reader = threading.Thread(target=read_frames, daemon=True)
         reader.start()
@@ -113,13 +117,14 @@ def test_real_desktop_readiness_authorization_and_shutdown(tmp_path, stop_mode):
             if not child.stdin.closed:
                 child.stdin.close()
             try:
-                child.wait(timeout=20)
-            except subprocess.TimeoutExpired:
-                child.kill()  # Only the Popen child created by this test.
-                child.wait(timeout=10)
-                raise
-            child.stdout.close()
-            reader.join(timeout=2)
+                try:
+                    child.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    child.kill()  # Only the Popen child created by this test.
+                    child.wait(timeout=10)
+                    raise
+            finally:
+                finish_pipe_reader(reader, child.stdout)
     assert secret not in (tmp_path / "startup.log").read_text()
 
 
@@ -202,21 +207,85 @@ def blocked(args):
 desktop_launcher._resolve_data_dir = blocked
 desktop_launcher.main(['--desktop-ipc'])
 """
-    with subprocess.Popen(
+    child = subprocess.Popen(
         [sys.executable, "-c", script],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-    ) as child:
+    )
+    starting = ReadinessLine(child.stdout)
+    blocked = ReadinessLine(child.stderr)
+    try:
+        child.stdin.write(json.dumps({"protocol": 1, "type": "launch", "secret": secrets.token_urlsafe(32)}) + "\n")
+        child.stdin.flush()
+        assert json.loads(starting.result(timeout=20))["type"] == "starting"
+        assert blocked.result(timeout=20).strip() == "initialization-blocked"
+        child.stdin.close()
+        assert child.wait(timeout=20) == 1
+    finally:
+        # Avoid Popen.__exit__: it closes buffered pipes before waiting, which
+        # can block behind a readiness reader if startup never produced a line.
         try:
-            child.stdin.write(json.dumps({"protocol": 1, "type": "launch", "secret": secrets.token_urlsafe(32)}) + "\n")
-            child.stdin.flush()
-            assert json.loads(child.stdout.readline())["type"] == "starting"
-            assert child.stderr.readline().strip() == "initialization-blocked"
-            child.stdin.close()
-            assert child.wait(timeout=20) == 1
+            reap_children([child])
         finally:
-            if child.poll() is None:
-                child.kill()
-                child.wait(timeout=5)
+            child.stdin.close()
+            try:
+                starting.finish()
+            finally:
+                blocked.finish()
+
+
+@pytest.mark.parametrize("channel", ["stdout", "stderr"])
+def test_readiness_without_newline_times_out_and_owned_child_is_reaped(channel):
+    # The child has its own finite escape hatch, so a broken reader cannot
+    # turn this failure-path regression into an indefinitely hung test.
+    script = (
+        "import sys,time; print('ready',flush=True); "
+        f"sys.{channel}.write('partial'); sys.{channel}.flush(); time.sleep(5)"
+    )
+    child = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ready = ReadinessLine(child.stdout)
+    pending = None
+    try:
+        assert ready.result(timeout=5) == b"ready" + os.linesep.encode()
+        pending = ReadinessLine(getattr(child, channel))
+        with pytest.raises(TimeoutError):
+            pending.result(timeout=0.05)
+    finally:
+        reap_children([child])
+        try:
+            if pending is not None:
+                pending.finish()
+        finally:
+            ready.finish()
+            child.stderr.close()
+    assert child.returncode is not None
+
+
+def test_pipe_cleanup_does_not_close_a_buffer_while_reader_is_blocked():
+    # An open writer models a descendant retaining stdout after its parent
+    # exits. Closing the buffer first would deadlock on the reader's lock.
+    read_fd, write_fd = os.pipe()
+    stream = os.fdopen(read_fd, "rb")
+    pending = ReadinessLine(stream)
+    release = threading.Event()
+
+    def hold_writer():
+        try:
+            release.wait(timeout=5)  # Escape hatch even if the close order regresses.
+        finally:
+            os.close(write_fd)
+
+    writer = threading.Thread(target=hold_writer, daemon=True)
+    writer.start()
+    try:
+        with pytest.raises(TimeoutError, match="Owned pipe reader"):
+            pending.finish(timeout=0.05)
+        assert not stream.closed
+    finally:
+        release.set()
+        writer.join(timeout=2)
+        pending.finish()
+    assert stream.closed
+    assert not pending.reader.is_alive()

@@ -148,6 +148,33 @@ For an affected operation, verify both the old response and the new selection:
 the old response must do nothing, and the new selection must remain usable.
 Keep existing scientific assertions unchanged when reorganizing orchestration.
 
+## Temporary workflow loading diagnostics
+
+The opt-in GUI trace can distinguish the Workflow loading predicate's three
+inputs: context readiness, workbook loading and workflow loading. Snapshots
+run after Vue's render flush and deduplicate equal inputs and owner IDs.
+Full-workflow execution adds exact-request transport, store application and
+ownership-finalizer transitions. HTTP `ok` means the awaited client response
+arrived; application `ok` means the store finished applying it, not that a plot
+rendered or scientific validation passed. A finalizer snapshot reports the
+existing ownership decision and loading flag without changing either. Run Node
+and stored-workflow execution are not instrumented by these new attempt events.
+
+Events contain only closed operation/state values, bounded diagnostic IDs,
+booleans and existing timing fields. Attempt numbers are page-local diagnostic
+correlation, never API payload or execution authority. Captured page/session
+ownership suppresses both queued observations and delayed completions after a
+credential or actor/session change. The trace POST rechecks this captured scope
+in a synchronous per-request transform immediately before adapter dispatch,
+after the client's asynchronous interceptors and normal JSON serialization;
+queue-time validation alone cannot prevent cross-login misattribution. This
+local dispatch guard is not serialized in the body or headers. Same-session sheet changes can report a
+superseded attempt, but cannot authorize result application or loading changes.
+The strict backend trace schema, authentication, opt-in gate, queue/rate limits
+and OpenAPI exclusion remain in force. No result values, names, URLs, tokens or
+exception text belong in these events. Trace gaps do not establish absence of a
+UI issue; qualification still requires a timestamped observation on the candidate.
+
 ## Remaining extraction checkpoints
 
 The request helper does not make every component small. Synthesis generation

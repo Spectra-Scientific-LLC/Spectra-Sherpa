@@ -250,3 +250,102 @@ def test_scope_cli_uses_real_git_and_fails_closed(tmp_path, prefix, change):
         assert result.returncode == 0, result.stderr
         needed = change not in {"unrelated", "draft"}
         assert output.read_text() == f"required={str(needed).lower()}\ndeferred={str(change == 'draft').lower()}\n"
+
+
+def test_backend_timing_keeps_native_matrix_and_required_verdict():
+    jobs = workflow("ci")["jobs"]
+    backend = jobs["backend"]
+    assert backend["strategy"]["matrix"] == {
+        "os": "${{ fromJSON(github.event_name == 'pull_request' && '[\"ubuntu-latest\"]' || "
+        '\'["ubuntu-latest", "windows-latest", "macos-latest"]\') }}',
+        "install_profile": ["base", "postgres"],
+    }
+    assert backend["strategy"]["fail-fast"] is False
+    steps = {step.get("name"): step for step in backend["steps"]}
+    run = steps["Run tests"]
+    assert run["env"]["PYTEST_ADDOPTS"] == "--durations=0 --durations-min=0"
+    assert not run.get("continue-on-error", False)
+    assert "poetry run python scripts/run_public_tests.py 2>&1 | tee" in run["run"]
+    for name in ("Record backend test timing context", "Upload backend test timings"):
+        assert steps[name]["if"] == "always()"
+        assert not steps[name].get("continue-on-error", False)
+    upload = steps["Upload backend test timings"]
+    assert upload["uses"] == "actions/upload-artifact@v7"
+    assert upload["with"]["path"] == "ci-test-timings/"
+    assert upload["with"]["if-no-files-found"] == "error"
+    assert "${{ matrix.os }}" in upload["with"]["name"]
+    assert "${{ matrix.install_profile }}" in upload["with"]["name"]
+    assert "${{ github.run_attempt }}" in upload["with"]["name"]
+    assert "backend" in jobs["verdict"]["needs"]
+
+
+@pytest.mark.parametrize("exit_code,blocked_log", [(0, False), (7, False), (0, True)])
+def test_backend_timing_pipeline_preserves_failure_and_stderr(tmp_path, workflow_bash, exit_code, blocked_log):
+    import shlex
+
+    steps = {step.get("name"): step for step in workflow("ci")["jobs"]["backend"]["steps"]}
+    script = steps["Run tests"]["run"]
+    probe = "import sys; print('stdout-proof'); print('stderr-proof', file=sys.stderr); sys.exit(%d)" % exit_code
+    script = script.replace("poetry run python scripts/run_public_tests.py", shlex.join([sys.executable, "-c", probe]))
+    if blocked_log:
+        (tmp_path / "ci-test-timings" / "pytest.log").mkdir(parents=True)
+    result = subprocess.run(
+        [workflow_bash, "-e", "-c", script], cwd=tmp_path, capture_output=True, text=True, timeout=15
+    )
+    if blocked_log:
+        assert result.returncode != 0
+    else:
+        assert result.returncode == exit_code, result.stderr
+        log = (tmp_path / "ci-test-timings" / "pytest.log").read_text()
+        assert "stdout-proof" in log and "stderr-proof" in log
+        assert "stdout-proof" in result.stdout and "stderr-proof" in result.stdout
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "skipped"])
+def test_backend_timing_metadata_records_outcome_without_certifying_success(tmp_path, workflow_bash, outcome):
+    import hashlib
+    import shlex
+
+    steps = {step.get("name"): step for step in workflow("ci")["jobs"]["backend"]["steps"]}
+    step = steps["Record backend test timing context"]
+    assert step["env"]["TEST_OUTCOME"] == "${{ steps.public_tests.outcome }}"
+    for args in (
+        ["init", "-q"],
+        ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "source"],
+    ):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True, timeout=10)
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True, timeout=10).strip()
+    if outcome != "skipped":
+        folder = tmp_path / "ci-test-timings"
+        folder.mkdir()
+        (folder / "pytest.log").write_bytes(b"synthetic test output\n")
+    env = {
+        **os.environ,
+        "TEST_OUTCOME": outcome,
+        "GITHUB_SHA": "event-sha",
+        "GITHUB_RUN_ID": "123",
+        "GITHUB_RUN_ATTEMPT": "2",
+        "MATRIX_OS": "ubuntu-latest",
+        "INSTALL_PROFILE": "postgres",
+        "RUNNER_OS": "Linux",
+        "RUNNER_ARCH": "X64",
+        "GITHUB_EVENT_NAME": "pull_request",
+    }
+    result = subprocess.run(
+        [workflow_bash, "-e", "-c", step["run"].replace("python -", shlex.quote(sys.executable) + " -")],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    metadata = json.loads((tmp_path / "ci-test-timings" / "metadata.json").read_text())
+    assert metadata["source_sha"] == sha
+    assert metadata["event_sha"] == "event-sha"
+    assert metadata["run_attempt"] == "2" and metadata["run_id"] == "123"
+    assert metadata["test_outcome"] == outcome
+    assert metadata["matrix_os"] == "ubuntu-latest" and metadata["install_profile"] == "postgres"
+    assert metadata["pytest_log_sha256"] == (
+        None if outcome == "skipped" else hashlib.sha256(b"synthetic test output\n").hexdigest()
+    )

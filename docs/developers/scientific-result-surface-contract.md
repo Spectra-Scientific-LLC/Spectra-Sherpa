@@ -71,6 +71,19 @@ Class names remain intact, including punctuation and long names; sample-label
 splitting or compaction must not change them. Explicit invalid axis labels or
 contradictory dimension roles must not fall back to similarly sized sample labels.
 
+Peak Table headings use the retained coordinate and per-column units in both
+standalone and embedded Data View. Consensus-group rows and record columns are
+separate from source spectra, source features and individual detection counts.
+A projection onto another output port must not inherit the primary matrix's
+`data_role` (including `sherpa.data_role` and its derived modality fields),
+`column_names` or `column_units`; the selected port's own declarations
+remain authoritative. In particular, a mixed-unit peak matrix must not change
+its sibling visualization into a numeric-column table.
+Column counts and embedded headers use all retained record keys in first-seen
+order, including fields beyond the current page; bounded rows show Subset.
+Nested detections remain readable with their full retained values available in
+hover and raw exports; display formatting does not round exported evidence.
+
 #### Declared context relationships
 
 - `ScientificPresentation.input_binding` names the input axis to preserve.

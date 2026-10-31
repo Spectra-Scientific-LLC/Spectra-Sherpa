@@ -90,6 +90,57 @@ export function scientificColumnLabel(key: string, metadata: unknown, label = ke
   return typeof unit === "string" && unit.trim() && !label.endsWith(`(${unit.trim()})`) ? `${label} (${unit.trim()})` : label;
 }
 
+/** All retained record fields, in first-seen order, independent of the displayed page. */
+export function scientificRecordColumnKeys(data: unknown): string[] {
+  const keys = new Set<string>();
+  if (Array.isArray(data)) {
+    for (const row of data) {
+      if (row && typeof row === "object" && !Array.isArray(row)) {
+        for (const key of Object.keys(row)) keys.add(key);
+      }
+    }
+  }
+  return [...keys];
+}
+
+/** Friendly record headings shared by standalone and embedded scientific tables. */
+export function scientificRecordColumnLabel(key: string, metadata: unknown, kind?: string): string {
+  const record = asRecord(metadata);
+  const peak = kind === "peak_table" || (!kind && !record.scientific_presentation && record.type === "PeakFinding");
+  if (!peak) return scientificColumnLabel(key, metadata);
+  const names: Record<string, string> = {
+    consensus_peak_id: "Peak", consensus_group: "Consensus group", label: "Label",
+    median_pos: "Median position", mean_pos: "Mean position", std_pos: "Position standard deviation",
+    min_pos: "Minimum position", max_pos: "Maximum position",
+    detection_count: "Detections", sample_count: "Samples", detection_fraction: "Detection fraction",
+    member_sample_indices: "Member sample indices", member_sample_labels: "Member sample labels",
+    constituent_detections: "Constituent detections",
+    median_height: "Median height", q1_height: "First-quartile height", q3_height: "Third-quartile height",
+    median_half_prominence_width: "Half-prominence width",
+    q1_half_prominence_width: "First-quartile half-prominence width", q3_half_prominence_width: "Third-quartile half-prominence width",
+    median_absolute_window_integral: "Median absolute window integral",
+    q1_absolute_window_integral: "First-quartile absolute window integral", q3_absolute_window_integral: "Third-quartile absolute window integral",
+  };
+  const label = names[key] ?? key.replace(/_/g, " ");
+  const declared = scientificColumnLabel(key, metadata, label);
+  if (declared !== label || Object.prototype.hasOwnProperty.call(asRecord(record.column_units), key)) return declared;
+  // Historical PeakFinding records may retain only the coordinate-unit declaration.
+  const coordinateKeys = ["median_pos", "mean_pos", "std_pos", "min_pos", "max_pos",
+    "median_half_prominence_width", "q1_half_prominence_width", "q3_half_prominence_width"];
+  return coordinateKeys.includes(key) && typeof record.x_units === "string" && record.x_units.trim()
+    ? `${label} (${record.x_units.trim()})` : label;
+}
+
+/** Compact structured cells; the full retained value remains available in hover/export. */
+export function scientificStructuredCell(value: unknown): string | null {
+  if (value === null || typeof value !== "object") return null;
+  if (Array.isArray(value) && value.some(item => item !== null && typeof item === "object")) {
+    return `${value.length} ${value.length === 1 ? "record" : "records"} (hover for details)`;
+  }
+  const text = JSON.stringify(value);
+  return text.length > 100 ? `${text.slice(0, 100)}…` : text;
+}
+
 /** Compact common response-unit context for an independently usable result. */
 export function scientificResponseUnit(value: unknown): string | null {
   const units = scientificMetricContext(value).target_units;

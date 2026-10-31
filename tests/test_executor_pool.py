@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from contextvars import Context
@@ -229,6 +230,41 @@ class TestDefaultPool:
         assert executor._process_pool is None
 
 
+def _shutdown_legacy_test_pool(pool):
+    # Python 3.11's executor has no public terminate-workers API. These are
+    # ONLY this test fixture's handles, not multiprocessing.active_children().
+    pending = tuple(pool._pending_work_items.values())
+    abandoned = any(not item.future.done() for item in pending)
+    try:
+        if abandoned:
+            workers = tuple((pool._processes or {}).values())
+            for worker in workers:
+                if worker.is_alive():
+                    worker.terminate()
+            for worker in workers:
+                worker.join(timeout=5)
+                if worker.is_alive():
+                    worker.kill()
+                    worker.join(timeout=5)
+                assert not worker.is_alive(), "Owned legacy test worker did not stop"
+    finally:
+        # Cancelling a Future does not stop running work. Keep actual executor
+        # shutdown, after stopping abandoned workers rather than wait=False.
+        pool.shutdown(wait=True, cancel_futures=abandoned)
+
+
+async def _finish_owned_pool_tasks(pool, *tasks):
+    owned = [task for task in tasks if task is not None]
+    try:
+        for task in owned:
+            if not task.done():
+                task.cancel()
+        if owned:
+            await asyncio.gather(*owned, return_exceptions=True)
+    finally:
+        pool.shutdown()
+
+
 @pytest.mark.asyncio
 class TestPoolExecution:
     """Integration tests: run workflows with a real ProcessPoolExecutor."""
@@ -248,7 +284,7 @@ class TestPoolExecution:
     def pool(self):
         p = self._create_pool(max_workers=2)
         yield p
-        p.shutdown(wait=True)
+        _shutdown_legacy_test_pool(p)
 
     async def test_workflow_with_pool_matches_in_process(self, pool, patch_eigenvector_loader):
         """Results from pool execution must match in-process execution."""
@@ -329,16 +365,18 @@ async def test_isolated_worker_timeout_reaps_and_releases_capacity(tmp_path):
 
     pool = IsolatedWorkerPool(1)
     started, finished = tmp_path / "started", tmp_path / "finished"
-    with pytest.raises(TimeoutError):
-        await pool.run(_slow_worker, str(started), str(finished), timeout=10)
-    assert started.exists(), "The test must time out a running child, not merely its startup"
-    assert int(started.read_text()) not in [p.pid for p in multiprocessing.active_children()]
-    assert not finished.exists()
-    assert not pool._active
-    # A fresh request can immediately use the only capacity slot.
-    pid = await pool.run(os.getpid, timeout=30)
-    assert pid != os.getpid()
-    pool.shutdown()
+    try:
+        with pytest.raises(TimeoutError):
+            await pool.run(_slow_worker, str(started), str(finished), timeout=10)
+        assert started.exists(), "The test must time out a running child, not merely its startup"
+        assert int(started.read_text()) not in [p.pid for p in multiprocessing.active_children()]
+        assert not finished.exists()
+        assert not pool._active
+        # A fresh request can immediately use the only capacity slot.
+        pid = await pool.run(os.getpid, timeout=30)
+        assert pid != os.getpid()
+    finally:
+        pool.shutdown()
 
 
 @pytest.mark.asyncio
@@ -351,6 +389,7 @@ async def test_cancelling_one_isolated_worker_preserves_other_request(tmp_path):
     pool = IsolatedWorkerPool(2)
     started, finished = tmp_path / "started", tmp_path / "finished"
     task = asyncio.create_task(pool.run(_slow_worker, str(started), str(finished), timeout=60))
+    other = None
     try:
         async with asyncio.timeout(30):
             while not started.exists():
@@ -363,10 +402,7 @@ async def test_cancelling_one_isolated_worker_preserves_other_request(tmp_path):
         assert not finished.exists()
         assert not pool._active
     finally:
-        pool.shutdown()
-        if not task.done():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        await _finish_owned_pool_tasks(pool, task, other)
 
 
 @pytest.mark.asyncio
@@ -588,6 +624,7 @@ async def test_cancelling_workflow_worker_does_not_cancel_other_workflow(tmp_pat
             return await pool.run(os.getpid, timeout=30)
 
     task = asyncio.create_task(slow())
+    surviving = None
     try:
         async with asyncio.timeout(30):
             while not started.exists():
@@ -600,10 +637,7 @@ async def test_cancelling_workflow_worker_does_not_cancel_other_workflow(tmp_pat
         assert not finished.exists()
         assert not pool._active
     finally:
-        pool.shutdown()
-        if not task.done():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        await _finish_owned_pool_tasks(pool, task, surviving)
 
 
 @pytest.mark.asyncio
@@ -832,3 +866,99 @@ if __name__ == "__main__":
     assert result.returncode == 7
     assert result.stdout.strip() == "worker-started"
     assert not (tmp_path / "finished").exists()
+
+
+def _finite_ownership_worker(started, finished):
+    """A real started worker with a finite escape hatch for cleanup regressions."""
+    import os
+    import time
+    from pathlib import Path
+
+    marker = Path(started)
+    pending = marker.with_suffix(".pending")
+    pending.write_text(str(os.getpid()))
+    pending.replace(marker)
+    time.sleep(20)
+    Path(finished).write_text("work ran to completion")
+    return os.getpid()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("workflow", [False, True])
+async def test_assertion_failure_collects_both_owned_pool_tasks(tmp_path, workflow):
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(2)
+    tasks = []
+    started = [tmp_path / f"started-{index}" for index in range(2)]
+    finished = [tmp_path / f"finished-{index}" for index in range(2)]
+    unrelated = asyncio.create_task(asyncio.sleep(60))
+
+    async def run(index):
+        if workflow:
+            async with pool.workflow():
+                return await pool.run(_finite_ownership_worker, str(started[index]), str(finished[index]), timeout=60)
+        return await pool.run(_finite_ownership_worker, str(started[index]), str(finished[index]), timeout=60)
+
+    try:
+        with pytest.raises(AssertionError, match="injected before companion await"):
+            try:
+                for index in range(2):
+                    tasks.append(asyncio.create_task(run(index)))
+                async with asyncio.timeout(30):
+                    while not all(path.exists() for path in started):
+                        await asyncio.sleep(0.02)
+                pids = {int(path.read_text()) for path in started}
+                assert len(pids) == 2
+                raise AssertionError("injected before companion await")
+            finally:
+                await _finish_owned_pool_tasks(pool, *tasks)
+        assert all(task.done() and task.cancelled() for task in tasks)
+        assert not pool._active
+        assert pool._slots._value == 2
+        assert pids.isdisjoint({child.pid for child in multiprocessing.active_children()})
+        assert not any(path.exists() for path in finished)
+        assert not unrelated.done()
+    finally:
+        unrelated.cancel()
+        await asyncio.gather(unrelated, return_exceptions=True)
+        pool.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_legacy_assertion_failure_stops_only_owned_running_workers(tmp_path):
+    import os
+
+    pool = TestPoolExecution._create_pool(1)
+    independent = TestPoolExecution._create_pool(1)
+    started, finished = tmp_path / "legacy-started", tmp_path / "legacy-finished"
+    work = None
+    try:
+        loop = asyncio.get_running_loop()
+        independent_pid = await asyncio.wait_for(loop.run_in_executor(independent, os.getpid), 30)
+        with pytest.raises(AssertionError, match="injected after future cancellation"):
+            try:
+                work = loop.run_in_executor(pool, _finite_ownership_worker, str(started), str(finished))
+                async with asyncio.timeout(30):
+                    while not started.exists():
+                        await asyncio.sleep(0.02)
+                # Same narrow Python 3.11 owned-handle boundary as fixture cleanup.
+                workers = tuple(pool._processes.values())
+                assert {worker.pid for worker in workers} == {int(started.read_text())}
+                work.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await work
+                assert all(worker.is_alive() for worker in workers), "Future cancellation must not fake worker exit"
+                raise AssertionError("injected after future cancellation")
+            finally:
+                _shutdown_legacy_test_pool(pool)
+        assert all(not worker.is_alive() and worker.exitcode is not None for worker in workers)
+        assert not finished.exists(), "Failure cleanup must stop the work, not wait for its natural completion"
+        assert await asyncio.wait_for(loop.run_in_executor(independent, os.getpid), 30) == independent_pid
+    finally:
+        if work is not None and not work.done():
+            work.cancel()
+        try:
+            _shutdown_legacy_test_pool(pool)
+        finally:
+            _shutdown_legacy_test_pool(independent)

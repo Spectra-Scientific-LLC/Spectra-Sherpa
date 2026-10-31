@@ -238,7 +238,7 @@ v-model:scale-value="selectedFeatureScale"
 
       <!-- Data Table -->
       <div v-else class="data-table-container">
-        <DisplaySubsetIndicator v-if="plotSampling?.plottedTableOnly" />
+        <DisplaySubsetIndicator v-if="plotSampling?.plottedTableOnly || (recordColumnKeys !== null && previewTotalRows > dataPreview.length)" />
         <span v-if="usePlottedTable && isProjectedScientificKind(nodeOutput, 'visualization')" class="data-summary">Plot coordinates <MethodHelp topic="displayExports" label="Plot coordinates and sample rows" /></span>
         <span v-if="!tableOnly && availablePlots.length === 0" class="data-summary" title="No shared quantitative axis">Table-only result</span>
         <span v-if="dataPreviewSummary" class="data-summary">{{ dataPreviewSummary }}</span>
@@ -266,7 +266,7 @@ v-model:scale-value="selectedFeatureScale"
             :header="col.header"
             :style="{ minWidth: '80px', maxWidth: '150px' }"
           >
-            <template #body="{ data }">{{ previewCell(data[col.field]) }}</template>
+            <template #body="{ data }"><span :title="data[col.field] !== null && typeof data[col.field] === 'object' ? JSON.stringify(data[col.field]) : undefined">{{ previewCell(data[col.field]) }}</span></template>
           </Column>
         </DataTable>
         <Paginator v-if="previewTotalRows > previewRowLimit" :first="previewFirst" :rows="previewRowLimit" :total-records="previewTotalRows" @page="previewFirst = $event.first" />
@@ -293,7 +293,7 @@ import { SCIENTIFIC_COLORS, PLOT_SURFACE } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
 import { scientificMatrixClassRowRole, scientificMatrixColumns, scientificMatrixRowLabels } from "@/utils/scientificMatrixColumns";
-import { scientificColumnLabel, scientificResponseUnit } from "@/utils/scientificDisplay";
+import { scientificRecordColumnKeys, scientificRecordColumnLabel, scientificStructuredCell, scientificResponseUnit } from "@/utils/scientificDisplay";
 import DisplaySubsetIndicator from "@/components/DisplaySubsetIndicator.vue";
 import AxisSetControls from "@/components/data/AxisSetControls.vue";
 import { plotMatrixSlices } from "@/utils/plotMatrixSlices";
@@ -317,7 +317,7 @@ import {
   type QuickPlotSelection,
 } from "@/composables/useScientificPlotProjection";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";
-import { isProjectedScientificKind } from "@/utils/scientificPresentation";
+import { isProjectedScientificKind, projectedPresentationIdentity } from "@/utils/scientificPresentation";
 import {
   normalizeSampleLabel,
   compactSampleLabel,
@@ -763,7 +763,7 @@ function toggleViewMode() {
 function previewCell(value: unknown): string {
   if (typeof value === "number") return Number.isInteger(value)
     ? String(value) : scientificNumber(value, { significantDigits: 6 });
-  return value == null ? "—" : String(value);
+  return scientificStructuredCell(value) ?? (value == null ? "—" : String(value));
 }
 
 function formatHqi(value?: number): string {
@@ -922,6 +922,14 @@ const dataPreview = computed(() => {
   });
 });
 
+// Compute the full retained column set once per payload, never from a page or cell.
+const recordColumnKeys = computed(() => {
+  const data = props.nodeOutput?.data;
+  return !usePlottedTable.value && Array.isArray(data) && data[0]
+    && typeof data[0] === "object" && !Array.isArray(data[0])
+    ? scientificRecordColumnKeys(data) : null;
+});
+
 const dataPreviewSummary = computed(() => {
   if (plotSampling.value?.plottedTableOnly && viewMode.value === "data") {
     return `${plotSampling.value.shown} plotted traces of ${plotSampling.value.total} ${plotSampling.value.sourceNoun}; full source matrix is not in this view`;
@@ -943,6 +951,7 @@ const dataPreviewSummary = computed(() => {
     ? data.filter((row: any) => String(row?.sample ?? "") === selectedLibrarySample.value)
     : data;
   const totalRows = rows.length;
+  if (recordColumnKeys.value !== null) return `${Math.min(totalRows, previewRowLimit.value)} of ${totalRows} rows`;
   const firstRow = rows[0] ?? data[0];
   const totalCols = Array.isArray(firstRow)
     ? firstRow.length
@@ -978,6 +987,15 @@ const dataPreviewColumns = computed(() => {
       { field: "outlier", header: "Screened outlier" },
     ];
   }
+  if (recordColumnKeys.value !== null) {
+    return [
+      { field: "_index", header: "#" },
+      ...recordColumnKeys.value.map(field => ({
+        field, header: scientificRecordColumnLabel(field, props.nodeOutput?.metadata,
+          projectedPresentationIdentity(props.nodeOutput)?.kind),
+      })),
+    ];
+  }
   const first = dataPreview.value[0] as Record<string, any>;
   const metadata = props.nodeOutput?.metadata || {};
   const pcLabels = metadata.pc_labels || [];
@@ -987,7 +1005,7 @@ const dataPreviewColumns = computed(() => {
   return Object.keys(first)
     .filter((key) => key !== "_label_full")
     .map((key) => {
-      let header = scientificColumnLabel(key, metadata);
+      let header = scientificRecordColumnLabel(key, metadata, projectedPresentationIdentity(props.nodeOutput)?.kind);
       if (key === "_index") {
         header = "#";
       } else if (correlationCircleSelected.value && key === "variable") {

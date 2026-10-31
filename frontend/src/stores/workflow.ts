@@ -1,6 +1,6 @@
 import { validateScientificMetadata } from "@/utils/scientificMetadataValidation";
 import { defineStore } from "pinia";
-import { traceGui } from "@/lib/guiTrace";
+import { createGuiTraceAttempt, traceGui } from "@/lib/guiTrace";
 import { ref, computed, watch } from "vue";
 import api from "@/api/client";
 import type { components } from "@/types/api/v1";
@@ -1171,6 +1171,20 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
     setMirroredStatus("running");
 
+    const diagnosticSession = sessionIdentity();
+    const traceExecution = createGuiTraceAttempt(
+      { project_id: useProjectStore().currentProjectId, workflow_id: executingWorkflowId },
+      () => sessionIdentity().every((value, index) => Object.is(value, diagnosticSession[index])),
+    );
+    const diagnosticOwnership = () => ({
+      workflow_id_matches: workflowId.value === executingWorkflowId,
+      workflow_owner_current: executingOwnership.isCurrent(),
+      execution_owner_current: execution.isCurrent(),
+    });
+    let diagnosticRunId: number | undefined;
+    let diagnosticPhase: "http" | "apply" | "superseded" = "http";
+    const diagnosticStarted = performance.now();
+    traceExecution("workflow_execute_http", "start", diagnosticOwnership());
     try {
       // REM-4: every execute carries a fresh Idempotency-Key so a network
       // blip that drops the response is replayed server-side instead of
@@ -1186,14 +1200,23 @@ export const useWorkflowStore = defineStore("workflow", () => {
           }),
       );
 
+      if (Number.isSafeInteger(response.data.run_id) && response.data.run_id > 0) diagnosticRunId = response.data.run_id;
+      traceExecution("workflow_execute_http", "ok", {
+        ...diagnosticOwnership(), run_id: diagnosticRunId,
+        elapsed_ms: Math.min(3600000, Math.max(0, Math.round(performance.now() - diagnosticStarted))),
+      });
       const isStillActiveWorkflow = workflowId.value === executingWorkflowId && executingOwnership.isCurrent() && execution.isCurrent();
       if (!isStillActiveWorkflow) {
+        diagnosticPhase = "superseded";
+        traceExecution("workflow_execute_apply", "superseded", { ...diagnosticOwnership(), run_id: diagnosticRunId });
         const status = response.data.status === "completed" && !response.data.error ? "success" : "error";
         setMirroredStatus(status);
         scheduleStatusClear(status);
         throw new DOMException("Execution belongs to a previously active workflow.", "AbortError");
       }
 
+      diagnosticPhase = "apply";
+      traceExecution("workflow_execute_apply", "start", { ...diagnosticOwnership(), run_id: diagnosticRunId });
       // Store results and integrity hash
       lastExecutionResults.value = response.data.results;
       restoredRunId.value = Number.isInteger(response.data.run_id) ? response.data.run_id : null;
@@ -1264,8 +1287,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
       setMirroredStatus("success");
       scheduleStatusClear("success");
 
+      traceExecution("workflow_execute_apply", "ok", { ...diagnosticOwnership(), run_id: diagnosticRunId });
       return response.data;
     } catch (error: unknown) {
+      if (diagnosticPhase !== "superseded") {
+        traceExecution(diagnosticPhase === "http" ? "workflow_execute_http" : "workflow_execute_apply",
+          isRequestCanceled(error) ? "cancelled" : "error", { ...diagnosticOwnership(), run_id: diagnosticRunId });
+      }
       if (isRequestCanceled(error)) {
         // A retired view has already recorded the server's terminal status.
         // A transport cancellation with no acknowledgement is not a failed run.
@@ -1282,7 +1310,12 @@ export const useWorkflowStore = defineStore("workflow", () => {
       scheduleStatusClear("error");
       throw error;
     } finally {
-      if (executingOwnership.isCurrent()) isLoading.value = false;
+      const loadingClearAuthorized = executingOwnership.isCurrent();
+      if (loadingClearAuthorized) isLoading.value = false;
+      traceExecution("workflow_execute_finalize", loadingClearAuthorized ? "ok" : "superseded", {
+        ...diagnosticOwnership(), run_id: diagnosticRunId,
+        loading_clear_authorized: loadingClearAuthorized, workflow_loading: isLoading.value,
+      });
     }
   }
 

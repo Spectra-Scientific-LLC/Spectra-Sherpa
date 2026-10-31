@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { retainedPeakFixture } from "@/test/fixtures/retainedPeakTable";
 import { nextTick } from "vue";
 import DataTableModal from "@/views/workflow-builder/modals/DataTableModal.vue";
 import QuickPlotModal from "@/views/workflow-builder/modals/QuickPlotModal.vue";
@@ -231,4 +232,22 @@ it("XGSC-06 exports the active cohort with retained indices and unrounded cells"
   useDisplayPreferences().precision = "full";
   expect(w.vm.formatValue(1e-8,true)).toBe("1e-8");
   expect(await csv(w)).toBe(text);
+});
+
+
+it("keeps retained Peak Table CSV keys, full precision and nested detections after friendly display formatting", async () => {
+  const { peaks } = retainedPeakFixture();
+  const before = structuredClone(peaks);
+  const w = table(peaks.data, peaks.metadata);
+  expect(w.vm.tableColumns.map((column: any) => column.header)).toContain("Median position (cm-1)");
+  expect(w.vm.tableColumns.map((column: any) => column.header)).toContain("Detections");
+  const exported = await csv(w);
+  expect(exported?.split("\n")[0]).toContain("median_pos (cm-1),mean_pos (cm-1)");
+  expect(exported?.split("\n")[0]).toContain("detection_count,sample_count,detection_fraction");
+  expect(exported).toContain("1200.123456789");
+  expect(exported).toContain("0.234567891");
+  expect(exported).toContain('""sample_label"":""Synthetic A""');
+  expect(exported).not.toContain("records (hover for details)");
+  expect(exported?.trim().split("\n")).toHaveLength(2);
+  expect(peaks).toEqual(before);
 });
