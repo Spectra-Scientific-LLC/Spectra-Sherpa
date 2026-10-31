@@ -292,7 +292,7 @@ v-model:scale-value="selectedFeatureScale"
 import { SCIENTIFIC_COLORS, PLOT_SURFACE } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
-import { scientificMatrixColumns, scientificMatrixRowLabels } from "@/utils/scientificMatrixColumns";
+import { scientificMatrixClassRowRole, scientificMatrixColumns, scientificMatrixRowLabels } from "@/utils/scientificMatrixColumns";
 import { scientificColumnLabel, scientificResponseUnit } from "@/utils/scientificDisplay";
 import DisplaySubsetIndicator from "@/components/DisplaySubsetIndicator.vue";
 import AxisSetControls from "@/components/data/AxisSetControls.vue";
@@ -849,6 +849,8 @@ const plottedPointPreview = computed(() => {
   return { rows, total };
 });
 
+const classRowRole = computed(() => scientificMatrixClassRowRole(props.nodeOutput));
+
 const dataPreview = computed(() => {
   if (usePlottedTable.value) return plottedPointPreview.value.rows;
   const data = props.nodeOutput?.data;
@@ -881,9 +883,9 @@ const dataPreview = computed(() => {
     ? data.map((_: unknown, index: number) => `LV ${index + 1}`)
     : scientificMatrixRowLabels(props.nodeOutput, data.length);
   const labels = Array.isArray(labelsRaw)
-    ? labelsRaw.map((label: any) => normalizeSampleLabel(label))
+    ? classRowRole.value ? labelsRaw : labelsRaw.map((label: any) => normalizeSampleLabel(label))
     : [];
-  const delimiter = detectLabelDelimiter(labels);
+  const delimiter = classRowRole.value ? null : detectLabelDelimiter(labels);
   const splitLabels = delimiter
     ? labels.map((label: string) => splitLabelByDelimiter(label, delimiter))
     : [];
@@ -904,7 +906,7 @@ const dataPreview = computed(() => {
           });
         }
       } else {
-        obj._label = compactSampleLabel(labels[i] || "", {
+        obj._label = classRowRole.value ? labels[i] : compactSampleLabel(labels[i] || "", {
           maxLength: 52, headLength: 34, tailLength: 14,
         });
       }
@@ -995,7 +997,10 @@ const dataPreviewColumns = computed(() => {
       } else if (correlationCircleSelected.value && key === "correlation_y") {
         header = String(pcLabels[yAxis.value] || `PC${yAxis.value + 1}`);
       } else if (key === "_label") {
-        header = isPlsVariance ? "Latent Variable" : "Label";
+        header = isPlsVariance ? "Latent Variable"
+          : classRowRole.value === "actual_class" ? "Actual class"
+            : classRowRole.value === "predicted_class" ? "Predicted class"
+              : classRowRole.value ? "Class" : "Label";
       } else if (key.startsWith("_label_")) {
         const labelIdx = Number.parseInt(key.replace("_label_", ""), 10);
         header = Number.isNaN(labelIdx) ? "Label" : `Field ${labelIdx + 1}`;
@@ -1004,7 +1009,7 @@ const dataPreviewColumns = computed(() => {
         if (isPlsVariance) {
           header = colIdx === 0 ? "X variance" : colIdx === 1 ? "Y variance" : `Domain ${colIdx + 1}`;
         } else if (featureNames.length > colIdx) {
-          header = typeof featureNames[colIdx] === "number"
+          header = classRowRole.value ? String(featureNames[colIdx]) : typeof featureNames[colIdx] === "number"
             ? previewCell(featureNames[colIdx]) : normalizeSampleLabel(featureNames[colIdx]);
         } else {
           header = `Col ${colIdx + 1}`;

@@ -2,14 +2,37 @@ import type { NodeOutput } from "./nodeOutput";
 import { isProjectedScientificKind } from "./scientificPresentation";
 import { scientificColumnLabel } from "./scientificDisplay";
 
+const classRowRoles = new Set(["class", "response_class", "actual_class", "predicted_class"]);
+
+function isConfusionMatrix(output: NodeOutput | null | undefined): boolean {
+  return isProjectedScientificKind(output, "confusion_matrix") ||
+    output?.descriptor?.scientific_kind === "confusion_matrix" || output?.metadata?.type === "ClassificationTest";
+}
+
+/** Use declared dimension semantics; neither shape nor class count defines a row. */
+export function scientificMatrixClassRowRole(output: NodeOutput | null | undefined): string | null {
+  const role = output?.descriptor?.dimensions?.[0]?.role;
+  if (role) return classRowRoles.has(role) ? role : null;
+  return isConfusionMatrix(output) ? "actual_class" : null;
+}
+
 /** Labels belong to this result's row axis, not a similarly sized input. */
 export function scientificMatrixRowLabels(output: NodeOutput | null | undefined, rows: number): string[] {
   const value = output?.presentation_value as Record<string, unknown> | undefined;
   const axis = (value?.sample_axis ?? value?.y_axis) as Record<string, unknown> | undefined;
   const metadata = output?.metadata ?? {};
   const diagnostics = metadata.diagnostics as Record<string, unknown> | undefined;
-  const candidate = output?.descriptor?.dimensions?.[0]?.labels ?? axis?.labels ??
-    metadata.sample_labels ?? metadata.labels ?? diagnostics?.sample_labels;
+  const row = output?.descriptor?.dimensions?.[0];
+  const classRole = scientificMatrixClassRowRole(output);
+  // A declared non-class axis contradicts a confusion presentation. Do not
+  // recover class identity from unrelated sample labels, even at equal length.
+  if (isConfusionMatrix(output) && !classRole) return [];
+  if (classRole && (output?.descriptor?.shape_valid === false || (row?.size != null && row.size !== rows))) return [];
+  // Select authority before validating it: malformed explicit labels must not
+  // fall through to a convenient lower-priority label array.
+  const candidate = row?.labels ?? axis?.labels ?? (classRole
+    ? metadata.classes ?? diagnostics?.classes ?? (isConfusionMatrix(output) ? metadata.labels : undefined)
+    : metadata.sample_labels ?? metadata.labels ?? diagnostics?.sample_labels);
   return Array.isArray(candidate) && candidate.length === rows &&
     candidate.every(label => (typeof label === "string" && label.trim().length > 0) ||
       (typeof label === "number" && Number.isFinite(label)))

@@ -2,6 +2,7 @@ import { mount } from "@vue/test-utils";
 import { plotContext } from "@/utils/plotContext";
 import { describe, expect, it } from "vitest";
 import { nextTick } from "vue";
+import PrimeVue from "primevue/config";
 
 import QuickPlotModal from "@/views/workflow-builder/modals/QuickPlotModal.vue";
 import { buildNodeOutput } from "@/utils/nodeOutput";
@@ -30,6 +31,36 @@ describe("QuickPlotModal", () => {
     const vm = wrapper.vm as any;
     expect(vm.dataPreview.map((row: any) => row._label_full)).toEqual(["Specimen 135", "Specimen 142"]);
     expect(vm.dataPreviewColumns.slice(-2).map((column: any) => column.header)).toEqual(["PC1", "PC2"]);
+    wrapper.unmount();
+  });
+  it.each([
+    { classes: ["class_0", "class_1", "class_2"], sampleCount: 134 },
+    { classes: ["class_0", "class_1", "class_2"], sampleCount: 3 },
+    { classes: ["('Reference, A' | \"quoted\")", "Reference | B", "Full reference class ".repeat(6)], sampleCount: 134 },
+  ])("renders exact confusion reference labels and counts in the embedded table: %j", async ({ classes, sampleCount }) => {
+    const matrix = [[44, 0, 0], [2, 50, 2], [0, 0, 36]];
+    const nodeOutput = { data: matrix, presentation_value: matrix,
+      descriptor: { scientific_kind: "confusion_matrix", shape: [3, 3], shape_valid: true,
+        dimensions: [{ role: "actual_class", size: 3 }, { role: "predicted_class", size: 3 }] },
+      metadata: { classes, diagnostics: { classes,
+        sample_labels: Array.from({ length: sampleCount }, (_, i) => `stale specimen ${i}`) },
+        scientific_presentation: { ...scientificPresentation("confusion_matrix"),
+          presentation_id: "calibration_confusion", source_port: "confusion_matrix_train",
+          source_ports: ["confusion_matrix_train"] } },
+    };
+    const original = structuredClone(nodeOutput);
+    const wrapper = mount(QuickPlotModal, { props: { embedded: true, tableOnly: true, modelValue: true,
+      nodeType: "classification.plsda", nodeLabel: "Calibration Confusion Matrix", nodeOutput: nodeOutput as any },
+      global: { plugins: [PrimeVue], stubs: { ...globalStubs, DataTable: false, Column: false } } });
+    await nextTick();
+    const vm = wrapper.vm as any;
+    expect(vm.dataPreview.map((row: any) => row._label_full)).toEqual(classes);
+    expect(vm.dataPreview.map((row: any) => row._label)).toEqual(classes);
+    expect(vm.dataPreviewColumns.map((column: any) => column.header)).toEqual(["#", "Actual class", ...classes]);
+    expect(wrapper.findAll("thead th").map(cell => cell.text())).toEqual(["#", "Actual class", ...classes.map(label => label.trim())]);
+    expect(wrapper.findAll("tbody tr").map(row => row.findAll("td").map(cell => cell.text())))
+      .toEqual(matrix.map((values, i) => [String(i + 1), classes[i].trim(), ...values.map(String)]));
+    expect(nodeOutput).toEqual(original);
     wrapper.unmount();
   });
   it("offers Color by and Symbol by for unlabeled Iris-style categorical responses", async () => {
