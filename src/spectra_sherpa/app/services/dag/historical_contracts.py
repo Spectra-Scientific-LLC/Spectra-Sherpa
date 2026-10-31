@@ -108,7 +108,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "classification.plsda": (
         "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-        "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
+        "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
@@ -138,7 +138,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.fitted_pls": (
         "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
-        "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
+        "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
     ),
     "model.fitted_svr": (
         "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
@@ -183,7 +183,7 @@ def historical_port_topology(graph: HistoricalValidationGraph) -> dict[str, obje
 _PRE_AUTOMATIC_PLS_CONSUMERS = {
     "classification.plsda": (
         "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
-        "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
+        "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
     ),
     "model.fitted_linear_regression": (
         "e67835fc9e93b0a1b5dcc306ed3cfcbbcae86eb515af3f7b730fe48cc1d79782",
@@ -195,7 +195,7 @@ _PRE_AUTOMATIC_PLS_CONSUMERS = {
     ),
     "model.fitted_pls": (
         "2252dec1ff34b651be6480a68a10662470aeaa566bfb9c179eba04f0d87c83e4",
-        "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
+        "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
     ),
     "model.fitted_svr": (
         "fe7266dee9a09f27a7be7fae4ecba2c38af9c643d9f1bd71b67b8884cc49ea1d",
@@ -217,7 +217,23 @@ class HistoricalReconstructionContext:
             == "eec02d6f13ac5b5fa1af45dfea754b0c054faf1c92d75cf9af88ec74ac066cdb"
         )
 
+    @property
+    def predates_preprocessing_expansion(self) -> bool:
+        return (
+            self._catalog["profile"]["profile_digest"]
+            == "a90673771ee6f54d95591e8eb9cd56470dca68dae5a319a58936552d77a96140"
+        )
+
+    @property
+    def predates_grouped_cv(self) -> bool:
+        return (
+            self._catalog["profile"]["profile_digest"]
+            == "af74c1883601c4db7943953a864eb319794e19cebf5b303ef3f67ac858714336"
+        )
+
     def added_pls_parameters(self) -> set[str]:
+        if self.predates_preprocessing_expansion or self.predates_grouped_cv:
+            return set()
         if self.predates_automatic_pls:
             return {"component_fit_mode"}
         return {"component_selection_rule", "component_curve_max", "component_cv_folds", "component_fit_mode"}
@@ -290,6 +306,29 @@ class HistoricalReconstructionContext:
         contract = NodeExecutionContract.from_dict(archived["payload"])
         if contract.digest != archived["digest"] or contract.digest != digest:
             raise ValidationGraphError("unknown historical operation/contract identity")
+        if self.predates_preprocessing_expansion or self.predates_grouped_cv:
+            reviewed = {
+                "model.fitted_pls": (
+                    "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
+                    "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
+                ),
+                "classification.plsda": (
+                    (
+                        "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236"
+                        if self.predates_grouped_cv
+                        else "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824"
+                    ),
+                    "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
+                ),
+            }
+            if current.digest != digest and reviewed.get(operation) != (digest, current.digest):
+                raise ValidationGraphError("unqualified pre-preprocessing inspection consumer")
+            ignored = {"implementation_components", "implementation_digest"}
+            if {k: v for k, v in contract.payload.items() if k not in ignored} != {
+                k: v for k, v in current.payload.items() if k not in ignored
+            }:
+                raise ValidationGraphError("pre-preprocessing scientific declarations changed")
+            return contract
         inspected = (_PRE_AUTOMATIC_PLS_CONSUMERS if self.predates_automatic_pls else _INSPECTION_CONSUMERS).get(
             operation
         )

@@ -141,7 +141,7 @@ def test_cleaning_nodes_have_representative_absolute_performance_ceilings() -> N
         ("preprocess.clip_floor", "spectrasherpa.preprocess.clip_floor"),
     ],
 )
-def test_cleaning_node_has_one_closed_local_contract(
+def test_cleaning_node_has_one_closed_managed_contract(
     node_type: str,
     implementation_id: str,
 ) -> None:
@@ -153,7 +153,11 @@ def test_cleaning_node_has_one_closed_local_contract(
     assert contract.payload["runtime_family"] == RuntimeFamily.SHERPA_NATIVE.value
     assert contract.payload["lifecycle_kind"] == LifecycleKind.STATELESS_TRANSFORM.value
     assert contract.payload["implementation_id"] == implementation_id
-    assert contract.payload["managed_optimization_eligibility"] == (ManagedOptimizationEligibility.LOCAL.value,)
+    assert contract.payload["managed_optimization_eligibility"] == (
+        ManagedOptimizationEligibility.LOCAL.value,
+        ManagedOptimizationEligibility.DEVELOPMENT.value,
+        ManagedOptimizationEligibility.FULL_REFIT.value,
+    )
     assert contract.payload["required_worker_capabilities"] == (WorkerCapability.READ_DATASET.value,)
     assert metadata.input_types == ["SpectralDataset"]
     assert metadata.output_type == "SpectralDataset"

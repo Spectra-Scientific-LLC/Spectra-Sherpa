@@ -266,3 +266,28 @@ def test_applicability_evidence_rejects_row_level_statistics() -> None:
                 },
             }
         )
+
+
+@pytest.mark.parametrize("change", ["unknown_field", "wrong_serializer", "wrong_shape", "nested_field"])
+def test_coefficient_shape_exception_does_not_admit_sample_tables(change):
+    from spectra_sherpa.sdk.canonical_fitted_artifact import _validate_data_free_state
+
+    serializer = "spectra.sherpa-simpls-regression-json/9"
+    state = {
+        "serializer": serializer,
+        "reference_samples": 3,
+        "features": 3,
+        "targets": 1,
+        "coefficients": [[1.0], [2.0], [3.0]],
+    }
+    _validate_data_free_state(state, serializer=serializer)
+    if change == "unknown_field":
+        state["unrecognized_matrix"] = [[1.0], [2.0], [3.0]]
+    elif change == "wrong_serializer":
+        serializer = "unknown/1"
+    elif change == "wrong_shape":
+        state["targets"] = 2
+    else:
+        state["metadata"] = {"coefficients": [[1.0], [2.0], [3.0]]}
+    with pytest.raises(CanonicalFittedArtifactError, match="sample-level rows"):
+        _validate_data_free_state(state, serializer=serializer)

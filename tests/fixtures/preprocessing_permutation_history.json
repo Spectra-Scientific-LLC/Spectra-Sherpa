@@ -1,0 +1,163 @@
+{
+  "evidence": {
+    "outputs": {
+      "permutation": {
+        "default": {
+          "byte_count": 4192,
+          "format_version": 1,
+          "reason": null,
+          "role": "default",
+          "sha256": "6a2c7be53c136f613fe6f62fc9e1c32f9e0d52b2f5ecce638d6455876ff9a332",
+          "state": "exact",
+          "storage": "file"
+        }
+      }
+    },
+    "qualification": "qualified",
+    "reason": null,
+    "schema_version": 1
+  },
+  "members": {
+    "run-outputs-v1/1/.quota/state.json": "{\"signature\": [16777234, 97450368, 1793405365868498504, 1793405365868498504], \"bytes\": 4192, \"count\": 2}",
+    "run-outputs-v1/1/6a2c7be53c136f613fe6f62fc9e1c32f9e0d52b2f5ecce638d6455876ff9a332.json": "{\"format_version\":1,\"value\":{\"schema_version\":\"spectrasherpa-plsda-response-permutation/1\",\"status\":\"complete\",\"model_family\":\"plsda\",\"scope\":\"calibration_development_only_no_independent_test\",\"model_state_sha256\":\"906d8212997efa6f524811b02caac07a471c1860511f6959f9f7e4cfad947b55\",\"calibration_x_sha256\":\"b5cac4b8f67ac79c8141aad5add2b6de176daea23cb2d35dd9aa193527beb6d9\",\"calibration_labels_sha256\":\"ce4e89170692b6e3551444dff61c248bdcd66ccfa356a5d3ce636cf7aee87801\",\"grouping_sha256\":null,\"blocks_sha256\":null,\"n_calibration\":30,\"n_classes\":2,\"n_units\":30,\"n_blocks\":null,\"class_counts\":{\"A\":15,\"B\":15},\"saved_model_components\":2,\"observed_reselected_components\":1,\"component_search_maximum\":2,\"selection_rule\":\"maximum_out_of_fold_balanced_accuracy_tie_fewer_components\",\"metric\":\"balanced_accuracy\",\"observed\":0.9333333333333333,\"observed_split_digest\":\"6f7d3b9c30be554f01d145e4a3387bf32d244e780aedbe8f3f8ee67f45f9aee5\",\"seed\":42,\"folds\":3,\"permutations_requested\":19,\"permutations_successful\":19,\"exceedances\":0,\"p_value\":0.05,\"null\":[{\"balanced_accuracy\":0.6333333333333333,\"selected_components\":1,\"split_digest\":\"05850cab6d3c06910f2e13692beab9c75458c5870b0723a32827838ad19c6721\"},{\"balanced_accuracy\":0.3666666666666667,\"selected_components\":1,\"split_digest\":\"af42cd5cf6e540a7f1d53adb0b26885cd939dae3cae4e748a84a1879f632b83f\"},{\"balanced_accuracy\":0.4666666666666667,\"selected_components\":2,\"split_digest\":\"43c5f795cf746c49f9a0d35e351b3f79dfacf1424c96bca566681e6ee84141f7\"},{\"balanced_accuracy\":0.6,\"selected_components\":1,\"split_digest\":\"a7ba588dc753659417eff7277355aec3fe10458a46d74528dc42e21e5e837d86\"},{\"balanced_accuracy\":0.7333333333333334,\"selected_components\":2,\"split_digest\":\"f8ae738390cae652255f670996dce11c7d3a212425868b6dbcd4b371cd0a34a9\"},{\"balanced_accuracy\":0.6666666666666666,\"selected_components\":1,\"split_digest\":\"74ee4ddf4d972a11b84200f4964b342c19bb11858e9df6f11a2f33c2b600e17b\"},{\"balanced_accuracy\":0.6333333333333333,\"selected_components\":1,\"split_digest\":\"4992c336f2e0d82c50b584603b080e337487576c2fd1d9a2acef0d614859b5d6\"},{\"balanced_accuracy\":0.7333333333333333,\"selected_components\":1,\"split_digest\":\"f5956136ac80487538c21a9214b4814fe40a634ec0e8a538e9089b3f723ab92b\"},{\"balanced_accuracy\":0.5333333333333333,\"selected_components\":1,\"split_digest\":\"89c309617e3602f1787034dfbe02ea58f5cac72504aa8ce7981071292246be77\"},{\"balanced_accuracy\":0.4666666666666667,\"selected_components\":2,\"split_digest\":\"d43fcc053f91b41484d0b1a050a9aa077807d33a4ffbf3be5de6f4ebb3d2384a\"},{\"balanced_accuracy\":0.6,\"selected_components\":2,\"split_digest\":\"1e278f48af43ff8259472b4d79145fe6655f7eac0efcf8a9ded57d8c8b8c35b0\"},{\"balanced_accuracy\":0.5,\"selected_components\":2,\"split_digest\":\"37ba3322bda3e647165d51dd2cb4090aca763dac2f60b4f3f4c417408ff32b0c\"},{\"balanced_accuracy\":0.5,\"selected_components\":1,\"split_digest\":\"c2e9b6df8f83c8764f6a429c01a5164aeb4dc798105114522b269730c61a6854\"},{\"balanced_accuracy\":0.6,\"selected_components\":1,\"split_digest\":\"806f95e221d7f6401be8aa6aff929f9e01aef6a08d659869545f42fd5c3da8ab\"},{\"balanced_accuracy\":0.7333333333333333,\"selected_components\":2,\"split_digest\":\"c8a772ea5a6a3e682d9af0f236a045fd209fc64baec673d4a6c498653a07aa44\"},{\"balanced_accuracy\":0.4666666666666667,\"selected_components\":1,\"split_digest\":\"c9c54ea48d84df43c90457a6b50d58299b6f2b44c7086ae40bc939765cfaa8a1\"},{\"balanced_accuracy\":0.6666666666666666,\"selected_components\":2,\"split_digest\":\"112439ac4d8e927d45499653cb8c33d4e7354865a77877262d95543a9c80500c\"},{\"balanced_accuracy\":0.6,\"selected_components\":1,\"split_digest\":\"bb627e6fcfb9292103e9f4259b8febccf405dc54c3b81420e41f0bd225c655d1\"},{\"balanced_accuracy\":0.6,\"selected_components\":2,\"split_digest\":\"0d428e6533fe7d2b93709ef0ef48c36f1898651efeebc42f2bc652c0be709f67\"}],\"scaling\":\"fold_fitted_mean_center\",\"cv_anova\":{\"status\":\"unavailable\",\"reason\":\"No qualified CV-ANOVA statistic for this PLS-DA response design.\"},\"interpretation_limit\":\"A small p-value is evidence against exchangeable random labels under this validation design; it does not establish independent external validity or application-domain fitness.\",\"upstream_preprocessing\":\"caller_declared_raw_array_no_recorded_preprocessing\",\"exchangeability_block_column\":null}}"
+  },
+  "producer_contract": "1b4d8a3f538be250518594d0bcee7f6530598de60963e8b165427a658c7f1eff",
+  "source_revision": "ba918fdb40202b95eb47cbdb4794322286809c40",
+  "value": {
+    "blocks_sha256": null,
+    "calibration_labels_sha256": "ce4e89170692b6e3551444dff61c248bdcd66ccfa356a5d3ce636cf7aee87801",
+    "calibration_x_sha256": "b5cac4b8f67ac79c8141aad5add2b6de176daea23cb2d35dd9aa193527beb6d9",
+    "class_counts": {
+      "A": 15,
+      "B": 15
+    },
+    "component_search_maximum": 2,
+    "cv_anova": {
+      "reason": "No qualified CV-ANOVA statistic for this PLS-DA response design.",
+      "status": "unavailable"
+    },
+    "exceedances": 0,
+    "exchangeability_block_column": null,
+    "folds": 3,
+    "grouping_sha256": null,
+    "interpretation_limit": "A small p-value is evidence against exchangeable random labels under this validation design; it does not establish independent external validity or application-domain fitness.",
+    "metric": "balanced_accuracy",
+    "model_family": "plsda",
+    "model_state_sha256": "906d8212997efa6f524811b02caac07a471c1860511f6959f9f7e4cfad947b55",
+    "n_blocks": null,
+    "n_calibration": 30,
+    "n_classes": 2,
+    "n_units": 30,
+    "null": [
+      {
+        "balanced_accuracy": 0.6333333333333333,
+        "selected_components": 1,
+        "split_digest": "05850cab6d3c06910f2e13692beab9c75458c5870b0723a32827838ad19c6721"
+      },
+      {
+        "balanced_accuracy": 0.3666666666666667,
+        "selected_components": 1,
+        "split_digest": "af42cd5cf6e540a7f1d53adb0b26885cd939dae3cae4e748a84a1879f632b83f"
+      },
+      {
+        "balanced_accuracy": 0.4666666666666667,
+        "selected_components": 2,
+        "split_digest": "43c5f795cf746c49f9a0d35e351b3f79dfacf1424c96bca566681e6ee84141f7"
+      },
+      {
+        "balanced_accuracy": 0.6,
+        "selected_components": 1,
+        "split_digest": "a7ba588dc753659417eff7277355aec3fe10458a46d74528dc42e21e5e837d86"
+      },
+      {
+        "balanced_accuracy": 0.7333333333333334,
+        "selected_components": 2,
+        "split_digest": "f8ae738390cae652255f670996dce11c7d3a212425868b6dbcd4b371cd0a34a9"
+      },
+      {
+        "balanced_accuracy": 0.6666666666666666,
+        "selected_components": 1,
+        "split_digest": "74ee4ddf4d972a11b84200f4964b342c19bb11858e9df6f11a2f33c2b600e17b"
+      },
+      {
+        "balanced_accuracy": 0.6333333333333333,
+        "selected_components": 1,
+        "split_digest": "4992c336f2e0d82c50b584603b080e337487576c2fd1d9a2acef0d614859b5d6"
+      },
+      {
+        "balanced_accuracy": 0.7333333333333333,
+        "selected_components": 1,
+        "split_digest": "f5956136ac80487538c21a9214b4814fe40a634ec0e8a538e9089b3f723ab92b"
+      },
+      {
+        "balanced_accuracy": 0.5333333333333333,
+        "selected_components": 1,
+        "split_digest": "89c309617e3602f1787034dfbe02ea58f5cac72504aa8ce7981071292246be77"
+      },
+      {
+        "balanced_accuracy": 0.4666666666666667,
+        "selected_components": 2,
+        "split_digest": "d43fcc053f91b41484d0b1a050a9aa077807d33a4ffbf3be5de6f4ebb3d2384a"
+      },
+      {
+        "balanced_accuracy": 0.6,
+        "selected_components": 2,
+        "split_digest": "1e278f48af43ff8259472b4d79145fe6655f7eac0efcf8a9ded57d8c8b8c35b0"
+      },
+      {
+        "balanced_accuracy": 0.5,
+        "selected_components": 2,
+        "split_digest": "37ba3322bda3e647165d51dd2cb4090aca763dac2f60b4f3f4c417408ff32b0c"
+      },
+      {
+        "balanced_accuracy": 0.5,
+        "selected_components": 1,
+        "split_digest": "c2e9b6df8f83c8764f6a429c01a5164aeb4dc798105114522b269730c61a6854"
+      },
+      {
+        "balanced_accuracy": 0.6,
+        "selected_components": 1,
+        "split_digest": "806f95e221d7f6401be8aa6aff929f9e01aef6a08d659869545f42fd5c3da8ab"
+      },
+      {
+        "balanced_accuracy": 0.7333333333333333,
+        "selected_components": 2,
+        "split_digest": "c8a772ea5a6a3e682d9af0f236a045fd209fc64baec673d4a6c498653a07aa44"
+      },
+      {
+        "balanced_accuracy": 0.4666666666666667,
+        "selected_components": 1,
+        "split_digest": "c9c54ea48d84df43c90457a6b50d58299b6f2b44c7086ae40bc939765cfaa8a1"
+      },
+      {
+        "balanced_accuracy": 0.6666666666666666,
+        "selected_components": 2,
+        "split_digest": "112439ac4d8e927d45499653cb8c33d4e7354865a77877262d95543a9c80500c"
+      },
+      {
+        "balanced_accuracy": 0.6,
+        "selected_components": 1,
+        "split_digest": "bb627e6fcfb9292103e9f4259b8febccf405dc54c3b81420e41f0bd225c655d1"
+      },
+      {
+        "balanced_accuracy": 0.6,
+        "selected_components": 2,
+        "split_digest": "0d428e6533fe7d2b93709ef0ef48c36f1898651efeebc42f2bc652c0be709f67"
+      }
+    ],
+    "observed": 0.9333333333333333,
+    "observed_reselected_components": 1,
+    "observed_split_digest": "6f7d3b9c30be554f01d145e4a3387bf32d244e780aedbe8f3f8ee67f45f9aee5",
+    "p_value": 0.05,
+    "permutations_requested": 19,
+    "permutations_successful": 19,
+    "saved_model_components": 2,
+    "scaling": "fold_fitted_mean_center",
+    "schema_version": "spectrasherpa-plsda-response-permutation/1",
+    "scope": "calibration_development_only_no_independent_test",
+    "seed": 42,
+    "selection_rule": "maximum_out_of_fold_balanced_accuracy_tie_fewer_components",
+    "status": "complete",
+    "upstream_preprocessing": "caller_declared_raw_array_no_recorded_preprocessing"
+  }
+}

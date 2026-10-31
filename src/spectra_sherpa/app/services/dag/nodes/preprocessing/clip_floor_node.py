@@ -202,7 +202,12 @@ bind_stable_execution_contract(
     implementation_id="spectrasherpa.preprocess.clip_floor",
     implementation_version="1.0.1",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
-    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    managed_optimization_eligibility=(
+        ManagedOptimizationEligibility.LOCAL,
+        ManagedOptimizationEligibility.DEVELOPMENT,
+        ManagedOptimizationEligibility.FULL_REFIT,
+    ),
+    managed_optimization_profiles=("first_party_pls",),
     sample_effect="preserves_samples",
     feature_effect="preserves_features",
     axis_effect="preserves_axis",
@@ -221,6 +226,9 @@ bind_stable_execution_contract(
     ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
+    citations=(
+        "NumPy 1.26, numpy.clip: lower-bound clipping, https://numpy.org/doc/1.26/reference/generated/numpy.clip.html",
+    ),
 )
 
 

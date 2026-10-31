@@ -19,6 +19,51 @@ SciPy's `savgol_filter` is the underlying reference point for Savitzky-Golay con
 
 Rubberband baseline correction follows the spectroscopy treatment discussed by Butler et al., *Analyst* 143 (2018), DOI [10.1039/C8AN01384E](https://doi.org/10.1039/C8AN01384E). Its lower convex envelope uses Andrew's monotone-chain construction, *Information Processing Letters* 9 (1979), DOI [10.1016/0020-0190(79)90072-3](https://doi.org/10.1016/0020-0190(79)90072-3). The full connected spectral interval is used; place Clip Range upstream when only a declared interval should be corrected.
 
+
+## Managed optimization coverage
+
+The expanded managed profile includes **Clip Feature Range**, **Rubberband**,
+**Cosmic Ray Removal**, and **Clip Floor**, alongside the existing normalization,
+smoothing, derivatives, scaling, MSC, EMSC, OSC and penalized baseline operations.
+Each proposed recipe runs through the canonical nodes during validation and full
+refit. Its canonical application package repeats the recorded preprocessing on
+new spectra. Sample-local corrections are recomputed independently for each
+incoming spectrum; no population-fitted correction is relearned from prediction
+samples.
+
+- **Clip Feature Range:** bounds use the measured axis units and must stay inside
+  the source range for new or edited campaign intervals. An unchanged seed
+  interval may surround the source range (for example 400–4000 on 650–4000 data). Keep/remove intervals preserve axis
+  order. Removing an internal band does not make the remaining coordinates
+  uniformly spaced; operations requiring a uniform grid can still refuse it.
+- **Rubberband:** correction uses each spectrum's lower convex envelope. Endpoints
+  can become constant; autoscaled PLS can refuse them. Mean-centered PLS avoids
+  scaling those constant columns. The proposal compiler refuses a known constant-
+  endpoint path into autoscaled PLS before spending a trial; it does not mistake
+  standalone Scale / Center's safe constant-variable handling for that refusal.
+- **Cosmic Ray Removal:** removes local spikes with the recorded window and
+  threshold. Review narrow real peaks before accepting a correction.
+- **Clip Floor:** enforces a declared intensity floor. This is appropriate when
+  the measurement/model requires it, not a general promise of improved PLS.
+
+Clip Range's numerical reference is [NumPy Boolean indexing](https://numpy.org/doc/1.26/user/basics.indexing.html#boolean-array-indexing);
+Clip Floor uses [lower-bound clipping](https://numpy.org/doc/1.26/reference/generated/numpy.clip.html).
+These references define the operators, not a promise of improved predictions.
+
+Managed eligibility does not certify every combination of parameters or inputs.
+Ordinary legacy saved-model replay keeps its existing unsupported-operation
+refusals; this promotion qualifies the canonical application-package path.
+
+Wavenumber Align remains outside this expansion. Time-series windows/trends,
+paired-reference scaling and instrument-transfer operations need separate
+validation of ordering or reference populations. Apply Fitted nodes consume a
+recorded correction rather than propose a new fitting step. Additional wavelength
+selection methods are deferred without a scheduled date.
+
+A campaign created under the previous managed profile retains its recorded
+results for inspection. Start a fresh campaign to use the expanded profile;
+previous results are not rewritten or treated as new-profile execution evidence.
+
 ## Range, Alignment, Normalization, and Scaling
 
 - [`preprocess.clip_range`](preprocessing.md#registry-reference): Keep a chemically relevant wavenumber range and drop unneeded variables. Check axis direction after cropping.

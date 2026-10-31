@@ -84,6 +84,7 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
         _HANDOFF_PRESENTATION_PREDECESSORS,
         _PCA_DISPLAY_INPUT_REUSE_PREDECESSORS,
         _PLSDA_INDEPENDENCE_READERS,
+        _PREPROCESSING_APPLICATION_PREDECESSORS,
         _SCIENTIFIC_AUDIT_PREDECESSORS,
         _SCIENTIFIC_AUTHORITY_PREDECESSORS,
         _WORKFLOW_POPULATION_PREDECESSORS,
@@ -116,6 +117,10 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
     )
     current_entries = tuple(_PLSDA_INDEPENDENCE_READERS) + tuple(
         entry for entry in current_entries if entry.operation_id != "classification.plsda"
+    )
+    promoted = {entry.operation_id for entry in _PREPROCESSING_APPLICATION_PREDECESSORS}
+    current_entries = tuple(_PREPROCESSING_APPLICATION_PREDECESSORS) + tuple(
+        entry for entry in current_entries if entry.operation_id not in promoted
     )
     for entry in current_entries:
         current = node_registry.get_metadata(entry.operation_id).resolved_execution_contract()
@@ -166,7 +171,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         "model.apply_fitted_svr": "265de5fa6c87e0629cffcaa742da2c84a1fc3ed848ac1c8750fbd7f83d640a58",
         "model.fitted_linear_regression": "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
         "model.fitted_pcr": "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
-        "model.fitted_pls": "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
+        "model.fitted_pls": "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
         "model.fitted_svr": "6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",
     }
     reviewed_changes = {

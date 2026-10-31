@@ -13,6 +13,10 @@ from spectra_sherpa.execution_contract_vocabulary import NodeExecutionContract
 
 _EXPECTED_PLS_OPERATIONS = {
     "baseline.penalized_ls",
+    "baseline.rubberband",
+    "preprocess.clip_range",
+    "preprocess.clip_floor",
+    "preprocess.cosmic_ray",
     "classification.knn",
     "classification.plsda",
     "classification.simca",
@@ -79,14 +83,22 @@ def test_application_contracts_are_not_candidate_profile_members() -> None:
     assert "preprocess.apply_fitted_scale" not in profile.operation_ids
 
 
-def test_nonreplayable_rubberband_remains_explicitly_local_only() -> None:
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "baseline.rubberband",
+        "preprocess.clip_range",
+        "preprocess.clip_floor",
+        "preprocess.cosmic_ray",
+    ],
+)
+def test_promoted_preprocessing_has_development_and_full_refit_contract(operation) -> None:
     profile = managed_optimization_profile()
-    contract = node_registry.get_metadata("baseline.rubberband").resolved_execution_contract()
-
+    contract = node_registry.get_metadata(operation).resolved_execution_contract()
     assert contract is not None
-    assert contract.payload["managed_optimization_eligibility"] == ("local",)
-    assert contract.payload["managed_optimization_profiles"] == ()
-    assert "baseline.rubberband" not in profile.operation_ids
+    assert contract.payload["managed_optimization_eligibility"] == ("local", "development", "full_refit")
+    assert contract.payload["managed_optimization_profiles"] == (profile.profile_id,)
+    assert operation in profile.operation_ids
 
 
 def test_installed_versions_cached_but_every_contract_requirement_checked(monkeypatch):
@@ -160,3 +172,32 @@ def test_profile_cache_only_after_registry_freeze(monkeypatch):
     other_registry.is_frozen = True
     monkeypatch.setattr(module, "node_registry", other_registry)
     assert module.managed_optimization_profile() is not sealed
+
+
+def test_pre_expansion_graph_keeps_recorded_identity_for_inspection_only():
+    import hashlib
+    import json
+    from pathlib import Path
+
+    from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
+    from spectra_sherpa.app.services.dag.validation_graph import (
+        ValidationGraphError,
+        assert_admitted_validation_graph,
+        validation_graph_from_dict,
+    )
+
+    raw = (Path(__file__).parent / "fixtures/preprocessing_predecessor_graph.json").read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == "34e4c2a354335efe3d4a939862a508e12eb4e45a2c87e8a2523778788a3e3716"
+    wire = json.loads(raw)
+    from spectra_sherpa.app.types import type_registry
+
+    if not type_registry.is_loaded:
+        type_registry.load(Path(__file__).resolve().parents[1] / "src/spectra_sherpa/app/types")
+    context = HistoricalReconstructionContext("a90673771ee6f54d95591e8eb9cd56470dca68dae5a319a58936552d77a96140")
+    restored = context.graph(wire)
+    assert restored.as_dict() == wire
+    assert context.profile().digest == "a90673771ee6f54d95591e8eb9cd56470dca68dae5a319a58936552d77a96140"
+    with pytest.raises(ValidationGraphError):
+        assert_admitted_validation_graph(restored)
+    with pytest.raises(ValidationGraphError):
+        validation_graph_from_dict(wire)

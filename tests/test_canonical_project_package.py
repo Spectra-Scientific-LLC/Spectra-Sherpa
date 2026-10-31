@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
 import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
 import spectra_sherpa.app.services.dag.nodes.regression_evaluator_node  # noqa: F401
+import spectra_sherpa.app.services.dag.nodes.time_series  # noqa: F401
 from spectra_sherpa.app.lib.sherpa_dataset import DomainContext, SherpaDataset, SpectralAxis, TargetContext
 from spectra_sherpa.app.services.dag.canonical_selection_policy import (
     CanonicalSelectionPolicy,
@@ -75,16 +76,15 @@ def _load_type_registry() -> None:
 
 async def _build_package(
     *,
-    include_local_only_rubberband: bool = False,
+    include_local_only_trend: bool = False,
     preprocessing_node_id: str = "scale",
     model_family: str = "pls",
 ) -> CanonicalProjectPackage:
     """Build a sealed first-party package with an optional local-only transform.
 
-    The optional rubberband transform intentionally shares the same refit,
-    application-plan, archive, and later project-import path as the native
-    fixture.  It remains outside the managed profile because artifact
-    application cannot replay the transform, not because it requires SCP.
+    The optional time-series trend operation remains outside the managed
+    profile. Row/time ordering needs separate validation; per-spectrum
+    preprocessing qualification must not silently admit it.
     """
 
     X = np.arange(96, dtype=float).reshape(12, 8)
@@ -103,7 +103,11 @@ async def _build_package(
         split_plan_digest=split.digest,
     )
     nodes = [
-        *([WorkflowNode("rubberband", "baseline.rubberband", {})] if include_local_only_rubberband else []),
+        *(
+            [WorkflowNode("trend", "time_series.trend_removal", {"method": "linear"})]
+            if include_local_only_trend
+            else []
+        ),
         WorkflowNode(preprocessing_node_id, "preprocess.scale", {"method": "autoscale", "center": True}),
         WorkflowNode(
             "model",
@@ -212,14 +216,12 @@ async def _build_package(
 
 
 def _package(
-    *, include_local_only_rubberband: bool = False, preprocessing_node_id: str = "scale"
+    *, include_local_only_trend: bool = False, preprocessing_node_id: str = "scale"
 ) -> CanonicalProjectPackage:
     """Synchronous package fixture used by the archive-only test module."""
 
     return asyncio.run(
-        _build_package(
-            include_local_only_rubberband=include_local_only_rubberband, preprocessing_node_id=preprocessing_node_id
-        )
+        _build_package(include_local_only_trend=include_local_only_trend, preprocessing_node_id=preprocessing_node_id)
     )
 
 
@@ -898,11 +900,11 @@ def test_canonical_project_package_rejects_a_local_record_rebound_to_another_art
         CanonicalProjectPackage.from_archive(_archive_with_new_manifest(members))
 
 
-def test_managed_project_package_rejects_nonreplayable_local_only_rubberband() -> None:
+def test_managed_project_package_rejects_local_only_time_series_trend() -> None:
     """A local canvas operation cannot be promoted into portable managed evidence."""
 
     with pytest.raises(ValidationGraphError, match="local-only"):
-        _package(include_local_only_rubberband=True)
+        _package(include_local_only_trend=True)
 
 
 def test_canonical_project_package_rejects_unlisted_or_swapped_member() -> None:

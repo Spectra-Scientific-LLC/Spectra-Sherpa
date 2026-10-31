@@ -55,15 +55,22 @@ def _capsule_and_artifact(
     *,
     offset: float = 0.0,
     include_stateless_smooth: bool = False,
+    stateless_preprocess: tuple[str, dict[str, object]] | None = None,
     fitted_preprocess: tuple[str, dict[str, object]] | None = None,
+    n_samples: int = 12,
+    include_scale: bool = True,
+    descending_axis: bool = False,
+    model_parameters: dict[str, object] | None = None,
 ) -> tuple[CanonicalWorkflowCapsule, CanonicalFittedArtifact]:
     rng = np.random.default_rng(20260813)
     axis = np.linspace(900.0, 1900.0, 16)
-    target = np.linspace(-1.0, 1.0, 12)
-    nuisance = rng.normal(size=(12, 3)) @ rng.normal(scale=0.08, size=(3, 16))
+    if descending_axis:
+        axis = axis[::-1]
+    target = np.linspace(-1.0, 1.0, n_samples)
+    nuisance = rng.normal(size=(n_samples, 3)) @ rng.normal(scale=0.08, size=(3, 16))
     X = (
-        np.linspace(0.85, 1.15, 12)[:, None] * (1.2 + target[:, None] * np.sin(axis / 175.0) + nuisance)
-        + np.linspace(-0.05, 0.05, 12)[:, None]
+        np.linspace(0.85, 1.15, n_samples)[:, None] * (1.2 + target[:, None] * np.sin(axis / 175.0) + nuisance)
+        + np.linspace(-0.05, 0.05, n_samples)[:, None]
         + offset
     )
     split = make_split_plan(X.shape[0], n_splits=3)
@@ -75,6 +82,11 @@ def _capsule_and_artifact(
     )
     nodes = [
         *(
+            [WorkflowNode("stateless-preprocess", stateless_preprocess[0], stateless_preprocess[1])]
+            if stateless_preprocess is not None
+            else []
+        ),
+        *(
             [WorkflowNode("smooth", "preprocess.smooth", {"method": "gaussian", "sigma": 1.0})]
             if include_stateless_smooth
             else []
@@ -84,8 +96,12 @@ def _capsule_and_artifact(
             if fitted_preprocess is not None
             else []
         ),
-        WorkflowNode("scale", "preprocess.scale", {"method": "autoscale", "center": True}),
-        WorkflowNode("model", "model.fitted_pls", {"n_components": 2, "scale": True}),
+        *(
+            [WorkflowNode("scale", "preprocess.scale", {"method": "autoscale", "center": True})]
+            if include_scale
+            else []
+        ),
+        WorkflowNode("model", "model.fitted_pls", model_parameters or {"n_components": 2, "scale": True}),
         WorkflowNode("score", "diagnostics.regression_evaluator", {}),
     ]
     graph = admit_validation_graph(
@@ -122,7 +138,7 @@ def _capsule_and_artifact(
         "capability_digest": capability.envelope_digest,
         "dataset_content_digest": capability.content_digest,
         "dataset_ref_digest": "a" * 64,
-        "dataset_shape": {"n_samples": 12, "n_features": 8, "grouped": False},
+        "dataset_shape": {"n_samples": X.shape[0], "n_features": X.shape[1], "grouped": False},
         "split_digest": split.digest,
         "validation": {
             "schema_version": "spectra-canonical-validation/3",
@@ -380,3 +396,154 @@ def test_legacy_application_plan_is_rejected_before_it_can_execute() -> None:
 
     with pytest.raises(CanonicalApplicationPlanError, match="schema is unsupported"):
         CanonicalApplicationPlan.from_dict(current)
+
+
+@pytest.mark.parametrize(
+    "operation, parameters",
+    [
+        ("preprocess.clip_range", {"minimum": 1000.0, "maximum": 1800.0, "exclude_range": False}),
+        ("preprocess.clip_range", {"minimum": 1200.0, "maximum": 1600.0, "exclude_range": True}),
+        ("baseline.rubberband", {}),
+        ("preprocess.cosmic_ray", {"window": 7, "zscore": 3.0}),
+        ("preprocess.clip_floor", {"floor": 0.0}),
+    ],
+)
+@pytest.mark.parametrize("descending_axis", [False, True])
+@pytest.mark.parametrize("n_samples", [12, 24])
+def test_promoted_preprocessing_validates_refits_and_builds_application(
+    operation, parameters, descending_axis, n_samples, tmp_path
+):
+    # Rubberband makes the endpoints constant. Preserve the scientific refusal
+    # to autoscale constant features; use mean-centered PLS for this pipeline.
+    capsule, artifact = _capsule_and_artifact(
+        stateless_preprocess=(operation, parameters),
+        n_samples=n_samples,
+        include_scale=False,
+        descending_axis=descending_axis,
+        model_parameters={"n_components": 2, "scale": False},
+    )
+    plan = CanonicalApplicationPlan.from_capsule_and_artifact(capsule, artifact)
+    restored = CanonicalApplicationPlan.from_dict(plan.as_dict())
+    first = restored.payload["nodes"][0]
+    assert first["source_operation_id"] == operation
+    assert first["application_operation_id"] == operation
+    assert first["parameters"] == parameters
+
+    from spectra_sherpa.app.services.canonical_artifact_store import init_canonical_artifact_store
+    from spectra_sherpa.core.canonical_artifact import ReadOnlyCanonicalArtifactReader
+    from spectra_sherpa.core.execution_runtime import ExecutionRuntime
+    from spectra_sherpa.sdk.canonical_application_execution import execute_canonical_application
+
+    artifact_path = artifact.write_new((tmp_path / "artifact").resolve())
+    init_canonical_artifact_store(tmp_path).install_from_directory(artifact_path)
+    runtime = ExecutionRuntime(
+        canonical_artifact_reader=ReadOnlyCanonicalArtifactReader(
+            tmp_path,
+            allowed_artifact_digests=(artifact.artifact_digest,),
+        )
+    )
+    axis = np.linspace(900.0, 1900.0, 16)
+    if descending_axis:
+        axis = axis[::-1]
+    incoming = SherpaDataset(
+        X=1.5 + np.arange(3)[:, None] * np.sin(axis / 175.0),
+        feature_axis=SpectralAxis(values=axis, units="cm-1"),
+    )
+    actual = asyncio.run(execute_canonical_application(restored, incoming, runtime=runtime))
+    expected = incoming
+    for node in restored.payload["nodes"]:
+        transform = node_registry.create_node(node["source_operation_id"], node["node_id"], node["parameters"])
+        if node["source_operation_id"] == operation:
+            output = asyncio.run(transform.execute(input_data=expected))
+            expected = output.outputs["default"] if hasattr(output, "outputs") else output
+        else:
+            state = json.loads(artifact.state_bytes[node["node_id"]])
+            expected = transform.apply_fitted_state(expected, state)
+    np.testing.assert_allclose(actual.results["model"]["default"], expected, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "operation, parameters",
+    [
+        ("preprocess.clip_range", {"minimum": 1000.0, "maximum": 1800.0, "exclude_range": False}),
+        ("preprocess.clip_range", {"minimum": 1200.0, "maximum": 1600.0, "exclude_range": True}),
+        ("baseline.rubberband", {}),
+        ("preprocess.cosmic_ray", {"window": 7, "zscore": 3.0}),
+        ("preprocess.clip_floor", {"floor": 0.0}),
+    ],
+)
+def test_promoted_preprocessing_allows_fold_local_automatic_pls(operation, parameters):
+    capsule, artifact = _capsule_and_artifact(
+        stateless_preprocess=(operation, parameters),
+        n_samples=24,
+        include_scale=False,
+        model_parameters={
+            "n_components": 2,
+            "scale": False,
+            "component_fit_mode": "one_standard_error",
+            "component_cv_folds": 3,
+            "component_curve_max": 3,
+        },
+    )
+    plan = CanonicalApplicationPlan.from_capsule_and_artifact(capsule, artifact)
+    assert plan.payload["nodes"][0]["source_operation_id"] == operation
+    state = json.loads(artifact.state_bytes["model"])
+    assert 1 <= state["n_components"] <= 3
+
+
+def test_rubberband_keeps_constant_endpoint_autoscaling_refusal():
+    axis = np.linspace(900.0, 1900.0, 16)
+    target = np.linspace(-1.0, 1.0, 24)
+    source = SherpaDataset(
+        X=2.0 + target[:, None] * np.sin(axis / 175.0),
+        target=target,
+        feature_axis=SpectralAxis(values=axis, units="cm-1"),
+    )
+    rubberband = node_registry.create_node("baseline.rubberband", "baseline", {})
+    corrected = asyncio.run(rubberband.execute(input_data=source)).outputs["default"]
+    model = node_registry.create_node("model.fitted_pls", "model", {"n_components": 2, "scale": True})
+    with pytest.raises(ValueError, match="SIMPLS cannot autoscale constant X column"):
+        model.fit_fitted_state(corrected, target)
+
+
+@pytest.mark.parametrize("field", ["projection", "reconstruction"])
+def test_artifact_reader_rejects_dotted_parameter_field_alias(field):
+    from spectra_sherpa.sdk.canonical_fitted_artifact import CanonicalFittedArtifactError
+
+    _capsule, artifact = _capsule_and_artifact(
+        n_samples=12,
+        include_scale=False,
+        stateless_preprocess=("preprocess.clip_range", {"minimum": 1000.0, "maximum": 1800.0, "exclude_range": False}),
+        model_parameters={"n_components": 2, "scale": False},
+    )
+    manifest = artifact.as_dict()
+    state = json.loads(artifact.state_bytes["model"])
+    assert state["features"] == state["reference_samples"] == 12
+    state[f"diagnostic_state.{field}"] = state["diagnostic_state"][field]
+    raw = json.dumps(state, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode()
+    member = next(item for item in manifest["state_members"] if item["node_id"] == "model")
+    member["state_content_digest"] = hashlib.sha256(raw).hexdigest()
+    manifest["artifact_digest"] = _digest({key: value for key, value in manifest.items() if key != "artifact_digest"})
+    states = {**artifact.state_bytes, "model": raw}
+    with pytest.raises(CanonicalFittedArtifactError, match="sample-level rows"):
+        CanonicalFittedArtifact.from_serialized(
+            json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(), states
+        )
+
+
+def test_parameter_shape_custody_does_not_establish_scientific_screening_validity():
+    from spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node import FittedPLSV2Node
+    from spectra_sherpa.sdk.canonical_fitted_artifact import _validate_data_free_state
+
+    _capsule, artifact = _capsule_and_artifact(
+        n_samples=12,
+        include_scale=False,
+        stateless_preprocess=("preprocess.clip_range", {"minimum": 1000.0, "maximum": 1800.0, "exclude_range": False}),
+        model_parameters={"n_components": 2, "scale": False},
+    )
+    state = json.loads(artifact.state_bytes["model"])
+    FittedPLSV2Node("check", {}).validate_fitted_state(state)
+    state["diagnostic_state"]["q_limit"] = -1.0
+    _validate_data_free_state(state, serializer=state["serializer"])
+    with pytest.raises(ValueError, match="screening q_limit"):
+        FittedPLSV2Node("check", {}).validate_fitted_state(state)

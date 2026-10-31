@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shutil
 import stat
@@ -85,7 +86,7 @@ class CanonicalFittedArtifact:
             if node_id in state_bytes:
                 raise CanonicalFittedArtifactError("canonical full-data refit repeats a state node")
             encoded = _canonical_json(state)
-            _validate_data_free_state(state)
+            _validate_data_free_state(state, serializer=getattr(record, "serializer", None))
             content_digest = _sha256(encoded)
             expected = {
                 "node_id": node_id,
@@ -254,7 +255,7 @@ class CanonicalFittedArtifact:
             parsed = _parse_canonical_json(raw, "canonical fitted artifact state")
             if not isinstance(parsed, Mapping) or _canonical_json(parsed) != raw:
                 raise CanonicalFittedArtifactError("canonical fitted artifact state is not canonical JSON")
-            _validate_data_free_state(parsed)
+            _validate_data_free_state(parsed, serializer=item["serializer"])
             normalized_state_bytes[node_id] = raw
             expected_members.append(dict(item))
         if set(state_bytes) != set(normalized_state_bytes):
@@ -534,12 +535,50 @@ _SAMPLE_LEVEL_FIELDS = frozenset(
 )
 
 
-def _validate_data_free_state(value: Mapping[str, Any]) -> None:
+def _validate_data_free_state(value: Mapping[str, Any], *, serializer: str | None = None) -> None:
     """Reject row-level payloads while allowing bounded aggregate evidence."""
 
     reference_samples = _state_reference_sample_count(value)
 
-    def visit(node: Any, path: str) -> None:
+    def is_pls_parameter_matrix(node: list, path: tuple[str | int, ...]) -> bool:
+        # A feature-by-response parameter matrix can coincidentally have one
+        # row per calibration sample. Admit only this exact serializer/field
+        # and shape; unknown matrices and sample-level fields remain refused.
+        expected = "spectra.sherpa-simpls-regression-json/9"
+        if serializer != expected or value.get("serializer") != expected:
+            return False
+        features, targets = value.get("features"), value.get("targets")
+        if any(isinstance(v, bool) or not isinstance(v, int) or v < 1 for v in (features, targets)):
+            return False
+        if path == ("state", "coefficients"):
+            columns = targets
+        elif path in {("state", "diagnostic_state", "projection"), ("state", "diagnostic_state", "reconstruction")}:
+            components = value.get("effective_n_components")
+            if isinstance(components, bool) or not isinstance(components, int) or components < 1:
+                return False
+            diagnostic = value.get("diagnostic_state")
+            if not isinstance(diagnostic, Mapping) or any(
+                type(diagnostic.get(key)) is not int or diagnostic[key] != expected
+                for key, expected in (
+                    ("features", features),
+                    ("components", components),
+                    ("reference_samples", reference_samples),
+                )
+            ):
+                return False
+            # Custody recognizes parameter shapes only. The canonical model
+            # reader remains responsible for complete screening validation.
+            columns = components
+        else:
+            return False
+        return len(node) == features and all(
+            isinstance(row, list)
+            and len(row) == columns
+            and all(not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(v) for v in row)
+            for row in node
+        )
+
+    def visit(node: Any, path: tuple[str | int, ...]) -> None:
         if isinstance(node, Mapping):
             for key, child in node.items():
                 if not isinstance(key, str):
@@ -565,7 +604,7 @@ def _validate_data_free_state(value: Mapping[str, Any]) -> None:
                         raise CanonicalFittedArtifactError(
                             f"canonical fitted artifact applicability evidence is invalid: {path}.{key}"
                         ) from exc
-                visit(child, f"{path}.{key}")
+                visit(child, (*path, key))
             return
         if isinstance(node, list):
             # JSON state arrays are normally parameter vectors or small model
@@ -576,14 +615,15 @@ def _validate_data_free_state(value: Mapping[str, Any]) -> None:
                 and len(node) == reference_samples
                 and node
                 and all(isinstance(item, list) for item in node)
+                and not is_pls_parameter_matrix(node, path)
             ):
                 raise CanonicalFittedArtifactError(
                     f"canonical fitted artifact state contains sample-level rows: {path}"
                 )
             for index, child in enumerate(node):
-                visit(child, f"{path}[{index}]")
+                visit(child, (*path, index))
 
-    visit(value, "state")
+    visit(value, ("state",))
 
 
 def _state_reference_sample_count(value: Mapping[str, Any]) -> int | None:

@@ -13,7 +13,7 @@ from spectra_sherpa.app.services.dag.node_base import node_registry
 from spectra_sherpa.execution_contract_vocabulary import ManagedOptimizationEligibility, NodeExecutionContract
 
 MANAGED_OPTIMIZATION_PLS_PROFILE_ID = "first_party_pls"
-MANAGED_OPTIMIZATION_PROFILE_VERSION = "8"
+MANAGED_OPTIMIZATION_PROFILE_VERSION = "9"
 MANAGED_OPTIMIZATION_RUNTIME_ATTESTATION_VERSION = "spectra-managed-optimization-runtime-attestation/2"
 MANAGED_OPTIMIZATION_PROFILE_SCHEMA_VERSION = "spectra-managed-optimization-profile/2"
 

@@ -14,6 +14,8 @@ SAFE_PREMODEL_OPERATIONS = frozenset(
         "preprocess.derivative",
         "preprocess.clip_range",
         "preprocess.clip_floor",
+        "baseline.rubberband",
+        "preprocess.cosmic_ray",
         "data.load_group",
         "data.synthetic_curve",
         "data.attach_target",
