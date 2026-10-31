@@ -319,8 +319,8 @@ describe("Sherpa Store communication state", () => {
     vi.useRealTimers();
   });
 
-  it("clears Pro chat at a project boundary and ignores a pending old-project list", async () => {
-    mockSiteProfile.value = "pro";
+  it.each(["demo", "pro"])("clears %s chat at a project boundary and ignores a pending old-project list", async (profile) => {
+    mockSiteProfile.value = profile;
     const { useProjectStore } = await import("@/stores/project");
     const { runProjectScopeResets } = await import("@/stores/projectScopeRegistry");
     const projects = useProjectStore();
@@ -338,6 +338,98 @@ describe("Sherpa Store communication state", () => {
     resolveList({ data: [{ id: "project-a", title: "Old project" }] });
     await pending;
     expect(store.conversations).toEqual([]);
+    store.dispose();
+  });
+
+  it.each(["demo", "pro", "local"])("clears %s conversation state when Dashboard selects another project without navigation", async (profile) => {
+    mockSiteProfile.value = profile === "local" ? "oss" : profile;
+    mockAppMode.value = profile === "local" ? "local" : "enterprise";
+    const { useProjectStore } = await import("@/stores/project");
+    const projects = useProjectStore();
+    projects.currentProjectId = 42;
+    const store = useSherpaStore();
+    store.currentConversationId = "project-a";
+    store.messages.push({ id: "a-result", role: "assistant", content: "Project A result" });
+    store.conversations.push({ id: "project-a", title: "Project A", updatedAt: "2026-10-31" });
+    mockApi.get.mockResolvedValueOnce({ data: { id: 43, name: "Project B" } });
+
+    // This is Dashboard's real selection path. No route or memory-scope
+    // navigation runs afterward to hide stale displayed conversation state.
+    await projects.selectProject(43);
+
+    expect(projects.currentProjectId).toBe(43);
+    expect(store.currentConversationId).toBeNull();
+    expect(store.messages.some(message => message.content.includes("Project A result"))).toBe(false);
+    expect(store.conversations).toEqual([]);
+    expect(mockApi.delete).not.toHaveBeenCalled();
+    store.dispose();
+  });
+
+  it.each(["demo", "pro"])("does not reuse %s same-ID or 404 snapshots across projects, but can reload retained history on return", async (profile) => {
+    mockSiteProfile.value = profile;
+    const { useProjectStore } = await import("@/stores/project");
+    const projects = useProjectStore();
+    projects.currentProjectId = 42;
+    const store = useSherpaStore();
+    const retained = { conversation_id: "project-a", messages: [{ role: "assistant", content: "Retained project A result" }] };
+    store.currentConversationId = "project-a";
+    store.messages.push({ id: "a-result", role: "assistant", content: "Retained project A result" });
+    store.startNewConversation(); // Retain A's normal in-memory fallback snapshot.
+    mockApi.get.mockResolvedValueOnce({ data: retained });
+    await store.loadConversation("project-a");
+
+    mockApi.get.mockResolvedValueOnce({ data: { id: 43, name: "Project B" } });
+    await projects.selectProject(43);
+    mockApi.get.mockRejectedValueOnce({ response: { status: 404 } });
+    await expect(store.loadConversation("project-a")).rejects.toThrow("no longer available");
+    expect(store.currentConversationId).toBeNull();
+    expect(store.messages.some(message => message.content.includes("Retained project A result"))).toBe(false);
+
+    mockApi.get.mockResolvedValueOnce({ data: { id: 42, name: "Project A" } });
+    await projects.selectProject(42);
+    mockApi.get.mockResolvedValueOnce({ data: retained });
+    await store.loadConversation("project-a");
+    expect(store.currentConversationId).toBe("project-a");
+    expect(store.messages.some(message => message.content === "Retained project A result")).toBe(true);
+    expect(mockApi.delete).not.toHaveBeenCalled();
+    store.dispose();
+  });
+
+  it("ignores Demo stream replies from the old project after Dashboard selection", async () => {
+    const { useProjectStore } = await import("@/stores/project");
+    const projects = useProjectStore();
+    projects.currentProjectId = 42;
+    const store = useSherpaStore();
+    store.init();
+    await store.sendMessage("Explain project A", true);
+    const sent = JSON.parse(String(mockWs.send.mock.calls.at(-1)?.[0]));
+    mockApi.get.mockResolvedValueOnce({ data: { id: 43, name: "Project B" } });
+    await projects.selectProject(43);
+
+    dispatchSherpaEvent({ type: "sherpa_chat_delta", request_id: sent.payload.request_id, text: "Late project A result" });
+    dispatchSherpaEvent({ type: "sherpa_chat_done", request_id: sent.payload.request_id, conversation_id: "project-a" });
+
+    expect(store.currentConversationId).toBeNull();
+    expect(store.messages.some(message => message.content.includes("Late project A result"))).toBe(false);
+    expect(store.isChatting).toBe(false);
+    store.dispose();
+  });
+
+  it.each(["demo", "pro", "local"])("preserves %s conversation on a same-project refresh", async (profile) => {
+    mockSiteProfile.value = profile === "local" ? "oss" : profile;
+    mockAppMode.value = profile === "local" ? "local" : "enterprise";
+    const { useProjectStore } = await import("@/stores/project");
+    const projects = useProjectStore();
+    projects.currentProjectId = 42;
+    const store = useSherpaStore();
+    store.currentConversationId = "project-a";
+    store.messages.push({ id: "a-result", role: "assistant", content: "Current project result" });
+    mockApi.get.mockResolvedValueOnce({ data: { id: 42, name: "Project A refreshed" } });
+
+    await projects.selectProject(42);
+
+    expect(store.currentConversationId).toBe("project-a");
+    expect(store.messages.some(message => message.content === "Current project result")).toBe(true);
     store.dispose();
   });
 

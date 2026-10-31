@@ -766,7 +766,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
   registerProjectScopeReset(() => {
     diagnosticScope.value = null;
-    if (!qualified.value) return;
+    // Project ownership is independent of product profile. Dashboard selection
+    // need not navigate to a page that would otherwise switch Advisor scope.
     conversationIndex.invalidate();
     startNewConversation();
     // An old project snapshot must never satisfy a later 404 or same-ID load.
