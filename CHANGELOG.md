@@ -5,7 +5,26 @@ All notable changes to SpectraSherpa will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.4] - Unreleased
+
+Candidate metadata is stamped `0.6.4` so final qualification can identify the
+intended release. This draft has no publication date and does not establish a
+PyPI release, completed qualification, desktop installer or hosted rollout.
+
+### Managed preprocessing and source custody
+
+- Managed profile 9 adds Rubberband, Cosmic Ray Removal, Clip Feature Range
+  and Clip Floor to validation, full refit and canonical application. These
+  samplewise operations do not learn cohort state. Ordinary legacy Load & Apply
+  replay is a separate support boundary; wavelength selectors are not promoted.
+- Saved native-target selection verifies original registered source custody
+  before binding its selected sample-table response. Native and table values
+  must agree; original source identities are preserved. This does not admit
+  curated subsets to the SDK without their own source-to-subset authority.
+- Duplicating a revision-backed workflow creates a fresh selection revision for
+  the new sheet after current source/project/view checks. Original receipts
+  remain unchanged; an unbound source does not acquire invented custody.
+
 
 ### Staging GUI corrections
 
@@ -91,8 +110,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Advisor dataset descriptions include the recorded instrument and parsed
   acquisition settings, distinct from processing history. Mixed settings and
   bounded source-lineage/timestamp summaries remain explicit.
-- Dependency security: require pypdf 6.21.2 or later in both pip and Poetry
-  installations; no dependency-audit exceptions were added.
+- Dependency security: require pypdf 6.21.4 or later in both pip and Poetry
+  installations. Dependency audit policy remains a separate release gate.
 - Quick Plot and Detailed View share declared scientific plots and controls,
   including PCA summaries, component-selection evidence and matrix slices.
   Saving a successful trial updates the workflow through normal retained node

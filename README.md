@@ -14,8 +14,9 @@ workflows. Import supported scientific files, inspect their axes and metadata,
 then use PCA, PLS, MCR-ALS, SIMCA, PLS-DA, variable selection, calibration
 transfer, and validation without hiding the data path behind a notebook.
 
-This branch is preparing the **v0.6.4 candidate (unreleased)**. The package
-version bump and publication follow separate release qualification. Historical
+This branch contains the **v0.6.4 candidate (unreleased)**. Package, frontend
+and desktop-shell source metadata are stamped `0.6.4` for candidate
+qualification; publication and desktop packaging remain separate gates. Historical
 [0.6.3 notes](docs/releases/0.6.3.md) describe that tag, not this candidate.
 Source version alone does not establish PyPI or desktop-installer availability;
 check the [published package](https://pypi.org/project/spectra-sherpa/) before

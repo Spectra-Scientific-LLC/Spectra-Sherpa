@@ -1,6 +1,6 @@
 {
   "name": "spectra-sherpa-desktop",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "private": true,
   "description": "Public native shell for the Spectra Sherpa OSS workbench",
   "author": "Spectra Scientific LLC <info@spectrascientific.ai>",

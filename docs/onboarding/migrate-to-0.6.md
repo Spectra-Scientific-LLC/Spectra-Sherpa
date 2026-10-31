@@ -15,6 +15,17 @@ canonical-DAG only, and optional SCP/HITRAN/NIST capabilities are explicit.
 This is a breaking release. Read the checklist before upgrading a retained
 environment.
 
+## Direct 0.6.0 → 0.6.4 candidate check
+
+For the retained published 0.6.0 baseline, use the
+[0.6.4 upgrade notes](../releases/0.6.4.md#upgrading-from-the-published-060-baseline)
+on a backed-up copy. They cover KNN/SIMCA retraining, PLS-DA serializer and
+validation semantics, project-goal migrations, and saved CSV format choices.
+Keep the 0.6.0 saved-model compatibility reference; source-only intermediate
+versions do not replace it. An unpublished candidate stamped `0.6.4` must be
+installed from the exact reviewed source or qualified local artifact, not
+requested from the public index before publication.
+
 ## Before upgrading
 
 1. Stop every running SpectraSherpa process.
