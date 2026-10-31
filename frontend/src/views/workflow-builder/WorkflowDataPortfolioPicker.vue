@@ -12,12 +12,13 @@
           {{ option.label }}
         </option>
       </select>
-      <button v-if="!bound && selectedKey" type="button" :disabled="busy" @click="applySelection">
+      <button v-if="!bound && selectedKey && selectedKey !== 'sheet'" type="button" :disabled="busy" @click="applySelection">
         Use selected
       </button>
     </div>
     <small v-if="busy" role="status">Checking portfolio…</small>
     <small v-else-if="!options.length">Save or choose a dataset in My Dataset first.</small>
+    <small v-else-if="!bound && selectedKey === 'sheet'">Choose an available portfolio to bind it to the sheet.</small>
     <small v-else-if="!bound">Choose this portfolio to bind it to the sheet.</small>
     <small v-else>Exact source, target, and groups are bound to this sheet.</small>
     <small v-if="error" class="picker-error" role="alert">{{ error }}</small>
@@ -120,7 +121,7 @@ async function load(): Promise<void> {
     });
     options.value = choices;
     selectedKey.value = matching?.key ?? (saved ? "sheet" : choices[0]?.key ?? "");
-    bound.value = Boolean(saved);
+    bound.value = Boolean(saved && contextResponse?.data.current_revision);
   } catch (failure) {
     if (ticket === generation) error.value = getErrorMessage(failure, "Datasets could not be loaded.");
   } finally {

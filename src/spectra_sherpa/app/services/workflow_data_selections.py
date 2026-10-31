@@ -373,6 +373,69 @@ async def execution_selection_revisions(
     return frozen
 
 
+async def cloned_selection_revisions(
+    session: AsyncSession, *, source: Workflow, duplicate: Workflow, user_id: int
+) -> list[WorkflowDataSelectionRevision]:
+    """Admit new-sheet custody without copying or repairing historical receipts.
+
+    The caller holds the source workflow lock and has not persisted the copy.
+    A duplicate starts its own revision sequence; its reason identifies the
+    source receipt rather than pretending that receipt was issued to this sheet.
+    """
+    import uuid
+
+    if (
+        source.user_id != user_id
+        or duplicate.user_id != user_id
+        or source.project_id is None
+        or duplicate.project_id != source.project_id
+    ):
+        raise HTTPException(404, "Workflow not found in this project")
+    frozen = await execution_selection_revisions(
+        session,
+        workflow_id=source.id,
+        graph_digest=workflow_graph_digest(source),
+        source_nodes=list(source.nodes),
+        user_id=user_id,
+        workflow_project_id=source.project_id,
+    )
+    copied_sources = {node.node_id: node for node in duplicate.nodes if node.node_type == "data.collection_load"}
+    revisions = []
+    for receipt in frozen:
+        selection = WorkflowSourceSelection.model_validate(receipt["selection"])
+        node = copied_sources.get(receipt["source_node_id"])
+        try:
+            copied = (
+                selection_from_parameters(dict(node.parameters or {}), dataset_name=selection.dataset_name)
+                if node is not None
+                else None
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(409, "Duplicated source lacks exact data-selection custody") from exc
+        if copied != selection:
+            raise HTTPException(409, "Duplicated source differs from its recorded data selection")
+        # A new sheet needs current admission, including active portfolio and
+        # project access. Historical execution's deleted-view allowance does
+        # not authorize a new selection.
+        await validate_selection(
+            session, selection=selection, user_id=user_id, workflow_project_id=duplicate.project_id
+        )
+        revisions.append(
+            WorkflowDataSelectionRevision(
+                source_node_id=receipt["source_node_id"],
+                revision_number=1,
+                parent_revision_id=None,
+                created_by=user_id,
+                origin="workflow_duplicate",
+                reason=f"Copied workflow {source.id}, data-selection revision {receipt['revision_id']}",
+                idempotency_key=f"duplicate:{uuid.uuid4()}",
+                selection=selection.model_dump(mode="json"),
+                graph_digest=workflow_graph_digest(duplicate),
+            )
+        )
+    return revisions
+
+
 async def record_restored_selection_revisions(
     session: AsyncSession, *, workflow: Workflow, user_id: int, version_id: int, record_initial: bool = False
 ) -> None:
