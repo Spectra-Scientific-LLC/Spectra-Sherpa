@@ -338,7 +338,7 @@ async def test_worker_readiness_has_one_deadline_even_with_noise_or_open_stderr(
         sys.executable, "-c", scripts[mode], stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     try:
-        assert await bounded(process.stdout.readline(), "fixture boot", timeout=5) == b"BOOT\n"
+        assert await bounded(process.stdout.readline(), "fixture boot", timeout=5) == b"BOOT" + os.linesep.encode()
         with pytest.raises(TimeoutError, match="worker readiness REGISTERED"):
             await line(process, "REGISTERED", timeout=0.1)
         assert process.returncode is None, "Observer must fail before the child's escape hatch"
@@ -376,7 +376,7 @@ async def test_worker_cleanup_signals_all_owned_children_and_continues_after_dra
             )
             processes.append(process)
             original_drains.append(process.communicate)
-            assert await bounded(process.stdout.readline(), "fixture boot", timeout=5) == b"BOOT\n"
+            assert await bounded(process.stdout.readline(), "fixture boot", timeout=5) == b"BOOT" + os.linesep.encode()
         first, second, unrelated = processes
         for process in (first, second):
             original_kill = process.kill

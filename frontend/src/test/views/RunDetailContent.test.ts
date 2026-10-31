@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils';
-import { reactive } from 'vue';
+import { nextTick, reactive } from 'vue';
 import { createRouter, createMemoryHistory } from 'vue-router';
 import PrimeVue from 'primevue/config';
 import PlotlyChart from '@/components/PlotlyChart.vue';
@@ -999,6 +999,7 @@ it('renders the declared peak overlay when the retained primary port is a mixed-
       availablePlots: Array<{ key: string; label: string }>;
       displayPlotData: Array<{ mode: string; x: number[] }>;
       displayDataShape: { rows: number; cols: number };
+      dataPreviewColumns: Array<{ field: string; header: string }>;
       viewMode: string; previewTotalRows: number; previewRowLimit: number; selectedPlotKey: string;
       plotLayout: { yaxis: { title: string } };
     };
@@ -1007,20 +1008,27 @@ it('renders the declared peak overlay when the retained primary port is a mixed-
     expect(vm().displayPlotData.filter(trace => trace.mode === 'lines').reduce((n, trace) => n + trace.x.length, 0)).toBe(50436);
     expect(plot().text()).not.toContain('No data to display');
     vm().viewMode = 'data';
-    await flushPromises();
+    await nextTick();
     expect(vm().previewTotalRows).toBe(54480);
-    expect(plot().findAll('tbody tr')).toHaveLength(vm().previewRowLimit);
+    expect(vm().previewRowLimit).toBe(100);
+    expect(plot().findAll('tbody tr')).toHaveLength(100);
+    // Data View headers/cells/pagination are mounted independently above. This
+    // full-scale case checks projection ownership; do not render another 2,400
+    // cells just to recheck the same header before inspecting plot-axis units.
+    vm().viewMode = 'plot';
+    await nextTick();
     await router.replace({ query: { project: '1', view: 'Results', node: 'peak', presentation: 'peak_table' } });
-    await flushPromises();
+    await nextTick();
     expect(vm().displayDataShape).toMatchObject({ rows: 1080, cols: 23 });
-    expect(plot().findAll('thead th').map(cell => cell.text())).toContain('Median position (cm-1)');
+    expect(vm().dataPreviewColumns.map(column => column.header)).toContain('Median position (cm-1)');
     await router.replace({ query: { project: '1', view: 'Results', node: 'peak', presentation: 'per_spectrum' } });
-    await flushPromises();
+    await nextTick();
+    expect(vm().viewMode).toBe('plot');
     expect(vm().availablePlots).toHaveLength(4320);
     expect(vm().availablePlots.every(option => option.key.startsWith('table_column:'))).toBe(true);
     expect(vm().plotLayout.yaxis.title).toBe('peak_position_1 (cm-1)');
     vm().selectedPlotKey = 'table_column:1';
-    await flushPromises();
+    await nextTick();
     expect(vm().plotLayout.yaxis.title).toBe('magnitude_at_peak_1 (absorbance)');
     expect(saved).toEqual(before);
   } finally {

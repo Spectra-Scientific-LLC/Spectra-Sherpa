@@ -248,7 +248,7 @@ def test_readiness_without_newline_times_out_and_owned_child_is_reaped(channel):
     ready = ReadinessLine(child.stdout)
     pending = None
     try:
-        assert ready.result(timeout=5) == b"ready\n"
+        assert ready.result(timeout=5) == b"ready" + os.linesep.encode()
         pending = ReadinessLine(getattr(child, channel))
         with pytest.raises(TimeoutError):
             pending.result(timeout=0.05)
