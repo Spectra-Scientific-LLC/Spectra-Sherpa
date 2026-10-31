@@ -18,5 +18,9 @@
     "@electron/packager": "20.3.0",
     "electron": "44.9.1",
     "playwright": "1.61.0"
+  },
+  "overrides": {
+    "glob": "14.0.3",
+    "minimatch@>=9": "11.0.3"
   }
 }

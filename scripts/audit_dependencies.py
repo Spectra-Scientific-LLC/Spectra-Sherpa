@@ -55,7 +55,7 @@ def _load_pip_audit_ignores(path: Path) -> list[str]:
     return ids
 
 
-def _load_npm_audit_ignores(path: Path) -> dict[str, dict[str, str]]:
+def _load_npm_audit_ignores(path: Path) -> dict[str, dict[str, object]]:
     """Reviewed npm suppressions, fail-closed: expired entries never waive."""
     if not path.is_file():
         return {}
@@ -65,7 +65,7 @@ def _load_npm_audit_ignores(path: Path) -> dict[str, dict[str, str]]:
         raise SystemExit(f"{path}: [npm-audit].ignore must be a list")
 
     today = date.today()
-    waivers: dict[str, dict[str, str]] = {}
+    waivers: dict[str, dict[str, object]] = {}
     for idx, entry in enumerate(entries, start=1):
         if not isinstance(entry, dict):
             raise SystemExit(f"{path}: npm ignore entry {idx} must be a table")
@@ -94,6 +94,20 @@ def _load_npm_audit_ignores(path: Path) -> dict[str, dict[str, str]]:
         if advisory_id in waivers:
             raise SystemExit(f"{path}: duplicate npm suppression {advisory_id}")
         waivers[advisory_id] = {"package": package, "lockfile": lockfile, "severity": severity}
+        versions = entry.get("versions")
+        if versions is not None:
+            if (
+                not isinstance(versions, list)
+                or not versions
+                or any(
+                    not isinstance(version, str) or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) is None
+                    for version in versions
+                )
+                or len(set(versions)) != len(versions)
+            ):
+                raise SystemExit(f"{path}: npm suppression {advisory_id} requires distinct exact versions")
+            waivers[advisory_id]["versions"] = versions
+
         print(f"Using npm-audit suppression {advisory_id}: {reason} expires={expires}", flush=True)
     return waivers
 
@@ -229,7 +243,30 @@ def audit_npm(directory: Path, *, scope: str, ignore_file: Path) -> None:
             match = GHSA_ID.search(url)
             identity = match.group() if match else url or f"npm:{advisory.get('source', 'unidentified')}"
             waiver = waivers.get(identity)
-            if waiver != {"package": package, "lockfile": lockfile, "severity": severity} or lockfile is None:
+            allowed = (
+                isinstance(waiver, dict)
+                and lockfile is not None
+                and {key: value for key, value in waiver.items() if key != "versions"}
+                == {"package": package, "lockfile": lockfile, "severity": severity}
+            )
+            if allowed and "versions" in waiver:
+                try:
+                    packages = json.loads((directory / "package-lock.json").read_text())["packages"]
+                    nodes = vulnerability.get("nodes")
+                    allowed = (
+                        isinstance(packages, dict)
+                        and isinstance(nodes, list)
+                        and bool(nodes)
+                        and all(
+                            isinstance(node, str)
+                            and isinstance(packages.get(node), dict)
+                            and packages[node].get("version") in waiver["versions"]
+                            for node in nodes
+                        )
+                    )
+                except (OSError, ValueError, KeyError, TypeError):
+                    allowed = False
+            if not allowed:
                 unwaived.append(identity)
     if result.returncode == 1 and not direct_count:
         raise SystemExit("npm full-lockfile audit failed without an identifiable advisory")

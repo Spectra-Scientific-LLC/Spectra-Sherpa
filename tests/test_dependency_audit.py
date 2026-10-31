@@ -202,3 +202,63 @@ def test_waivers_are_individual_severity_and_lock_scoped(audit, npm_tree, monkey
     else:
         with pytest.raises(SystemExit, match="without a reviewed suppression"):
             audit.audit_npm(directory, scope="full", ignore_file=npm_tree / "scripts/audit-ignore.toml")
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["exact", "affected-version", "missing-node", "missing-nodes", "invalid-lock", "packages-list", "packages-null"],
+)
+def test_version_scoped_nonapplicability_never_waives_other_versions(audit, npm_tree, monkeypatch, case):
+    identity = "GHSA-g3hv-75wg-m249"
+    directory = npm_tree / "frontend"
+    packages = {"node_modules/legacy/minimatch": {"version": "3.1.5"}}
+    if case == "affected-version":
+        packages["node_modules/modern/minimatch"] = {"version": "10.2.5"}
+    nodes = list(packages)
+    if case in {"packages-list", "packages-null"}:
+        packages = [] if case == "packages-list" else None
+    if case == "missing-node":
+        nodes.append("node_modules/unrecorded/minimatch")
+    (directory / "package-lock.json").write_text(
+        "bad" if case == "invalid-lock" else json.dumps({"packages": packages})
+    )
+    monkeypatch.setattr(audit, "_require_tool", lambda name: None)
+    monkeypatch.setattr(
+        audit,
+        "_load_npm_audit_ignores",
+        lambda path: {
+            identity: {
+                "package": "minimatch",
+                "lockfile": "frontend/package-lock.json",
+                "severity": "moderate",
+                "versions": ["3.1.5", "5.1.9"],
+            }
+        },
+    )
+    issue = {
+        "severity": "moderate",
+        "nodes": nodes,
+        "via": [{"url": f"https://github.com/advisories/{identity}", "severity": "moderate"}],
+    }
+    if case == "missing-nodes":
+        issue.pop("nodes")
+    report = {"auditReportVersion": 2, "vulnerabilities": {"minimatch": issue}}
+    monkeypatch.setattr(
+        audit.subprocess, "run", lambda args, **kwargs: subprocess.CompletedProcess(args, 1, json.dumps(report), "")
+    )
+    if case == "exact":
+        audit.audit_npm(directory, scope="full", ignore_file=npm_tree / "scripts/audit-ignore.toml")
+    else:
+        with pytest.raises(SystemExit, match="without a reviewed suppression"):
+            audit.audit_npm(directory, scope="full", ignore_file=npm_tree / "scripts/audit-ignore.toml")
+
+
+@pytest.mark.parametrize("versions", ["[]", '["3.1.5", "3.1.5"]', '[">=3"]', "[false]", '[["3.1.5"]]'])
+def test_nonapplicability_versions_must_be_distinct_exact_releases(audit, tmp_path, versions):
+    path = tmp_path / "audit-ignore.toml"
+    path.write_text(
+        '[[npm-audit.ignore]]\nid="GHSA-g3hv-75wg-m249"\nreason="fixture"\nexpires="2099-01-01"\npackage="minimatch"\nlockfile="frontend/package-lock.json"\nseverity="moderate"\nversions='
+        + versions
+    )
+    with pytest.raises(SystemExit, match="distinct exact versions"):
+        audit._load_npm_audit_ignores(path)
