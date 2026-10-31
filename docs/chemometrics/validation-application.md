@@ -190,6 +190,16 @@ table with IDs or re-import with typed IDs, then rerun; labels are not promoted
 to verified identity. Historical review evidence remains readable, and previously
 recorded exclusions can be restored without authorizing new label-based decisions.
 
+New project imports of the built-in Wine, Iris and Breast Cancer tables persist
+typed observation IDs through the CSV sample-metadata contract. IDs name the
+catalog dataset, its feature/target table revision and a row in that revision.
+Identical imports retain the same IDs; changed values or row order establish a
+different revision. These are catalog observation identities, not evidence of
+independent specimens or new acquisitions. This applies only to newly
+materialized files: existing imports and saved runs are unchanged. For an older
+import without typed IDs, attach a sample table with explicit IDs or import a new
+source with typed IDs, then rerun to obtain a new diagnostic review receipt.
+
 Loadings describe variables in a component, not selected-sample T²/Q contributions.
 Influence limits use all fitted components, with limits appropriate to calibration
 or projected application roles. Classifier contribution bars show additive Q and
