@@ -231,26 +231,29 @@ class TestDefaultPool:
 
 
 def _shutdown_legacy_test_pool(pool):
+    from multiprocessing.connection import wait
+
     # Python 3.11's executor has no public terminate-workers API. These are
     # ONLY this test fixture's handles, not multiprocessing.active_children().
     pending = tuple(pool._pending_work_items.values())
     abandoned = any(not item.future.done() for item in pending)
+    workers = tuple((pool._processes or {}).values()) if abandoned else ()
     try:
-        if abandoned:
-            workers = tuple((pool._processes or {}).values())
-            for worker in workers:
-                if worker.is_alive():
-                    worker.terminate()
-            for worker in workers:
-                worker.join(timeout=5)
-                if worker.is_alive():
-                    worker.kill()
-                    worker.join(timeout=5)
-                assert not worker.is_alive(), "Owned legacy test worker did not stop"
+        for worker in workers:
+            worker.terminate()
+        for worker in workers:
+            # The executor manager owns join/waitpid. Concurrent is_alive/join
+            # can see ECHILD before that thread publishes the exit status.
+            # Sentinels observe exit without competing to reap the process.
+            if not wait([worker.sentinel], timeout=5):
+                worker.kill()
+                assert wait([worker.sentinel], timeout=5), "Owned legacy test worker did not stop"
     finally:
         # Cancelling a Future does not stop running work. Keep actual executor
         # shutdown, after stopping abandoned workers rather than wait=False.
         pool.shutdown(wait=True, cancel_futures=abandoned)
+    for worker in workers:
+        assert not worker.is_alive() and worker.exitcode is not None, "Owned legacy test worker was not reaped"
 
 
 async def _finish_owned_pool_tasks(pool, *tasks):
@@ -926,8 +929,9 @@ async def test_assertion_failure_collects_both_owned_pool_tasks(tmp_path, workfl
 
 
 @pytest.mark.asyncio
-async def test_legacy_assertion_failure_stops_only_owned_running_workers(tmp_path):
+async def test_legacy_assertion_failure_stops_only_owned_running_workers(tmp_path, monkeypatch):
     import os
+    import threading
 
     pool = TestPoolExecution._create_pool(1)
     independent = TestPoolExecution._create_pool(1)
@@ -949,6 +953,18 @@ async def test_legacy_assertion_failure_stops_only_owned_running_workers(tmp_pat
                 with pytest.raises(asyncio.CancelledError):
                     await work
                 assert all(worker.is_alive() for worker in workers), "Future cancellation must not fake worker exit"
+                manager = pool._executor_manager_thread
+                assert manager is not None and manager.is_alive()
+                for worker in workers:
+                    original_poll = worker._popen.poll
+
+                    def manager_only_poll(*args, _poll=original_poll, **kwargs):
+                        assert (
+                            threading.current_thread() is manager or not manager.is_alive()
+                        ), "Only the executor manager may reap a worker before shutdown completes"
+                        return _poll(*args, **kwargs)
+
+                    monkeypatch.setattr(worker._popen, "poll", manager_only_poll)
                 raise AssertionError("injected after future cancellation")
             finally:
                 _shutdown_legacy_test_pool(pool)
