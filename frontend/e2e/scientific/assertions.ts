@@ -17,6 +17,30 @@ export function assertMatrix(actual: number[][], expected: number[][], tolerance
   });
 }
 
+/** A labelled full-population CSV has two declared non-component metadata columns.
+ * Validate them before comparing values; never discard a column by shape.
+ */
+export function assertLabelledMatrixCsv(
+  csv: string[][],
+  expected: number[][],
+  labels: string[],
+  columns: string[],
+): void {
+  assert.ok(expected.length > 0, "An acceptance oracle must not be empty");
+  assert.equal(labels.length, expected.length, "CSV label population");
+  assert.ok(expected.every(row => row.length === columns.length), "CSV component oracle width");
+  assert.deepEqual(csv[0], ["Index", "Label", ...columns], "CSV declared column order");
+  const rows = csv.slice(1);
+  assert.equal(rows.length, expected.length, "Scientific row population");
+  rows.forEach((row, index) => {
+    assert.equal(row.length, columns.length + 2, `CSV row width at ${index}`);
+    assert.equal(row[0], String(index + 1), `CSV row index at ${index}`);
+    assert.equal(row[1], labels[index], `CSV source display label at ${index}`);
+    assert.ok(row.slice(2).every(cell => cell.trim() !== ""), `Missing scientific CSV value at ${index}`);
+  });
+  assertMatrix(rows.map(row => row.slice(2).map(Number)), expected);
+}
+
 /** Exact six-significant-digit default display, independent of production formatting.
  * Full-precision values are asserted separately in CSVs and plot arrays.
  */

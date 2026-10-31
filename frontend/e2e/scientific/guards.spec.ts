@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { assertDefaultDisplayMatrix, assertIdentity, assertMatrix, assertReportedNumber, assertSameScreenshot, parseCsv, settledPlotScreenshot, settledTableScreenshot } from "./assertions";
+import { assertDefaultDisplayMatrix, assertIdentity, assertLabelledMatrixCsv, assertMatrix, assertReportedNumber, assertSameScreenshot, parseCsv, settledPlotScreenshot, settledTableScreenshot } from "./assertions";
 
 test("table capture preserves exact content across text raster modes @smoke", async ({ page }) => {
   await page.setContent('<div role="dialog"><div class="p-datatable-wrapper" style="width:300px;height:80px;background:#0f172a;color:white;font:12px monospace;-webkit-font-smoothing:subpixel-antialiased"><table><tbody><tr><td>moisture-nir-01</td><td>0.369612</td></tr></tbody></table></div></div>');
@@ -36,6 +36,40 @@ test("visual parity still rejects changed text, color and geometry @smoke", asyn
 
 // Deliberate corruptions exercise the same assertions used on browser outputs.
 // An executor's "completed" status cannot make these scientific checks pass.
+test("labelled CSV acceptance checks metadata columns without hiding scientific corruption @smoke", () => {
+  const labels = ['Sample, "one"', "Sample | two"];
+  const columns = ["PC1 (73.0%)", "PC2 (22.9%)", "PC3 (3.7%)"];
+  const values = [[0.123456789012, 2, 3], [4, 5, 6]];
+  const csv = [
+    ["Index", "Label", ...columns],
+    ["1", labels[0], ...values[0].map(String)],
+    ["2", labels[1], ...values[1].map(String)],
+  ];
+  assertLabelledMatrixCsv(csv, values, labels, columns);
+  // The former one-column slice reproduces the CI failure on valid labelled data.
+  expect(() => assertMatrix(csv.slice(1).map(row => row.slice(1).map(Number)), values)).toThrow(/orientation/);
+  const corruptions: Array<(copy: string[][]) => void> = [
+    copy => { copy[0][1] = "Include"; },
+    copy => { copy.forEach(row => row.splice(1, 1)); },
+    copy => { [copy[0][2], copy[0][3]] = [copy[0][3], copy[0][2]]; },
+    copy => { copy[1][1] = labels[1]; },
+    copy => { copy[1][0] = "2"; },
+    copy => { [copy[1], copy[2]] = [copy[2], copy[1]]; },
+    copy => { copy[1].push("7"); },
+    copy => { copy[1].pop(); },
+    copy => { copy[1][2] = "0.123457"; },
+    copy => { copy[1][2] = ""; },
+    copy => { copy[1][2] = "NaN"; },
+    copy => { copy[1][3] = "50"; },
+    copy => { copy.pop(); },
+  ];
+  for (const corrupt of corruptions) {
+    const copy = structuredClone(csv);
+    corrupt(copy);
+    expect(() => assertLabelledMatrixCsv(copy, values, labels, columns)).toThrow();
+  }
+});
+
 test("acceptance rejects blank tables, plausible transpositions and wrong exclusion identities @smoke", () => {
   const expected = [
     [1, 2, 3],
