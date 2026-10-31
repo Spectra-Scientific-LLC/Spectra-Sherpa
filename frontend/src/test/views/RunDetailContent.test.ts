@@ -3,6 +3,7 @@ import { mount, flushPromises, type VueWrapper } from '@vue/test-utils';
 import { nextTick, reactive } from 'vue';
 import { createRouter, createMemoryHistory } from 'vue-router';
 import PrimeVue from 'primevue/config';
+import Paginator from 'primevue/paginator';
 import PlotlyChart from '@/components/PlotlyChart.vue';
 import QuickPlotModal from '@/views/workflow-builder/modals/QuickPlotModal.vue';
 import { useDisplayPreferences } from '@/composables/useDisplayPreferences';
@@ -863,7 +864,7 @@ it('renders retained Peak Table through the real RunDetail and embedded QuickPlo
   };
   expect(vm().displayDataShape).toMatchObject({ rows: 1, cols: 23, rowLabel: 'consensus group', colLabel: 'columns' });
   vm().viewMode = 'data';
-  await flushPromises();
+  await nextTick();
   const headers = plot().findAll('thead th').map(cell => cell.text());
   expect(headers).toContain('Median position (cm-1)');
   expect(headers).toContain('Half-prominence width (cm-1)');
@@ -877,8 +878,11 @@ it('renders retained Peak Table through the real RunDetail and embedded QuickPlo
   const nested = cells[headers.indexOf('Constituent detections')];
   expect(nested.text()).toBe('1 record (hover for details)');
   expect(nested.find('span[title]').attributes('title')).toContain('1200.123456789');
+  // Coordinate Data View is mounted in the full-scale cases below.
+  vm().viewMode = 'plot';
+  await nextTick();
   await router.replace({ query: { project: '1', view: 'Results', node: 'peak' } });
-  await flushPromises();
+  await nextTick();
   expect(vm().availablePlots).toEqual([{ key: 'scientific_visualization:peak_finding', label: 'Spectra with Peaks' }]);
   expect(vm().displayPlotData).toHaveLength(2);
   expect(vm().dataPreview).toHaveLength(vm().previewRowLimit);
@@ -888,49 +892,83 @@ it('renders retained Peak Table through the real RunDetail and embedded QuickPlo
 });
 
 
-it('keeps retained Peak Table columns and units across later records and bounded pages', async () => {
+// The small case exercises every rendered column/cell. The 101-record case
+// keeps the complete source and the field introduced only on record 101, while
+// testing the full first-page projection and mounting the final page. Rendering
+// all 2,600 first-page cells again adds no distinct formatter coverage.
+it.each([3, 101])('keeps retained Peak Table columns and units across %i records and bounded pages', async (recordCount) => {
   const preferences = useDisplayPreferences();
   const originalLimit = preferences.maxRows;
   preferences.maxRows = 100;
   try {
     const saved = retainedPeakFixture();
     const first = saved.peaks.data[0];
-    saved.peaks.data = Array.from({ length: 101 }, () => structuredClone(first));
+    saved.peaks.data = Array.from({ length: recordCount }, () => structuredClone(first));
     Object.assign(saved.peaks.data[1], { later_height: 0.125 });
-    Object.assign(saved.peaks.data[100], { final_position: 1234.5, later_height: 0.25 });
+    Object.assign(saved.peaks.data[recordCount - 1], { final_position: 1234.5, later_height: 0.25 });
     Object.assign(saved.peaks.metadata.column_units, { later_height: 'absorbance', final_position: 'cm-1' });
-    saved.peaks.metadata.n_consensus_peaks = 101;
-    saved.descriptor.shape = [101];
-    saved.descriptor.dimensions[0].size = 101;
+    saved.peaks.metadata.n_consensus_peaks = recordCount;
+    saved.descriptor.shape = [recordCount];
+    saved.descriptor.dimensions[0].size = recordCount;
     const before = structuredClone(saved);
     installRetainedPeaks(saved);
     const { wrapper } = await open('?project=1&view=Results&node=peak&presentation=peak_table', false, true);
     const plot = wrapper.getComponent(QuickPlotModal);
     const vm = plot.vm as unknown as {
       displayDataShape: { rows: number; cols: number };
-      viewMode: string; previewFirst: number; dataPreview: unknown[];
+      dataPreviewColumns: Array<{ field: string; header: string }>;
+      viewMode: string; previewFirst: number; previewRowLimit: number;
+      dataPreview: Array<Record<string, unknown>>; dataPreviewSummary: string;
     };
-    expect(vm.displayDataShape).toMatchObject({ rows: 101, cols: 25 });
-    vm.viewMode = 'data';
-    await flushPromises();
-    const headers = () => plot.findAll('thead th').map(cell => cell.text());
-    const firstHeaders = headers();
+    expect(vm.displayDataShape).toMatchObject({ rows: recordCount, cols: 25 });
+    expect(vm.previewRowLimit).toBe(100);
+    const firstHeaders = vm.dataPreviewColumns.map(column => column.header);
     expect(firstHeaders.slice(-2)).toEqual(['later height (absorbance)', 'final position (cm-1)']);
-    expect(firstHeaders).toHaveLength(vm.displayDataShape.cols + 1); // Display-only row number.
-    expect(plot.findAll('tbody tr')).toHaveLength(100);
-    expect(vm.dataPreview).toHaveLength(100);
-    expect(plot.find('.display-subset-indicator').text()).toBe('Subset');
-    expect(plot.find('.data-summary').text()).toContain('1–100 of 101 rows');
-    const cells = plot.findAll('tbody tr')[1].findAll('td');
-    expect(cells[firstHeaders.indexOf('later height (absorbance)')].text()).toBe('0.125000');
-    expect(cells[firstHeaders.indexOf('final position (cm-1)')].text()).toBe('—');
-    vm.previewFirst = 100;
-    await flushPromises();
-    expect(headers()).toEqual(firstHeaders);
-    expect(plot.findAll('tbody tr')).toHaveLength(1);
-    const finalCells = plot.find('tbody tr').findAll('td');
-    expect(finalCells[firstHeaders.indexOf('final position (cm-1)')].text()).toBe('1234.50');
-    expect(plot.find('.data-summary').text()).toContain('101–101 of 101 rows');
+    expect(firstHeaders).toHaveLength(vm.displayDataShape.cols + 1);
+    expect(vm.dataPreview).toHaveLength(Math.min(100, recordCount));
+    expect(vm.dataPreview[1]).toMatchObject({ later_height: 0.125 });
+    expect(vm.dataPreview[1]).not.toHaveProperty('final_position');
+    expect(vm.dataPreviewSummary).toBe(`1–${Math.min(100, recordCount)} of ${recordCount} rows`);
+    if (recordCount === 101) {
+      expect(saved.peaks.data.slice(0, 100).every(row => !Object.hasOwn(row, 'final_position'))).toBe(true);
+      vm.previewFirst = 100;
+    }
+    vm.viewMode = 'data';
+    await nextTick();
+    const headers = plot.findAll('thead th').map(cell => cell.text());
+    expect(headers).toEqual(firstHeaders);
+    const rows = plot.findAll('tbody tr');
+    expect(rows).toHaveLength(recordCount === 101 ? 1 : 3);
+    if (recordCount === 3) {
+      const cells = rows[1].findAll('td');
+      expect(cells[headers.indexOf('later height (absorbance)')].text()).toBe('0.125000');
+      expect(cells[headers.indexOf('final position (cm-1)')].text()).toBe('—');
+      expect(plot.find('.data-summary').text()).toContain('1–3 of 3 rows');
+    }
+    const finalCells = rows[rows.length - 1].findAll('td');
+    expect(finalCells[0].text()).toBe(String(recordCount));
+    expect(finalCells[headers.indexOf('final position (cm-1)')].text()).toBe('1234.50');
+    expect(finalCells[headers.indexOf('Detections')].text()).toBe('1');
+    expect(finalCells[headers.indexOf('Samples')].text()).toBe('1');
+    const nested = finalCells[headers.indexOf('Constituent detections')];
+    expect(nested.text()).toBe('1 record (hover for details)');
+    expect(nested.find('span[title]').attributes('title')).toContain('1200.123456789');
+    expect(plot.text()).not.toContain('[object Object]');
+    if (recordCount === 101) {
+      expect(plot.find('.display-subset-indicator').text()).toBe('Subset');
+      expect(plot.find('.data-summary').text()).toContain('101–101 of 101 rows');
+      const paginator = plot.getComponent(Paginator);
+      expect(paginator.props()).toMatchObject({ first: 100, rows: 100, totalRecords: 101 });
+      // Exercise the real paginator -> preview handler without remounting an
+      // already-covered wide table; inspect the resulting full page projection.
+      vm.viewMode = 'plot';
+      paginator.vm.$emit('page', { first: 0, rows: 100, page: 0, pageCount: 2 });
+      await nextTick();
+      expect(vm.previewFirst).toBe(0);
+      expect(vm.dataPreview).toHaveLength(100);
+      expect(vm.dataPreviewSummary).toBe('1–100 of 101 rows');
+      expect(vm.dataPreviewColumns.map(column => column.header)).toEqual(firstHeaders);
+    }
     expect(saved).toEqual(before);
   } finally {
     preferences.maxRows = originalLimit;
@@ -939,44 +977,51 @@ it('keeps retained Peak Table columns and units across later records and bounded
 
 
 it('keeps producer-shaped 27 × 1868 retained peak overlays available above 50,000 source points', async () => {
-  const saved = retainedPeakScaleFixture();
-  const before = structuredClone(saved);
-  installRetainedPeaks(saved);
-  const { wrapper } = await open('?project=1&view=Results&node=peak', false, true, true);
-  const plot = wrapper.getComponent(QuickPlotModal);
-  const vm = plot.vm as unknown as {
-    availablePlots: Array<{ key: string; label: string }>;
-    plotData: Array<{ mode: string; x: number[]; y: number[] }>;
-    displayPlotData: Array<{ mode: string; x: number[]; y: number[] }>;
-    viewMode: string; dataPreview: unknown[]; previewRowLimit: number; previewTotalRows: number;
-  };
-  expect(vm.availablePlots).toEqual([{ key: 'scientific_visualization:peak_finding', label: 'Spectra with Peaks' }]);
-  expect(vm.plotData).toHaveLength(55); // 27 spectra, 27 detections, one consensus trace.
-  expect(vm.plotData.filter(trace => trace.mode === 'lines')).toHaveLength(27);
-  expect(vm.plotData.filter(trace => trace.mode === 'lines').every(trace => trace.x.length === 1868 && trace.y.length === 1868)).toBe(true);
-  expect(vm.displayPlotData.length).toBeGreaterThan(0);
-  expect(vm.displayPlotData.filter(trace => trace.mode === 'lines')).toHaveLength(27);
-  const chart = plot.getComponent(PlotlyChart);
-  const chartVm = chart.vm as unknown as {
-    displayed: { data: Array<{ mode: string; x: number[] }>; omitted: number };
-    contextText: string;
-  };
-  const shownMarkers = chartVm.displayed.data.filter(trace => trace.mode === 'markers')
-    .reduce((count, trace) => count + trace.x.length, 0);
-  expect(shownMarkers).toBe(vm.previewRowLimit);
-  expect(chartVm.displayed.omitted).toBe(2964 + 1080 - vm.previewRowLimit);
-  expect(chartVm.displayed.data.filter(trace => trace.mode === 'lines')
-    .reduce((count, trace) => count + trace.x.length, 0)).toBe(50436);
-  expect(chart.find('.display-subset-indicator').text()).toBe('Subset');
-  expect(chartVm.contextText).toContain(`${chartVm.displayed.omitted} plotted observations`);
-  vm.viewMode = 'data';
-  await flushPromises();
-  expect(vm.previewTotalRows).toBe(27 * 1868 + 2964 + 1080);
-  expect(vm.dataPreview).toHaveLength(vm.previewRowLimit);
-  expect(plot.findAll('tbody tr')).toHaveLength(vm.previewRowLimit);
-  expect(plot.text()).toContain('Plot coordinates');
-  expect(plot.text()).not.toContain('No retained table');
-  expect(saved).toEqual(before);
+  const preferences = useDisplayPreferences();
+  const originalLimit = preferences.maxRows;
+  preferences.maxRows = 100;
+  try {
+    const saved = retainedPeakScaleFixture();
+    const before = structuredClone(saved);
+    installRetainedPeaks(saved);
+    const { wrapper } = await open('?project=1&view=Results&node=peak', false, true, true);
+    const plot = wrapper.getComponent(QuickPlotModal);
+    const vm = plot.vm as unknown as {
+      availablePlots: Array<{ key: string; label: string }>;
+      plotData: Array<{ mode: string; x: number[]; y: number[] }>;
+      displayPlotData: Array<{ mode: string; x: number[]; y: number[] }>;
+      viewMode: string; dataPreview: unknown[]; previewRowLimit: number; previewTotalRows: number;
+    };
+    expect(vm.availablePlots).toEqual([{ key: 'scientific_visualization:peak_finding', label: 'Spectra with Peaks' }]);
+    expect(vm.plotData).toHaveLength(55); // 27 spectra, 27 detections, one consensus trace.
+    expect(vm.plotData.filter(trace => trace.mode === 'lines')).toHaveLength(27);
+    expect(vm.plotData.filter(trace => trace.mode === 'lines').every(trace => trace.x.length === 1868 && trace.y.length === 1868)).toBe(true);
+    expect(vm.displayPlotData.length).toBeGreaterThan(0);
+    expect(vm.displayPlotData.filter(trace => trace.mode === 'lines')).toHaveLength(27);
+    const chart = plot.getComponent(PlotlyChart);
+    const chartVm = chart.vm as unknown as {
+      displayed: { data: Array<{ mode: string; x: number[] }>; omitted: number };
+      contextText: string;
+    };
+    const shownMarkers = chartVm.displayed.data.filter(trace => trace.mode === 'markers')
+      .reduce((count, trace) => count + trace.x.length, 0);
+    expect(shownMarkers).toBe(vm.previewRowLimit);
+    expect(chartVm.displayed.omitted).toBe(2964 + 1080 - vm.previewRowLimit);
+    expect(chartVm.displayed.data.filter(trace => trace.mode === 'lines')
+      .reduce((count, trace) => count + trace.x.length, 0)).toBe(50436);
+    expect(chart.find('.display-subset-indicator').text()).toBe('Subset');
+    expect(chartVm.contextText).toContain(`${chartVm.displayed.omitted} plotted observations`);
+    vm.viewMode = 'data';
+    await nextTick();
+    expect(vm.previewTotalRows).toBe(27 * 1868 + 2964 + 1080);
+    expect(vm.dataPreview).toHaveLength(vm.previewRowLimit);
+    expect(plot.findAll('tbody tr')).toHaveLength(vm.previewRowLimit);
+    expect(plot.text()).toContain('Plot coordinates');
+    expect(plot.text()).not.toContain('No retained table');
+    expect(saved).toEqual(before);
+  } finally {
+    preferences.maxRows = originalLimit;
+  }
 });
 
 
