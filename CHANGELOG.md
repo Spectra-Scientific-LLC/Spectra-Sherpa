@@ -5,11 +5,12 @@ All notable changes to SpectraSherpa will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.4] - Unreleased
+## [0.6.4] - 2026-11-01
 
-Candidate metadata is stamped `0.6.4` so final qualification can identify the
-intended release. This draft has no publication date and does not establish a
-PyPI release, completed qualification, desktop installer or hosted rollout.
+Changes for `0.6.4` are listed below. Source version and date alone do not
+establish publication or qualification; release receipts identify the exact
+source revision and artifact hashes. Desktop packaging remains paused until
+separately authorized.
 
 ### Catalog observation identity and review labels
 
@@ -23,9 +24,9 @@ PyPI release, completed qualification, desktop installer or hosted rollout.
 - New PCA/PLS review receipts can retain display labels while selections and
   requests continue to use full typed IDs. Older receipts fall back to their
   recorded IDs. The PLS-DA diagnostic correction also uses typed IDs rather than
-  display labels; its producer and compatibility qualification remain pending.
-- Application of affected existing models requires reviewed exact predecessor
-  compatibility; this draft does not claim that qualification is complete.
+  display labels.
+- Application of affected existing models uses exact reviewed predecessor
+  compatibility; unrecognized contracts remain refused.
   Supported older campaign profiles remain view-only, subject to retained
   evidence checks. New rounds require a new campaign under the current profile.
 

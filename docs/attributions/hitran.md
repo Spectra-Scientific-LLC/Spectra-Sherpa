@@ -2,10 +2,10 @@
 
 HITRAN/HAPI support is an optional extra for pip users and is included in desktop installers. It serves a different role than NIST. NIST supports reference and quantitative infrared workflows around public compiled data. HITRAN/HAPI supports line-by-line gas-phase spectral synthesis when the clients, API key, and network access are configured.
 
-> **Installation target.** These guides describe the unreleased v0.6.4
-> candidate. Commands below install the latest *published* package, not that
-> candidate. For candidate qualification, install the exact reviewed checkout
-> with the required extras using [Local onboarding](../onboarding/local-30-minutes.md).
+> **Installation target.** These guides describe v0.6.4. Commands below install
+> the latest *published* package. For source qualification, install the exact
+> reviewed checkout with the required extras using
+> [Local onboarding](../onboarding/local-30-minutes.md).
 
 ```bash
 pip install "spectra-sherpa[hitran]"

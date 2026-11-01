@@ -14,13 +14,11 @@ workflows. Import supported scientific files, inspect their axes and metadata,
 then use PCA, PLS, MCR-ALS, SIMCA, PLS-DA, variable selection, calibration
 transfer, and validation without hiding the data path behind a notebook.
 
-This branch contains the **v0.6.4 candidate (unreleased)**. Package, frontend
-and desktop-shell source metadata are stamped `0.6.4` for candidate
-qualification; publication and desktop packaging remain separate gates. Historical
-[0.6.3 notes](docs/releases/0.6.3.md) describe that tag, not this candidate.
-Source version alone does not establish PyPI or desktop-installer availability;
-check the [published package](https://pypi.org/project/spectra-sherpa/) before
-installing.
+This is the source for **SpectraSherpa 0.6.4**. See the
+[release notes](docs/releases/0.6.4.md) for changes and migration requirements.
+Check [PyPI](https://pypi.org/project/spectra-sherpa/) for package availability;
+source versions and tags alone do not establish it. Desktop packaging remains
+paused until separately authorized.
 
 Install the latest published Workbench and Python SDK (Python 3.11 or 3.12):
 
@@ -79,10 +77,11 @@ HITRAN downloads require your personal key in **Settings → API Keys** and
 **Settings → Integrations → HITRAN/HAPI Queries** enabled. Network access is
 optional and disabled by default locally.
 
-For the unreleased candidate, use the exact reviewed source revision and the
+For a source installation, use the exact reviewed revision and the
 [local installation guide](docs/onboarding/local-30-minutes.md). Build its
 frontend before installing; a Git source archive is not a prepared Python wheel.
-Do not assume that `pip install spectra-sherpa` installs this candidate.
+`pip install spectra-sherpa` installs the latest published package, which may
+differ from the source checkout.
 
 Run the canonical Python example:
 

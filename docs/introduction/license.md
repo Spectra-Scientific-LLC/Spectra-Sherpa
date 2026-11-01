@@ -31,10 +31,10 @@ You generally should not:
 
 ## Optional Dependencies
 
-> **Installation target.** These guides describe the unreleased v0.6.4
-> candidate. Commands below install the latest *published* package, not that
-> candidate. For candidate qualification, install the exact reviewed checkout
-> with the required extras using [Local onboarding](../onboarding/local-30-minutes.md).
+> **Installation target.** These guides describe v0.6.4. Commands below install
+> the latest *published* package. For source qualification, install the exact
+> reviewed checkout with the required extras using
+> [Local onboarding](../onboarding/local-30-minutes.md).
 
 SpectroChemPy is intentionally optional. After 0.6 publication, install it
 with:

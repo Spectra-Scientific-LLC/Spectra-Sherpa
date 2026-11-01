@@ -124,10 +124,10 @@ families remain demand-gated, and Thermo Paradigm/OMNICxi containers (`.srsx`,
 
 ## Optional SpectroChemPy Algorithms
 
-> **Installation target.** These guides describe the unreleased v0.6.4
-> candidate. Commands below install the latest *published* package, not that
-> candidate. For candidate qualification, install the exact reviewed checkout
-> with the required extras using [Local onboarding](../onboarding/local-30-minutes.md).
+> **Installation target.** These guides describe v0.6.4. Commands below install
+> the latest *published* package. For source qualification, install the exact
+> reviewed checkout with the required extras using
+> [Local onboarding](../onboarding/local-30-minutes.md).
 
 After 0.6 publication, install with:
 

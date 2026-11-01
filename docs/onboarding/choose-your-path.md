@@ -14,9 +14,9 @@ Choose a surface, not a different implementation of the calculation.
 | Python or Jupyter | Scripted workflows, reproducible notebooks and supported exports | [Python workflows](python-canonical-workflows.md) |
 | Desktop application | The local Workbench in a native window, when matching installers are published | [Check installer availability](../support/local_install.md) |
 
-These guides describe the v0.6.4 candidate, which is not yet published.
-Use an exact reviewed source revision for candidate testing. A source tag,
-PyPI wheel and desktop installer are different artifacts.
+These guides describe v0.6.4. Check PyPI for package availability and use an
+exact reviewed source revision for source testing. A source tag, PyPI wheel
+and desktop installer are different artifacts.
 
 Choose SCP, HITRAN and NIST dependencies up front in the local installation
 guide. Offline scientific calculation does not require an AI key or account.

@@ -5,9 +5,9 @@
     (saved workflows, models and data), and the order to do it in.
 
 > **Scope.** This guide explains the breaking transition from pre-0.6 data and
-> workflows. The current documentation targets the unreleased v0.6.4 candidate.
-> Follow [Local onboarding](local-30-minutes.md) to install an exact source
-> candidate; a tag alone does not establish PyPI or installer availability.
+> workflows. The current documentation targets v0.6.4. Follow
+> [Local onboarding](local-30-minutes.md) for source or published-package
+> installation; a tag alone does not establish PyPI or installer availability.
 
 Version 0.6 makes the product boundary simpler: the default package contains
 the native Workbench and Python SDK together, scientific execution is
@@ -15,16 +15,16 @@ canonical-DAG only, and optional SCP/HITRAN/NIST capabilities are explicit.
 This is a breaking release. Read the checklist before upgrading a retained
 environment.
 
-## Direct 0.6.0 → 0.6.4 candidate check
+## Direct 0.6.0 → 0.6.4 upgrade
 
 For the retained published 0.6.0 baseline, use the
 [0.6.4 upgrade notes](../releases/0.6.4.md#upgrading-from-the-published-060-baseline)
 on a backed-up copy. They cover KNN/SIMCA retraining, PLS-DA serializer and
 validation semantics, project-goal migrations, and saved CSV format choices.
 Keep the 0.6.0 saved-model compatibility reference; source-only intermediate
-versions do not replace it. An unpublished candidate stamped `0.6.4` must be
-installed from the exact reviewed source or qualified local artifact, not
-requested from the public index before publication.
+versions do not replace it. Before a version is published, install its exact
+reviewed source or qualified local artifact. Use PyPI only after checking
+that version is available.
 
 ## Before upgrading
 
@@ -70,7 +70,7 @@ poetry run python -m spectra_sherpa.examples.canonical_workflow
 
 Perform an in-place upgrade only after the intended version is published,
 and only when you have retained the backup above. Substitute that published
-version for `VERSION`; this is not a command to fetch the unreleased candidate:
+version for `VERSION`; verify its availability before running the command:
 
 ```bash
 python -m pip install --upgrade "spectra-sherpa==VERSION"

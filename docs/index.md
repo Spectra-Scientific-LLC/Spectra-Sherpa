@@ -10,11 +10,10 @@ chemometrics. Import spectra or feature tables, inspect samples and axes,
 build an analysis, compare results, and export a reproducible record.
 Local scientific workflows need neither an account nor an AI provider.
 
-These guides describe the **v0.6.4 candidate (unreleased)**.
-Publication follows local and staging qualification; a source checkout is not
-an available PyPI release or desktop installer. Follow
-[Local onboarding](onboarding/local-30-minutes.md) for the matching installation
-route. Changes on development branches are recorded separately in the changelog.
+These guides describe **SpectraSherpa v0.6.4**. Source version alone does not
+establish availability; check [PyPI](https://pypi.org/project/spectra-sherpa/)
+and follow [Local onboarding](onboarding/local-30-minutes.md) for the matching
+installation route. Desktop packaging remains paused until separately authorized.
 
 <figure class="ss-hero-figure">
   <img src="assets/workflow-canvas-hero.png" alt="Connected data, analysis, plot, and table nodes in the workflow canvas." />
