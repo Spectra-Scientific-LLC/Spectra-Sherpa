@@ -228,6 +228,8 @@ async def test_duplicate_refuses_stale_or_cross_scope_binding_before_persisting(
     revision_count = await test_session.scalar(select(func.count()).select_from(WorkflowDataSelectionRevision))
     response = await auth_client.post(f"/api/v1/workflows/{source.id}/duplicate")
     assert response.status_code == status, response.text
+    if damage in {"deleted_view", "cross_project_view", "changed_view"}:
+        assert "reselect its data" in response.json()["detail"]
     assert await test_session.scalar(select(func.count()).select_from(Workflow)) == workflow_count
     assert await test_session.scalar(select(func.count()).select_from(WorkflowDataSelectionRevision)) == revision_count
     assert await _revision_snapshot(test_session, source.id) == before

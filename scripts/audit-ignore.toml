@@ -34,11 +34,12 @@ ignore = []
 # These legacy APIs are needed by ESLint and Redocly. Unlike modern minimatch,
 # exact 3.1.5 and 5.1.9 contain neither firstPhasePreProcess nor optimizationLevel;
 # the advisory's globParts amplification cannot run there. Modern branches use
-# patched 11.0.3. Recheck the upstream advisory before this entry expires.
+# patched 11.0.3. Rechecked 2026-10-31: the advisory (updated 2026-10-30) still lists
+# only < 11.0.1 with no 3.x/5.x backport. Recheck before this entry expires.
 [[npm-audit.ignore]]
 id = "GHSA-g3hv-75wg-m249"
 reason = "Exact legacy minimatch 3.1.5/5.1.9 lack the vulnerable optimizationLevel>=2 preprocessing algorithm; independently inspected and probed. Preserve their callable/default-export APIs for ESLint/Redocly. Modern copies are patched."
-expires = "2026-11-14"
+expires = "2027-01-31"
 package = "minimatch"
 lockfile = "frontend/package-lock.json"
 severity = "moderate"

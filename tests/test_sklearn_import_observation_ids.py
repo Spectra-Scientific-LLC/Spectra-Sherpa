@@ -24,7 +24,7 @@ from spectra_sherpa.app.schemas.workflow_data_selection import WorkflowSourceSel
 from spectra_sherpa.app.services.dag.nodes.data.transforms import FilterSamplesNode
 from spectra_sherpa.app.services.dag.nodes.modeling.pca_nodes import PCANode
 from spectra_sherpa.app.services.dag.nodes.preprocessing.scale_node import ScaleNode
-from spectra_sherpa.app.services.experiments import experiment_dir
+from spectra_sherpa.app.services.experiments import catalog_table_revision, experiment_dir
 from spectra_sherpa.app.services.model_application import load_project_dataset
 from spectra_sherpa.app.services.pca_review_evidence import sample_ids as review_sample_ids
 from spectra_sherpa.app.services.workflow_data_selections import source_parameters
@@ -67,7 +67,7 @@ async def test_catalog_import_collection_fit_and_saved_diagnostics(
     expected_targets = np.asarray([reference.target_names[i] for i in reference.target])
     revision_table = pd.DataFrame(reference.data, columns=reference.feature_names)
     revision_table["target"] = expected_targets
-    revision = hashlib.sha256(revision_table.to_csv(index=False, lineterminator="\n").encode()).hexdigest()
+    revision = catalog_table_revision(revision_table)
 
     # Repeated independent reads must recover IDs from persisted typed metadata.
     direct = load_csv_as_sherpa(path)
