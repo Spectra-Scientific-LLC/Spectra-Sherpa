@@ -90,6 +90,10 @@ def test_summary_and_report_share_retained_counts_and_exact_map_without_row_copy
     assert source["output_sha256"] == run.evidence_completeness["outputs"]["load"]["exclusions"]["sha256"]
     assert "duplicate" not in json.dumps(result) and "identity-" not in json.dumps(result)
     assert "observation_ref" not in json.dumps(result)
+    # Offline reports keep the exact retained locator, not only a friendly label.
+    labels = [row["label"] for row in result["rows"]]
+    assert any("node load, port exclusions" in label and label.startswith("Exclusions (") for label in labels)
+    assert any("node load, port exclusions" in label and label.startswith("Exclusion map (") for label in labels)
     report = validation_summary(run, definition)
     for row in result["rows"]:
         assert row in report["summary_rows"]

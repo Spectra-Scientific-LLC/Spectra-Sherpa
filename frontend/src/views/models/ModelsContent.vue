@@ -792,7 +792,8 @@ function restoreActiveRunsTab(): void {
 
 function persistActiveRunsTab(): void {
   const id = MODEL_SUBSCOPES[activeTab.value];
-  if (id) writeRememberedTab(runsActiveTabStorageKey(), id);
+  // Inspect is never restored, so it must not overwrite the tab Back returns to.
+  if (id && id !== "inspect") writeRememberedTab(runsActiveTabStorageKey(), id);
 }
 
 const activeProjectName = computed(() => projectStore.currentProject?.name ?? "—");

@@ -109,10 +109,14 @@ In **View Data**, each observation row starts with two symbols:
 | second ○ / ⊗ | current workflow state; click to exclude or restore |
 
 An observation excluded after the calculation was still used in it; the first
-symbol updates when you rerun. Workflow-excluded observations stay in the table
-with — in the computed columns. Observations excluded in My Dataset are not
-listed here; restore them in My Dataset. CSV exports contain only the computed
-rows. Saved runs keep the exclusions they ran with.
+symbol updates when you rerun. When the result retains a qualified display
+cohort, workflow-excluded observations from that cohort stay in the table with
+— in the computed columns; otherwise only computed rows are listed, and
+observations from another source or branch are never added. Observations
+excluded in My Dataset are not listed here; restore them in My Dataset. When
+many rows are excluded, the preview caps them so computed rows stay visible.
+CSV exports contain only the computed rows. Saved runs keep the exclusions they
+ran with.
 
 The decision belongs to **Load Data**, not the plot or model. Collection Load,
 File Load and Load Group materialize the active population before any branch:

@@ -62,6 +62,22 @@ describe("Runs → retained exclusions → Back", () => {
     view.unmount();
   });
 
+  it.each([["batch", "Batch"], ["compare", "Compare"]])(
+    "returns from a retained map to the remembered %s tab of a bare /runs address", async (remembered, tab) => {
+      localStorage.setItem("spectra_sherpa_runs_active_tab_v4_1_1", remembered);
+      const { router, view } = await mountAt("/runs");
+      expect(selectedTab(view)).toBe(tab);
+      await router.push("/runs/42?project=1&tab=inspect&view=Summary#retained-observation-exclusions");
+      await flushPromises();
+      expect(selectedTab(view)).toBe("Inspect");
+      router.back();
+      await flushPromises();
+      expect(router.currentRoute.value.fullPath).toBe("/runs");
+      expect(selectedTab(view)).toBe(tab);
+      view.unmount();
+    },
+  );
+
   it("still clears History/Compare selections when leaving for Models", async () => {
     const { router, view } = await mountAt("/runs?tab=run_history");
     await router.push("/runs?tab=models");

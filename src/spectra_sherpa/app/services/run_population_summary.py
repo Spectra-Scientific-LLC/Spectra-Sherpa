@@ -235,12 +235,12 @@ def retained_population_summary(run: Any, *, definition_read: RetainedDefinition
                 "value": "First 32 sources shown; inspect the others in Runs.",
             }
         )
-    # Readers know a source by its canvas label; the node id disambiguates repeats.
-    repeated = {label for label in labels.values() if list(labels.values()).count(label) > 1}
 
+    # Readers know a source by its canvas label; offline reports also need the
+    # exact retained locator (node ID and port), so keep both.
     def name(node: str) -> str:
-        label = labels.get(node)
-        return node if label is None else f"{label}, {node}" if label in repeated else label
+        locator = f"node {node}, port exclusions"
+        return f"{labels[node]}; {locator}" if node in labels and labels[node] != node else locator
 
     for node in sorted(sources)[:SUMMARY_SOURCES]:
         item = evidence.outputs.get(node, {}).get("exclusions")
