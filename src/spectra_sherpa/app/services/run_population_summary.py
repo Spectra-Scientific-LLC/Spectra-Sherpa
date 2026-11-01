@@ -187,9 +187,7 @@ def retained_population_summary(run: Any, *, definition_read: RetainedDefinition
     try:
         evidence = RunEvidence.model_validate(getattr(run, "evidence_completeness", None) or {})
     except ValueError:
-        result["rows"].append(
-            {"label": "Exclusion map", "value": "Unavailable: invalid retention inventory."}
-        )
+        result["rows"].append({"label": "Exclusion map", "value": "Unavailable: invalid retention inventory."})
         return result
     sources = {node for node, ports in evidence.outputs.items() if "exclusions" in ports}
     params = getattr(run, "params_snapshot", None) or {}
