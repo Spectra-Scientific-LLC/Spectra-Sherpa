@@ -25,11 +25,7 @@ DEFINITION_BYTES = 2 * 1024 * 1024
 COUNT_CACHE_ENTRIES = 128
 _count_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
 _count_cache_lock = Lock()
-SCOPE = (
-    "Retained run decisions only; current workflow edits are not substituted. "
-    "Source membership is before branch filtering; it does not establish use by every downstream computation. "
-    "Counts are per source, not unique specimens."
-)
+SCOPE = "Recorded at execution, per Load Data source, before any branch filter; later edits are not shown."
 
 
 @dataclass(frozen=True)
@@ -170,7 +166,7 @@ def retained_population_summary(run: Any, *, definition_read: RetainedDefinition
         "schema_version": "spectrasherpa-retained-population-summary/1",
         "run_id": run.id,
         "sources": [],
-        "rows": [{"label": "Workflow observation exclusions", "value": SCOPE}],
+        "rows": [{"label": "Observation exclusions", "value": SCOPE}],
     }
     remaining = SUMMARY_BYTES
     definition_read = definition_read if definition_read is not None else RetainedDefinitionRead()
@@ -191,9 +187,7 @@ def retained_population_summary(run: Any, *, definition_read: RetainedDefinition
     try:
         evidence = RunEvidence.model_validate(getattr(run, "evidence_completeness", None) or {})
     except ValueError:
-        result["rows"].append(
-            {"label": "Retained observation map", "value": "Unavailable: invalid retention inventory."}
-        )
+        result["rows"].append({"label": "Exclusion map", "value": "Unavailable: invalid retention inventory."})
         return result
     sources = {node for node, ports in evidence.outputs.items() if "exclusions" in ports}
     params = getattr(run, "params_snapshot", None) or {}
@@ -201,6 +195,7 @@ def retained_population_summary(run: Any, *, definition_read: RetainedDefinition
     sources.update(
         node for node, values in params.items() if isinstance(values, dict) and "workflow_exclusions" in values
     )
+    labels: dict[str, str] = {}
     try:
         definition = read(evidence.outputs.get("__workflow__", {}).get("definition"), definition=True)
         if not isinstance(definition, dict) or definition.get("schema_version") != 1:
@@ -208,6 +203,8 @@ def retained_population_summary(run: Any, *, definition_read: RetainedDefinition
         from spectra_sherpa.app.services.dag import node_registry
 
         for node in definition.get("nodes", []):
+            if isinstance(node, dict) and isinstance(node.get("label"), str) and node["label"].strip():
+                labels[str(node.get("node_id"))] = node["label"].strip()
             try:
                 metadata = node_registry.get_metadata(node["node_type"])
                 if any(
@@ -221,54 +218,53 @@ def retained_population_summary(run: Any, *, definition_read: RetainedDefinition
         result["rows"].append(
             {
                 "label": "Source inventory",
-                "value": "Saved definition unavailable; source coverage cannot be established.",
+                "value": "Saved definition unavailable; source coverage unknown.",
             }
         )
     if not sources:
         result["rows"].append(
             {
-                "label": "Retained observation map",
-                "value": (
-                    "Unavailable: no canonical source exclusion map was retained; zero exclusions cannot be inferred."
-                ),
+                "label": "Exclusion map",
+                "value": "Not recorded; zero exclusions cannot be assumed.",
             }
         )
     if len(sources) > SUMMARY_SOURCES:
         result["rows"].append(
             {
                 "label": "Source inventory",
-                "value": "Summary limited to 32 sources; inspect remaining retained source outputs individually.",
+                "value": "First 32 sources shown; inspect the others in Runs.",
             }
         )
+
+    # Readers know a source by its canvas label; offline reports also need the
+    # exact retained locator (node ID and port), so keep both.
+    def name(node: str) -> str:
+        locator = f"node {node}, port exclusions"
+        return f"{labels[node]}; {locator}" if node in labels and labels[node] != node else locator
+
     for node in sorted(sources)[:SUMMARY_SOURCES]:
         item = evidence.outputs.get(node, {}).get("exclusions")
         source: dict[str, Any] = {"node_id": node, "port": "exclusions", "availability": "unavailable"}
         try:
             source.update(_verified_counts(read(item), run.user_id, item, node, params.get(node)))
             source.update(availability="available", output_sha256=item.sha256)
+            overlap = source["source_excluded_count"] + source["workflow_excluded_count"] > source["excluded_count"]
             value = (
-                f"{source['source_count']} source; {source['active_count']} used in the retained run's source result; "
-                f"{source['excluded_count']} excluded from that source result. "
-                f"{source['source_excluded_count']} excluded in the source; "
-                f"{source['workflow_excluded_count']} workflow exclusions (may overlap source exclusions)."
+                f"{source['source_count']} observations: {source['active_count']} used, "
+                f"{source['excluded_count']} excluded ({source['source_excluded_count']} in My Dataset, "
+                f"{source['workflow_excluded_count']} in workflow{'; some in both' if overlap else ''})."
             )
             result["rows"].append(
                 {
-                    "label": f"Retained row map ({node})",
-                    "value": (
-                        f"Run {run.id}, node {node}, port exclusions. Source SHA-256 {source['source_digest']}; "
-                        f"output SHA-256 {item.sha256}. Complete individual decisions remain in this retained output."
-                    ),
+                    "label": f"Exclusion map ({name(node)})",
+                    "value": f"Source SHA-256 {source['source_digest']}; map SHA-256 {item.sha256}.",
                 }
             )
         except (ValueError, OSError, TypeError, KeyError):
             # Do not leak storage paths or pretend that a missing/corrupt map is empty.
-            value = (
-                "Unavailable: source map missing, unsupported, inconsistent, or outside the summary read budget. "
-                "Inspect retained evidence."
-            )
+            value = "Unavailable: map missing, inconsistent or too large to summarize. Inspect it in Runs."
             source["reason"] = value
         source["summary"] = value
         result["sources"].append(source)
-        result["rows"].append({"label": f"Retained exclusions ({node})", "value": value})
+        result["rows"].append({"label": f"Exclusions ({name(node)})", "value": value})
     return result

@@ -95,27 +95,28 @@ sheet does not change the scope. **Restore all** is a workflow action.
 [The PCA walkthrough](../chemometrics/pca.md#exclusions-and-row-numbers) gives a
 150 → 148 → 149 → 150 example.
 
-Selection applies to individual observations, including sample plots produced
-by visualization nodes. Choose **Box Select** or **Lasso Select** in the plot
-toolbar before dragging; dragging with **Zoom** selected changes the axes.
-Loadings, variable correlations and aggregate curves do not identify observations
-and do not offer sample exclusion.
+Selection works on plots of individual observations (scores, spectra, sample
+scatter plots), including those drawn by Plot nodes. Choose **Box Select** or
+**Lasso Select** in the plot toolbar before dragging; with **Zoom** selected,
+dragging changes the axes. Loadings, variable correlations and averaged curves
+do not show individual observations, so they offer no exclusion.
 
-In workflow **View Data**, two small symbols precede each identified observation
-in the existing matrix. Hover the first for membership in the displayed
-calculation; hover the second for its current exclusion state. Click the second
-to exclude or restore that observation. A point excluded after calculation was
-still used in that result; rerunning updates the first symbol. Original sample
-identities remain unchanged.
+In **View Data**, each observation row starts with two symbols:
 
-When the operation retains a qualified display cohort, workflow-excluded observations
-remain inspectable in that same table, with dashes for unavailable computed
-values. An unrelated source or another branch's observations are never added.
-Rows already excluded in My Dataset stay outside the workflow population;
-restore those in My Dataset first.
-The preview reserves room for active observations when many rows are excluded;
-CSV still exports the actual computed rows. Previous runs keep their recorded
-decisions; current edits do not rewrite them.
+| Symbol | Meaning |
+| :--- | :--- |
+| first ○ / ⊗ | used / not used in the calculation shown |
+| second ○ / ⊗ | current workflow state; click to exclude or restore |
+
+An observation excluded after the calculation was still used in it; the first
+symbol updates when you rerun. When the result retains a qualified display
+cohort, workflow-excluded observations from that cohort stay in the table with
+— in the computed columns; otherwise only computed rows are listed, and
+observations from another source or branch are never added. Observations
+excluded in My Dataset are not listed here; restore them in My Dataset. When
+many rows are excluded, the preview caps them so computed rows stay visible.
+CSV exports contain only the computed rows. Saved runs keep the exclusions they
+ran with.
 
 The decision belongs to **Load Data**, not the plot or model. Collection Load,
 File Load and Load Group materialize the active population before any branch:

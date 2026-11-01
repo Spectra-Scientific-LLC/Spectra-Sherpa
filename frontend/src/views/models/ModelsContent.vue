@@ -792,7 +792,8 @@ function restoreActiveRunsTab(): void {
 
 function persistActiveRunsTab(): void {
   const id = MODEL_SUBSCOPES[activeTab.value];
-  if (id) writeRememberedTab(runsActiveTabStorageKey(), id);
+  // Inspect is never restored, so it must not overwrite the tab Back returns to.
+  if (id && id !== "inspect") writeRememberedTab(runsActiveTabStorageKey(), id);
 }
 
 const activeProjectName = computed(() => projectStore.currentProject?.name ?? "—");
@@ -962,6 +963,9 @@ function applyRunDeepLink(): void {
   }
   const linkedTab = MODEL_SUBSCOPES.indexOf(route.query.tab as typeof MODEL_SUBSCOPES[number]);
   if (linkedTab >= 0) activeTab.value = linkedTab;
+  // Back from a run lands on a run-free address, which cannot show Inspect
+  // content. Return to the workspace tab instead of an empty Inspect page.
+  else if (activeTab.value === TAB_INSPECT) restoreActiveRunsTab();
   const target = route.query.run;
   const raw = typeof target === "string" && target.length > 0 ? Number.parseInt(target, 10) : NaN;
   if (!Number.isFinite(raw)) return;
@@ -1058,7 +1062,9 @@ watch(artifactSearch, () => {
 watch(activeTab, () => {
   focusSection(activeTabId.value);
   persistActiveRunsTab();
-  if (activeTab.value !== TAB_COMPARE && activeTab.value !== TAB_RUN_HISTORY) runsStore.clearSelection();
+  // Inspecting one run is a detour from History/Compare: keep their selection
+  // and comparison so Back returns the user to the same place.
+  if (![TAB_COMPARE, TAB_RUN_HISTORY, TAB_INSPECT].includes(activeTab.value)) runsStore.clearSelection();
   if (activeTab.value !== TAB_MODELS) selectedArtifactUids.value = new Set();
   void syncAdvisorForModelsTab();
 });

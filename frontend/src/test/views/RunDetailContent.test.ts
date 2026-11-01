@@ -117,7 +117,7 @@ describe('retained workflow exclusions across run sections', () => {
       return normal(url, config);
     });
     const { wrapper, router } = await open(`?project=1&view=${view}&node=pca`);
-    expect(wrapper.get('[aria-label="Retained workflow observation exclusions"]').text()).toContain('Used 4');
+    expect(wrapper.get('[aria-label="Retained workflow observation exclusions"]').text()).toContain('used 4');
     expect(wrapper.find('[aria-label="Retained source exclusion map"]').exists()).toBe(false);
     await wrapper.get('[aria-label="Download retained row map load"]').trigger('click');
     await flushPromises();
@@ -127,8 +127,8 @@ describe('retained workflow exclusions across run sections', () => {
     expect(router.currentRoute.value.query).toMatchObject({ view: 'Results', node: 'load', output: 'exclusions' });
     const map = wrapper.get('[aria-label="Retained source exclusion map"]');
     expect(map.text()).toContain('typed-1');
-    expect(map.text()).toContain('Workflow exclusion at execution');
-    expect(map.text()).toContain('Current workflow exclusions are not loaded here');
+    expect(map.text()).toContain('Result row');
+    expect(map.get('.method-context-text').text()).toContain('current workflow edits are not shown');
   });
   it('does not download a late map response after leaving the owning run', async () => {
     downloadJson.mockClear();
@@ -145,7 +145,7 @@ describe('retained workflow exclusions across run sections', () => {
     await router.replace('/runs/43?project=1&view=Summary'); await flushPromises();
     pending.resolve({ data: { value: { rows: [] } } }); await flushPromises();
     expect(downloadJson).not.toHaveBeenCalled();
-    expect(wrapper.text()).toContain('Retained exclusions unavailable');
+    expect(wrapper.text()).toContain('Exclusions unavailable');
   });
 });
 
@@ -1157,6 +1157,9 @@ it('scrolls the retained-map link only after its asynchronous run summary render
     expect(wrapper.find('#retained-observation-exclusions').exists()).toBe(true);
     expect(scroll).toHaveBeenCalledTimes(1);
     expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+    // Automatic node selection refines the address; it must keep the target.
+    expect(router.currentRoute.value.query.node).toBe('pca');
+    expect(router.currentRoute.value.hash).toBe('#retained-observation-exclusions');
     await router.replace({ query: router.currentRoute.value.query, hash: '' });
     await router.replace({ query: router.currentRoute.value.query, hash: '#retained-observation-exclusions' });
     await nextTick();

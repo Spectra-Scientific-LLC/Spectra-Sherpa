@@ -90,6 +90,10 @@ def test_summary_and_report_share_retained_counts_and_exact_map_without_row_copy
     assert source["output_sha256"] == run.evidence_completeness["outputs"]["load"]["exclusions"]["sha256"]
     assert "duplicate" not in json.dumps(result) and "identity-" not in json.dumps(result)
     assert "observation_ref" not in json.dumps(result)
+    # Offline reports keep the exact retained locator, not only a friendly label.
+    labels = [row["label"] for row in result["rows"]]
+    assert any("node load, port exclusions" in label and label.startswith("Exclusions (") for label in labels)
+    assert any("node load, port exclusions" in label and label.startswith("Exclusion map (") for label in labels)
     report = validation_summary(run, definition)
     for row in result["rows"]:
         assert row in report["summary_rows"]
@@ -139,7 +143,7 @@ def test_old_records_never_borrow_current_labels_or_settings():
     )
     result = summary.retained_population_summary(run)
     assert result["sources"] == []
-    assert "zero exclusions cannot be inferred" in json.dumps(result)
+    assert "zero exclusions cannot be assumed" in json.dumps(result)
 
 
 def test_saved_definition_finds_source_without_inventory_or_parameters():
@@ -179,7 +183,7 @@ def test_source_map_limit_and_unavailable_canonical_receipt():
     result = summary.retained_population_summary(run)
     assert len(result["sources"]) == 32
     assert all(source["availability"] == "unavailable" for source in result["sources"])
-    assert "Summary limited to 32 sources" in json.dumps(result)
+    assert "First 32 sources shown" in json.dumps(result)
 
 
 def test_sources_are_separate_and_reads_are_bounded(monkeypatch):
@@ -327,7 +331,7 @@ def test_definition_cap_does_not_spend_the_source_map_budget(monkeypatch):
     assert result["sources"][0]["availability"] == "available"
     assert result["sources"][0]["active_count"] == 4
     assert len(opened) == 1
-    assert "source coverage cannot be established" in json.dumps(result)
+    assert "source coverage unknown" in json.dumps(result)
 
 
 def test_definition_snapshot_is_bounded_bound_and_isolated(monkeypatch):

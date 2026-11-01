@@ -23,16 +23,17 @@ it('shows excluded rows and original identities across bounded pages without bor
     provide: { 'workflow-population-actions': { resolve } },
   } });
   expect(wrapper.findAll('tbody tr')).toHaveLength(100);
-  expect(wrapper.text()).toContain('not use by every downstream computation');
+  expect(wrapper.text()).not.toContain('downstream computation');
+  expect(wrapper.get('.method-context-text').text()).toContain('before any branch filter');
   expect(wrapper.find('tbody tr').text()).toContain('typed-0');
-  expect(wrapper.find('tbody tr').text()).toContain('Not excluded');
+  expect(wrapper.find('tbody tr').findAll('td')[4].text()).toBe('—');
   await wrapper.findAll('button')[1].trigger('click');
   await wrapper.findAll('button')[1].trigger('click');
   expect(wrapper.findAll('tbody tr')).toHaveLength(2);
   const excluded = wrapper.find('tbody tr').findAll('td').map(cell => cell.text());
-  expect(excluded).toEqual(['201', 'typed-200', 'duplicate', 'Yes', 'Excluded', 'No', 'Excluded']);
+  expect(excluded).toEqual(['201', 'typed-200', 'duplicate', 'Included', 'Excluded', '⊗', '—']);
   const included = wrapper.findAll('tbody tr')[1].findAll('td').map(cell => cell.text());
-  expect(included).toEqual(['202', 'typed-201', 'duplicate', 'Yes', 'Not excluded', 'Yes', '201']);
+  expect(included).toEqual(['202', 'typed-201', 'duplicate', 'Included', '—', '○', '201']);
   expect(resolve).not.toHaveBeenCalled();
   expect(JSON.stringify(value)).toBe(before);
 });
@@ -40,7 +41,7 @@ it('shows excluded rows and original identities across bounded pages without bor
 it('does not render a foreign or incomplete retained map', () => {
   for (const value of [{ ...fixture(), source_node_id: 'foreign' }, { ...fixture(), rows: [] }, undefined]) {
     const wrapper = mount(RetainedPopulationMap, { props: { value, nodeId: 'load' } });
-    expect(wrapper.text()).toContain('unavailable or inconsistent');
+    expect(wrapper.text()).toContain('Exclusion map unavailable');
     expect(wrapper.findAll('tbody tr')).toHaveLength(0);
   }
 });
@@ -78,7 +79,7 @@ it.each(inconsistentCases)('refuses %s without repairing the retained map', (_, 
   change(value);
   const before = JSON.stringify(value);
   const wrapper = mount(RetainedPopulationMap, { props: { value, nodeId: 'load' } });
-  expect(wrapper.text()).toContain('unavailable or inconsistent');
+  expect(wrapper.text()).toContain('Exclusion map unavailable');
   expect(wrapper.find('table').exists()).toBe(false);
   expect(wrapper.findAll('button')).toHaveLength(0);
   expect(JSON.stringify(value)).toBe(before);
@@ -93,7 +94,7 @@ it.each([
   { schema_version: 'spectrasherpa-workflow-population/2' },
 ])('refuses malformed or unavailable envelope %j', override => {
   const wrapper = mount(RetainedPopulationMap, { props: { value: { ...fixture(), ...override }, nodeId: 'load' } });
-  expect(wrapper.text()).toContain('unavailable or inconsistent');
+  expect(wrapper.text()).toContain('Exclusion map unavailable');
   expect(wrapper.find('table').exists()).toBe(false);
   wrapper.unmount();
 });
@@ -103,7 +104,7 @@ it('accepts overlapping source/workflow exclusions without adding their counts t
   value.rows[200].source_included = false;
   const wrapper = mount(RetainedPopulationMap, { props: { value, nodeId: 'load' } });
   expect(wrapper.find('table').exists()).toBe(true);
-  expect(wrapper.text()).not.toContain('unavailable or inconsistent');
+  expect(wrapper.text()).not.toContain('Exclusion map unavailable');
   wrapper.unmount();
 });
 
@@ -114,7 +115,7 @@ it('removes previously displayed rows when a replacement retained map is inconsi
   inconsistent.rows[201].included = false;
   await wrapper.setProps({ value: inconsistent });
   expect(wrapper.find('table').exists()).toBe(false);
-  expect(wrapper.text()).toContain('unavailable or inconsistent');
+  expect(wrapper.text()).toContain('Exclusion map unavailable');
   await wrapper.setProps({ value: fixture() });
   expect(wrapper.find('tbody tr').find('td').text()).toBe('1');
   wrapper.unmount();

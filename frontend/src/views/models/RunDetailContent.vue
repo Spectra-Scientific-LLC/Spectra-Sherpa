@@ -44,7 +44,7 @@
       <ModelSummaryCard :summary="modelSummary" compact display="context"
         :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
       <RetainedPopulationSummary ref="retainedSummaryAnchor" :value="detail.population_summary" :run-id="detail.run.id"
-        @inspect="inspectPopulationSource" @download="downloadPopulationMap" />
+        :labels="nodeLabels" @inspect="inspectPopulationSource" @download="downloadPopulationMap" />
       <p v-if="populationDownloadError" role="status">{{ populationDownloadError }}</p>
       <section class="inspection">
         <aside aria-label="Saved run nodes">
@@ -170,7 +170,8 @@
             <p v-if="nodeFailure" role="alert">{{ nodeFailure }}</p>
             <p v-for="message in outputMessages" :key="message" role="status">{{ message }}</p>
               <RetainedPopulationMap v-if="route.query.output === 'exclusions'"
-                :key="`${detail.run.id}:${selectedNode}`" :value="values.exclusions" :node-id="selectedNode" />
+                :key="`${detail.run.id}:${selectedNode}`" :value="values.exclusions" :node-id="selectedNode"
+                :node-label="selectedDefinition?.label || selectedNode" />
               <section v-if="nodeTrust" class="application-trust" aria-label="Retained prediction trust">
                 <h3>Per-file prediction trust</h3>
                 <p>Fitted model artifact: {{ values.model_id }}</p>
@@ -476,6 +477,7 @@ const nodes = computed(() => {
   const ids = new Set([...Object.keys(detail.value?.node_statuses || {}), ...Object.keys(detail.value?.evidence.outputs || {}), ...(definition.value?.nodes.map(node => node.node_id) || [])]);
   return [...ids].filter(id => !id.startsWith('__')).map(id => ({ id, label: definition.value?.nodes.find(node => node.node_id === id)?.label || id }));
 });
+const nodeLabels = computed(() => Object.fromEntries(nodes.value.map(node => [node.id, node.label])));
 // Prefer retained scientific evaluation over input/load nodes, while honoring
 // explicit node links (including links to missing evidence).
 const preferredNode = computed(() => {
@@ -567,6 +569,8 @@ registerProjectScopeReset(runRequests.invalidate);
 const failure = (err: any) => String(err?.response?.data?.detail || err?.message || 'Saved evidence could not be loaded.');
 function setTab(value: string) { if (value) void router.replace({ query: { ...route.query, view: value } }); }
 function selectNode(id: string) { void router.replace({ query: { ...route.query, node: id, presentation: undefined, output: undefined } }); }
+// Automatic choices refine the address the user opened; keep its scroll target.
+function selectDefaultNode(id: string) { void router.replace({ query: { ...route.query, node: id, presentation: undefined, output: undefined }, hash: route.hash }); }
 function selectPresentation(id: string) { void router.replace({ query: { ...route.query, presentation: id } }); }
 function backToRuns() {
   const query = { ...route.query };
@@ -717,12 +721,12 @@ async function loadRun(allowProjectSelection = true) {
       const modelNode = definition.value?.nodes.find(node => node.node_type === 'model.load_apply' &&
         (!filePrefix || node.node_id.startsWith(filePrefix)));
       if (modelNode && modelNode.node_id !== selectedNode.value) {
-        await router.replace({ query: { ...route.query, node: modelNode.node_id } });
+        await router.replace({ query: { ...route.query, node: modelNode.node_id }, hash: route.hash });
         if (!request.isCurrent()) return;
       }
     }
     void loadModelSummary(request);
-    if (!selectedNode.value && preferredNode.value) selectNode(preferredNode.value);
+    if (!selectedNode.value && preferredNode.value) selectDefaultNode(preferredNode.value);
     else await loadNode();
   } catch (err) { if (request.isCurrent()) error.value = failure(err); }
   finally { if (request.isCurrent()) loading.value = false; }
