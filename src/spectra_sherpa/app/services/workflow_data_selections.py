@@ -373,6 +373,15 @@ async def execution_selection_revisions(
     return frozen
 
 
+def _unavailable_selection(exc: HTTPException) -> HTTPException:
+    """Keep the fail-closed status; tell the user how to recover."""
+    return HTTPException(
+        exc.status_code,
+        f"This sheet's saved data selection is no longer available ({exc.detail}). "
+        "Open the sheet, reselect its data, then duplicate it.",
+    )
+
+
 async def cloned_selection_revisions(
     session: AsyncSession, *, source: Workflow, duplicate: Workflow, user_id: int
 ) -> list[WorkflowDataSelectionRevision]:
@@ -391,14 +400,17 @@ async def cloned_selection_revisions(
         or duplicate.project_id != source.project_id
     ):
         raise HTTPException(404, "Workflow not found in this project")
-    frozen = await execution_selection_revisions(
-        session,
-        workflow_id=source.id,
-        graph_digest=workflow_graph_digest(source),
-        source_nodes=list(source.nodes),
-        user_id=user_id,
-        workflow_project_id=source.project_id,
-    )
+    try:
+        frozen = await execution_selection_revisions(
+            session,
+            workflow_id=source.id,
+            graph_digest=workflow_graph_digest(source),
+            source_nodes=list(source.nodes),
+            user_id=user_id,
+            workflow_project_id=source.project_id,
+        )
+    except HTTPException as exc:
+        raise _unavailable_selection(exc) from exc
     copied_sources = {node.node_id: node for node in duplicate.nodes if node.node_type == "data.collection_load"}
     revisions = []
     for receipt in frozen:
@@ -417,9 +429,12 @@ async def cloned_selection_revisions(
         # A new sheet needs current admission, including active portfolio and
         # project access. Historical execution's deleted-view allowance does
         # not authorize a new selection.
-        await validate_selection(
-            session, selection=selection, user_id=user_id, workflow_project_id=duplicate.project_id
-        )
+        try:
+            await validate_selection(
+                session, selection=selection, user_id=user_id, workflow_project_id=duplicate.project_id
+            )
+        except HTTPException as exc:
+            raise _unavailable_selection(exc) from exc
         revisions.append(
             WorkflowDataSelectionRevision(
                 source_node_id=receipt["source_node_id"],

@@ -63,6 +63,28 @@ def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def catalog_table_revision(table) -> str:
+    """Hash catalog table values, independent of pandas/NumPy CSV float formatting.
+
+    Python's float repr is the shortest exact round-trip form, so equal values
+    give equal revisions across library versions.
+    """
+    from pandas.api.types import is_numeric_dtype
+
+    canonical = {
+        "columns": [str(column) for column in table.columns],
+        "values": [
+            (
+                [repr(float(value)) for value in table[column]]
+                if is_numeric_dtype(table[column])
+                else [str(value) for value in table[column]]
+            )
+            for column in table.columns
+        ],
+    }
+    return _sha256(json.dumps(canonical, separators=(",", ":")).encode("utf-8"))
+
+
 def _builtin_lavender_archive_path() -> Path:
     return lavender_archive_path()
 
@@ -634,7 +656,7 @@ async def import_reference_dataset(
             # plain labels are never promoted by a reader. Scope row identities
             # to the exact catalog table revision, not an account, path, class,
             # specimen or acquisition. Repeated imports are not new specimens.
-            revision = _sha256(df.to_csv(index=False, lineterminator="\n").encode("utf-8"))
+            revision = catalog_table_revision(df)
             df.insert(
                 0,
                 f"{SAMPLE_METADATA_CSV_PREFIX}sample_id",

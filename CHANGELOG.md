@@ -16,7 +16,10 @@ PyPI release, completed qualification, desktop installer or hosted rollout.
 - New Wine, Iris and Breast Cancer catalog imports carry typed observation IDs
   separately from readable sample labels. These IDs identify source rows; they
   do not establish independent specimens. Existing files, models and receipts
-  are not rewritten.
+  are not rewritten. The table revision in each ID hashes canonical values,
+  so it does not change with pandas or NumPy float formatting.
+- Duplicating a sheet whose saved data selection is no longer available still
+  fails closed, now with a message explaining how to reselect its data.
 - New PCA/PLS review receipts can retain display labels while selections and
   requests continue to use full typed IDs. Older receipts fall back to their
   recorded IDs. The PLS-DA diagnostic correction also uses typed IDs rather than
