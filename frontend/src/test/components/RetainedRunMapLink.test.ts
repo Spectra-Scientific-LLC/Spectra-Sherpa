@@ -14,7 +14,8 @@ function render(props: { runId?: number; projectId?: number }) {
 it('links exact run/project identities without requesting any retained evidence', () => {
   const { wrapper } = render({ runId: 42, projectId: 7 });
   expect(wrapper.get('a').attributes('href')).toBe('/runs/42?project=7&tab=inspect&view=Summary#retained-observation-exclusions');
-  expect(wrapper.text()).toBe('Inspect retained exclusions · Run #42');
+  expect(wrapper.text()).toBe('Exclusions');
+  expect(wrapper.get('a').attributes('aria-label')).toBe('Inspect retained exclusions for run #42');
 });
 
 it('uses router navigation without a document reload or parent selection click', async () => {
@@ -38,6 +39,6 @@ it.each([{}, { runId: 42 }, { projectId: 7 }, { runId: 0, projectId: 7 }, { runI
   'never fabricates a run link for absent or invalid identity', props => {
     const { wrapper } = render(props);
     expect(wrapper.find('a').exists()).toBe(false);
-    expect(wrapper.text()).toContain('unavailable');
+    expect(wrapper.text()).toBe('');
   },
 );

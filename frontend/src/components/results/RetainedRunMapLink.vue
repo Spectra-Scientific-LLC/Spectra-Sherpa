@@ -1,6 +1,7 @@
 <template>
-  <RouterLink v-if="destination" :to="destination" class="retained-map-link" @click.stop>Inspect retained exclusions · Run #{{ runId }}</RouterLink>
-  <span v-else>Retained source run map unavailable</span>
+  <RouterLink v-if="destination" :to="destination" class="retained-map-link"
+    :title="`Observation exclusions recorded in run #${runId}`"
+    :aria-label="`Inspect retained exclusions for run #${runId}`" @click.stop>Exclusions</RouterLink>
 </template>
 
 <script setup lang="ts">
