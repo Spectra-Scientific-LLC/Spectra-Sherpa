@@ -26,11 +26,14 @@ def _current_install_guidance_failures(docs_root: Path) -> list[str]:
     return failures
 
 
-def test_current_candidate_and_published_install_are_distinct():
+def test_current_source_and_published_install_are_distinct():
     index = (PACKAGE_ROOT / "docs/index.md").read_text(encoding="utf-8")
     local = (PACKAGE_ROOT / "docs/onboarding/local-30-minutes.md").read_text(encoding="utf-8")
     migration = (PACKAGE_ROOT / "docs/onboarding/migrate-to-0.6.md").read_text(encoding="utf-8")
-    assert "v0.6.4" in index and "unreleased" in index.lower()
+    assert "v0.6.4" in index
+    assert "source version alone does not" in index.lower()
+    assert "establish availability" in index.lower() and "https://pypi.org/" in index
+    assert "Desktop packaging remains paused" in index
     assert "--source ." in local
     assert "latest published package" in local
     assert "exact reviewed revision" in local
@@ -44,6 +47,7 @@ def test_historical_release_is_not_rewritten_as_candidate():
     assert "v0.6.4" not in release
     changelog = (PACKAGE_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert len(re.findall(r"^## \[0\.6\.0\] - (Unreleased|20\d{2}-\d{2}-\d{2})$", changelog, re.MULTILINE)) == 1
+    assert len(re.findall(r"^## \[0\.6\.4\] - (Unreleased|20\d{2}-\d{2}-\d{2})$", changelog, re.MULTILINE)) == 1
 
 
 def test_new_install_page_cannot_escape_publication_truth_gate(tmp_path):
