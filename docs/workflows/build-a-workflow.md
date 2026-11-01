@@ -108,9 +108,11 @@ to exclude or restore that observation. A point excluded after calculation was
 still used in that result; rerunning updates the first symbol. Original sample
 identities remain unchanged.
 
-When the operation retains a qualified display cohort, excluded observations
+When the operation retains a qualified display cohort, workflow-excluded observations
 remain inspectable in that same table, with dashes for unavailable computed
 values. An unrelated source or another branch's observations are never added.
+Rows already excluded in My Dataset stay outside the workflow population;
+restore those in My Dataset first.
 The preview reserves room for active observations when many rows are excluded;
 CSV still exports the actual computed rows. Previous runs keep their recorded
 decisions; current edits do not rewrite them.

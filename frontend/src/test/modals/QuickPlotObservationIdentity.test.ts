@@ -177,7 +177,9 @@ describe("Quick Plot visualization observation identity", () => {
       await settle();
       const [, plotted] = plotly.react.mock.calls.at(-1)!;
       expect(plotted[1].meta).toEqual({ workflow_observation_ref: refs[1], workflow_included: false });
-      expect(plotted[1].marker.symbol).toEqual(["x-open", "x-open"]);
+      expect(plotted[1].mode).toBe("lines");
+      expect(plotted[1].line).toMatchObject({ dash: "dot" });
+      expect(plotted[1].marker).toBeUndefined();
       if (withActions) {
         const click = plotly.on.mock.calls.find(([event]) => event === "plotly_click")![1];
         click({ points: [{ pointIndex: 1, data: plotted[1] }] });

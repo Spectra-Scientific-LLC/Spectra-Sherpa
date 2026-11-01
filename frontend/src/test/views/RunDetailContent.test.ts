@@ -1139,3 +1139,57 @@ it('renders the declared peak overlay when the retained primary port is a mixed-
     preferences.maxRows = previousLimit;
   }
 });
+
+it('scrolls the retained-map link only after its asynchronous run summary renders', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+  const scroll = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scroll });
+  const pending = deferred<ReturnType<typeof runEvidence>>();
+  const original = get.getMockImplementation()!;
+  get.mockImplementation((url: string, ...args: unknown[]) => url.endsWith('/evidence') ? pending.promise : original(url, ...args));
+  try {
+    const { wrapper, router } = await open('?project=1&view=Summary#retained-observation-exclusions');
+    expect(scroll).not.toHaveBeenCalled();
+    expect(wrapper.find('#retained-observation-exclusions').exists()).toBe(false);
+    pending.resolve(runEvidence(42));
+    await flushPromises();
+    await nextTick();
+    expect(wrapper.find('#retained-observation-exclusions').exists()).toBe(true);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+    await router.replace({ query: router.currentRoute.value.query, hash: '' });
+    await router.replace({ query: router.currentRoute.value.query, hash: '#retained-observation-exclusions' });
+    await nextTick();
+    expect(scroll).toHaveBeenCalledTimes(2);
+  } finally {
+    if (descriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', descriptor);
+    else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+  }
+});
+
+it('never scrolls a superseded run when its retained summary arrives late', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+  const scroll = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scroll });
+  const oldRun = deferred<ReturnType<typeof runEvidence>>();
+  const nextRun = deferred<ReturnType<typeof runEvidence>>();
+  const original = get.getMockImplementation()!;
+  get.mockImplementation((url: string, ...args: unknown[]) => url.endsWith('/evidence')
+    ? (url.includes('/42/') ? oldRun.promise : nextRun.promise) : original(url, ...args));
+  try {
+    const { wrapper, router } = await open('?project=1&view=Summary#retained-observation-exclusions');
+    await router.push('/runs/43?project=1&view=Summary#retained-observation-exclusions');
+    await flushPromises();
+    oldRun.resolve(runEvidence(42));
+    await flushPromises();
+    expect(scroll).not.toHaveBeenCalled();
+    nextRun.resolve(runEvidence(43));
+    await flushPromises();
+    await nextTick();
+    expect(wrapper.text()).toContain('Run 43');
+    expect(scroll).toHaveBeenCalledTimes(1);
+  } finally {
+    if (descriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', descriptor);
+    else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+  }
+});

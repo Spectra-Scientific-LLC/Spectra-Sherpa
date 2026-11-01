@@ -99,6 +99,30 @@ async def test_labels_and_neighboring_population_never_create_navigation(plot_ty
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("plot_type", ["spectra", "scores", "scatter", "biplot"])
+@pytest.mark.parametrize("bad_field", ["workflow_observation_refs", "include_mask"])
+async def test_misaligned_optional_navigation_does_not_discard_computed_plot(plot_type, bad_field):
+    ds = dataset()
+    control = dataset()
+    control_axis = control.sample_axis
+    control_axis.workflow_observation_refs = None
+    control.sample_axis = control_axis
+    # Simulate a stale optional axis left by an upstream projection. The
+    # numerical matrix and its scientifically meaningful coordinates stay valid.
+    axis = ds._axes[ds._SAMPLE_DIM]
+    object.__setattr__(axis, bad_field, getattr(axis, bad_field)[:1])
+    assert len(getattr(ds.sample_axis, bad_field)) == 1
+    payload = {"scores": ds, "loadings": [[0.1, 0.2], [0.3, 0.4]]} if plot_type == "biplot" else ds
+    control_payload = {"scores": control, "loadings": [[0.1, 0.2], [0.3, 0.4]]} if plot_type == "biplot" else control
+    before = ds.X.copy()
+    result = await PlotNode("p", {"plot_type": plot_type}).execute(payload)
+    expected = await PlotNode("p", {"plot_type": plot_type}).execute(control_payload)
+    assert result == expected
+    assert all("meta" not in trace for trace in result["visualization"]["data"])
+    np.testing.assert_array_equal(ds.X, before)
+
+
+@pytest.mark.anyio
 async def test_aggregate_spectral_comparison_has_no_observation_navigation():
     from spectra_sherpa.app.lib.sherpa_dataset import SpectralAxis
 

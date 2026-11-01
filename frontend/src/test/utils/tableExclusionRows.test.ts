@@ -19,6 +19,7 @@ function output(displayRefs = refs) {
   } } as typeof raw.presentation_contract;
   raw.metadata.workflow_population = { outputs: { default: { ...dataset, data: displayRefs.map(() => [999]), sample_axis: {
     labels: displayRefs.map(() => "Repeated"), workflow_observation_refs: displayRefs,
+    include_mask: displayRefs.map(reference => reference !== "one"),
   } } } };
   return projectScientificPresentation(raw, resolveScientificPresentation(null, raw))!;
 }
@@ -44,4 +45,38 @@ describe("excluded identities in the original data table", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ _observation_ref: "three", _source_row: 3, col_0: 3 });
   });
+  it.each(["source excluded", "undeclared eligibility", "not workflow excluded"])("does not reintroduce %s rows", reason => {
+    const source = structuredClone(population);
+    if (reason === "source excluded") source.rows[0].source_included = false;
+    if (reason === "undeclared eligibility") delete (source.rows[0] as Partial<typeof source.rows[0]>).source_included;
+    if (reason === "not workflow excluded") source.rows[0].workflow_excluded = false;
+    const rows = tableExclusionRows(output(), computedRows, refs.slice(1), new Map([["two", true], ["three", true]]), [source], 100);
+    expect(rows.map(row => row._observation_ref)).toEqual(["two", "three"]);
+  });
+
+  it("refuses a whole-node display containing another cohort's active and excluded identities", () => {
+    const whole = output(["one", "two", "three", "other-active", "other-excluded"]);
+    const companion = (whole.metadata.workflow_population as { outputs: { default: { sample_axis: { include_mask: boolean[] } } } }).outputs.default;
+    companion.sample_axis.include_mask = [false, true, true, true, false];
+    const other = structuredClone(population);
+    other.rows = [{ ...population.rows[0], observation_ref: "other-excluded" }];
+    const rows = tableExclusionRows(whole, computedRows, refs.slice(1), new Map([["two", true], ["three", true]]), [population, other], 100);
+    expect(rows.map(row => row._observation_ref)).toEqual(["two", "three"]);
+    expect(rows.map(row => row.col_0)).toEqual([2, 3]);
+  });
+
+  it.each([[["two", "foreign"]], [["three", "two"]]])("does not certify caller refs %j using another output's axis", supplied => {
+    const rows = tableExclusionRows(output(), computedRows, supplied, new Map(supplied.map(reference => [reference, true])), [population], 100);
+    expect(rows).toEqual(computedRows);
+    expect(rows.every(row => !("_observation_ref" in row))).toBe(true);
+  });
+
+  it.each([{ mask: undefined }, { mask: [false, true] }, { mask: [false, true, "true"] }])("does not qualify omitted rows with malformed display mask %j", ({ mask }) => {
+    const result = output();
+    const companion = (result.metadata.workflow_population as { outputs: { default: { sample_axis: { include_mask?: unknown } } } }).outputs.default;
+    companion.sample_axis.include_mask = mask;
+    const rows = tableExclusionRows(result, computedRows, refs.slice(1), new Map([["two", true], ["three", true]]), [population], 100);
+    expect(rows.map(row => row._observation_ref)).toEqual(["two", "three"]);
+  });
+
 });

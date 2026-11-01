@@ -10,7 +10,7 @@ from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_node import WorkflowNode
 from spectra_sherpa.app.services import run_output_retention as retention
-from spectra_sherpa.app.services import run_validation_summary
+from spectra_sherpa.app.services import run_population_summary, run_validation_summary
 
 
 @pytest.mark.asyncio
@@ -71,11 +71,21 @@ async def test_report_uses_saved_graph_not_current_canvas_and_discloses_missing_
 
     from unittest.mock import Mock
 
+    opened = []
+    read = retention.read_output
+
+    def checked_read(owner, item):
+        opened.append((owner, item.sha256))
+        return read(owner, item)
+
+    monkeypatch.setattr(retention, "read_output", checked_read)
+    monkeypatch.setattr(run_population_summary, "read_output", checked_read)
     summary_spy = Mock(wraps=run_validation_summary.validation_summary)
     monkeypatch.setattr(run_validation_summary, "validation_summary", summary_spy)
     report = await workflow_export.get_report_data(
         workflow.id, run_ids=str(run.id), session=test_session, current_user=test_user
     )
+    assert len(opened) == 1, "Report and population summary must share one verified definition read"
     assert summary_spy.call_args.kwargs["include_row_level_plots"] is False
     await workflow_export.get_report_data(
         workflow.id,
@@ -84,6 +94,7 @@ async def test_report_uses_saved_graph_not_current_canvas_and_discloses_missing_
         session=test_session,
         current_user=test_user,
     )
+    assert len(opened) == 2, "A new report request must reverify the retained definition"
     assert summary_spy.call_args.kwargs["include_row_level_plots"] is True
     assert report["name"] == "Original method"
     assert report["description"] is None

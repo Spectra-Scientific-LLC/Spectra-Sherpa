@@ -4,7 +4,7 @@ import { reactive, ref } from "vue";
 import PrimeVue from "primevue/config";
 const m = vi.hoisted(() => ({ get: vi.fn(), push: vi.fn(), replace: vi.fn(), params: {} as Record<string, string>, query: {} as Record<string, string>, runs: null as any, project: null as any }));
 vi.mock("@/api/client", () => ({ default: { get: m.get } }));
-vi.mock("vue-router", () => ({ useRouter: () => ({ push: m.push, replace: m.replace }), useRoute: () => ({ query: m.query, params: m.params }), RouterLink: { template: "<a><slot /></a>" } }));
+vi.mock("vue-router", () => ({ useRouter: () => ({ push: m.push, replace: m.replace }), useRoute: () => ({ query: m.query, params: m.params }), RouterLink: { props: ['to'], template: "<a :href=\"to\"><slot /></a>" } }));
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: vi.fn() }) }));
 vi.mock("@/stores/project", () => ({ useProjectStore: () => m.project }));
 vi.mock("@/stores/runs", () => ({ useRunsStore: () => m.runs }));

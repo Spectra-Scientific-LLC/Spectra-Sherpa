@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from asyncio import to_thread
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
@@ -21,6 +21,9 @@ from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.schemas.run_evidence import EvidenceGap, RunEvidence
 from spectra_sherpa.core.node_identity import canonicalize_serialized_workflow
+
+if TYPE_CHECKING:
+    from spectra_sherpa.app.services.run_population_summary import RetainedDefinitionRead
 
 router = APIRouter(prefix="/workflows")
 
@@ -288,15 +291,28 @@ async def get_report_data(
         if len(runs) != len(set(parsed_run_ids)):
             raise HTTPException(status_code=404, detail="One or more selected runs are unavailable in this workflow")
 
-        saved_definitions = await to_thread(lambda: [_saved_report_definition(run) for run in runs])
+        from spectra_sherpa.app.services.run_population_summary import RetainedDefinitionRead
         from spectra_sherpa.app.services.run_validation_summary import validation_summary
 
-        validation_summaries = await to_thread(
-            lambda: [
-                validation_summary(run, definition, include_row_level_plots=include_row_level_plots is True)
-                for run, definition in zip(runs, saved_definitions)
-            ]
-        )
+        def retained_report_parts():
+            definitions, summaries = [], []
+            for run in runs:
+                # Request-local and per run: no definition or row matrices
+                # survive this export, and the definition is verified once.
+                definition_read = RetainedDefinitionRead()
+                definition = _saved_report_definition(run, definition_read=definition_read)
+                definitions.append(definition)
+                summaries.append(
+                    validation_summary(
+                        run,
+                        definition,
+                        include_row_level_plots=include_row_level_plots is True,
+                        population_definition_read=definition_read,
+                    )
+                )
+            return definitions, summaries
+
+        saved_definitions, validation_summaries = await to_thread(retained_report_parts)
         # Never attach the current edited canvas to historical measurements.
         common_definition = saved_definitions[0] if saved_definitions else None
         if common_definition is None or any(value != common_definition for value in saved_definitions):
@@ -424,17 +440,18 @@ def _run_evidence_gaps(run: ExecutionRun) -> list[EvidenceGap]:
         ]
 
 
-def _saved_report_definition(run: ExecutionRun) -> dict | None:
-    from spectra_sherpa.app.services.run_output_retention import read_output
+def _saved_report_definition(
+    run: ExecutionRun, *, definition_read: RetainedDefinitionRead | None = None
+) -> dict | None:
+    from spectra_sherpa.app.services.run_population_summary import RetainedDefinitionRead
 
     try:
         evidence = RunEvidence.model_validate(run.evidence_completeness)
         item = evidence.outputs.get("__workflow__", {}).get("definition")
         if evidence.qualification != "qualified" or item is None or item.state != "exact":
             return None
-        if item.byte_count is None or item.byte_count > 2 * 1024 * 1024:
-            return None
-        definition = read_output(run.user_id, item)
+        reader = definition_read if definition_read is not None else RetainedDefinitionRead()
+        definition = reader.read(run.user_id, item)
         if not isinstance(definition, dict) or definition.get("schema_version") != 1:
             return None
         return canonicalize_serialized_workflow(definition)

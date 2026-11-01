@@ -20,6 +20,8 @@ from spectra_sherpa.app.services.run_validation_summary import validation_summar
 @pytest.fixture(autouse=True)
 def store(tmp_path, monkeypatch):
     monkeypatch.setattr(retention, "settings", replace(retention.settings, data_dir=tmp_path))
+    with summary._count_cache_lock:
+        summary._count_cache.clear()
 
 
 def saved_run(node="load", user_id=1):
@@ -306,3 +308,147 @@ async def test_http_evidence_with_deferred_owner_uses_admitted_snapshot(
         assert admitted == []
         assert received == []
     assert {p: p.read_bytes() for p in files_before} == files_before
+
+
+def test_definition_cap_does_not_spend_the_source_map_budget(monkeypatch):
+    run, _, _ = saved_run()
+    item = run.evidence_completeness["outputs"]["__workflow__"]["definition"]
+    item["byte_count"] = summary.SUMMARY_BYTES
+    read = summary.read_output
+    opened = []
+
+    def checked_read(owner, evidence):
+        opened.append(evidence.sha256)
+        assert evidence.sha256 != item["sha256"], "Oversized definition must not be opened"
+        return read(owner, evidence)
+
+    monkeypatch.setattr(summary, "read_output", checked_read)
+    result = summary.retained_population_summary(run)
+    assert result["sources"][0]["availability"] == "available"
+    assert result["sources"][0]["active_count"] == 4
+    assert len(opened) == 1
+    assert "source coverage cannot be established" in json.dumps(result)
+
+
+def test_definition_snapshot_is_bounded_bound_and_isolated(monkeypatch):
+    from spectra_sherpa.app.api.v1.routes.workflow_export import _saved_report_definition
+    from spectra_sherpa.app.schemas.run_evidence import OutputEvidence
+
+    run, _, definition = saved_run()
+    reader = summary.RetainedDefinitionRead()
+    read = summary.read_output
+    opened = []
+
+    def checked_read(owner, item):
+        opened.append((owner, item.sha256))
+        return read(owner, item)
+
+    monkeypatch.setattr(summary, "read_output", checked_read)
+    item = OutputEvidence.model_validate(run.evidence_completeness["outputs"]["__workflow__"]["definition"])
+    returned = reader.read(run.user_id, item)
+    returned["nodes"].clear()
+    assert _saved_report_definition(run, definition_read=reader) == definition
+    result = summary.retained_population_summary(run, definition_read=reader)
+    assert result["sources"][0]["availability"] == "available"
+    assert opened.count((run.user_id, item.sha256)) == 1
+    # Same SHA with a changed receipt must be revalidated, not hit the snapshot.
+    changed = item.model_copy(update={"byte_count": item.byte_count + 1})
+    with pytest.raises(ValueError, match="checksum"):
+        reader.read(run.user_id, changed)
+    with pytest.raises(FileNotFoundError):
+        reader.read(999, item)
+    # A new request must not reuse this request's successful read.
+    (retention._user_directory(run.user_id) / f"{item.sha256}.json").unlink()
+    assert _saved_report_definition(run) is None
+
+
+@pytest.mark.parametrize("damage", ["same_size_tamper", "missing", "symlink"])
+def test_warm_counts_still_detect_current_storage_damage(damage, monkeypatch):
+    import os
+
+    run, _, _ = saved_run()
+    assert summary.retained_population_summary(run)["sources"][0]["availability"] == "available"
+    item = run.evidence_completeness["outputs"]["load"]["exclusions"]
+    path = retention._user_directory(run.user_id) / f"{item['sha256']}.json"
+    payload, stat = path.read_bytes(), path.stat()
+    if damage == "same_size_tamper":
+        altered = payload.replace(b'"source_count":6', b'"source_count":9')
+        assert altered != payload and len(altered) == len(payload)
+        path.write_bytes(altered)
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    elif damage == "missing":
+        path.unlink()
+    else:
+        target = path.with_suffix(".backup")
+        path.rename(target)
+        path.symlink_to(target)
+    monkeypatch.setattr(summary, "_counts", lambda *args: pytest.fail("warm counts require verified current bytes"))
+    assert summary.retained_population_summary(run)["sources"][0]["availability"] == "unavailable"
+    if path.is_symlink():
+        path.unlink()
+    path.write_bytes(payload)
+    assert summary.retained_population_summary(run)["sources"][0]["availability"] == "available"
+
+
+def test_count_cache_binds_owner_receipt_node_and_parameters_and_has_finite_size(monkeypatch):
+    run, _, _ = saved_run()
+    read, count = summary.read_output, summary._counts
+    opened, validated = [], []
+
+    def checked_read(owner, item):
+        opened.append((owner, item.sha256))
+        return read(owner, item)
+
+    def checked_count(value, node, params):
+        validated.append(node)
+        return count(value, node, params)
+
+    monkeypatch.setattr(summary, "read_output", checked_read)
+    monkeypatch.setattr(summary, "_counts", checked_count)
+    monkeypatch.setattr(summary, "COUNT_CACHE_ENTRIES", 2)
+    first = summary.retained_population_summary(run)
+    first["sources"][0]["active_count"] = -1
+    run.id += 1  # Immutable inputs may share counts; run-specific result must not be cached.
+    again = summary.retained_population_summary(run)
+    assert again["run_id"] == run.id and again["sources"][0]["active_count"] == 4
+    assert len(validated) == 1 and len(opened) == 4
+    other, _, _ = saved_run(user_id=2)
+    assert summary.retained_population_summary(other)["sources"][0]["active_count"] == 4
+    assert len(validated) == 2
+    run.params_snapshot["load"]["workflow_exclusions"]["excluded_refs"] = []
+    assert summary.retained_population_summary(run)["sources"][0]["availability"] == "unavailable"
+    assert len(validated) == 3  # Failed validation is never cached.
+    assert summary.retained_population_summary(run)["sources"][0]["availability"] == "unavailable"
+    assert len(validated) == 4
+    moved, _, _ = saved_run()
+    moved.evidence_completeness["outputs"]["wrong"] = moved.evidence_completeness["outputs"].pop("load")
+    moved.params_snapshot = {}
+    assert all(s["availability"] == "unavailable" for s in summary.retained_population_summary(moved)["sources"])
+    for revision in range(3):
+        other.params_snapshot["load"]["revision"] = revision
+        assert summary.retained_population_summary(other)["sources"][0]["availability"] == "available"
+    assert len(summary._count_cache) == 2
+    assert all(len(key) == 64 for key in summary._count_cache)
+    assert all(all(isinstance(v, (str, int)) for v in value.values()) for value in summary._count_cache.values())
+    validations_before = len(validated)
+    other.params_snapshot["load"]["revision"] = 0  # Evicted by revisions 1 and 2.
+    summary.retained_population_summary(other)
+    assert len(validated) == validations_before + 1
+    summary.retained_population_summary(other)
+    assert len(validated) == validations_before + 1
+
+
+def test_warm_counts_do_not_ignore_a_changed_receipt(monkeypatch):
+    from unittest.mock import Mock
+
+    run, _, _ = saved_run()
+    count = Mock(wraps=summary._counts)
+    monkeypatch.setattr(summary, "_counts", count)
+    summary.retained_population_summary(run)
+    item = run.evidence_completeness["outputs"]["load"]["exclusions"]
+    item["role"] = "amended-receipt-role"
+    assert summary.retained_population_summary(run)["sources"][0]["availability"] == "available"
+    assert count.call_count == 2
+    item["byte_count"] += 1
+    assert summary.retained_population_summary(run)["sources"][0]["availability"] == "unavailable"
+    assert count.call_count == 2

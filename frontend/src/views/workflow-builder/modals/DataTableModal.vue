@@ -849,7 +849,7 @@ const basePreviewTableData = computed(() => {
 });
 
 const previewTableData = computed(() => tableObservationRefs.value && tableMembership.value
-  ? tableExclusionRows(props.nodeOutput, basePreviewTableData.value, tableObservationRefs.value, tableMembership.value,
+  ? tableExclusionRows(inspectedOutput.value, basePreviewTableData.value, tableObservationRefs.value, tableMembership.value,
     hasCurrentObservationActions.value ? populationActions?.populations?.() ?? [] : [], rowLimit.value)
   : basePreviewTableData.value);
 const previewComputedCount = computed(() => tableObservationRefs.value

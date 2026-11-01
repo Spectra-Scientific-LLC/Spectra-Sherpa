@@ -15,11 +15,13 @@
           <div v-for="workflow in availableWorkflows" :key="workflow.id" class="selection-item">
             <label><input v-model="selectedWorkflowIds" type="checkbox" :value="workflow.id" /> {{ workflow.name }}</label>
             <div v-if="mode === 'apply_model' && selectedWorkflowIds.includes(workflow.id)" class="model-choices">
-              <label v-for="artifact in modelsFor(workflow.id)" :key="artifact.artifact_uid">
+              <div v-for="artifact in modelsFor(workflow.id)" :key="artifact.artifact_uid" class="model-choice">
+                <label>
                 <input v-model="selectedArtifactUids" type="checkbox" :value="artifact.artifact_uid" />
                 {{ artifact.display_name || artifact.name }} <small>{{ modelContext(artifact) }}</small>
+                </label>
                 <RetainedRunMapLink :run-id="artifact.source_run_id" :project-id="projectStore.currentProjectId" />
-              </label>
+              </div>
               <small v-if="!modelsFor(workflow.id).length">No fitted model is available. Use train/evaluate first.</small>
             </div>
           </div>
@@ -247,6 +249,7 @@ fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
 label { display: flex; align-items: baseline; gap: .6rem; padding: .35rem 0; }
 input { accent-color: var(--primary-color); }
 .model-choices { padding-left: 1.5rem; }
+.model-choice { display: flex; align-items: baseline; flex-wrap: wrap; gap: .6rem; }
 small { display: block; color: var(--text-color-secondary); }
 .batch-combinations ul { list-style: none; padding: 0; }
 .batch-combinations li { padding: .6rem 0; border-bottom: 1px solid var(--surface-border); }

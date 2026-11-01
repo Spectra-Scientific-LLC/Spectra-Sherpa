@@ -34,8 +34,22 @@ export function traceObservationIncluded(trace: Trace, index: number): boolean |
 export function displayObservationTraces(traces: Trace[], actions?: WorkflowPopulationActions | null,
   selected: ReadonlySet<string> = new Set()): Trace[] {
   let excluded = false;
+  let excludedLines = false;
+  let excludedPoints = false;
   const resolved = new Map<string, boolean>();
   const displayed = traces.map(trace => {
+    const wholeReference = compactObservationRef(trace);
+    if (wholeReference !== null && typeof trace.mode === "string" && trace.mode.split("+").includes("lines")) {
+      // One spectrum is one observation. Keep its navigation compact and style
+      // the curve once, rather than creating a marker at every wavelength.
+      if (!resolved.has(wholeReference)) resolved.set(wholeReference, actions?.resolve(wholeReference)?.excluded === true);
+      const selection = selected.size ? { opacity: selected.has(wholeReference) ? 1 : 0.35 } : {};
+      if (!resolved.get(wholeReference) && traceObservationIncluded(trace, 0) !== false) return { ...trace, ...selection };
+      excluded = true;
+      excludedLines = true;
+      return { ...trace, ...selection, mode: "lines",
+        line: { ...(trace.line as Record<string, unknown> | undefined), color: SCIENTIFIC_COLORS.excluded, dash: "dot" } };
+    }
     const refs = traceObservationRefs(trace);
     if (!refs.length) return trace;
     const flags = refs.map((ref, i) => {
@@ -46,6 +60,7 @@ export function displayObservationTraces(traces: Trace[], actions?: WorkflowPopu
       selected: { marker: { opacity: 1 } }, unselected: { marker: { opacity: 0.35 } } } : {};
     if (!flags.some(Boolean)) return { ...trace, ...selection };
     excluded = true;
+    excludedPoints = true;
     const marker = (trace.marker ?? {}) as Record<string, unknown>;
     const original = (value: unknown, i: number, fallback: unknown) => Array.isArray(value) ? value[i] : value ?? fallback;
     const line = trace.line as Record<string, unknown> | undefined;
@@ -64,7 +79,9 @@ export function displayObservationTraces(traces: Trace[], actions?: WorkflowPopu
       ...(line && allExcluded ? { line: { ...line, color: SCIENTIFIC_COLORS.excluded, dash: "dot" } } : {}),
     };
   });
-  if (excluded) displayed.push({ type: "scatter", mode: "markers", x: [null], y: [null],
-    name: "Excluded / not in fit", hoverinfo: "skip", marker: { symbol: "x-open", color: SCIENTIFIC_COLORS.excluded, size: 10 } });
+  if (excluded) displayed.push({ type: "scatter", mode: excludedLines && !excludedPoints ? "lines" : "markers",
+    x: [null], y: [null], name: "Excluded / not in fit", hoverinfo: "skip",
+    ...(excludedLines && !excludedPoints ? { line: { color: SCIENTIFIC_COLORS.excluded, dash: "dot" } }
+      : { marker: { symbol: "x-open", color: SCIENTIFIC_COLORS.excluded, size: 10 } }) });
   return displayed;
 }

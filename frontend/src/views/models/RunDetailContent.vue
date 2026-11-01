@@ -43,7 +43,7 @@
       <p v-if="summaryError" role="status" class="summary-error">{{ summaryError }}</p>
       <ModelSummaryCard :summary="modelSummary" compact display="context"
         :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
-      <RetainedPopulationSummary :value="detail.population_summary" :run-id="detail.run.id"
+      <RetainedPopulationSummary ref="retainedSummaryAnchor" :value="detail.population_summary" :run-id="detail.run.id"
         @inspect="inspectPopulationSource" @download="downloadPopulationMap" />
       <p v-if="populationDownloadError" role="status">{{ populationDownloadError }}</p>
       <section class="inspection">
@@ -337,6 +337,7 @@ const applicationAdvisorAvailable = computed(() => appMode.value !== 'local' &&
 const emit = defineEmits<{ (event: 'renamed'): void }>();
 defineProps<{ actionsTarget?: HTMLElement | null }>();
 const detail = ref<Detail | null>(null);
+const retainedSummaryAnchor = ref<InstanceType<typeof RetainedPopulationSummary> | null>(null);
 const producedArtifactUid = ref('');
 watch(() => detail.value?.run.id, () => { producedArtifactUid.value = ''; });
 function openProducedModel() {
@@ -867,6 +868,14 @@ watch([() => detail.value?.run.id, tab], ([id, view], [previousId]) => {
   else if (!expandedSections.value.includes(view)) expandedSections.value.push(view);
 }, { immediate: true });
 watch([selectedNode, inspectingNode], () => void loadNode());
+watch([() => route.hash, retainedSummaryAnchor, () => detail.value?.run.id, loading], () => {
+  // The target exists only after this run's scoped async read has rendered.
+  // Never scroll a late result or a previously selected run into view.
+  if (route.hash !== '#retained-observation-exclusions' || loading.value
+    || detail.value?.run.id !== Number(route.params.runId)) return;
+  const target = retainedSummaryAnchor.value?.$el;
+  if (target instanceof HTMLElement) target.scrollIntoView({ block: 'start' });
+}, { flush: 'post' });
 onBeforeUnmount(() => { runRequests.dispose(); nodeRequests.dispose(); nameRequests.dispose(); cache.clear(); });
 </script>
 

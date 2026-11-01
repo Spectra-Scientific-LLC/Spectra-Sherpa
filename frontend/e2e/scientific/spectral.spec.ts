@@ -78,12 +78,15 @@ for (const name of ["mixture-ir", "moisture-nir"]) {
           Array.from(row.querySelectorAll("td"), (cell) => cell.textContent?.trim() ?? ""),
         ),
       );
+    // Membership/current-action glyphs precede the existing index and sample
+    // columns. Downloads remain the unchanged scientific matrix schema.
+    expect((await dialog.locator("th").allTextContents()).slice(0, 2).map(text => text.trim())).toEqual(["", ""]);
     assertIdentity(
-      rows.map((row) => row[1]),
+      rows.map((row) => row[3]),
       labels,
     );
     assertDefaultDisplayMatrix(
-      rows.map((row) => row.slice(2)),
+      rows.map((row) => row.slice(4)),
       values.map((row: number[]) => row.slice(0, 8)),
     );
     const csv = await downloadTable(page, dialog);

@@ -522,6 +522,14 @@ a row after computation must not relabel its retained inclusion decision.
 The projection reads at most 16 MiB of declared retained evidence, including the
 saved definition, and summarizes at most 32 sources. Larger maps remain available
 through their individual retained-output route subject to its existing limits.
+The saved definition has the same 2 MiB cap in Inspect and Report; an oversized
+definition does not consume the source-map budget. Report shares one checked,
+owner/receipt-bound definition snapshot with its population summary within each
+request. New requests check storage again. A process-local LRU holds at most 128
+scalar count results, keyed by owner, complete output receipt, source node and
+retained parameters. Cache hits still require a fresh owner-scoped file read and
+checksum/format verification; raw maps and failed validations are never cached
+across requests. This saves repeated count validation, not integrity-required I/O.
 Missing, reduced, unsupported, inconsistent and over-budget evidence is explicitly
 unavailable, never zero exclusions. Older runs are not backfilled. The frontend
 summary adapter validates run/schema binding and creates only a display view

@@ -44,10 +44,12 @@ def _observation_trace_metadata(
     if refs is None or (not refs and dataset.n_samples == 0):
         return {}
     if len(refs) != dataset.n_samples:
-        raise ValueError("Plot observation references must match the dataset rows")
+        # Optional plot navigation cannot invalidate an otherwise plottable
+        # numerical result. Refuse selection authority, not the visualization.
+        return {}
     mask = axis.include_mask
     if mask is not None and len(mask) != dataset.n_samples:
-        raise ValueError("Plot inclusion mask must match the dataset rows")
+        return {}
     if whole_observation:
         if len(rows) != 1:
             raise ValueError("A whole-observation plot trace requires exactly one source row")
