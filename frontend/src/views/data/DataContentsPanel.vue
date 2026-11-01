@@ -278,6 +278,7 @@
             :saving="sampleTableSaving"
             :saveError="sampleTableSaveError"
             :saveConflict="sampleTableSaveConflict"
+            :publicationDisabled="!canPublishSamples"
             @save="saveSampleTable"
             @clearSaveError="clearSampleTableSaveError"
           />
@@ -673,6 +674,7 @@ import api from "@/api/client";
 import MemoryAttribution from "@/components/MemoryAttribution.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { getErrorMessage } from "@/utils/errors";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
 import DisplayPreferencesSection from "@/views/settings/DisplayPreferencesSection.vue";
 import { useDataStore, type CatalogDatasetInfo, type DataStoryPropertyStat } from "@/stores/data";
@@ -711,7 +713,7 @@ type SampleTableMessage =
     }
   | { kind: "error"; text: string };
 const sampleTableMessage = ref<SampleTableMessage | null>(null);
-const { isFeatureEnabled } = useAppConfig();
+const { isFeatureEnabled, isCapabilityDisabled } = useAppConfig();
 
 function clearSampleTableSaveError(): void {
   sampleTableSaveError.value = "";
@@ -2264,6 +2266,8 @@ const canPrepareSamples = computed(
     dataStore.activeFileId != null &&
     (dataStore.fileInfo?.n_samples ?? 0) > 0,
 );
+const canPublishSamples = computed(() => !["data_upload", "prepared_data_authoring", "sample_table_authoring"]
+  .some(capability => isCapabilityDisabled(capability)));
 
 const sampleWrites = useScopedRequest(() => [
   props.scopeKey, dataStore.activeExperimentId, dataStore.activeFileId,
@@ -2272,6 +2276,7 @@ const sampleWrites = useScopedRequest(() => [
   clearSampleTableSaveError();
 });
 async function saveSampleTable(payload: SampleTableSavePayload): Promise<void> {
+  if (!canPublishSamples.value) return;
   if (
     dataStore.activeExperimentId == null ||
     dataStore.activeFileId == null ||
@@ -2316,7 +2321,7 @@ async function saveSampleTable(payload: SampleTableSavePayload): Promise<void> {
       });
     } catch (error: unknown) {
       if (!ticket.isCurrent()) return;
-      const detail = error instanceof Error ? error.message : "binding failed";
+      const detail = getErrorMessage(error, "Binding failed");
       sampleTableMessage.value = {
         kind: "error",
         text: `The CSV was saved as file #${savedFile.id}, but was not bound to the dataset: ${detail}`,
@@ -2334,7 +2339,7 @@ async function saveSampleTable(payload: SampleTableSavePayload): Promise<void> {
     await dataStore.inspectFile(sourceFileId, sourceFilePath, experimentId).catch(() => null);
   } catch (error: unknown) {
     if (!ticket.isCurrent()) return;
-    const detail = error instanceof Error ? error.message : "Failed to save sample table";
+    const detail = getErrorMessage(error, "Failed to save sample table");
     sampleTableMessage.value = { kind: "error", text: detail };
     sampleTableSaveError.value = detail;
     sampleTableSaveConflict.value = false;

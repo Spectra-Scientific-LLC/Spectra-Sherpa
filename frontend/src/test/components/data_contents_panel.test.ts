@@ -11,6 +11,7 @@ import api from "@/api/client";
 enableAutoUnmount(afterEach);
 
 const mocks = vi.hoisted(() => ({
+  disabledCapabilities: new Set<string>(),
   apiGet: vi.fn(),
   apiPost: vi.fn(),
   dataStore: {
@@ -53,6 +54,7 @@ vi.mock("@/stores/sherpa", () => ({
 vi.mock("@/composables/useAppConfig", () => ({
   useAppConfig: () => ({
     isFeatureEnabled: () => false,
+    isCapabilityDisabled: (name: string) => mocks.disabledCapabilities.has(name),
   }),
 }));
 
@@ -2348,6 +2350,21 @@ describe("DataContentsPanel", () => {
 
     const wrapper = mount(DataContentsPanel);
     expect(wrapper.text()).toContain("project collection identity is incomplete or unsupported");
+  });
+
+  it("retains measured-sample inspection but refuses publication when workspace authoring is disabled", async () => {
+    mocks.disabledCapabilities.add("sample_table_authoring");
+    mocks.dataStore.activeExperimentId = 12;
+    mocks.dataStore.activeFileId = 41;
+    mocks.dataStore.activeFilePath = "raw/corn.mat";
+    mocks.dataStore.fileInfo = { n_samples: 2, n_features: 1, data: [[1], [2]], metadata: {} };
+    const wrapper = mount(DataContentsPanel);
+    const editor = wrapper.findComponent({ name: "SampleTableEditor" });
+    expect(editor.props("publicationDisabled")).toBe(true);
+    editor.vm.$emit("save", { file: new File(["draft"], "draft.csv") });
+    await flushPromises();
+    expect(mocks.dataStore.uploadFile).not.toHaveBeenCalled();
+    mocks.disabledCapabilities.clear();
   });
 
   it("shows an auditable save receipt and warns that existing workflows remain pinned", async () => {

@@ -46,7 +46,7 @@
     <div v-if="saveError" class="validation-errors editor-save-error" role="alert">
       <i class="pi pi-exclamation-triangle" aria-hidden="true" />
       <span>{{ saveError }}</span>
-      <Button label="Retry publication" icon="pi pi-refresh" class="p-button-sm" @click="publish" />
+      <Button label="Retry publication" icon="pi pi-refresh" class="p-button-sm" :disabled="publicationDisabled" @click="publish" />
       <Button
         v-if="saveConflict"
         label="Refresh binding"
@@ -533,7 +533,8 @@
         label="Review publication"
         icon="pi pi-search"
         :loading="saving"
-        :disabled="editorLoading || Boolean(editorLoadError)"
+        :disabled="publicationDisabled || editorLoading || Boolean(editorLoadError)"
+        :title="publicationDisabled ? 'Measured-sample publication is unavailable in this workspace' : undefined"
         @click="reviewPublication"
       />
       <Button
@@ -541,7 +542,8 @@
         label="Publish new immutable version"
         icon="pi pi-upload"
         :loading="saving"
-        :disabled="editorLoading || Boolean(editorLoadError)"
+        :disabled="publicationDisabled || editorLoading || Boolean(editorLoadError)"
+        :title="publicationDisabled ? 'Measured-sample publication is unavailable in this workspace' : undefined"
         @click="publish"
       />
     </template>
@@ -636,6 +638,7 @@ const props = defineProps<{
   saving?: boolean;
   saveError?: string;
   saveConflict?: boolean;
+  publicationDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -1261,9 +1264,11 @@ function buildSavePayload(): SampleTableSavePayload | null {
   };
 }
 function reviewPublication(): void {
+  if (props.publicationDisabled) return;
   pendingPublication.value = buildSavePayload();
 }
 function publish(): void {
+  if (props.publicationDisabled) return;
   const payload = buildSavePayload();
   if (!payload) return;
   pendingPublication.value = payload;

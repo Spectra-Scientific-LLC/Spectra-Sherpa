@@ -95,6 +95,10 @@ describe("DataTableModal", () => {
     } });
     expect((wrapper.vm as any).tableColumns.slice(-3).map((column: any) => column.header))
       .toEqual(["setosa", "versicolor", "virginica"]);
+    expect((wrapper.vm as any).tableColumns.map((column: any) => column.header))
+      .toContain("Actual class");
+    expect((wrapper.vm as any).previewTableData.map((row: any) => row._label))
+      .toEqual(["setosa", "versicolor", "virginica"]);
     wrapper.unmount();
   });
 

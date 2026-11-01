@@ -56,6 +56,46 @@ def _is_model_object(obj: Any) -> bool:
     return False
 
 
+def _is_plain_json_tree(value: Any) -> bool:
+    """Recognize callback-free built-in trees; custom values keep the old path."""
+    pending = [value]
+    seen: set[int] = set()
+    while pending:
+        item = pending.pop()
+        kind = type(item)
+        if kind is str or kind is int or kind is float or kind is bool or kind is type(None):
+            continue
+        if kind is not dict and kind is not list and kind is not tuple:
+            return False
+        identity = id(item)
+        if identity in seen:
+            # Aliases/cycles conservatively retain the ordinary serializer.
+            return False
+        seen.add(identity)
+        if kind is dict:
+            if any(type(key) is not str for key in item):
+                return False
+            pending.extend(item.values())
+        else:
+            pending.extend(item)
+    return True
+
+
+def _serialize_plain_json_tree(value: Any, *, retain_full: bool, model_keys: bool = False) -> Any:
+    """Copy only exact built-ins already checked by the public boundary."""
+    if type(value) is dict:
+        return {
+            key: _serialize_plain_json_tree(
+                item, retain_full=retain_full, model_keys=not model_keys and key == "models" and type(item) is dict
+            )
+            for key, item in value.items()
+            if retain_full or model_keys or not key.startswith("_") or key == "__workflow_population"
+        }
+    if type(value) is list or type(value) is tuple:
+        return [_serialize_plain_json_tree(item, retain_full=retain_full) for item in value]
+    return value
+
+
 def serialize_result(
     obj: Any, *, owner_user_id: int | None = None, retain_full: bool = False, project_id: int | None = None
 ) -> Any:
@@ -79,6 +119,11 @@ def serialize_result(
     7. Everything else → pass through
     """
     reject_spectrochempy_transport(obj, boundary="workflow API serialization")
+    # Only callback-free, exact built-in JSON trees can avoid repeated subtree
+    # validation. Custom iterators, Pydantic values, arrays and typed datasets
+    # retain the original recursive boundary, including newly produced values.
+    if _is_plain_json_tree(obj):
+        return _serialize_plain_json_tree(obj, retain_full=retain_full)
 
     # 1. SherpaDataset — the only spectral-data transport
     if isinstance(obj, SherpaDataset):
