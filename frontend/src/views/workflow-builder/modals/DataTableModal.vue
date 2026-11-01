@@ -209,7 +209,7 @@ import { isAuditField, scientificMetadata, scientificColumnLabel, scientificReco
 import { isProjectedScientificKind, projectedPresentationIdentity } from "@/utils/scientificPresentation";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";
 import { classificationMetricRows } from "@/utils/scientificMetricRows";
-import { scientificMatrixColumns, scientificMatrixRowLabels } from "@/utils/scientificMatrixColumns";
+import { isConfusionMatrix, scientificMatrixClassRowRole, scientificMatrixColumns, scientificMatrixRowLabels } from "@/utils/scientificMatrixColumns";
 import {
   compactSampleLabel,
   detectLabelDelimiter,
@@ -558,21 +558,27 @@ function semanticLabelInfo(output: any, data: any[]) {
   const metadata = output?.metadata ?? {};
   const dimensions = output?.descriptor?.dimensions ?? [];
   const rowRole = String(dimensions[0]?.role ?? "").toLowerCase();
-  const classRows = ["class", "response_class", "actual_class", "predicted_class"].includes(rowRole);
+  const classRows = scientificMatrixClassRowRole(output) !== null || isConfusionMatrix(output);
+  if (classRows) {
+    // Class identities are not sample names: preserve punctuation, whitespace
+    // and full length, using the same declared row authority as Quick Plot.
+    return { labels: scientificMatrixRowLabels(output, data.length), delimiter: null,
+      splitLabels: [], maxParts: 0, useSplitColumns: false };
+  }
   const variableRows = ["feature", "spectral_variable", "variable"].includes(rowRole);
+  const observationRows = !variableRows && !["component", "cluster"].includes(rowRole);
+  const observationLabels = dimensions[0]?.labels ?? output?.presentation_value?.sample_axis?.labels
+    ?? output?.presentation_value?.y_axis?.labels ?? metadata.source_labels;
+  if (observationRows && observationLabels != null) {
+    return getLabelInfo({ sample_labels: exactStringLabels(observationLabels, data.length) });
+  }
   const labels = variableRows
     ? relatedFeatureLabels(output, data.length)
-    : classRows || ["component", "cluster"].includes(rowRole)
-      ? [] : exactStringLabels(metadata.source_labels, data.length);
+    : [];
   if (labels.length === 0 && variableRows) return getLabelInfo({});
   if (labels.length === 0) {
     const declared = exactStringLabels(dimensions[0]?.labels, data.length);
     if (declared.length) return getLabelInfo({ sample_labels: declared });
-    if (classRows) {
-      return getLabelInfo({ sample_labels: exactStringLabels(
-        metadata.classes ?? metadata.diagnostics?.classes, data.length,
-      ) });
-    }
     if (rowRole === "cluster") return getLabelInfo({ sample_labels: exactStringLabels(metadata.cluster_labels, data.length) });
     if (rowRole === "component") {
       const axis = output?.presentation_value?.sample_axis ?? output?.presentation_value?.y_axis;
@@ -613,7 +619,8 @@ const tableColumns = computed(() => {
         useSplitColumns: false,
       }
     : semanticLabelInfo(output, data);
-  const descriptorRowRole = String(descriptorDimensions[0]?.role ?? "").toLowerCase();
+  const descriptorRowRole = scientificMatrixClassRowRole(output)
+    ?? String(descriptorDimensions[0]?.role ?? "").toLowerCase();
   const variableRows = ["feature", "spectral_variable", "variable"].includes(
     descriptorRowRole,
   );
@@ -751,6 +758,7 @@ const basePreviewTableData = computed(() => {
   if (!output?.data) return [];
 
   const data = displayedData.value;
+  const classRows = scientificMatrixClassRowRole(output) !== null;
   const labelInfo = isPlsExplainedVariance.value
     ? {
         labels: data.map((_: unknown, index: number) => `LV ${index + 1}`),
@@ -800,7 +808,7 @@ const basePreviewTableData = computed(() => {
             });
           }
         } else {
-          row._label = compactSampleLabel(fullLabel, {
+          row._label = classRows ? fullLabel : compactSampleLabel(fullLabel, {
             maxLength: 64,
             headLength: 40,
             tailLength: 18,
@@ -834,7 +842,7 @@ const basePreviewTableData = computed(() => {
             });
           }
         } else {
-          row._label = compactSampleLabel(labelInfo.labels[i] || "", {
+          row._label = classRows ? labelInfo.labels[i] : compactSampleLabel(labelInfo.labels[i] || "", {
             maxLength: 64,
             headLength: 40,
             tailLength: 18,
@@ -981,6 +989,13 @@ watch(
   },
 );
 function exportRowLabels(output: any, count: number): unknown[] {
+  if (scientificMatrixClassRowRole(output) !== null || isConfusionMatrix(output)) {
+    const labels = scientificMatrixRowLabels(output, count);
+    if (labels.length !== count) {
+      throw new Error("CSV unavailable: declared class row labels must match every result row.");
+    }
+    return labels;
+  }
   const meta = output?.metadata ?? {};
   const row = output?.descriptor?.dimensions?.[0];
   const variableRows = ["feature", "spectral_variable", "variable"].includes(row?.role);
@@ -1003,6 +1018,7 @@ function exportRowLabels(output: any, count: number): unknown[] {
         row?.labels,
         output?.presentation_value?.sample_axis?.labels,
         output?.presentation_value?.y_axis?.labels,
+        ...(["component", "cluster"].includes(row?.role) ? [] : [meta.source_labels]),
         meta.sample_labels,
         meta.labels,
         meta.diagnostics?.sample_labels,

@@ -1,7 +1,7 @@
 schema_version: 1
 name: Partition Clustering Comparison
 slug: clustering_comparison
-description: Compare centroid-based K-Means with cohort-only density clustering on one autoscaled dataset.
+description: Compare centroid-based K-Means with cohort-only density clustering using the same data and preprocessing.
 category: clustering
 is_active: true
 status: ready

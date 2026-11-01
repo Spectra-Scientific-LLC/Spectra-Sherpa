@@ -4,7 +4,7 @@ import { scientificColumnLabel } from "./scientificDisplay";
 
 const classRowRoles = new Set(["class", "response_class", "actual_class", "predicted_class"]);
 
-function isConfusionMatrix(output: NodeOutput | null | undefined): boolean {
+export function isConfusionMatrix(output: NodeOutput | null | undefined): boolean {
   return isProjectedScientificKind(output, "confusion_matrix") ||
     output?.descriptor?.scientific_kind === "confusion_matrix" || output?.metadata?.type === "ClassificationTest";
 }

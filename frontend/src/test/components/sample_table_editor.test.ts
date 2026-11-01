@@ -98,6 +98,23 @@ describe("SampleTableEditor acquisition-plan synchronization", () => {
     wrapper.unmount();
   });
 
+  it("keeps retained rows inspectable without offering publication in a read-only workspace", async () => {
+    const wrapper = shallowMount(SampleTableEditor, {
+      props: { sampleCount: 2, sampleLabels: [], sourceName: "Wine", sourceFileId: 41,
+        experimentId: 12, publicationDisabled: true },
+      global: { stubs: { Dialog: { template: '<div><slot /><slot name="footer" /></div>' },
+        DataTable: { template: '<div><slot /></div>' } } },
+    });
+    await wrapper.get('button-stub[label="Edit measured samples"]').trigger("click");
+    await flushPromises();
+    const review = wrapper.get('button-stub[label="Review publication"]');
+    expect(review.attributes("disabled")).toBe("true");
+    await review.trigger("click");
+    expect(wrapper.emitted("save")).toBeUndefined();
+    expect(wrapper.find('button-stub[label="Publish new immutable version"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it("seeds a new measured table from Settings, not the registry or acquisition plan", async () => {
     vi.mocked(api.get).mockImplementation((url: string) => Promise.resolve({ data:
       url === "/acquisition-preferences" ? { default_plate_format_id: "plate-384" } : plan,

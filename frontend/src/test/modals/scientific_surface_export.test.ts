@@ -47,6 +47,69 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("Scientific surface export authority", () => {
+  it.each([134, 3])("exports Wine calibration confusion class axes rather than %i training labels", async (sampleCount) => {
+    const classes = ["class_0", "class_1", "class_2"];
+    const w = table([[44, 0, 0], [2, 50, 2], [0, 0, 36]], {
+      classes, diagnostics: { classes, sample_labels: Array.from({ length: sampleCount }, (_, i) => `Sample ${i + 1}`) },
+    });
+    await w.setProps({ nodeOutput: { ...w.props("nodeOutput"), descriptor: {
+      scientific_kind: "confusion_matrix", shape_valid: true, shape: [3, 3],
+      dimensions: [{ role: "actual_class", size: 3 }, { role: "predicted_class", size: 3 }],
+    } } });
+    const original = JSON.parse(JSON.stringify(w.props("nodeOutput")));
+    expect(w.vm.previewTableData.map((row: any) => row._label)).toEqual(classes);
+    expect(await csv(w)).toBe("Index,Label,class_0,class_1,class_2\n1,class_0,44,0,0\n2,class_1,2,50,2\n3,class_2,0,0,36\n");
+    expect(w.props("nodeOutput")).toEqual(original);
+  });
+  it("preserves full class strings in display and CSV without sample-label splitting or compaction", async () => {
+    const classes = ['["actual","class"]', "  long, class | with ; punctuation " + "x".repeat(80)];
+    const w = table([[4, 1], [0, 5]], { classes, source_labels: ["wrong A", "wrong B"] });
+    await w.setProps({ nodeOutput: { ...w.props("nodeOutput"), descriptor: {
+      dimensions: [{ role: "actual_class", size: 2 }, { role: "predicted_class", size: 2, labels: classes }],
+    } } });
+    expect(w.vm.tableColumns.map((column: any) => column.field)).toEqual(["_index", "_label", "col_0", "col_1"]);
+    expect(w.vm.previewTableData.map((row: any) => row._label)).toEqual(classes);
+    expect(w.vm.previewTableData.map((row: any) => row._label_full)).toEqual(classes);
+    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    expect(await csv(w)).toBe(`Index,Label,${classes.map(escape).join(",")}\n1,${escape(classes[0])},4,1\n2,${escape(classes[1])},0,5\n`);
+  });
+  it.each([
+    { dimensions: [{ role: "actual_class", size: 2, labels: ["only one"] }] },
+    { dimensions: [{ role: "actual_class", size: 3 }] },
+    { dimensions: [{ role: "sample", size: 2 }] },
+    { shape_valid: false, dimensions: [{ role: "actual_class", size: 2 }] },
+  ])("refuses invalid confusion row authority without borrowing matching sample labels: %j", async (descriptor) => {
+    const w = table([[4, 1], [0, 5]], { classes: ["A", "B"], sample_labels: ["wrong A", "wrong B"] });
+    await w.setProps({ nodeOutput: { ...w.props("nodeOutput"), descriptor: {
+      scientific_kind: "confusion_matrix", ...descriptor,
+    } } });
+    expect(w.vm.previewTableData.every((row: any) => !row._label_full)).toBe(true);
+    expect(await csv(w)).toBeUndefined();
+    await nextTick();
+    expect(w.get('[role="alert"]').text()).toContain("declared class row labels");
+  });
+  it("exports HCA source sample labels alongside unchanged cluster assignments", async () => {
+    const assignments = [...Array(40).fill(0), ...Array(14).fill(1), ...Array(26).fill(2)];
+    const labels = assignments.map((_, i) => `corn-m5-${String(i + 1).padStart(3, "0")}`);
+    const w = table(assignments, { type: "HCA", source_labels: labels, sample_labels: assignments.map(String) });
+    expect(w.vm.previewTableData.map((row: any) => row._label_full)).toEqual(labels);
+    expect(await csv(w)).toBe("Index,Label,Value\n" + assignments.map((value, i) => `${i + 1},${labels[i]},${value}\n`).join(""));
+  });
+  it("keeps typed observation labels ahead of HCA source metadata in CSV", async () => {
+    const w = table([0, 1], { type: "HCA", source_labels: ["stale A", "stale B"], sample_labels: ["0", "1"] });
+    await w.setProps({ nodeOutput: { ...w.props("nodeOutput"), presentation_value: {
+      y_axis: { labels: ["exact A", "exact B"] },
+    } } });
+    expect(w.vm.previewTableData.map((row: any) => row._label_full)).toEqual(["exact A", "exact B"]);
+    expect(await csv(w)).toBe("Index,Label,Value\n1,exact A,0\n2,exact B,1\n");
+  });
+  it("refuses malformed HCA source labels instead of exporting assignments as sample names", async () => {
+    const w = table([0, 1], { type: "HCA", source_labels: ["only one"], sample_labels: ["0", "1"] });
+    expect(w.vm.previewTableData.every((row: any) => !row._label_full)).toBe(true);
+    expect(await csv(w)).toBeUndefined();
+    await nextTick();
+    expect(w.get('[role="alert"]').text()).toContain("declared row labels");
+  });
   it("retains response units beside exact reference and prediction values in CSV", async () => {
     const w = table([{ sample: "gas-17", target: "Methane", reference: 10, predicted: 9, residual: 1, role: "held_out_test" }],
       { response_identity: { names: ["Methane"], units: ["ppm"] }, target_units: ["ppm"] });
