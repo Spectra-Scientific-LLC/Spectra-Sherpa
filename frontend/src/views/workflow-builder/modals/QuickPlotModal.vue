@@ -238,10 +238,10 @@ v-model:scale-value="selectedFeatureScale"
 
       <!-- Data Table -->
       <div v-else class="data-table-container">
-        <DisplaySubsetIndicator v-if="plotSampling?.plottedTableOnly || (recordColumnKeys !== null && previewTotalRows > dataPreview.length)" />
+        <DisplaySubsetIndicator v-if="plotSampling?.plottedTableOnly || (recordColumnKeys !== null && previewTotalRows > dataPreview.length) || (tableMembership !== null && previewComputedCount < previewSourceRows)" />
         <span v-if="usePlottedTable && isProjectedScientificKind(nodeOutput, 'visualization')" class="data-summary">Plot coordinates <MethodHelp topic="displayExports" label="Plot coordinates and sample rows" /></span>
         <span v-if="!tableOnly && availablePlots.length === 0" class="data-summary" title="No shared quantitative axis">Table-only result</span>
-        <span v-if="dataPreviewSummary" class="data-summary">{{ dataPreviewSummary }}</span>
+        <span v-if="dataPreviewSummary" class="data-summary" :title="tableMembership ? 'Calculated observations shown; excluded rows are marked separately' : undefined">{{ dataPreviewSummary }}</span>
         <span v-if="responseUnit" class="data-summary">Response unit: {{ responseUnit }}</span>
         <div v-if="totalFeatureColumns > 10" class="feature-paging">
           <Button icon="pi pi-angle-double-left" aria-label="First feature columns" :disabled="featureOffset === 0" @click="featureOffset = 0" />
@@ -259,6 +259,18 @@ v-model:scale-value="selectedFeatureScale"
           size="small"
           stripedRows
         >
+          <Column v-if="hasObservationRows" :style="{ width: '2rem' }">
+            <template #body="{ data }"><span
+              v-if="data._observation_ref"
+              :title="data._usedInResult ? 'Used in this result' : 'Not used in this result'"
+              :aria-label="data._usedInResult ? 'Used in this result' : 'Not used in this result'"
+              tabindex="0" role="img" :class="{ 'excluded-observation': !data._usedInResult }">{{ data._usedInResult ? '○' : '⊗' }}</span></template>
+          </Column>
+          <Column v-if="hasObservationRows && hasCurrentObservationActions" :key="populationScope?.scope" :style="{ width: '2rem' }">
+            <template #body="{ data }"><ObservationExclusionButton
+              v-if="data._observation_ref"
+              :observation-ref="data._observation_ref" :label="data._label_full || data.point_label" :used-in-result="data._usedInResult" /></template>
+          </Column>
           <Column
             v-for="col in dataPreviewColumns"
             :key="col.field"
@@ -292,6 +304,11 @@ v-model:scale-value="selectedFeatureScale"
 import { SCIENTIFIC_COLORS, PLOT_SURFACE } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
+import ObservationExclusionButton from "@/components/ObservationExclusionButton.vue";
+import { WORKFLOW_POPULATION_ACTIONS, type WorkflowPopulationActions } from "@/utils/workflowPopulation";
+import { observationOutputMembership } from "@/utils/observationOutputMembership";
+import { tableExclusionRows } from "@/utils/tableExclusionRows";
+import { traceObservationRefs, traceObservationIncluded } from "@/utils/workflowPopulationTrace";
 import { scientificMatrixClassRowRole, scientificMatrixColumns, scientificMatrixRowLabels } from "@/utils/scientificMatrixColumns";
 import { scientificRecordColumnKeys, scientificRecordColumnLabel, scientificStructuredCell, scientificResponseUnit } from "@/utils/scientificDisplay";
 import DisplaySubsetIndicator from "@/components/DisplaySubsetIndicator.vue";
@@ -302,7 +319,7 @@ import { scientificNumber } from "@/utils/scientificEncoding";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
 import { scientificPlotRefusal, spectralTruthLimitation } from "@/utils/scientificPlotState";
 /* eslint-disable @typescript-eslint/no-explicit-any -- quick-plot consumes generic backend visualization payloads. */
-import { ref, computed, provide, watch } from "vue";
+import { ref, computed, inject, provide, watch } from "vue";
 
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
@@ -739,7 +756,7 @@ const usePlottedTable = computed(() => !props.tableOnly && availablePlots.value.
   || isProjectedScientificKind(props.nodeOutput, "regression_coefficients")
   || !Array.isArray(props.nodeOutput?.data) || props.nodeOutput.data.length === 0));
 const totalFeatureColumns = computed(() => !usePlottedTable.value && Array.isArray(props.nodeOutput?.data?.[0]) ? props.nodeOutput.data[0].length : 0);
-const previewTotalRows = computed(() => {
+const previewSourceRows = computed(() => {
   if (usePlottedTable.value) return plottedPointPreview.value.total;
   if (isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics")) return t2QDiagnosticRows(props.nodeOutput?.presentation_value, props.nodeOutput?.metadata || {}).length;
   const data = props.nodeOutput?.data;
@@ -761,6 +778,7 @@ function toggleViewMode() {
 }
 
 function previewCell(value: unknown): string {
+  if (value == null) return "—";
   if (typeof value === "number") return Number.isInteger(value)
     ? String(value) : scientificNumber(value, { significantDigits: 6 });
   return scientificStructuredCell(value) ?? (value == null ? "—" : String(value));
@@ -829,6 +847,14 @@ const plottedPointPreview = computed(() => {
       continue;
     }
     const count = Math.min(trace.x.length, trace.y.length);
+    const refs = traceObservationRefs(trace);
+    const included = refs.map((_, index) => traceObservationIncluded(trace, index));
+    // Trace-local navigation only, aligned before pagination. Never use point
+    // labels/ids or neighboring ports to reconstruct observation membership.
+    const identified = trace.x.length === trace.y.length && Array.isArray(refs) && refs.length === count
+      && refs.every((ref: unknown) => typeof ref === "string" && ref.length > 0)
+      && Array.isArray(included) && included.length === count
+      && included.every((flag: unknown) => typeof flag === "boolean");
     const start = Math.max(0, previewFirst.value - total);
     for (let index = start; index < count && rows.length < previewRowLimit.value; index += 1) {
       const id = trace.ids?.[index];
@@ -839,6 +865,7 @@ const plottedPointPreview = computed(() => {
       };
       const multiAxis = (plotData.value ?? []).some(t => (t.xaxis && t.xaxis !== "x") || (t.yaxis && t.yaxis !== "y"));
       rows.push({ _index: total + index + 1, series,
+        ...(identified ? { _observation_ref: refs[index], _usedInResult: included[index] } : {}),
         ...(typeof id === "string" || typeof id === "number" ? { point_id: id } : {}),
         ...(typeof pointLabel === "string" && pointLabel && !/[<>]/.test(pointLabel) ? { point_label: pointLabel } : {}),
         ...(multiAxis ? { x_quantity: axisLabel(trace.xaxis || "x", "x"), y_quantity: axisLabel(trace.yaxis || "y", "y") } : {}),
@@ -851,15 +878,15 @@ const plottedPointPreview = computed(() => {
 
 const classRowRole = computed(() => scientificMatrixClassRowRole(props.nodeOutput));
 
-const dataPreview = computed(() => {
+function renderDataPreview(first: number, count: number): Record<string, any>[] {
   if (usePlottedTable.value) return plottedPointPreview.value.rows;
   const data = props.nodeOutput?.data;
   const metadata = props.nodeOutput?.metadata || {};
   if (isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics")) {
     return t2QDiagnosticRows(props.nodeOutput?.presentation_value, metadata)
-      .slice(previewFirst.value, previewFirst.value + previewRowLimit.value)
+      .slice(first, first + count)
       .map((row, index) => ({
-        _index: previewFirst.value + index + 1,
+        _index: first + index + 1,
         sample: row.sample,
         t2: row.t2,
         q: row.q,
@@ -872,8 +899,8 @@ const dataPreview = computed(() => {
     const rows = props.nodeType === "analysis.compare_library" && selectedLibrarySample.value
       ? data.filter((row: any) => String(row?.sample ?? "") === selectedLibrarySample.value)
       : data;
-    return rows.slice(previewFirst.value, previewFirst.value + previewRowLimit.value).map((row: any, i: number) => ({
-      _index: previewFirst.value + i + 1,
+    return rows.slice(first, first + count).map((row: any, i: number) => ({
+      _index: first + i + 1,
       ...row,
     }));
   }
@@ -894,8 +921,8 @@ const dataPreview = computed(() => {
     : 0;
   const useSplitColumns = !!delimiter && maxParts > 1;
 
-  return data.slice(previewFirst.value, previewFirst.value + previewRowLimit.value).map((row: any, rowIndex: number) => {
-    const i = previewFirst.value + rowIndex;
+  return data.slice(first, first + count).map((row: any, rowIndex: number) => {
+    const i = first + rowIndex;
     const obj: any = { _index: i + 1, _label_full: labels[i] || "" };
     if (labels.length > 0) {
       if (useSplitColumns) {
@@ -920,7 +947,52 @@ const dataPreview = computed(() => {
     }
     return obj;
   });
+}
+
+// Numerical tables use their own retained sample axis, never the plot companion.
+const populationActions = inject<WorkflowPopulationActions | null>(WORKFLOW_POPULATION_ACTIONS, null);
+// The modal can mount before workflow loading. Bind its current actions only
+// when opened; a scope change invalidates that opening until explicit reopen.
+const populationScope = ref<{ scope: string | undefined } | null>(null);
+watch(() => [props.modelValue, populationActions?.scope?.()] as const, ([open, scope], previous) => {
+  if (!open) populationScope.value = null;
+  else if (!previous?.[0]) populationScope.value = { scope };
+  else if (scope !== populationScope.value?.scope) populationScope.value = null;
+}, { immediate: true, flush: "sync" });
+const hasCurrentObservationActions = computed(() => !!populationActions && populationScope.value !== null
+  && populationActions.scope?.() === populationScope.value.scope);
+const tableMembership = computed(() => !usePlottedTable.value
+  && (isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics")
+    || (Array.isArray(props.nodeOutput?.data) && props.nodeOutput.data.every(Array.isArray)))
+  ? observationOutputMembership(props.nodeOutput) : null);
+// Derive only navigation/index records for the complete fused sequence. Numeric
+// cells stay in their original matrix and are read only for the current page.
+const tableRowPlan = computed(() => {
+  const membership = tableMembership.value;
+  if (!membership) return null;
+  const refs = [...membership.keys()];
+  return tableExclusionRows(props.nodeOutput, refs.map((_, index) => ({ _computedIndex: index,
+    ...(isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics") ? { sample: "" } : {}),
+  })), refs, membership,
+  hasCurrentObservationActions.value ? populationActions?.populations?.() ?? [] : [], 0);
 });
+const previewTotalRows = computed(() => tableRowPlan.value?.length ?? previewSourceRows.value);
+const tablePagePlan = computed(() => tableRowPlan.value?.slice(previewFirst.value, previewFirst.value + previewRowLimit.value));
+const computedPageIndices = computed(() => tablePagePlan.value
+  ?.flatMap(row => typeof row._computedIndex === "number" ? [row._computedIndex] : []));
+const previewComputedFirst = computed(() => computedPageIndices.value?.[0] ?? (tableRowPlan.value ? 0 : previewFirst.value));
+const baseDataPreview = computed(() => renderDataPreview(previewComputedFirst.value,
+  computedPageIndices.value?.length ?? previewRowLimit.value));
+const dataPreview = computed<Record<string, any>[]>(() => {
+  if (!tablePagePlan.value) return baseDataPreview.value;
+  return tablePagePlan.value.map(row => {
+    const { _computedIndex, ...navigation } = row;
+    if (typeof _computedIndex !== "number") return navigation;
+    const calculated = baseDataPreview.value[_computedIndex - previewComputedFirst.value];
+    return { ...navigation, ...calculated, _label_full: calculated._label_full || navigation._label_full };
+  });
+});
+const previewComputedCount = computed(() => computedPageIndices.value?.length ?? dataPreview.value.length);
 
 // Compute the full retained column set once per payload, never from a page or cell.
 const recordColumnKeys = computed(() => {
@@ -935,13 +1007,16 @@ const dataPreviewSummary = computed(() => {
     return `${plotSampling.value.shown} plotted traces of ${plotSampling.value.total} ${plotSampling.value.sourceNoun}; full source matrix is not in this view`;
   }
   if (usePlottedTable.value) return `${previewFirst.value + 1}–${Math.min(previewFirst.value + previewRowLimit.value, previewTotalRows.value)} of ${previewTotalRows.value} plotted points`;
-  if (props.embedded) return `${previewFirst.value + 1}–${Math.min(previewFirst.value + previewRowLimit.value, previewTotalRows.value)} of ${previewTotalRows.value} rows`;
+  if (props.embedded) {
+    const shown = previewComputedCount.value;
+    return shown ? `${previewComputedFirst.value + 1}–${previewComputedFirst.value + shown} of ${previewSourceRows.value} rows` : `0 of ${previewSourceRows.value} rows`;
+  }
   if (isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics")) {
     const totalRows = t2QDiagnosticRows(
       props.nodeOutput?.presentation_value,
       props.nodeOutput?.metadata || {},
     ).length;
-    return `${Math.min(totalRows, previewRowLimit.value)} of ${totalRows} samples`;
+    return `${previewComputedCount.value} of ${totalRows} samples`;
   }
   const data = props.nodeOutput?.data;
   if (!Array.isArray(data) || data.length === 0) {
@@ -958,7 +1033,7 @@ const dataPreviewSummary = computed(() => {
     : firstRow && typeof firstRow === "object"
       ? Object.keys(firstRow).length + 1
       : 1;
-  const shownRows = Math.min(totalRows, previewRowLimit.value);
+  const shownRows = tableMembership.value ? previewComputedCount.value : Math.min(totalRows, previewRowLimit.value);
   const shownCols = Math.min(Math.max(0, totalCols - featureOffset.value), 10);
   let summary = `${shownRows} of ${totalRows} rows`;
   if (totalCols > 10) summary += `, ${shownCols} of ${totalCols} columns`;
@@ -966,6 +1041,8 @@ const dataPreviewSummary = computed(() => {
 });
 
 const responseUnit = computed(() => scientificResponseUnit(props.nodeOutput?.presentation_value ?? props.nodeOutput?.metadata));
+const hasObservationRows = computed(() => dataPreview.value.some(row => typeof row._observation_ref === "string"));
+
 const dataPreviewColumns = computed(() => {
   if (!dataPreview.value.length) return [];
   if (usePlottedTable.value) {
@@ -976,7 +1053,7 @@ const dataPreviewColumns = computed(() => {
     };
     const multiAxis = dataPreview.value.some(row => "x_quantity" in row);
     const labels: Record<string, string> = { _index: "#", series: "Series", point_id: "Retained point ID", point_label: "Retained point label", x_quantity: "X quantity", y_quantity: "Y quantity", x: multiAxis ? "X coordinate" : title(plotLayout.value?.xaxis, "X"), y: multiAxis ? "Y coordinate" : title(plotLayout.value?.yaxis, "Y"), value: "Value" };
-    return [...new Set(dataPreview.value.flatMap(row => Object.keys(row)))].map(field => ({ field, header: labels[field] || field }));
+    return [...new Set(dataPreview.value.flatMap(row => Object.keys(row)))].filter(field => !["_observation_ref", "_usedInResult"].includes(field)).map(field => ({ field, header: labels[field] || field }));
   }
   if (isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics")) {
     return [
@@ -996,14 +1073,14 @@ const dataPreviewColumns = computed(() => {
       })),
     ];
   }
-  const first = dataPreview.value[0] as Record<string, any>;
+  const first = (baseDataPreview.value[0] ?? renderDataPreview(0, 1)[0] ?? dataPreview.value[0]) as Record<string, any>;
   const metadata = props.nodeOutput?.metadata || {};
   const pcLabels = metadata.pc_labels || [];
   const featureNames = scientificMatrixColumns(props.nodeOutput, Array.isArray(props.nodeOutput?.data?.[0]) ? props.nodeOutput.data[0].length : 1);
   const isPlsVariance = isProjectedScientificKind(props.nodeOutput, "pls_explained_variance");
 
   return Object.keys(first)
-    .filter((key) => key !== "_label_full")
+    .filter((key) => !["_label_full", "_observation_ref", "_usedInResult", "_source_row"].includes(key))
     .map((key) => {
       let header = scientificRecordColumnLabel(key, metadata, projectedPresentationIdentity(props.nodeOutput)?.kind);
       if (key === "_index") {
@@ -1060,6 +1137,7 @@ async function downloadPlot() {
 </script>
 
 <style scoped>
+.excluded-observation { color: var(--ss-excluded); }
 .feature-paging { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; color: var(--ss-panel-secondary); }
 .quick-plot-modal :deep(.p-dialog-content) {
   padding: 0;

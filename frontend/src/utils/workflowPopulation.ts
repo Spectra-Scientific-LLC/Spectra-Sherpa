@@ -24,6 +24,8 @@ export interface WorkflowPopulation {
 }
 export interface WorkflowPopulationActions {
   scope?(): string;
+  /** Exact source maps for inspection; never computational or projected rows. */
+  populations?(): WorkflowPopulation[];
   resolve(ref: string): { excluded: boolean; restorable: boolean } | null;
   change(refs: string[], exclude: boolean): void;
 }

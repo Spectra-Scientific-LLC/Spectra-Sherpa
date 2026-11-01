@@ -19,6 +19,11 @@
     </div>
 
     <template v-else>
+      <nav aria-label="Compared runs' retained exclusion maps">
+        <div v-for="run in runs" :key="run.id">
+          <RetainedRunMapLink :run-id="run.id" :project-id="run.project_id" />
+        </div>
+      </nav>
       <component :is="scientificComparison ? ScientificComparison : 'div'" :evidence="scientificComparison">
         <template #[evaluationSlot]>
           <ScientificBasisHelp v-if="!scientificComparison" />
@@ -98,6 +103,7 @@
 </template>
 
 <script setup lang="ts">
+import RetainedRunMapLink from "@/components/results/RetainedRunMapLink.vue";
 import { comparisonLabel, comparisonDeltaLabel } from "@/utils/comparisonLabel";
 import { formatTimestamp } from "@/utils/format";
 import { scientificNumber } from "@/utils/scientificEncoding";

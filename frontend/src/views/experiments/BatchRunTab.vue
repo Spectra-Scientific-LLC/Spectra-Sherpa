@@ -18,6 +18,7 @@
               <label v-for="artifact in modelsFor(workflow.id)" :key="artifact.artifact_uid">
                 <input v-model="selectedArtifactUids" type="checkbox" :value="artifact.artifact_uid" />
                 {{ artifact.display_name || artifact.name }} <small>{{ modelContext(artifact) }}</small>
+                <RetainedRunMapLink :run-id="artifact.source_run_id" :project-id="projectStore.currentProjectId" />
               </label>
               <small v-if="!modelsFor(workflow.id).length">No fitted model is available. Use train/evaluate first.</small>
             </div>
@@ -71,6 +72,7 @@
 
 <script setup lang="ts">
 import Panel from "primevue/panel";
+import RetainedRunMapLink from "@/components/results/RetainedRunMapLink.vue";
 import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import Button from "primevue/button";

@@ -126,6 +126,10 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
             summary_rows.append({"label": label, "value": str(value if short is None else short)})
 
     add("Saved run", run.id)
+    from spectra_sherpa.app.services.run_population_summary import retained_population_summary
+
+    for row in retained_population_summary(run)["rows"]:
+        add(row["label"], row["value"], summary=True)
     for label, detail in regression_reporting_notes().items():
         add(f"Metric interpretation: {label}", detail)
     add("Run outcome", getattr(run, "status", "Not recorded"))

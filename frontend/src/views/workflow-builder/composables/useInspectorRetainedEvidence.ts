@@ -139,7 +139,9 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
       const primaryMetadata = view !== "detail" && source?.ports?.metadata && source.primary_port &&
         sourcePorts.includes(source.primary_port) ? ["metadata"] : [];
       const retainedPorts = view === "detail" && !source ? [] : [...new Set([
-        ...(view !== "table" && source?.metadata.workflow_population ? ["__workflow_population"] : []),
+        // Tables use this exact companion only to qualify omitted identities;
+        // their numerical cells remain bound to the active source ports.
+        ...(source?.metadata.workflow_population ? ["__workflow_population"] : []),
         // Retain the original primary context when plotting another port.
         // Otherwise rebuilding a one-port node changes shared model labels.
         ...(view === "plot" && source?.primary_port ? [source.primary_port] : []),
@@ -156,7 +158,7 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
       const [outputs, inputs] = await Promise.all([
         Promise.all(retainedPorts.map(async port => {
           if (port !== "__workflow_population") return [port, await read(nodeId, port)] as const;
-          try { return [port, await read(nodeId, port)] as const; }
+          try { return [port, await read(nodeId, port, true)] as const; }
           catch {
             // Optional display evidence cannot invalidate exact active scores
             // or thresholds. Never fall back to its bounded preview coordinates.

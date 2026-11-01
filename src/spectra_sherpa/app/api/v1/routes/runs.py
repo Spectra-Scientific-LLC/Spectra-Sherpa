@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from asyncio import to_thread
+from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
@@ -942,9 +943,18 @@ async def inspect_run_evidence(
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     from spectra_sherpa.app.services.run_output_retention import DETAIL_METADATA_BUDGET_BYTES
+    from spectra_sherpa.app.services.run_population_summary import RetainedPopulationInput, retained_population_summary
 
     run = await _owned_run(run_id, project_id, session, current_user)
     evidence = _validated_run_evidence(run.evidence_completeness)
+    # Ownership was admitted by _owned_run. Its user_id column is deferred;
+    # never pass the ORM instance into retained-file work on another thread.
+    population_input = RetainedPopulationInput(
+        id=run.id,
+        user_id=current_user.id,
+        evidence_completeness=deepcopy(run.evidence_completeness),
+        params_snapshot=deepcopy(run.params_snapshot),
+    )
     if not evidence.outputs:
         await session.refresh(run, attribute_names=["results_summary"])
         for node_id, value in (run.results_summary or {}).items():
@@ -966,6 +976,7 @@ async def inspect_run_evidence(
         "run": _run_navigation(run, workflow_name).model_dump(mode="json"),
         "evidence": evidence.model_dump(),
         "evidence_gaps": [item.model_dump() for item in evidence.gaps()],
+        "population_summary": await to_thread(retained_population_summary, population_input),
         "node_statuses": run.node_statuses or {},
         "integrity_hash": run.integrity_hash,
         "error": run.error,

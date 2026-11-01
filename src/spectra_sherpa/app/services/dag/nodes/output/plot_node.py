@@ -4,7 +4,7 @@ Plot visualization node.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 import numpy as np
 
@@ -26,6 +26,44 @@ from spectra_sherpa.sdk.plot_spec import canonical_plot_spec_from_projection
 from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
 from . import stats_summary_node as stats_summary_contract
 from ._helpers import get_axis_display_info
+
+
+def _observation_trace_metadata(
+    dataset: Any, rows: Sequence[int], *, whole_observation: bool = False
+) -> dict[str, Any]:
+    """Project this dataset's typed navigation axis through the plotted rows.
+
+    These are workflow references, never specimen IDs. A whole-observation
+    spectrum carries one scalar reference, not a copy for every wavelength. No axis means no
+    selection authority; labels, sibling ports and equal lengths cannot supply it.
+    """
+    if not isinstance(dataset, SherpaDataset):
+        return {}
+    axis = dataset.sample_axis
+    refs = None if axis is None else axis.workflow_observation_refs
+    if refs is None or (not refs and dataset.n_samples == 0):
+        return {}
+    if len(refs) != dataset.n_samples:
+        raise ValueError("Plot observation references must match the dataset rows")
+    mask = axis.include_mask
+    if mask is not None and len(mask) != dataset.n_samples:
+        raise ValueError("Plot inclusion mask must match the dataset rows")
+    if whole_observation:
+        if len(rows) != 1:
+            raise ValueError("A whole-observation plot trace requires exactly one source row")
+        row = rows[0]
+        return {
+            "meta": {
+                "workflow_observation_ref": refs[row],
+                "workflow_included": bool(mask[row]) if mask is not None else True,
+            }
+        }
+    return {
+        "meta": {
+            "workflow_observation_refs": [refs[row] for row in rows],
+            "workflow_included": [bool(mask[row]) if mask is not None else True for row in rows],
+        }
+    }
 
 
 def _is_numeric_array(arr: np.ndarray) -> bool:
@@ -261,6 +299,38 @@ class PlotNode(Node):
         parameters = self.metadata.canonicalize_parameters(self._resolve_params())
         source = input_data if input_data is not None else default
         return build_plot_result(source, parameters=parameters)
+
+    async def project_population(self, outputs: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+        """Render one already projected observation dataset; never apply or fit a model.
+
+        The normal visualization remains the computational result. This separate
+        display companion retains the source mask, including excluded rows whose
+        coordinates were explicitly supplied by an upstream projection.
+        """
+        if len(inputs) != 1 or next(iter(inputs)) not in {"default", "input_data"}:
+            raise ValueError("Plot population projection requires one unambiguous dataset input")
+        source = next(iter(inputs.values()))
+        if not isinstance(source, SherpaDataset):
+            raise ValueError("Plot population projection requires one typed dataset, not multiple cohorts")
+        navigation = _observation_trace_metadata(source, range(source.n_samples)).get("meta")
+        if navigation is None:
+            raise ValueError("Plot population projection requires aligned observation references")
+        included = {
+            ref for ref, flag in zip(navigation["workflow_observation_refs"], navigation["workflow_included"]) if flag
+        }
+        # The optional dispatcher can see only a subset of incoming companion
+        # ports. An aggregate/unidentified active result is not proof that this
+        # single dataset owns it, even when its dimensions happen to match.
+        active_refs: set[str] = set()
+        for trace in outputs.get("visualization", {}).get("data", []):
+            navigation_meta = trace.get("meta", {})
+            if "workflow_observation_ref" in navigation_meta:
+                active_refs.add(navigation_meta["workflow_observation_ref"])
+            else:
+                active_refs.update(navigation_meta.get("workflow_observation_refs", []))
+        if not active_refs or not active_refs.issubset(included):
+            raise ValueError("Plot population projection requires an aligned individual-observation result")
+        return await self.execute(input_data=source)
 
     def _build(self, input_data: Any) -> Dict[str, Any]:
         """Dispatch one supported scientific result to its presentation projection."""
@@ -607,6 +677,7 @@ class PlotNode(Node):
             trace: dict[str, Any] = {
                 "x": x_data,
                 "y": data[i].tolist(),
+                **_observation_trace_metadata(dataset, [int(i)], whole_observation=True),
                 "type": "bar" if is_feature_table else "scatter",
                 "name": name,
             }
@@ -925,6 +996,7 @@ class PlotNode(Node):
                 for label in dict.fromkeys(labels):
                     indices = [index for index, value in enumerate(labels) if value == label]
                     trace = {
+                        **_observation_trace_metadata(scores, indices),
                         "x": scores_array[indices, pc_x].tolist(),
                         "y": scores_array[indices, pc_y].tolist(),
                         "type": "scatter",
@@ -939,6 +1011,7 @@ class PlotNode(Node):
             elif np.issubdtype(target.dtype, np.number) and np.isfinite(target.astype(np.float64)).all():
                 target_name = str(getattr(target_context, "target_name", None) or "Response")
                 trace = {
+                    **_observation_trace_metadata(scores, range(scores_array.shape[0])),
                     "x": scores_array[:, pc_x].tolist(),
                     "y": scores_array[:, pc_y].tolist(),
                     "type": "scatter",
@@ -960,6 +1033,7 @@ class PlotNode(Node):
                 traces.append(trace)
         if not traces:
             trace = {
+                **_observation_trace_metadata(scores, range(scores_array.shape[0])),
                 "x": scores_array[:, pc_x].tolist(),
                 "y": scores_array[:, pc_y].tolist(),
                 "type": "scatter",
@@ -1016,6 +1090,7 @@ class PlotNode(Node):
                 {
                     "x": x_values,
                     "y": data[:, col].tolist(),
+                    **_observation_trace_metadata(dataset, range(data.shape[0])),
                     "type": "scatter",
                     "mode": "lines+markers" if data.shape[0] <= 100 else "lines",
                     "name": name,
@@ -1358,6 +1433,7 @@ class PlotNode(Node):
         scores_y = scores_array[:, pc_y].astype(float)
         traces: list[dict[str, Any]] = [
             {
+                **_observation_trace_metadata(scores, range(scores_array.shape[0])),
                 "x": scores_x.tolist(),
                 "y": scores_y.tolist(),
                 "type": "scatter",
@@ -1528,6 +1604,7 @@ class PlotNode(Node):
 
                 traces.append(
                     {
+                        **_observation_trace_metadata(dataset, np.flatnonzero(mask).tolist()),
                         "x": data[mask, x_col].tolist(),
                         "y": data[mask, y_col].tolist(),
                         "type": "scatter",
@@ -1539,6 +1616,7 @@ class PlotNode(Node):
         else:
             traces.append(
                 {
+                    **_observation_trace_metadata(dataset, range(data.shape[0])),
                     "x": data[:, x_col].tolist(),
                     "y": data[:, y_col].tolist(),
                     "type": "scatter",

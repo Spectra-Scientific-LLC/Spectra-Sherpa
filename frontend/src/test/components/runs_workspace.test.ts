@@ -14,12 +14,12 @@ vi.mock("@/stores/advisor", () => ({ useAdvisorStore: () => ({ switchScope: vi.f
 vi.mock("@/composables/useAppConfig", () => ({ useAppConfig: () => ({ config: ref({}), appMode: ref("local"), isCapabilityDisabled: () => false }) }));
 vi.mock("@/composables/useDemoMode", () => ({ useDemoMode: () => ({ isDemoMode: ref(false) }) }));
 import ModelsContent from "@/views/models/ModelsContent.vue";
-function mountView() {
+function mountView(realTables = false) {
   return mount(ModelsContent, { global: { plugins: [PrimeVue], renderStubDefaultSlot: true,
     stubs: { WorkspaceHeader: true, WorkspaceContext: true, WorkspaceContextItem: true, RunDetailContent: true,
       BatchRunTab: true, EvidenceComparisonView: true, ComparisonPanel: true, QualificationApplications: true, QualificationPanel: true,
       SavedModelProjectTable: true, SavedModelQualification: true,
-      Dialog: true, DataTable: true, Dropdown: true, Button: true,
+      Dialog: true, DataTable: !realTables, Dropdown: true, Button: true,
       InputText: true, ProgressSpinner: true, Tag: true, Textarea: true, LabelChips: true },
     directives: { tooltip: () => undefined } } });
 }
@@ -30,6 +30,15 @@ describe("Runs workspace", () => {
     m.runs = { runs: [], total: 0, selectedRunIds: new Set(), selectedCount: 0, runsLoading: false, comparison: null, loadError: null,
       fetchProjectRuns: vi.fn(), clearSelection: vi.fn() };
     m.get.mockImplementation(async (path: string) => ({ data: path === "/deploy/capabilities" ? { privateBatchUpload: true } : path === "/runs" ? { runs: [], total: 0 } : [] }));
+  });
+  it("offers a History map link without reading individual output payloads", async () => {
+    m.query = { tab: "run_history" };
+    m.runs.runs = [{ id: 42, name: "Saved run", status: "completed", run_kind: "data", executed_at: "2026-10-31", labels: [] }];
+    m.runs.total = 1;
+    const view = mountView(true); await flushPromises();
+    expect(view.get('a.retained-map-link').attributes('href')).toBe('/runs/42?project=1&tab=inspect&view=Summary#retained-observation-exclusions');
+    expect(m.get.mock.calls.some(([url]) => String(url).includes('/outputs/'))).toBe(false);
+    view.unmount();
   });
   it("clears campaign evidence references when comparing newly selected saved runs", async () => {
     m.query = {tab: "run_history", evidence: "old-campaign-references", project: "1"};
@@ -141,6 +150,7 @@ describe("Runs workspace", () => {
     for (let reopen = 0; reopen < 2; reopen++) {
       const view = mountView(); await flushPromises();
       await view.get(".object-row").trigger("click"); await flushPromises();
+      expect(view.get('a.retained-map-link').attributes('href')).toBe('/runs/42?project=1&tab=inspect&view=Summary#retained-observation-exclusions');
       expect(view.get('[aria-label="Saved model component evidence"]').text()).toContain("Latent variables");
       expect(view.get('[aria-label="Saved model component evidence"]').text()).toContain("Too few independent groups");
       expect(m.get).toHaveBeenCalledWith("/runs/42/outputs/fit/component_curve", { params: { project_id: 1 } });

@@ -94,6 +94,7 @@
                   <div class="run-name-cell">
                     <Button :label="data.display_name || data.name" class="p-button-link p-button-sm" @click="inspectRun(data.id)" />
                     <small>Run #{{ data.id }}</small>
+                    <RetainedRunMapLink :run-id="data.id" :project-id="projectStore.currentProjectId" />
                   </div>
                 </template>
               </Column>
@@ -305,6 +306,8 @@
                     @click="inspectRun(selectedModel.source_run_id)"
                   />
                   <span v-else>Source run not recorded</span>
+                  <RetainedRunMapLink v-if="selectedModel.source_run_id != null"
+                    :run-id="selectedModel.source_run_id" :project-id="projectStore.currentProjectId" />
                 </dd>
               </div>
               <div>
@@ -524,6 +527,7 @@ import { useWorkflowStore } from "@/stores/workflow";
 import { getErrorMessage } from "@/utils/errors";
 import { downloadJson } from "@/utils/download";
 import BatchRunTab from "@/views/experiments/BatchRunTab.vue";
+import RetainedRunMapLink from "@/components/results/RetainedRunMapLink.vue";
 import RunDetailContent from "./RunDetailContent.vue";
 import ModelSummaryCard from "@/components/ModelSummaryCard.vue";
 import SavedModelDiagnostics from "@/components/SavedModelDiagnostics.vue";
@@ -1229,6 +1233,7 @@ async function inspectRun(id: number): Promise<void> {
   delete query.node;
   delete query.view;
   delete query.presentation;
+  delete query.output;
   inspectedRunId.value = String(id);
   activeTab.value = TAB_INSPECT;
   await router.push({ path: `/runs/${id}`, query });

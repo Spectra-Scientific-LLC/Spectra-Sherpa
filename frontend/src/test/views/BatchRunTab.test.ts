@@ -63,6 +63,8 @@ describe('Batch workflow verification', () => {
     const vm = await choose(wrapper);
     expect(vm.combinations).toHaveLength(4);
     expect(wrapper.text()).toContain('Run #17');
+    expect(wrapper.get('a.retained-map-link').attributes('href')).toBe('/runs/17?project=3&tab=inspect&view=Summary#retained-observation-exclusions');
+    expect(mocks.get.mock.calls.some(([url]) => String(url).includes('/outputs/'))).toBe(false);
     expect(wrapper.text()).toContain('5 LV');
     expect(wrapper.findAll('input[type="radio"]')).toHaveLength(2);
     expect(wrapper.find('table').exists()).toBe(false);

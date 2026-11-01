@@ -12,6 +12,17 @@ const run = (id: number) => ({ id, name: `Run ${id}`, params_snapshot: {}, resul
 }) as ExecutionRunDetail;
 
 describe('Comparison evaluation qualification', () => {
+  it('links each compared run to its own retained map without decoding outputs for navigation', () => {
+    get.mockClear();
+    const first = { ...run(1), project_id: 4 }, second = { ...run(2), project_id: 4 };
+    const wrapper = mount(ComparisonPanel, { props: { runs: [first, second], metricKeys: [], diff: {} }, global: { plugins: [PrimeVue] } });
+    expect(wrapper.findAll('a.retained-map-link').map(link => link.attributes('href'))).toEqual([
+      '/runs/1?project=4&tab=inspect&view=Summary#retained-observation-exclusions',
+      '/runs/2?project=4&tab=inspect&view=Summary#retained-observation-exclusions',
+    ]);
+    expect(get).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
   it('shares the available width equally across candidates and wraps long values', () => {
     const runs = [run(1), run(2), run(3)];
     runs[0].name = 'A very long run name that must remain readable at narrow widths';

@@ -78,14 +78,16 @@
           <span v-if="hasActiveFilter" class="stat-item">
             <strong>{{ filteredRowCount }}</strong> matched
           </span>
-          <span v-if="previewTableData.length < dataShape.rows" class="stat-item warning">
-            {{ previewTableData.length }} previewed
+          <span v-if="previewComputedCount < dataShape.rows" class="stat-item warning" title="Calculated observations shown; excluded rows are marked separately">
+            {{ previewComputedCount }} previewed
           </span>
           <MethodHelp
             topic="displayExports"
             label="Table and export scope"
-            :context="previewTableData.length < dataShape.rows
-              ? `Filters apply to the first ${previewTableData.length} rows. CSV exports all ${dataShape.rows} active rows.`
+            :context="previewComputedCount < dataShape.rows
+              ? tableObservationRefs
+                ? `Filters apply to ${previewComputedCount} previewed calculated rows and any displayed excluded rows. CSV exports all ${dataShape.rows} active rows.`
+                : `Filters apply to the first ${previewComputedCount} rows. CSV exports all ${dataShape.rows} active rows.`
               : `CSV exports all ${dataShape.rows} active rows, regardless of table filters.`"
           />
         </div>
@@ -121,6 +123,18 @@
           size="small"
           stripedRows
         >
+          <Column v-if="tableObservationRefs" :style="{ width: '2rem' }">
+            <template #body="{ data }"><span
+tabindex="0" role="img"
+              :title="data._usedInResult ? 'Used in this result' : 'Not used in this result'"
+              :aria-label="data._usedInResult ? 'Used in this result' : 'Not used in this result'"
+              :class="{ 'excluded-observation': !data._usedInResult }">{{ data._usedInResult ? '○' : '⊗' }}</span></template>
+          </Column>
+          <Column v-if="tableObservationRefs && hasCurrentObservationActions" :key="populationScope?.scope" :style="{ width: '2rem' }">
+            <template #body="{ data }"><ObservationExclusionButton
+              :observation-ref="data._observation_ref" :label="data._label_full"
+              :used-in-result="data._usedInResult" /></template>
+          </Column>
           <Column
             v-for="col in tableColumns"
             :key="col.field"
@@ -136,7 +150,7 @@
                   'label-cell': col.field.startsWith('_label'),
                 }"
                 :title="
-                  col.field.startsWith('_label') ? data._label_full || data[col.field] || '' :
+                  col.field.startsWith('_label') ? `${data._label_full || data[col.field] || ''}${data._source_row ? ` · original row ${data._source_row}` : ''}` :
                     typeof data[col.field] === 'object' ? JSON.stringify(data[col.field]) : ''
                 "
               >
@@ -179,7 +193,7 @@ import { scientificNumber } from "@/utils/scientificEncoding";
 import { useDisplayPreferences, displayNumber } from "@/composables/useDisplayPreferences";
 import { projectActiveSpectralCohort } from "@/utils/scientificCohort";
 /* eslint-disable @typescript-eslint/no-explicit-any -- table modal accepts generic node outputs and loose Plotly-shaped metadata. */
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, inject } from "vue";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
 import InputText from "primevue/inputtext";
@@ -187,6 +201,10 @@ import Button from "primevue/button";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import SampleSelectionMap from "@/components/SampleSelectionMap.vue";
+import ObservationExclusionButton from "@/components/ObservationExclusionButton.vue";
+import { observationOutputMembership } from "@/utils/observationOutputMembership";
+import { tableExclusionRows } from "@/utils/tableExclusionRows";
+import { WORKFLOW_POPULATION_ACTIONS, type WorkflowPopulationActions } from "@/utils/workflowPopulation";
 import { isAuditField, scientificMetadata, scientificColumnLabel, scientificRecordColumnKeys, scientificRecordColumnLabel, scientificStructuredCell, scientificResponseUnit } from "@/utils/scientificDisplay";
 import { isProjectedScientificKind, projectedPresentationIdentity } from "@/utils/scientificPresentation";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";
@@ -207,6 +225,17 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const populationActions = inject<WorkflowPopulationActions | null>(WORKFLOW_POPULATION_ACTIONS, null);
+// The modal can mount before workflow loading. Bind its current actions only
+// when opened; a scope change invalidates that opening until explicit reopen.
+const populationScope = ref<{ scope: string | undefined } | null>(null);
+watch(() => [props.modelValue, populationActions?.scope?.()] as const, ([open, scope], previous) => {
+  if (!open) populationScope.value = null;
+  else if (!previous?.[0]) populationScope.value = { scope };
+  else if (scope !== populationScope.value?.scope) populationScope.value = null;
+}, { immediate: true, flush: "sync" });
+const hasCurrentObservationActions = computed(() => !!populationActions && populationScope.value !== null
+  && populationActions.scope?.() === populationScope.value.scope);
 const cohort = computed(() => projectActiveSpectralCohort(props.nodeOutput));
 const inspectedOutput = computed(() => cohort.value.output);
 const responseUnit = computed(() => scientificResponseUnit(inspectedOutput.value?.presentation_value ?? inspectedOutput.value?.metadata));
@@ -715,7 +744,9 @@ const tableColumns = computed(() => {
 });
 
 // Build table data
-const previewTableData = computed(() => {
+const tableMembership = computed(() => observationOutputMembership(inspectedOutput.value));
+const tableObservationRefs = computed(() => tableMembership.value ? [...tableMembership.value.keys()] : null);
+const basePreviewTableData = computed(() => {
   const output = inspectedOutput.value;
   if (!output?.data) return [];
 
@@ -816,6 +847,13 @@ const previewTableData = computed(() => {
 
   return rows;
 });
+
+const previewTableData = computed(() => tableObservationRefs.value && tableMembership.value
+  ? tableExclusionRows(props.nodeOutput, basePreviewTableData.value, tableObservationRefs.value, tableMembership.value,
+    hasCurrentObservationActions.value ? populationActions?.populations?.() ?? [] : [], rowLimit.value)
+  : basePreviewTableData.value);
+const previewComputedCount = computed(() => tableObservationRefs.value
+  ? previewTableData.value.filter(row => row._usedInResult === true).length : previewTableData.value.length);
 
 const sampleFilterOptions = computed(() => {
   if (!isRowDictFormat.value) return [];
@@ -1045,6 +1083,7 @@ function exportCSV() {
 </script>
 
 <style scoped>
+.excluded-observation { color: var(--ss-excluded); }
 .data-table-modal :deep(.p-dialog-content) {
   padding: 0;
   background: var(--ss-panel-inset);
