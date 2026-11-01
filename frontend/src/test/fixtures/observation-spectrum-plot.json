@@ -1,0 +1,72 @@
+{
+  "schema_version": "spectra-canonical-plot-spec/1",
+  "plot_type": "spectra",
+  "data": [
+    {
+      "x": [
+        4000.0,
+        400.0
+      ],
+      "y": [
+        1.0,
+        2.0
+      ],
+      "meta": {
+        "workflow_observation_ref": "load:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:2",
+        "workflow_included": true
+      },
+      "type": "scatter",
+      "name": "Repeated",
+      "mode": "lines"
+    },
+    {
+      "x": [
+        4000.0,
+        400.0
+      ],
+      "y": [
+        1.0,
+        2.0
+      ],
+      "meta": {
+        "workflow_observation_ref": "load:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:1",
+        "workflow_included": false
+      },
+      "type": "scatter",
+      "name": "Repeated",
+      "mode": "lines"
+    },
+    {
+      "x": [
+        4000.0,
+        400.0
+      ],
+      "y": [
+        1.0,
+        2.0
+      ],
+      "meta": {
+        "workflow_observation_ref": "load:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0",
+        "workflow_included": true
+      },
+      "type": "scatter",
+      "name": "Repeated",
+      "mode": "lines"
+    }
+  ],
+  "layout": {
+    "title": "Measured values",
+    "xaxis": {
+      "title": "Spectral Coordinate (cm-1)"
+    },
+    "yaxis": {
+      "title": "Measured values"
+    }
+  },
+  "metadata": {
+    "data_role": "X_spectra",
+    "n_samples": 3,
+    "n_features": 2,
+    "shown_traces": 3
+  }
+}

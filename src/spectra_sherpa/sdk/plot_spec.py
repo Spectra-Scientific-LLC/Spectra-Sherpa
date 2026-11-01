@@ -55,6 +55,7 @@ _TRACE_FIELDS = frozenset(
         "legendgroup",
         "line",
         "marker",
+        "meta",
         "mode",
         "name",
         "opacity",
@@ -171,6 +172,35 @@ class CanonicalPlotSpec:
                 raise CanonicalPlotSpecError(f"data[{index}].type is unsupported")
             if "visible" in trace and not (isinstance(trace["visible"], bool) or trace["visible"] == "legendonly"):
                 raise CanonicalPlotSpecError(f"data[{index}].visible must be true, false, or 'legendonly'")
+            if "meta" in trace:
+                # Closed navigation projection only; no sample identity or free-form payload.
+                compact = isinstance(trace["meta"], Mapping) and "workflow_observation_ref" in trace["meta"]
+                ref_field = "workflow_observation_ref" if compact else "workflow_observation_refs"
+                fields = frozenset({ref_field, "workflow_included"})
+                navigation = _closed_mapping(trace["meta"], path=f"data[{index}].meta", allowed=fields)
+                refs = navigation.get(ref_field)
+                included = navigation.get("workflow_included")
+                aligned = (
+                    trace.get("type") in {"scatter", "bar"}
+                    and isinstance(trace.get("x"), list)
+                    and isinstance(trace.get("y"), list)
+                    and len(trace["x"]) == len(trace["y"])
+                )
+                valid = (
+                    isinstance(refs, str) and bool(refs) and refs == refs.strip() and type(included) is bool
+                    if compact
+                    else isinstance(refs, list)
+                    and bool(refs)
+                    and all(isinstance(ref, str) and bool(ref) and ref == ref.strip() for ref in refs)
+                    and isinstance(included, list)
+                    and len(included) == len(refs)
+                    and all(type(flag) is bool for flag in included)
+                    and aligned
+                    and len(refs) == len(trace["x"])
+                )
+                if not aligned or not valid:
+                    raise CanonicalPlotSpecError(f"data[{index}].meta must contain point-aligned workflow navigation")
+                trace["meta"] = navigation
             traces.append(trace)
         closed_layout = _closed_mapping(layout, path="layout", allowed=_LAYOUT_FIELDS)
         closed_metadata = _json_safe(metadata or {}, path="metadata")

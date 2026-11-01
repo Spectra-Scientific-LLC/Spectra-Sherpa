@@ -43,6 +43,9 @@
       <p v-if="summaryError" role="status" class="summary-error">{{ summaryError }}</p>
       <ModelSummaryCard :summary="modelSummary" compact display="context"
         :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
+      <RetainedPopulationSummary ref="retainedSummaryAnchor" :value="detail.population_summary" :run-id="detail.run.id"
+        @inspect="inspectPopulationSource" @download="downloadPopulationMap" />
+      <p v-if="populationDownloadError" role="status">{{ populationDownloadError }}</p>
       <section class="inspection">
         <aside aria-label="Saved run nodes">
           <button v-for="node in nodes" :key="node.id" :aria-current="selectedNode === node.id ? 'true' : undefined" @click="selectNode(node.id)">
@@ -166,6 +169,8 @@
             <h2>{{ selectedDefinition?.label || selectedNode }}</h2>
             <p v-if="nodeFailure" role="alert">{{ nodeFailure }}</p>
             <p v-for="message in outputMessages" :key="message" role="status">{{ message }}</p>
+              <RetainedPopulationMap v-if="route.query.output === 'exclusions'"
+                :key="`${detail.run.id}:${selectedNode}`" :value="values.exclusions" :node-id="selectedNode" />
               <section v-if="nodeTrust" class="application-trust" aria-label="Retained prediction trust">
                 <h3>Per-file prediction trust</h3>
                 <p>Fitted model artifact: {{ values.model_id }}</p>
@@ -236,6 +241,8 @@
 
 <script setup lang="ts">
 import SavedPairedEvaluation from "@/components/SavedPairedEvaluation.vue";
+import RetainedPopulationSummary from "@/components/results/RetainedPopulationSummary.vue";
+import RetainedPopulationMap from "@/components/results/RetainedPopulationMap.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- saved node payloads use the shared scientific renderer contract. */
 import { computed, ref, shallowRef, watch, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -288,6 +295,7 @@ interface Definition {
   edges: Array<{ from_node_id: string; to_node_id: string; from_output: string; to_input: string }>;
 }
 interface Detail {
+  population_summary?: unknown;
   batch?: { batch_id: string; batch_index: number; batch_size: number; execution_mode: string;
     scope_label: string; dataset?: { name: string }; dataset_view?: { name: string }; n_included_samples: number } | null;
   environment_snapshot?: Record<string, unknown> | null;
@@ -329,6 +337,7 @@ const applicationAdvisorAvailable = computed(() => appMode.value !== 'local' &&
 const emit = defineEmits<{ (event: 'renamed'): void }>();
 defineProps<{ actionsTarget?: HTMLElement | null }>();
 const detail = ref<Detail | null>(null);
+const retainedSummaryAnchor = ref<InstanceType<typeof RetainedPopulationSummary> | null>(null);
 const producedArtifactUid = ref('');
 watch(() => detail.value?.run.id, () => { producedArtifactUid.value = ''; });
 function openProducedModel() {
@@ -419,6 +428,24 @@ const rawOpen = ref<Record<string, boolean>>({});
 const outputMessages = ref<string[]>([]);
 const modelSummary = shallowRef<ModelSummary | null>(null);
 const summaryError = ref('');
+const populationDownloadError = ref('');
+function inspectPopulationSource(nodeId: string) {
+  void router.replace({ query: { ...route.query, view: 'Results', node: nodeId, output: 'exclusions', presentation: undefined } });
+}
+async function downloadPopulationMap(nodeId: string) {
+  const owner = activeRunTicket;
+  const run = detail.value?.run;
+  const evidence = detail.value?.evidence.outputs[nodeId]?.exclusions;
+  populationDownloadError.value = '';
+  if (!owner?.isCurrent() || !run || evidence?.state !== 'exact') return;
+  try {
+    const value = await read(nodeId, 'exclusions');
+    if (!owner.isCurrent()) return;
+    downloadJson({ run_id: run.id, node_id: nodeId, port: 'exclusions', evidence, value }, `run-${run.id}-${nodeId}-exclusions.json`);
+  } catch (error) {
+    if (owner.isCurrent()) populationDownloadError.value = `Retained row map unavailable: ${failure(error)}`;
+  }
+}
 const tabs = ["Summary", "Results", "Validation"];
 const expandedSections = ref<string[]>([]);
 const inspectingNode = computed(() => expandedSections.value.includes('Results') || expandedSections.value.includes('Validation'));
@@ -539,7 +566,7 @@ const runRequests = useScopedRequest(runIdentity, clearRunEvidence);
 registerProjectScopeReset(runRequests.invalidate);
 const failure = (err: any) => String(err?.response?.data?.detail || err?.message || 'Saved evidence could not be loaded.');
 function setTab(value: string) { if (value) void router.replace({ query: { ...route.query, view: value } }); }
-function selectNode(id: string) { void router.replace({ query: { ...route.query, node: id, presentation: undefined } }); }
+function selectNode(id: string) { void router.replace({ query: { ...route.query, node: id, presentation: undefined, output: undefined } }); }
 function selectPresentation(id: string) { void router.replace({ query: { ...route.query, presentation: id } }); }
 function backToRuns() {
   const query = { ...route.query };
@@ -628,6 +655,7 @@ async function openReport(): Promise<void> {
 }
 async function loadRun(allowProjectSelection = true) {
   clearRunEvidence();
+  populationDownloadError.value = '';
   const request = runRequests.begin();
   activeRunTicket = request;
   if (!route.params.runId) { loading.value = false; return; }
@@ -840,6 +868,14 @@ watch([() => detail.value?.run.id, tab], ([id, view], [previousId]) => {
   else if (!expandedSections.value.includes(view)) expandedSections.value.push(view);
 }, { immediate: true });
 watch([selectedNode, inspectingNode], () => void loadNode());
+watch([() => route.hash, retainedSummaryAnchor, () => detail.value?.run.id, loading], () => {
+  // The target exists only after this run's scoped async read has rendered.
+  // Never scroll a late result or a previously selected run into view.
+  if (route.hash !== '#retained-observation-exclusions' || loading.value
+    || detail.value?.run.id !== Number(route.params.runId)) return;
+  const target = retainedSummaryAnchor.value?.$el;
+  if (target instanceof HTMLElement) target.scrollIntoView({ block: 'start' });
+}, { flush: 'post' });
 onBeforeUnmount(() => { runRequests.dispose(); nodeRequests.dispose(); nameRequests.dispose(); cache.clear(); });
 </script>
 

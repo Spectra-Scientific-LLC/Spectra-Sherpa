@@ -90,6 +90,65 @@ function installIdentifiedRuns() {
   });
 }
 
+describe('retained workflow exclusions across run sections', () => {
+  function populationEvidence() {
+    const response = runEvidence(42);
+    return { data: { ...response.data,
+      population_summary: {
+        schema_version: 'spectrasherpa-retained-population-summary/1', run_id: 42,
+        rows: [{ label: 'Retained exclusions (load)', value: '6 source; 4 active; 2 excluded in total.' }],
+        sources: [{ node_id: 'load', port: 'exclusions', availability: 'available', source_count: 6, active_count: 4, excluded_count: 2 }],
+      },
+      evidence: { ...response.data.evidence, outputs: { ...response.data.evidence.outputs,
+        load: { exclusions: { state: 'exact', storage: 'file', sha256: 'a'.repeat(64) } },
+      } },
+    } };
+  }
+  it.each(['Summary', 'Results', 'Validation'])('keeps run-bound context visible in %s and downloads the exact map', async view => {
+    const normal = get.getMockImplementation()!;
+    const value = { schema_version: 'spectrasherpa-workflow-population/1', source_node_id: 'load', source_digest: 'a'.repeat(64),
+      source_count: 6, active_count: 4, workflow_excluded_count: 2,
+      rows: Array.from({ length: 6 }, (_, index) => ({ observation_ref: `load:${'a'.repeat(64)}:${index}`,
+        sample_id: `typed-${index + 1}`, sample_label: `label-${index + 1}`, included: index >= 2,
+        source_included: true, workflow_excluded: index < 2, source_row: index + 1, result_row: index < 2 ? null : index - 1 })) };
+    get.mockImplementation(async (url: string, config?: unknown) => {
+      if (url.endsWith('/evidence')) return populationEvidence();
+      if (url.endsWith('/load/exclusions')) return { data: { value } };
+      return normal(url, config);
+    });
+    const { wrapper, router } = await open(`?project=1&view=${view}&node=pca`);
+    expect(wrapper.get('[aria-label="Retained workflow observation exclusions"]').text()).toContain('Used 4');
+    expect(wrapper.find('[aria-label="Retained source exclusion map"]').exists()).toBe(false);
+    await wrapper.get('[aria-label="Download retained row map load"]').trigger('click');
+    await flushPromises();
+    expect(downloadJson).toHaveBeenCalledWith(expect.objectContaining({ run_id: 42, node_id: 'load', port: 'exclusions', value }), 'run-42-load-exclusions.json');
+    await wrapper.get('[aria-label="Inspect retained source map load"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.query).toMatchObject({ view: 'Results', node: 'load', output: 'exclusions' });
+    const map = wrapper.get('[aria-label="Retained source exclusion map"]');
+    expect(map.text()).toContain('typed-1');
+    expect(map.text()).toContain('Workflow exclusion at execution');
+    expect(map.text()).toContain('Current workflow exclusions are not loaded here');
+  });
+  it('does not download a late map response after leaving the owning run', async () => {
+    downloadJson.mockClear();
+    const pending = deferred<{ data: { value: object } }>();
+    const normal = get.getMockImplementation()!;
+    get.mockImplementation((url: string, config?: unknown) => {
+      if (url === '/runs/42/evidence') return Promise.resolve(populationEvidence());
+      if (url === '/runs/43/evidence') return Promise.resolve(runEvidence(43));
+      if (url.endsWith('/load/exclusions')) return pending.promise;
+      return normal(url, config);
+    });
+    const { wrapper, router } = await open('?project=1&view=Summary');
+    await wrapper.get('[aria-label="Download retained row map load"]').trigger('click');
+    await router.replace('/runs/43?project=1&view=Summary'); await flushPromises();
+    pending.resolve({ data: { value: { rows: [] } } }); await flushPromises();
+    expect(downloadJson).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain('Retained exclusions unavailable');
+  });
+});
+
 describe('Retained run request scope', () => {
   it('rejects an old A response after A→B→A and keeps the newly loaded A', async () => {
     installIdentifiedRuns();
@@ -1078,5 +1137,59 @@ it('renders the declared peak overlay when the retained primary port is a mixed-
     expect(saved).toEqual(before);
   } finally {
     preferences.maxRows = previousLimit;
+  }
+});
+
+it('scrolls the retained-map link only after its asynchronous run summary renders', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+  const scroll = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scroll });
+  const pending = deferred<ReturnType<typeof runEvidence>>();
+  const original = get.getMockImplementation()!;
+  get.mockImplementation((url: string, ...args: unknown[]) => url.endsWith('/evidence') ? pending.promise : original(url, ...args));
+  try {
+    const { wrapper, router } = await open('?project=1&view=Summary#retained-observation-exclusions');
+    expect(scroll).not.toHaveBeenCalled();
+    expect(wrapper.find('#retained-observation-exclusions').exists()).toBe(false);
+    pending.resolve(runEvidence(42));
+    await flushPromises();
+    await nextTick();
+    expect(wrapper.find('#retained-observation-exclusions').exists()).toBe(true);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+    await router.replace({ query: router.currentRoute.value.query, hash: '' });
+    await router.replace({ query: router.currentRoute.value.query, hash: '#retained-observation-exclusions' });
+    await nextTick();
+    expect(scroll).toHaveBeenCalledTimes(2);
+  } finally {
+    if (descriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', descriptor);
+    else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+  }
+});
+
+it('never scrolls a superseded run when its retained summary arrives late', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+  const scroll = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scroll });
+  const oldRun = deferred<ReturnType<typeof runEvidence>>();
+  const nextRun = deferred<ReturnType<typeof runEvidence>>();
+  const original = get.getMockImplementation()!;
+  get.mockImplementation((url: string, ...args: unknown[]) => url.endsWith('/evidence')
+    ? (url.includes('/42/') ? oldRun.promise : nextRun.promise) : original(url, ...args));
+  try {
+    const { wrapper, router } = await open('?project=1&view=Summary#retained-observation-exclusions');
+    await router.push('/runs/43?project=1&view=Summary#retained-observation-exclusions');
+    await flushPromises();
+    oldRun.resolve(runEvidence(42));
+    await flushPromises();
+    expect(scroll).not.toHaveBeenCalled();
+    nextRun.resolve(runEvidence(43));
+    await flushPromises();
+    await nextTick();
+    expect(wrapper.text()).toContain('Run 43');
+    expect(scroll).toHaveBeenCalledTimes(1);
+  } finally {
+    if (descriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', descriptor);
+    else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
   }
 });

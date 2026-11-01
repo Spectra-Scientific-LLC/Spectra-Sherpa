@@ -2111,6 +2111,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   });
   const workflowPopulationActions: WorkflowPopulationActions = {
     scope: () => JSON.stringify([...workspaceIdentity(), workflowId.value]),
+    populations: () => workflowPopulations.value.map(({ state }) => state),
     resolve: ref => workflowObservationLookup.value.get(ref) ?? null,
     change(refs, exclude) {
       if (isExecuting.value) throw new Error("Wait for this run to finish before changing workflow exclusions.");

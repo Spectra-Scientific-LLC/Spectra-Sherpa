@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from spectra_sherpa.app.schemas.run_evidence import RunEvidence
 from spectra_sherpa.app.services.dag.node_base import node_registry
@@ -15,6 +15,9 @@ from spectra_sherpa.app.services.dag.out_of_fold_evidence import validate_out_of
 from spectra_sherpa.app.services.run_output_retention import read_output
 from spectra_sherpa.core.target_units import TargetUnits, resolve_response_units, resolve_target_units
 from spectra_sherpa.sdk.validation_reporting import regression_reporting_notes
+
+if TYPE_CHECKING:
+    from spectra_sherpa.app.services.run_population_summary import RetainedDefinitionRead
 
 
 class ValidationReadBudgetExceeded(ValueError):
@@ -112,7 +115,13 @@ def _preparation_only(definition: dict | None) -> bool:
         return False
 
 
-def validation_summary(run: Any, definition: dict | None, *, include_row_level_plots: bool = False) -> dict:
+def validation_summary(
+    run: Any,
+    definition: dict | None,
+    *,
+    include_row_level_plots: bool = False,
+    population_definition_read: RetainedDefinitionRead | None = None,
+) -> dict:
     """Build an exportable summary, preserving explicit gaps in retained evidence."""
     rows: list[dict[str, Any]] = []
     figures: list[dict] = []
@@ -126,6 +135,10 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
             summary_rows.append({"label": label, "value": str(value if short is None else short)})
 
     add("Saved run", run.id)
+    from spectra_sherpa.app.services.run_population_summary import retained_population_summary
+
+    for row in retained_population_summary(run, definition_read=population_definition_read)["rows"]:
+        add(row["label"], row["value"], summary=True)
     for label, detail in regression_reporting_notes().items():
         add(f"Metric interpretation: {label}", detail)
     add("Run outcome", getattr(run, "status", "Not recorded"))

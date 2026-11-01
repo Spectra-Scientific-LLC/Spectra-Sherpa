@@ -491,6 +491,50 @@ is aligned navigation context, not a specimen identity or a second inclusion
 mask; slicing preserves it and scientific dataset identity omits it.
 `include_mask` remains the inclusion authority.
 
+Runs exposes the same retained exclusion context above Summary, Results and
+Validation as compact source/used/excluded counts with short hover scope. The
+individual map is rendered only after explicit inspection; full provenance
+remains in the report projection and retained evidence. History, run comparison, model provenance and Batch model choices
+link to the owning retained run using only its recorded run/project IDs; these
+navigation links do not read or decode source maps in lists. Batch completion
+continues to open the resulting run in Inspect. A missing source run is unavailable,
+not inferred from a model name. `app/services/run_population_summary.py` reads the exact source
+`exclusions` ports, checks their row/count alignment and any recorded effective
+`workflow_exclusions` parameters, and supplies the same scalar rows to Report's
+short and detailed HTML/Markdown projections. It does not consult the current
+canvas, match labels, recalculate a fit, or change retained receipts. Counts are
+per source, not distinct specimens across sources. Source exclusions and workflow
+overrides may overlap; their sum must not be presented as the total excluded count.
+
+Each available summary identifies its run, source node, `exclusions` port, source
+digest and retained-output checksum. Runs can open that source's read-only map
+(100 rows per page, including excluded observations) and download
+its complete original row map through the existing project-scoped retained-output
+route. Summary responses and report context do not embed observation rows or
+display labels. The source map remains the individual-observation evidence;
+an offline report's reference does not itself contain that map. Current workflow
+edits do not update the saved decision, and no comparison with the current canvas
+is implied by this retained summary. “Used in the retained run's source result”
+means that source's canonical `included` field, before branch filters. It does
+not establish use by every downstream fit or evaluator. In particular, excluding
+a row after computation must not relabel its retained inclusion decision.
+
+The projection reads at most 16 MiB of declared retained evidence, including the
+saved definition, and summarizes at most 32 sources. Larger maps remain available
+through their individual retained-output route subject to its existing limits.
+The saved definition has the same 2 MiB cap in Inspect and Report; an oversized
+definition does not consume the source-map budget. Report shares one checked,
+owner/receipt-bound definition snapshot with its population summary within each
+request. New requests check storage again. A process-local LRU holds at most 128
+scalar count results, keyed by owner, complete output receipt, source node and
+retained parameters. Cache hits still require a fresh owner-scoped file read and
+checksum/format verification; raw maps and failed validations are never cached
+across requests. This saves repeated count validation, not integrity-required I/O.
+Missing, reduced, unsupported, inconsistent and over-budget evidence is explicitly
+unavailable, never zero exclusions. Older runs are not backfilled. The frontend
+summary adapter validates run/schema binding and creates only a display view
+model; it does not redeclare observation inclusion or a transport authority.
+
 An explicitly declared `project_population` may supply a private, retained
 `__workflow_population` display companion. It applies the current fitted state
 or a declared row-local transformation; it must not refit, evaluate, write an

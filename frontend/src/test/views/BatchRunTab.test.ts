@@ -1,5 +1,6 @@
 import { mount, flushPromises } from '@vue/test-utils';
 import { reactive } from 'vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BatchRunTab from '@/views/experiments/BatchRunTab.vue';
 
@@ -8,10 +9,14 @@ vi.mock('@/api/client', () => ({ default: { get: mocks.get, post: mocks.post } }
 vi.mock('@/stores/project', () => ({ useProjectStore: () => mocks.project }));
 vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: vi.fn() }) }));
 function open() {
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { path: '/', component: { template: '<div />' } },
+    { path: '/runs/:runId', component: { template: '<div />' } },
+  ] });
   return mount(BatchRunTab, { props: { artifacts: [
     { artifact_uid: 'm1', name: 'Model one', workflow_id: 1, source_run_id: 17, n_components: 5, created_at: '2026-10-09T12:00:00Z' },
     { artifact_uid: 'm2', name: 'Model two', workflow_id: 2 },
-  ] }, global: { stubs: { PrivateBatchUpload: true,
+  ] }, global: { plugins: [router], stubs: { PrivateBatchUpload: true,
     Button: { props: ['label', 'disabled'], template: '<button :disabled="disabled">{{ label }}</button>' },
   } } });
 }
@@ -63,6 +68,9 @@ describe('Batch workflow verification', () => {
     const vm = await choose(wrapper);
     expect(vm.combinations).toHaveLength(4);
     expect(wrapper.text()).toContain('Run #17');
+    expect(wrapper.get('a.retained-map-link').attributes('href')).toBe('/runs/17?project=3&tab=inspect&view=Summary#retained-observation-exclusions');
+    expect(wrapper.get('a.retained-map-link').element.closest('label')).toBeNull();
+    expect(mocks.get.mock.calls.some(([url]) => String(url).includes('/outputs/'))).toBe(false);
     expect(wrapper.text()).toContain('5 LV');
     expect(wrapper.findAll('input[type="radio"]')).toHaveLength(2);
     expect(wrapper.find('table').exists()).toBe(false);

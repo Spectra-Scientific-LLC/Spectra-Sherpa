@@ -1,0 +1,76 @@
+{
+  "schema_version": "spectra-canonical-plot-spec/1",
+  "plot_type": "scores",
+  "data": [
+    {
+      "meta": {
+        "workflow_observation_refs": [
+          "load:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:2",
+          "load:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0"
+        ],
+        "workflow_included": [
+          true,
+          true
+        ]
+      },
+      "x": [
+        1.0,
+        1.0
+      ],
+      "y": [
+        2.0,
+        2.0
+      ],
+      "type": "scatter",
+      "mode": "markers",
+      "marker": {
+        "size": 8,
+        "opacity": 0.8
+      },
+      "name": "A",
+      "text": [
+        "Repeated",
+        "Repeated"
+      ],
+      "hovertemplate": "%{text}<br>%{x:.4g}, %{y:.4g}<extra>%{fullData.name}</extra>"
+    },
+    {
+      "meta": {
+        "workflow_observation_refs": [
+          "load:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:1"
+        ],
+        "workflow_included": [
+          true
+        ]
+      },
+      "x": [
+        1.0
+      ],
+      "y": [
+        2.0
+      ],
+      "type": "scatter",
+      "mode": "markers",
+      "marker": {
+        "size": 8,
+        "opacity": 0.8
+      },
+      "name": "B",
+      "text": [
+        "Repeated"
+      ],
+      "hovertemplate": "%{text}<br>%{x:.4g}, %{y:.4g}<extra>%{fullData.name}</extra>"
+    }
+  ],
+  "layout": {
+    "title": "Measured values",
+    "xaxis": {
+      "title": "PC1"
+    },
+    "yaxis": {
+      "title": "PC2"
+    },
+    "showlegend": true
+  },
+  "metadata": {}
+}

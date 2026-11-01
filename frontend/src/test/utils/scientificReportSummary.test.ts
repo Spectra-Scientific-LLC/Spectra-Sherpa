@@ -29,6 +29,28 @@ function fixture(): ReportData {
   };
 }
 
+it('keeps backend retained exclusion counts and row-map custody in short and detailed HTML/Markdown', () => {
+  const data = fixture();
+  const rows = [
+    { label: 'Workflow observation exclusions', value: 'Retained run decisions only; current workflow edits are not substituted.', row_level: false },
+    { label: 'Retained exclusions (load)', value: '6 source; 4 active; 2 excluded in total.', row_level: false },
+    { label: 'Retained row map (load)', value: `Run 7, node load, port exclusions. Source SHA-256 ${'a'.repeat(64)}; output SHA-256 ${'b'.repeat(64)}.`, row_level: false },
+    { label: 'Retained exclusions (other)', value: 'Unavailable: source map missing.', row_level: false },
+  ];
+  data.runs![0].validation_summary = { schema_version: 'spectrasherpa-readable-validation/1', run_id: 7, rows, summary_rows: rows };
+  // Current authoring settings and duplicate labels cannot replace retained facts.
+  data.nodes = [{ nodeId: 'load', nodeType: 'data.file_load', label: 'duplicate', positionX: 0, positionY: 0, parameters: { workflow_exclusions: { excluded_refs: [] } } }];
+  for (const reportMode of ['summary', 'detailed'] as const) {
+    data.reportMode = reportMode;
+    const before = JSON.stringify(data);
+    for (const output of [generateProvenanceReport(data), generateMarkdownReport(data)]) {
+      for (const row of rows) expect(output.replace(/\\([.()])/g, '$1')).toContain(row.value);
+      expect(output).not.toContain('observation_ref');
+    }
+    expect(JSON.stringify(data)).toBe(before);
+  }
+});
+
 // Run692's retained KNN calibration shape: the dataset metadata and extra
 // carry a sklearn class report beside core_utils.classification_metrics_contract.
 // Only public aggregate values are needed; no sample rows or model state.

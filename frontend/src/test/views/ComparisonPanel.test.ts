@@ -4,7 +4,13 @@ const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock('@/api/client', () => ({ default: { get } }));
 import ComparisonPanel from '@/views/experiments/ComparisonPanel.vue';
 import PrimeVue from 'primevue/config';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import type { ExecutionRunDetail } from '@/types';
+
+const testRouter = () => createRouter({ history: createMemoryHistory(), routes: [
+  { path: '/', component: { template: '<div />' } },
+  { path: '/runs/:runId', component: { template: '<div />' } },
+] });
 
 const run = (id: number) => ({ id, name: `Run ${id}`, params_snapshot: {}, results_summary: {},
   diagnostics: {}, node_statuses: {}, labels: [], produced_artifact_uids: [], attempted_artifact_uids: [], succeeded_artifact_uids: [],
@@ -12,12 +18,25 @@ const run = (id: number) => ({ id, name: `Run ${id}`, params_snapshot: {}, resul
 }) as ExecutionRunDetail;
 
 describe('Comparison evaluation qualification', () => {
+  it('links each compared run to its own retained map without decoding outputs for navigation', () => {
+    get.mockClear();
+    const first = { ...run(1), project_id: 4 }, second = { ...run(2), project_id: 4 };
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } },
+      { path: '/runs/:runId', component: { template: '<div />' } }] });
+    const wrapper = mount(ComparisonPanel, { props: { runs: [first, second], metricKeys: [], diff: {} }, global: { plugins: [PrimeVue, router] } });
+    expect(wrapper.findAll('a.retained-map-link').map(link => link.attributes('href'))).toEqual([
+      '/runs/1?project=4&tab=inspect&view=Summary#retained-observation-exclusions',
+      '/runs/2?project=4&tab=inspect&view=Summary#retained-observation-exclusions',
+    ]);
+    expect(get).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
   it('shares the available width equally across candidates and wraps long values', () => {
     const runs = [run(1), run(2), run(3)];
     runs[0].name = 'A very long run name that must remain readable at narrow widths';
     const wrapper = mount(ComparisonPanel, { props: {
       runs, metricKeys: [], diff: {},
-    }, global: { plugins: [PrimeVue] } });
+    }, global: { plugins: [PrimeVue, testRouter()] } });
     const table = wrapper.find('.comparison-matrix');
     expect(table.attributes('style')).toContain('min-width: 41rem');
     expect(table.findAll('col.comparison-run-column')).toHaveLength(3);
@@ -27,7 +46,7 @@ describe('Comparison evaluation qualification', () => {
   });
 
   it('keeps legacy overview descriptive when the scientific authority is present', () => {
-    const wrapper = mount(ComparisonPanel, {props: {runs: [run(1), run(2)], metricKeys: ['accuracy'], diff: {accuracy: {'1': .9, '2': .8}}, rankableMetrics: ['accuracy'], scientificComparison: {schema_version: 'spectrasherpa-scientific-comparison/1', items: [], pairs: []}}, global: {plugins: [PrimeVue]}});
+    const wrapper = mount(ComparisonPanel, {props: {runs: [run(1), run(2)], metricKeys: ['accuracy'], diff: {accuracy: {'1': .9, '2': .8}}, rankableMetrics: ['accuracy'], scientificComparison: {schema_version: 'spectrasherpa-scientific-comparison/1', items: [], pairs: []}}, global: {plugins: [PrimeVue, testRouter()]}});
     expect(wrapper.text()).toContain('Additional recorded details');
     expect(wrapper.find('.metric-best, .delta-positive, .delta-negative').exists()).toBe(false);
     wrapper.unmount();
@@ -51,7 +70,7 @@ describe('Comparison evaluation qualification', () => {
     } } }));
     const wrapper = mount(ComparisonPanel, { props: {
       runs: [first, second], metricKeys: [], diff: {},
-    }, global: { plugins: [PrimeVue] } });
+    }, global: { plugins: [PrimeVue, testRouter()] } });
     await flushPromises();
     const rows = wrapper.findAll('tbody').find((body) => body.find('.matrix-section-row').text() === 'Workflow')!.findAll('tr').slice(1);
     expect(rows.map((row) => row.findAll('td')[0]?.text())).toEqual(['Load Data', 'Normalize', 'PLS']);
@@ -82,7 +101,7 @@ describe('Comparison evaluation qualification', () => {
         ? { ...node, node_type: 'model.fitted_pls' } : { ...node }), edges: [] },
     } });
     const wrapper = mount(ComparisonPanel, { props: { runs: [first, second], metricKeys: [], diff: {} },
-      global: { plugins: [PrimeVue], stubs: { PairedEvaluationPanel: { props: ['recipes'], template: '<div class="paired-recipes">{{ JSON.stringify(recipes) }}</div>' } } } });
+      global: { plugins: [PrimeVue, testRouter()], stubs: { PairedEvaluationPanel: { props: ['recipes'], template: '<div class="paired-recipes">{{ JSON.stringify(recipes) }}</div>' } } } });
     await flushPromises();
     const selectors = wrapper.findAll('.evaluation-controls select');
     expect(selectors).toHaveLength(2);
@@ -103,7 +122,7 @@ describe('Comparison evaluation qualification', () => {
     const wrapper = mount(ComparisonPanel, { props: {
       runs: [run(1), run(2)], metricKeys: ['eval_1.r2', 'training_cv.r2'],
       diff: { 'eval_1.r2': { '1': .996, '2': .9976 }, 'training_cv.r2': { '2': .9966 } }, rankableMetrics: [],
-    }, global: { plugins: [PrimeVue] } });
+    }, global: { plugins: [PrimeVue, testRouter()] } });
     const first = wrapper.get('table[aria-label="Recorded measures for Run 1"]');
     const second = wrapper.get('table[aria-label="Recorded measures for Run 2"]');
     expect(first.findAll('tbody tr')).toHaveLength(1);
@@ -124,7 +143,7 @@ describe('Comparison evaluation qualification', () => {
     const left = run(1), right = run(2);
     left.params_snapshot = { fit: { n_components: 2, scale: true, label: '2', tolerance: 0.000001 } };
     right.params_snapshot = { fit: { n_components: 7, scale: false, label: '7', tolerance: 0.000002, seed: 1 } };
-    const wrapper = mount(ComparisonPanel, { props: { runs: [left, right], metricKeys: [], diff: {} }, global: { plugins: [PrimeVue] } });
+    const wrapper = mount(ComparisonPanel, { props: { runs: [left, right], metricKeys: [], diff: {} }, global: { plugins: [PrimeVue, testRouter()] } });
     const rows = wrapper.findAll('tbody').find(body => body.text().includes('Changed settings'))!.findAll('tr');
     const delta = (label: string) => rows.find(row => row.text().includes(label))!.findAll('td').at(-1)!.text();
     expect(delta('n components')).toBe('+5');
@@ -151,7 +170,7 @@ describe('Comparison evaluation qualification', () => {
     };
     const wrapper = mount(ComparisonPanel, { props: {
       runs: [splitRun], metricKeys: [], diff: {},
-    }, global: { plugins: [PrimeVue] } });
+    }, global: { plugins: [PrimeVue, testRouter()] } });
     const rows = wrapper.findAll('tr').map(row => row.text());
     expect(rows).toContain('Data dimensions33 samples × 1868 features');
     expect(rows).toContain('PartitionTrain 24 / Test 9, 27% test');
@@ -162,7 +181,7 @@ describe('Comparison evaluation qualification', () => {
     const wrapper = mount(ComparisonPanel, {
       props: { runs: [run(1), run(2)], metricKeys: [], diff: {} },
       attrs: { resultPairs: [{ kind, requires_pairing: true }] },
-      global: { plugins: [PrimeVue] },
+      global: { plugins: [PrimeVue, testRouter()] },
     });
     expect(wrapper.find('.comparison-matrix').exists()).toBe(true);
     expect(wrapper.text()).not.toContain('Result pairing');

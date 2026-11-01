@@ -1,3 +1,4 @@
+import { compactObservationRef } from "@/utils/workflowPopulationTrace";
 import type { DisplayPreferences } from "@/composables/useDisplayPreferences";
 import { themedPlotLayout, themedPlotTrace, type PlotSurface } from "@/theme/plotTheme";
 
@@ -108,11 +109,12 @@ export function displayPlot(
   const allSpectralLines = curves.length > prefs.maxRows && curves.every((trace) =>
     trace.type === "scatter" && String(trace.mode || "").includes("lines") &&
     (!String(trace.mode || "").includes("markers") ||
-      Array.isArray((trace.meta as Trace | undefined)?.workflow_observation_refs)));
+      Array.isArray((trace.meta as Trace | undefined)?.workflow_observation_refs) || compactObservationRef(trace) !== null));
   if (allSpectralLines) {
     const priority = curves.flatMap((trace, index) => {
       const meta = trace.meta as Trace | undefined;
-      return Array.isArray(meta?.workflow_included) && meta.workflow_included.some(value => value === false)
+      return (compactObservationRef(trace) !== null && meta?.workflow_included === false)
+        || (Array.isArray(meta?.workflow_included) && meta.workflow_included.some(value => value === false))
         ? [index] : [];
     });
     // Excluded observations disclose context; they must not replace the
