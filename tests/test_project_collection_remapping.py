@@ -199,7 +199,13 @@ async def test_unbound_draft_collection_node_has_no_binding_to_restore(monkeypat
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "binding",
-    [{"selected_file_ids": ["5"]}, {"asset_id": "asset"}, {"scientific_collection_sha256": "a" * 64}],
+    [
+        {"selected_file_ids": ["5"]},
+        {"asset_id": "asset"},
+        {"scientific_collection_sha256": "a" * 64},
+        {"dataset_view_id": "view"},
+        {"dataset_view_sha256": "b" * 64},
+    ],
 )
 async def test_partial_binding_without_experiment_is_still_refused(binding, test_session, test_user):
     from spectra_sherpa.app.api.v1.routes.projects import _verify_restored_collection_binding
@@ -343,3 +349,18 @@ async def test_export_names_node_whose_selected_file_was_deleted(auth_client, te
     detail = exported.json()["detail"]
     assert 'workflow "Draft canvas", node "Load spectra"' in detail
     assert "Reselect its data" in detail
+
+
+def test_export_preflight_checks_a_lone_file_id():
+    from spectra_sherpa.app.api.v1.routes.projects import (
+        ProjectSnapshotStateError,
+        _preflight_workflow_file_selections,
+    )
+
+    snapshot = _selection_snapshot([])
+    parameters = snapshot["workflows"][0]["nodes"][0]["parameters"]
+    parameters["file_id"] = 11
+    _preflight_workflow_file_selections(snapshot)
+    parameters["file_id"] = 12
+    with pytest.raises(ProjectSnapshotStateError, match='node "Load spectra".*Reselect'):
+        _preflight_workflow_file_selections(snapshot)

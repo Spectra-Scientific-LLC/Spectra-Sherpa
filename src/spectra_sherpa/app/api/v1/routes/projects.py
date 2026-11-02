@@ -951,11 +951,14 @@ def _preflight_workflow_file_selections(snapshot: dict[str, Any]) -> None:
                 continue
             for node in workflow.get("nodes", []):
                 parameters = node.get("parameters") if isinstance(node, dict) else None
-                if not isinstance(parameters, dict) or not parameters.get("selected_file_ids"):
+                if not isinstance(parameters, dict):
                     continue
+                selected = list(parameters.get("selected_file_ids") or [])
+                if parameters.get("file_id") is not None:
+                    selected.append(parameters["file_id"])
                 experiment_id = _as_int(parameters.get("experiment_id", parameters.get("dataset_id")))
                 available = experiment_files.get(experiment_id, set())
-                if any(_as_int(member) not in available for member in parameters["selected_file_ids"]):
+                if any(_as_int(member) not in available for member in selected):
                     raise ProjectSnapshotStateError(
                         f"{_node_display_name(workflow, node)} selects a file that is no longer in its "
                         "experiment. Reselect its data, then export again."
@@ -4649,6 +4652,8 @@ async def _verify_restored_collection_binding(
             "source_manifest_sha256",
             "collection_definition_sha256",
             "scientific_collection_sha256",
+            "dataset_view_id",
+            "dataset_view_sha256",
         )
     ):
         # A draft node with no data chosen yet carries no binding to prove.
