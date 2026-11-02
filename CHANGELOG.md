@@ -47,6 +47,8 @@ separately authorized.
 
 ### Staging GUI corrections
 
+- Data comparison previews use signal labels rather than legacy sample-coordinate
+  titles, preserving declared quantities, units and compatibility checks.
 - Signing in through a saved Optimize link waits for its add-on route and linked
   project to be ready, preserving the saved URL without a page reload. Unknown
   routes and inaccessible projects keep their normal refusals.
