@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import api from "@/api/client";
 import type { components } from "@/types/api/v1";
-import { folderWatch } from "@/api/adapters/deploy";
+import { folderWatch, packageTrust } from "@/api/adapters/deploy";
 import { runSummary } from "@/api/adapters/runs";
 import { activeProjectScope, registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import { useAuthStore } from "@/stores/auth";
@@ -89,6 +89,7 @@ export const useDeployStore = defineStore("deploy", () => {
                 item.canonical_artifact_id == null ? null : Number(item.canonical_artifact_id),
               artifact_digest: item.artifact_digest == null ? null : String(item.artifact_digest),
               source_run_id: item.source_run_id == null ? null : Number(item.source_run_id),
+              package_trust: packageTrust(item.provenance),
               campaign_validation_recorded:
                 (item.campaign_validation as { recorded?: boolean } | undefined)?.recorded === true,
               deploy_ready: true,

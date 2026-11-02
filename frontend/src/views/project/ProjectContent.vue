@@ -940,7 +940,7 @@ async function onExportProject(project: ProjectSummary): Promise<void> {
     toast.add({
       severity: "warn",
       summary: "Partial project archive downloaded",
-      detail: `${projectStore.lastExportOmittedModels} saved model artifact(s) lacked portable training-source provenance and were omitted. The archive records their identities; workflows using them may need retraining. This is not a deployable winner package.`,
+      detail: `${projectStore.lastExportOmittedModels} saved model artifact(s) lacked portable training-source provenance and were omitted. The archive records their identities; workflows using them may need retraining.`,
       life: 9000,
     });
   }

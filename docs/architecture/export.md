@@ -100,7 +100,7 @@ The `.sherpa` object is the round-trip export path for moving a project between 
 - `data/experiments/<id>/...`: uploaded project files needed by My Dataset workflows
 - `models/<artifact_uid>/manifest.json` and `models/<artifact_uid>/arrays.npz` when saved model artifacts are available
 
-Current full-project exports mark `project.json` with `archive_format.version: "0.2"` and mirror that value in `sherpa-object.json` as `project_payload_version`. Uploaded data files use deterministic member paths derived from their experiment ID and relative file path. During import, a bundled file is accepted only when the project payload's `archive_member` matches that deterministic path and the file's SHA-256 matches the recorded `sha256`.
+Current full-project exports mark `project.json` with `archive_format.version: "0.5"` and mirror that value in `sherpa-object.json` as `project_payload_version`. Uploaded data files use deterministic member paths derived from their experiment ID and relative file path. During import, a bundled file is accepted only when the project payload's `archive_member` matches that deterministic path and the file's SHA-256 matches the recorded `sha256`.
 
 Unlike a Python or notebook export, a `.sherpa` object is meant to be imported back into SpectraSherpa. Import creates a new project, restores uploaded project files and their metadata, restores project data-source records, recreates workflow sheets with their nodes and edges, imports model artifacts when present, and stores the imported payload as version 1 of the new project.
 
@@ -140,6 +140,19 @@ the managed optimizer or promise reconstruction of every campaign candidate.
 Package verification, model/input compatibility, and scientific applicability
 are separate checks. Qualification records and report-only QC do not establish
 fitness for a new instrument or population without the required evidence.
+
+Optimization is not required to transfer an ordinary fitted model. Export the
+full project from Project or Workflow, then import its `.sherpa` archive into
+local OSS. Included models retain their frozen state and exact producing
+workflow. Registered-reference data that cannot be redistributed must be supplied
+separately using the recorded size and SHA-256 bindings. The project archive and
+campaign Model package remain separate supported handoffs at 0.6.4.
+
+In local OSS, an eligible imported model can be used in Deploy without a formal
+Pro promotion decision. Unsigned project imports carry an **Imported package ·
+Unsigned** label; campaign packages authenticated at import carry **Signature
+verified**. Integrity, publisher authentication and scientific approval are
+distinct. A failed publisher signature is not treated as an unsigned import.
 
 For non-redistributed reference sources, recipients supply their own exact
 provider-obtained file when reproducing work that needs that source. Ordinary

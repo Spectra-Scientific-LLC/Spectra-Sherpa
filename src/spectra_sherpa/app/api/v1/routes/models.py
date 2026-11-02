@@ -962,15 +962,30 @@ async def update_model(
 
     review_decision = None
     if payload.is_deploy_ready is True:
-        if payload.promotion_review is None:
-            raise HTTPException(422, "Review for promotion is required before confirming deploy-ready.")
-        from spectra_sherpa.app.services.model_promotion_review import confirm_promotion_review
+        from spectra_sherpa.app.core.mode_policy import is_local
 
-        review = await _current_promotion_review(session, current_user, model)
-        try:
-            review_decision = confirm_promotion_review(review, payload.promotion_review)
-        except ValueError as exc:
-            raise HTTPException(409, str(exc)) from exc
+        if is_local() and payload.promotion_review is None:
+            # Local application is not a formal approval. Re-admit the exact
+            # fitted artifact and its provenance without fabricating a review.
+            from spectra_sherpa.app.services.deployment_binding import resolve_deployment_binding
+            from spectra_sherpa.core.model_artifact import ModelArtifactIntegrityError
+
+            try:
+                await resolve_deployment_binding(
+                    session, user_id=current_user.id, workflow_id=model.workflow_id, artifact_uid=model.artifact_uid
+                )
+            except (ValueError, PermissionError, OSError, ModelArtifactIntegrityError) as exc:
+                raise HTTPException(409, "Stored fitted model cannot be verified for application.") from exc
+        else:
+            if payload.promotion_review is None:
+                raise HTTPException(422, "Review for promotion is required before confirming deploy-ready.")
+            from spectra_sherpa.app.services.model_promotion_review import confirm_promotion_review
+
+            review = await _current_promotion_review(session, current_user, model)
+            try:
+                review_decision = confirm_promotion_review(review, payload.promotion_review)
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
 
     before_state = {
         "display_name": model.display_name,
@@ -992,20 +1007,25 @@ async def update_model(
 
         if payload.is_deploy_ready:
             try:
-                await ensure_model_release(
+                release = await ensure_model_release(
                     session,
                     model=model,
                     user_id=current_user.id,
-                    promotion_review={**review_decision, "actor_id": current_user.id},
+                    promotion_review={**review_decision, "actor_id": current_user.id} if review_decision else None,
+                    application_enabled=True,
                 )
+                if release.state != "released":
+                    raise HTTPException(409, "Stored fitted model cannot be verified for application.")
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
         else:
             existing_release = await session.scalar(
                 select(ApplicationRelease).where(ApplicationRelease.model_artifact_uid == model.artifact_uid)
             )
-            if existing_release is not None:
-                await ensure_model_release(session, model=model, user_id=current_user.id)
+            from spectra_sherpa.app.core.mode_policy import is_local
+
+            if existing_release is not None or (is_local() and model.project_id and model.workflow_id):
+                await ensure_model_release(session, model=model, user_id=current_user.id, application_enabled=False)
 
     from spectra_sherpa.app.services.audit import audit_emitter
 

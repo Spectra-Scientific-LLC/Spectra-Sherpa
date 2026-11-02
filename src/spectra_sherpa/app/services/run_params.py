@@ -16,6 +16,7 @@ def build_saved_definition_snapshot(workflow: Any) -> dict[str, Any]:
     return deepcopy(
         {
             "schema_version": 1,
+            "classifier_validation_semantics": CURRENT_CLASSIFIER_VALIDATION_SEMANTICS,
             "fold_validation_plan": getattr(workflow, "fold_validation_plan", None),
             "name": workflow.name,
             "integrity_hash": workflow.integrity_hash,

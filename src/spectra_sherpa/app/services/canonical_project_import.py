@@ -64,6 +64,8 @@ async def import_canonical_project(
     max_uncompressed_bytes: int,
     commercial_subscription_id: int | None = None,
     commercial_workspace_id: int | None = None,
+    publisher_authentication_digest: str | None = None,
+    publisher_attestation_digest: str | None = None,
 ) -> CanonicalProjectImportResult:
     """Verify, install, and commit one package as an all-or-nothing import.
 
@@ -177,6 +179,13 @@ async def import_canonical_project(
                 release.provenance = {
                     **(release.provenance or {}),
                     "confirmation_history": package.confirmation_history.as_dict(),
+                    "package_trust": {
+                        "status": "verified" if publisher_authentication_digest else "unsigned",
+                        "source": "campaign_review" if publisher_authentication_digest else "canonical_application",
+                        "package_sha256": package.archive_sha256,
+                        "authentication_digest": publisher_authentication_digest,
+                        "attestation_digest": publisher_attestation_digest,
+                    },
                 }
                 audit_emitter.emit(
                     session=session,

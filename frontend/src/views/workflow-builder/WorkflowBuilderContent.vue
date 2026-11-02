@@ -72,6 +72,7 @@
             class="p-button-outlined p-button-sm"
             :disabled="isTrialTabActive"
             @click="toggleExportMenu"
+            :title="workflowStore.hasFoldValidationPlan ? 'Project packages retain the cross-validation plan and available fitted models. Standalone code export is unavailable for this plan.' : 'Project packages include available fitted models; code exports reproduce the recipe.'"
           />
           <Button
             label="Audit"
@@ -162,12 +163,6 @@
       <span>{{ workbookLoadError }}</span>
       <Button label="Reload workbook" class="p-button-sm" @click="initializeWorkbook(false)" />
     </div>
-    <p v-if="!workflowContextLoading && workflowStore.hasFoldValidationPlan" role="status" aria-label="Validated workflow export">
-      This campaign-derived sheet has a cross-validation plan. A project archive preserves the sheet, but is not a deployable campaign winner.
-      <template v-if="canOptimize">For an application, use a signed Model package when Optimize offers one for a selected, refitted winner.</template>
-      <template v-else>For an application, import an available signed Model package from Dashboard.</template>
-      Standalone Python, notebook, and ZIP exports cannot preserve this validation plan.
-    </p>
     <section
       v-if="!workflowContextLoading && pendingDataSelection && !dataSelectionReceipt"
       id="workflow-selection-unavailable"
@@ -2300,29 +2295,30 @@ const downloadZip = async () => {
   }
 };
 
-const exportValidatedProject = async () => {
+const exportProjectArchive = async () => {
   const projectId = projectStore.currentProjectId;
   if (projectId == null) {
-    toast.add({ severity: "error", summary: "Export Failed", detail: "Select a project before exporting this validated sheet.", life: 5000 });
+    toast.add({ severity: "error", summary: "Export Failed", detail: "Select a project before exporting.", life: 5000 });
     return;
   }
   await projectStore.exportProject(projectId);
   if (projectStore.error) {
     toast.add({ severity: "error", summary: "Export Failed", detail: projectStore.error, life: 5000 });
   } else if (projectStore.lastExportOmittedModels > 0) {
-    toast.add({ severity: "warn", summary: "Partial project archive exported", detail: `${projectStore.lastExportOmittedModels} saved model artifact(s) lacked portable training-source provenance and were omitted. The sheet remains, but workflows using those models may need retraining. This is not a deployable winner package.`, life: 9000 });
+    toast.add({ severity: "warn", summary: "Partial project archive exported", detail: `${projectStore.lastExportOmittedModels} saved model artifact(s) lacked portable training-source provenance and were omitted. The sheet remains, but workflows using those models may need retraining.`, life: 9000 });
   } else {
-    toast.add({ severity: "success", summary: "Project archive exported", detail: "This preserves the sheet, not a campaign winner application.", life: 4000 });
+    toast.add({ severity: "success", summary: "Project package exported", life: 4000 });
   }
 };
 
-const exportMenuItems = computed(() => workflowStore.hasFoldValidationPlan ? [
+const exportMenuItems = computed(() => [
   {
-    label: "Project archive (.sherpa) — not a winner package",
+    label: "Project package (.sherpa)",
     icon: "pi pi-download",
-    command: exportValidatedProject,
+    command: exportProjectArchive,
   },
-] : [
+  ...(workflowStore.hasFoldValidationPlan ? [] : [
+  { separator: true },
   {
     label: "Canonical Workflow Python (.py)",
     icon: "pi pi-file",
@@ -2341,6 +2337,7 @@ const exportMenuItems = computed(() => workflowStore.hasFoldValidationPlan ? [
     icon: "pi pi-box",
     command: downloadZip,
   },
+  ]),
 ]);
 
 const actionMenuItems = computed(() => [

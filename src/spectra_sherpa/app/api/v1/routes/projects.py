@@ -833,6 +833,7 @@ def _bind_archived_model_training_source(
     from spectra_sherpa.core.model_artifact import (
         ModelArtifactIntegrityError,
         experiment_training_dataset_id,
+        experiment_training_source_step,
     )
 
     try:
@@ -847,7 +848,8 @@ def _bind_archived_model_training_source(
     archived = experiments.get(linked_dataset_id)
     if archived is None or owner_project_id is None or archived[0] != owner_project_id:
         raise HTTPException(status_code=400, detail="Project model training source is outside project custody")
-    source = manifest["preprocessing_chain"][0]
+    source = experiment_training_source_step(manifest)
+    assert source is not None
     if source["op_id"] == "data.file_load":
         parameters = source["parameters"]
         file_id = parameters.get("file_id")
@@ -875,7 +877,6 @@ def _bind_archived_model_training_source(
     # from the complete experiment-read scientific authority. An arbitrary
     # manifest integer is never enough.
     experiment = archived[1]
-    source = manifest["preprocessing_chain"][0]
     parameters = source.get("parameters")
     definition = experiment.get("collection_definition")
     rows = definition.get("rows") if isinstance(definition, dict) else None
@@ -3291,6 +3292,110 @@ async def _preflight_live_project_storage(
         await _preflight_live_project_storage(child, session, budget)
 
 
+def _validate_model_source_run(
+    source: Any,
+    *,
+    artifact_uid: str,
+    workflow_id: int,
+    project_id: int,
+    node_id: str,
+    manifest: dict[str, Any],
+) -> None:
+    """Bind the portable producing graph to one model, workflow and project."""
+    if (
+        not isinstance(source, dict)
+        or set(source) != {"run_id", "workflow_id", "project_id", "artifact_uid", "definition_sha256", "snapshot"}
+        or type(source.get("run_id")) is not int
+        or source["run_id"] < 1
+        or type(source.get("workflow_id")) is not int
+        or source["workflow_id"] != workflow_id
+        or type(source.get("project_id")) is not int
+        or source["project_id"] != project_id
+        or source.get("artifact_uid") != artifact_uid
+        or not isinstance(source.get("snapshot"), dict)
+        or not isinstance(source["snapshot"].get("nodes"), list)
+        or not isinstance(source["snapshot"].get("edges"), list)
+        or source.get("definition_sha256")
+        != sha256_bytes(json.dumps(source["snapshot"], sort_keys=True, separators=(",", ":"), allow_nan=False).encode())
+    ):
+        raise ValueError("Project model producing-run provenance is invalid")
+    from spectra_sherpa.app.services.dag.saved_graph_admission import admit_saved_workflow_graph
+
+    snapshot = source["snapshot"]
+    from spectra_sherpa.core.model_artifact import ModelArtifactIntegrityError, require_artifact_producer_node_type
+
+    try:
+        producer_type = require_artifact_producer_node_type(manifest)
+    except ModelArtifactIntegrityError as exc:
+        raise ValueError("Project model producing-node authority is invalid") from exc
+    if (
+        not isinstance(node_id, str)
+        or not node_id.strip()
+        or (manifest.get("node_id") is not None and manifest["node_id"] != node_id)
+    ):
+        raise ValueError("Project model producing-node authority is invalid")
+    try:
+        admitted = admit_saved_workflow_graph(
+            snapshot["nodes"],
+            snapshot["edges"],
+            classifier_validation_semantics=snapshot.get("classifier_validation_semantics"),
+        )
+    except (ValueError, TypeError, KeyError) as exc:
+        raise ValueError("Project model producing graph is invalid") from exc
+    producer = next((node for node in admitted.nodes if node["node_id"] == node_id), None)
+    if producer is None or producer["node_type"] != producer_type:
+        raise ValueError("Project model producing-node identity differs from its fitted artifact")
+
+
+async def _model_source_run_snapshot(model: ModelArtifact, session: AsyncSession) -> dict[str, Any]:
+    """Read only the exact retained producing graph, never the current canvas."""
+    from spectra_sherpa.app.models.execution_run import ExecutionRun
+    from spectra_sherpa.app.schemas.run_evidence import RunEvidence
+    from spectra_sherpa.app.services.run_output_retention import read_output
+    from spectra_sherpa.core.model_artifact import ModelArtifactIntegrityError
+
+    run = await session.scalar(
+        select(ExecutionRun).where(
+            ExecutionRun.id == model.source_run_id,
+            ExecutionRun.user_id == model.user_id,
+            ExecutionRun.workflow_id == model.workflow_id,
+            ExecutionRun.project_id == model.project_id,
+        )
+    )
+    try:
+        if run is None or model.artifact_uid not in (run.produced_artifact_uids or []):
+            raise ValueError("Model producing run does not own this artifact")
+        evidence = RunEvidence.model_validate(run.evidence_completeness)
+        definition = evidence.outputs.get("__workflow__", {}).get("definition")
+        if evidence.qualification != "qualified" or definition is None or definition.state != "exact":
+            raise ValueError("Model producing graph was not retained exactly")
+        snapshot = await asyncio.to_thread(read_output, model.user_id, definition)
+        source = {
+            "run_id": run.id,
+            "workflow_id": run.workflow_id,
+            "project_id": run.project_id,
+            "artifact_uid": model.artifact_uid,
+            "snapshot": snapshot,
+            "definition_sha256": sha256_bytes(
+                json.dumps(snapshot, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+            ),
+        }
+        from spectra_sherpa.app.services.model_store import get_model_store
+
+        manifest, _arrays = await asyncio.to_thread(get_model_store().load, model.artifact_uid, verify=True)
+        _validate_model_source_run(
+            source,
+            artifact_uid=model.artifact_uid,
+            workflow_id=model.workflow_id,
+            project_id=model.project_id,
+            node_id=model.node_id,
+            manifest=manifest,
+        )
+        return source
+    except (ValueError, TypeError, OSError, ModelArtifactIntegrityError) as exc:
+        raise ProjectSnapshotStateError("Model exact producing workflow definition is unavailable") from exc
+
+
 async def _build_snapshot(
     project: Project,
     session: AsyncSession,
@@ -3495,6 +3600,7 @@ async def _build_snapshot(
     models_snap = []
     for m in model_result.scalars().all():
         source_version = None
+        source_run = None
         if m.workflow_version_id is not None:
             version = await session.scalar(
                 select(WorkflowVersion).where(
@@ -3510,6 +3616,8 @@ async def _build_snapshot(
                 "version_number": version.version_number,
                 "snapshot": version.snapshot,
             }
+        elif m.source_run_id is not None:
+            source_run = await _model_source_run_snapshot(m, session)
         metrics = _safe_parse_metrics(m.metrics_json)
         models_snap.append(
             {
@@ -3521,6 +3629,7 @@ async def _build_snapshot(
                 "node_id": m.node_id,
                 "workflow_id": m.workflow_id,
                 "source_workflow_version": source_version,
+                **({"source_workflow_run": source_run} if source_run is not None else {}),
                 "training_dataset_id": m.training_dataset_id,
                 "n_features": m.n_features,
                 "n_components": m.n_components,
@@ -4433,13 +4542,37 @@ def _remap_workflow_parameters(
     data_source_remap: dict[int, int],
     experiment_remap: dict[int, int],
     file_remap: dict[int, int],
+    *,
+    file_experiments: dict[int, int] | None = None,
 ) -> Any:
-    """Best-effort rewrite of known project-local IDs inside node parameters."""
+    """Remap storage IDs; refuse unbound or ambiguous declared file selections."""
     if isinstance(value, dict):
         rewritten = {
-            key: _remap_workflow_parameters(item, data_source_remap, experiment_remap, file_remap)
+            key: _remap_workflow_parameters(
+                item, data_source_remap, experiment_remap, file_remap, file_experiments=file_experiments
+            )
             for key, item in value.items()
         }
+        if "selected_file_ids" in value:
+            selected = value["selected_file_ids"]
+            if not isinstance(selected, list):
+                raise HTTPException(400, "Project workflow file selection is invalid")
+            old_experiment = _as_int(value.get("experiment_id", value.get("dataset_id")))
+            seen: set[int] = set()
+            remapped = []
+            for member in selected:
+                valid_member = type(member) is int or (isinstance(member, str) and member.isdigit())
+                old_file = _as_int(member) if valid_member else None
+                if old_file is None or old_file < 1 or old_file in seen:
+                    raise HTTPException(400, "Project workflow file selection is invalid")
+                if old_file not in file_remap or (
+                    file_experiments is not None and file_experiments.get(old_file) != old_experiment
+                ):
+                    raise HTTPException(400, "Project workflow selected file is outside experiment custody")
+                seen.add(old_file)
+                new_file = file_remap[old_file]
+                remapped.append(str(new_file) if isinstance(member, str) else new_file)
+            rewritten["selected_file_ids"] = remapped
         for key in ("data_source_id", "primary_data_source_id"):
             if isinstance(rewritten.get(key), int) and rewritten[key] in data_source_remap:
                 rewritten[key] = data_source_remap[rewritten[key]]
@@ -4452,8 +4585,43 @@ def _remap_workflow_parameters(
             rewritten["file_id"] = file_remap[old_file_id]
         return rewritten
     if isinstance(value, list):
-        return [_remap_workflow_parameters(item, data_source_remap, experiment_remap, file_remap) for item in value]
+        return [
+            _remap_workflow_parameters(
+                item, data_source_remap, experiment_remap, file_remap, file_experiments=file_experiments
+            )
+            for item in value
+        ]
     return value
+
+
+async def _verify_restored_collection_binding(
+    parameters: dict[str, Any],
+    *,
+    session: AsyncSession,
+    user_id: int,
+    project_id: int,
+) -> None:
+    """Re-admit pinned source identities from restored bytes, never filenames."""
+    from spectra_sherpa.app.services.model_application import load_project_dataset
+
+    try:
+        loaded = await load_project_dataset(
+            session,
+            user_id=user_id,
+            experiment_id=parameters.get("experiment_id"),
+            stage=parameters.get("stage") or "raw",
+            file_ids=[int(value) for value in parameters.get("selected_file_ids", [])] or None,
+            asset_id=parameters.get("asset_id") or None,
+            strict_prepared_data=True,
+        )
+        if loaded.project_id != project_id:
+            raise ValueError("Restored collection is outside the workflow project")
+        for field in ("source_manifest_sha256", "collection_definition_sha256", "scientific_collection_sha256"):
+            expected = parameters.get(field)
+            if expected and expected != getattr(loaded, field):
+                raise ValueError("Restored collection differs from its pinned scientific identity")
+    except (ValueError, TypeError, OSError) as exc:
+        raise HTTPException(400, "Project workflow collection binding cannot be restored exactly") from exc
 
 
 async def _restore_workflows_from_snapshot(
@@ -4469,6 +4637,11 @@ async def _restore_workflows_from_snapshot(
     """Recreate workflow rows from a project snapshot."""
     workflow_remap: dict[int, int] = {}
     pending_created_from: list[tuple[Workflow, int]] = []
+    file_experiments = {
+        int(file["id"]): int(experiment["id"])
+        for experiment in project_json.get("experiments", [])
+        for file in experiment.get("files", [])
+    }
 
     for wf_data in project_json.get("workflows", []):
         if not isinstance(wf_data, dict):
@@ -4537,18 +4710,27 @@ async def _restore_workflows_from_snapshot(
         for node_data in wf_data.get("nodes", []):
             if not isinstance(node_data, dict):
                 continue
+            parameters = _remap_workflow_parameters(
+                node_data.get("parameters") or {},
+                data_source_remap,
+                experiment_remap,
+                file_remap,
+                file_experiments=file_experiments,
+            )
+            if canonical_node_type(node_data["node_type"]) == "data.collection_load":
+                await _verify_restored_collection_binding(
+                    parameters,
+                    session=session,
+                    user_id=user_id,
+                    project_id=project.id,
+                )
             session.add(
                 WorkflowNode(
                     workflow_id=workflow.id,
                     node_id=node_data["node_id"],
                     node_type=node_data["node_type"],
                     label=node_data.get("label"),
-                    parameters=_remap_workflow_parameters(
-                        node_data.get("parameters") or {},
-                        data_source_remap,
-                        experiment_remap,
-                        file_remap,
-                    ),
+                    parameters=parameters,
                     annotation=node_data.get("annotation"),
                     position_x=node_data.get("position_x"),
                     position_y=node_data.get("position_y"),
@@ -4804,6 +4986,8 @@ async def _import_campaign_review_bytes(
             async_session,
             user_id=user_id,
             archive=review_package.application.archive,
+            publisher_authentication_digest=authentication_digest,
+            publisher_attestation_digest=review_package.publisher_attestation.digest,
             data_dir=settings.data_dir,
             max_uncompressed_bytes=max_bytes,
             commercial_subscription_id=commercial_subscription_id,
@@ -5175,6 +5359,21 @@ async def import_project(
                         or not isinstance(source_version["snapshot"].get("edges"), list)
                     ):
                         raise HTTPException(status_code=400, detail="Project model source workflow version is invalid")
+                source_run = m_data.get("source_workflow_run")
+                if source_run is not None:
+                    try:
+                        if source_version is not None:
+                            raise ValueError("Project model source authorities conflict")
+                        _validate_model_source_run(
+                            source_run,
+                            artifact_uid=uid,
+                            workflow_id=m_data.get("workflow_id"),
+                            project_id=old_model_project_id,
+                            node_id=m_data.get("node_id"),
+                            manifest=manifest,
+                        )
+                    except (ValueError, TypeError) as exc:
+                        raise HTTPException(400, "Project model producing-run provenance is invalid") from exc
                 model_entries.append((uid, m_data, old_model_project_id, manifest, arrays))
 
             # Total budget check across all models
@@ -5220,22 +5419,40 @@ async def import_project(
             # Restore only explicitly retained model provenance, never infer a
             # training version from the current workflow canvas. Keep the exact
             # historical snapshot; it is evidence, not a promise of data replay.
-            model_versions: dict[int, WorkflowVersion] = {}
+            model_versions: dict[tuple[str, int], WorkflowVersion] = {}
             for _uid, model_data, _project_id, _manifest, _arrays in model_entries:
                 source_version = model_data.get("source_workflow_version")
-                if source_version is None:
+                source_run = model_data.get("source_workflow_run")
+                if source_version is None and source_run is None:
                     continue
+                from_run = source_version is None
+                if from_run:
+                    source_version = {
+                        "id": source_run["run_id"],
+                        "workflow_id": source_run["workflow_id"],
+                        "version_number": 1,
+                        "snapshot": source_run["snapshot"],
+                    }
                 local_workflow_id = workflow_remap.get(source_version["workflow_id"])
                 if local_workflow_id is None:
                     raise HTTPException(status_code=400, detail="Project model source workflow is missing")
-                old_version_id = source_version["id"]
+                old_version_id = ("run" if from_run else "version", source_version["id"])
+                version_snapshot = {
+                    **copy.deepcopy(source_version["snapshot"]),
+                    "replay_authority": "external_evidence_only",
+                }
+                if from_run:
+                    # External history, not a local ExecutionRun foreign key.
+                    # Keep this data-free origin through subsequent exports.
+                    version_snapshot["external_source_run_provenance"] = {
+                        key: source_run[key] for key in ("run_id", "project_id", "workflow_id", "definition_sha256")
+                    }
                 existing = model_versions.get(old_version_id)
                 if existing is not None:
                     if (
                         existing.workflow_id != local_workflow_id
                         or existing.version_number != source_version["version_number"]
-                        or existing.snapshot
-                        != {**source_version["snapshot"], "replay_authority": "external_evidence_only"}
+                        or existing.snapshot != version_snapshot
                     ):
                         raise HTTPException(status_code=400, detail="Project model source versions conflict")
                     continue
@@ -5243,11 +5460,12 @@ async def import_project(
                     workflow_id=local_workflow_id,
                     version_number=source_version["version_number"],
                     created_by=user_id,
-                    change_description="Imported exact model source version (historical source identities retained)",
-                    snapshot={
-                        **copy.deepcopy(source_version["snapshot"]),
-                        "replay_authority": "external_evidence_only",
-                    },
+                    change_description=(
+                        "Imported exact producing-run graph (historical source identities retained)"
+                        if from_run
+                        else "Imported exact model source version (historical source identities retained)"
+                    ),
+                    snapshot=version_snapshot,
                 )
                 session.add(version)
                 await session.flush()
@@ -5286,6 +5504,7 @@ async def import_project(
                 from spectra_sherpa.core.model_artifact import (
                     ModelArtifactIntegrityError,
                     experiment_training_dataset_id,
+                    experiment_training_source_step,
                     require_experiment_training_dataset_id,
                 )
 
@@ -5303,11 +5522,13 @@ async def import_project(
                             status_code=400,
                             detail="Project model training source is unavailable",
                         )
-                    source_parameters = manifest["preprocessing_chain"][0]["parameters"]
+                    source_step = experiment_training_source_step(manifest)
+                    assert source_step is not None
+                    source_parameters = source_step["parameters"]
                     # This integer is a workspace-local storage link, not a
                     # scientific identity. Rebind every experiment-trained
                     # model, including ordinary PCA, before publication.
-                    if manifest["preprocessing_chain"][0]["op_id"] == "data.file_load":
+                    if source_step["op_id"] == "data.file_load":
                         old_file_id = source_parameters["file_id"]
                         if old_file_id not in file_remap:
                             raise HTTPException(400, "Project model training file could not be remapped")
@@ -5344,14 +5565,8 @@ async def import_project(
                         optional=False,
                     )
                     assert target_authority is not None
-                    preprocessing_chain = manifest.get("preprocessing_chain") or []
-                    source_parameters = (
-                        preprocessing_chain[0].get("parameters", {})
-                        if isinstance(preprocessing_chain, list)
-                        and preprocessing_chain
-                        and isinstance(preprocessing_chain[0], dict)
-                        else {}
-                    )
+                    source_step = experiment_training_source_step(manifest)
+                    source_parameters = source_step["parameters"] if source_step is not None else {}
                     if not isinstance(source_parameters, dict):
                         raise HTTPException(
                             status_code=400,
@@ -5435,7 +5650,12 @@ async def import_project(
                 imported_n_features = manifest.get("n_features", 0) if canonical_origin else m_data.get("n_features", 0)
                 imported_n_components = manifest.get("n_components") if canonical_origin else m_data.get("n_components")
                 source_version = m_data.get("source_workflow_version")
-                imported_version = model_versions.get(source_version["id"]) if source_version else None
+                source_run = m_data.get("source_workflow_run")
+                imported_version = (
+                    model_versions.get(("version", source_version["id"]))
+                    if source_version
+                    else model_versions.get(("run", source_run["run_id"])) if source_run else None
+                )
                 model_row = ModelArtifact(
                     artifact_uid=target_uid,
                     user_id=user_id,
@@ -5478,6 +5698,29 @@ async def import_project(
                 )
                 session.add(model_row)
                 models_imported += 1
+                from spectra_sherpa.app.core.mode_policy import is_local
+
+                if is_local() and model_row.workflow_id is not None:
+                    from spectra_sherpa.app.services.application_release import ensure_model_release
+
+                    await session.flush()
+                    release = await ensure_model_release(
+                        session,
+                        model=model_row,
+                        user_id=user_id,
+                        application_enabled=True,
+                    )
+                    # A full project archive has no publisher signature. Keep
+                    # this import's exact trust scope on the durable identity;
+                    # import intent grants neither review nor qualification.
+                    release.provenance = {
+                        **(release.provenance or {}),
+                        "package_trust": {
+                            "status": "unsigned",
+                            "source": "project_archive",
+                            "package_sha256": sha256_bytes(upload_bytes),
+                        },
+                    }
 
             await _remap_imported_workflow_model_uids(session, workflow_remap, uid_remap)
 

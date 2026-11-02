@@ -109,6 +109,41 @@ Use **Models** for the user-facing collection of retained fitted models.
 Artifact describes the underlying fitted-state record.
 
 Training nodes can persist fitted models. A model artifact keeps a readable compatibility record plus the numeric fitted state needed for later review and application. Before applying an artifact, confirm the spectral axis, preprocessing, feature count, target units, and validation context match the new data.
+
+**Copy model metadata** copies the selected model's summary as text for notes or
+email. It does not contain fitted arrays and cannot be imported as a model.
+
+For an ordinary fitted model, use **Export** on Project or Workflow to download
+the full project `.sherpa` archive. Import that archive into local OSS and select
+its fitted application in **Deploy**. A saved model not already listed there can
+be opened through **Make Application** in Models. The archive must include the
+model, its exact producing workflow and the source bindings. A partial-export
+warning identifies omitted models; models actually included in the archive can
+still be transferred.
+
+Optimization is optional. A candidate can be opened in Workflow, executed and
+exported through the same project route. Optimize also retains an independent
+**Model package** download for completed fitted campaign applications. A saved
+campaign conclusion alone contains no new fitted model. See
+[export contracts](../architecture/export.md#signed-campaign-review-packages-and-local-application).
+
+In local OSS, choose **Make Application** on a saved model to open its eligible
+fitted application in **Deploy**, without a formal promotion review or refit.
+Explicit withdrawal remains available. Scientific inspection and optional
+external validation remain separate from application availability.
+
+A technically ready imported package opens the exact application in **Deploy**.
+An unavailable local import remains inspectable under **Runs → Models → Imported
+Models** without a formal review dialog. Existing Pro/hybrid formal-review
+behavior is unchanged. Package trust, fitted-state integrity, compatibility and
+dependency checks still apply; application availability does not assert
+independent validation or analytical qualification.
+
+Deploy labels imported unsigned projects separately from packages with a verified
+publisher signature. Neither label is approval for an intended use. Apply and
+Evaluate reuse frozen state; Refit creates a new model. Observation counts may
+differ, but the model's feature, axis and unit requirements still apply.
+
 ## Batch execution
 
 **Apply trained model** uses the fitted model and preprocessing without refitting

@@ -59,31 +59,18 @@ async def campaign(auth_client, test_session, test_user, tmp_path, monkeypatch, 
     imported.workflow_id = record.workflow_id
     imported.canonical_package = _PACKAGE if request.param == "normal" else _EARLY_CANONICAL_PACKAGE
     imported.canonical_archive = imported.canonical_package.archive
-    # Import establishes executable custody, not a scientific readiness decision.
-    pending = await auth_client.get("/api/v1/deploy/canonical-targets", params={"project_id": imported.project_id})
-    assert pending.status_code == 200 and not pending.json()[0]["deploy_ready"]
-    refused = await auth_client.post(
-        "/api/v1/deploy/watches",
-        json={
-            "workflow_id": imported.workflow_id,
-            "canonical_artifact_id": record.id,
-            "name": "Unreviewed direct ID",
-            "folder_path": str(tmp_path),
-        },
-    )
-    assert refused.status_code == 422 and "Review for promotion" in refused.text
-    review = await auth_client.get(f"/api/v1/deploy/canonical-artifacts/{record.id}/promotion-review")
-    assert review.status_code == 200, review.text
-    confirmed = await auth_client.post(
-        f"/api/v1/deploy/canonical-artifacts/{record.id}/promotion-review",
-        json={
-            "review_digest": review.json()["review_digest"],
-            "intended_use": "Offline exploratory inference",
-            "protocol": "exploratory",
-            "rationale": "Reviewed exact imported application and limitations",
-        },
-    )
-    assert confirmed.status_code == 200, confirmed.text
+    # Local use requires genuine imported custody, not a formal Pro decision.
+    targets = await auth_client.get("/api/v1/deploy/canonical-targets", params={"project_id": imported.project_id})
+    assert targets.status_code == 200 and targets.json()[0]["deploy_ready"]
+    applications = await auth_client.get("/api/v1/deploy/applications", params={"project_id": imported.project_id})
+    assert applications.status_code == 200, applications.text
+    application = applications.json()[0]
+    assert application["canonical_artifact_id"] == record.id
+    assert application["readiness"]["review_state"] == "not_required"
+    assert application["provenance"].get("promotion_review") is None
+    assert application["provenance"]["package_trust"]["status"] == "verified"
+    assert application["provenance"]["package_trust"]["package_sha256"] == record.package_sha256
+    assert application["provenance"]["package_trust"]["authentication_digest"] == package.publisher_attestation.digest
     return imported, record, factory
 
 

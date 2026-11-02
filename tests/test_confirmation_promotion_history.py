@@ -176,4 +176,7 @@ async def test_successful_import_history_survives_rename_and_later_dossier(
     release = await test_session.scalar(
         select(ApplicationRelease).where(ApplicationRelease.canonical_artifact_id == artifact.id)
     )
-    assert release.state == "revoked"  # Neither import nor a new dossier makes a readiness decision.
+    # Local technical availability is separate from formal approval; neither
+    # rename nor a later dossier changes the preserved confirmation history.
+    assert release.state == "released"
+    assert release.readiness["review_state"] == "not_required"

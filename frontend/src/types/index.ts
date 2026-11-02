@@ -571,6 +571,7 @@ export type FolderWatch = components["schemas"]["FolderWatchOut"];
  * while older Workbenches roll forward to the release registry.
  */
 export interface DeployApplication {
+  package_trust?: "verified" | "unsigned" | "unverified" | null;
   campaign_validation_recorded?: boolean;
   application_id: string;
   application_handle?: string | null;

@@ -1093,37 +1093,48 @@ async def test_model_metadata_patch_updates_editable_lifecycle_fields(test_sessi
 
     from unittest.mock import AsyncMock
 
-    snapshot = {
-        "review_digest": "a" * 64,
-        "artifact_uid": artifact.artifact_uid,
-        "artifact_digest": artifact.integrity_hash,
-        "manifest_digest": "b" * 64,
-        "blockers": [],
-        "population": {"fitted_count": None, "held_out_count": None},
-        "qualification": {"state": "unavailable"},
-        "limitations": ["Exploratory only"],
-    }
-    monkeypatch.setattr(models_route, "_current_promotion_review", AsyncMock(return_value=snapshot))
-    with pytest.raises(HTTPException) as missing_review:
+    from sqlalchemy import select
+
+    from spectra_sherpa.app.core.config import app_config
+    from spectra_sherpa.app.models.application_release import ApplicationRelease
+
+    review = AsyncMock(side_effect=AssertionError("This test must not manufacture a promotion review"))
+    monkeypatch.setattr(models_route, "_current_promotion_review", review)
+    # Managed Pro still requires a genuine formal decision before admission.
+    with monkeypatch.context() as pro:
+        pro.setattr(app_config, "mode", "enterprise")
+        pro.setattr(app_config, "site_profile", "pro")
+        with pytest.raises(HTTPException) as missing_review:
+            await models_route.update_model(
+                artifact.artifact_uid,
+                models_route.ModelUpdateRequest(is_deploy_ready=True),
+                session=test_session,
+                current_user=test_user,
+            )
+        assert missing_review.value.status_code == 422
+        assert not artifact.is_deploy_ready
+
+    monkeypatch.setattr(app_config, "mode", "local")
+    with pytest.raises(HTTPException) as unavailable:
         await models_route.update_model(
             artifact.artifact_uid,
             models_route.ModelUpdateRequest(is_deploy_ready=True),
             session=test_session,
             current_user=test_user,
         )
-    assert missing_review.value.status_code == 422
+    assert unavailable.value.status_code == 409
+    assert "cannot be verified for application" in unavailable.value.detail
     assert not artifact.is_deploy_ready
+    assert await test_session.scalar(select(ApplicationRelease)) is None
+
+    # Metadata remains editable; clearing availability records withdrawal
+    # without claiming this fake/missing fitted artifact is deployable.
     updated = await models_route.update_model(
         artifact.artifact_uid,
         models_route.ModelUpdateRequest(
-            promotion_review={
-                "review_digest": "a" * 64,
-                "intended_use": "Exploration",
-                "rationale": "Review completed",
-            },
             display_name="Wine PLSDA production candidate",
             tags=["wine", "candidate"],
-            is_deploy_ready=True,
+            is_deploy_ready=False,
         ),
         session=test_session,
         current_user=test_user,
@@ -1131,7 +1142,23 @@ async def test_model_metadata_patch_updates_editable_lifecycle_fields(test_sessi
 
     assert updated.display_name == "Wine PLSDA production candidate"
     assert updated.tags == ["wine", "candidate"]
-    assert updated.is_deploy_ready is True
+    assert updated.is_deploy_ready is False
+    assert artifact.integrity_hash == "hash"
+    assert artifact.artifact_dir == "/tmp/model"
+    release = await test_session.scalar(select(ApplicationRelease))
+    assert release.state == "revoked"
+    assert release.provenance["application_withdrawn"] is True
+    with pytest.raises(HTTPException) as still_unavailable:
+        await models_route.update_model(
+            artifact.artifact_uid,
+            models_route.ModelUpdateRequest(is_deploy_ready=True),
+            session=test_session,
+            current_user=test_user,
+        )
+    assert still_unavailable.value.status_code == 409
+    assert release.state == "revoked" and release.provenance["application_withdrawn"] is True
+    assert not artifact.is_deploy_ready
+    review.assert_not_awaited()
 
 
 def test_model_update_rejects_overlong_tags():

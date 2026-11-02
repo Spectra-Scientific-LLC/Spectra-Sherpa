@@ -112,9 +112,12 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
-        # Typed PCA result axes and awaitable publication capability preserve
-        # archived declarations. Inspection only, never historical execution.
-        "272022dfaa41de8e593ed606612f4a3fd00d8fed2b0e8ca7080d33786bc43ee2",
+        # Previous inspected consumer (retained as history):
+        # 272022dfaa41de8e593ed606612f4a3fd00d8fed2b0e8ca7080d33786bc43ee2
+        # Producer/source provenance changes core.model_artifact source bytes,
+        # not declarations or model application. Inspection only, no execution.
+        # Review: docs/developers/model-load-apply-source-binding-review.md
+        "a6d6a6712ac63ce16ff15d96dae43b785496c43b3ce19169b7b7b28da59ca23b",
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",

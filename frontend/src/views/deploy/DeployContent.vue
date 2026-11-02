@@ -84,9 +84,11 @@
                   >★</span
                 >
                 <Tag
-                  :value="application.origin === 'saved_run' ? 'Saved run' : 'Portable application'"
+                  :value="application.package_trust ? 'Imported model' : application.origin === 'saved_run' ? 'Saved run' : 'Portable application'"
                   severity="info"
                 />
+                <Tag v-if="application.package_trust" :value="packageTrustLabel(application.package_trust)"
+                  :title="packageTrustHint(application.package_trust)" severity="info" />
               </button>
             </div>
           </section>
@@ -673,6 +675,7 @@ import { useRunsStore } from "@/stores/runs";
 import { useAppConfig } from "@/composables/useAppConfig";
 import api from "@/api/client";
 import type { FolderWatch, BatchPredictionResult, DeployApplication } from "@/types";
+import { packageTrustHint, packageTrustLabel } from "@/utils/packageTrust";
 
 const toast = useToast();
 const deployStore = useDeployStore();
