@@ -47,6 +47,9 @@ separately authorized.
 
 ### Staging GUI corrections
 
+- Manual-search model packages retain the explicit conclusion checkpoint separately
+  from the original round settlement, supporting normal download, workflow import
+  and model review. Existing package formats remain readable.
 - Data comparison previews use signal labels rather than legacy sample-coordinate
   titles, preserving declared quantities, unit deduplication and compatibility checks.
 - Signing in through a saved Optimize link waits for its add-on route and linked

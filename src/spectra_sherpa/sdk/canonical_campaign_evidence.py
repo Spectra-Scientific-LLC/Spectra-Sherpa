@@ -34,6 +34,20 @@ from . import canonical_execution_evidence as _canonical_execution_evidence
 CANONICAL_CAMPAIGN_EVIDENCE_VERSION = "spectra-canonical-campaign-evidence/6"
 REVIEWED_CAMPAIGN_EVIDENCE_VERSION = "spectra-canonical-campaign-evidence/7"
 REVIEWED_SELECTION_VERSION = "spectra-scientist-reviewed-selection/1"
+MANUAL_CHECKPOINT_EVIDENCE_VERSION = "spectra-canonical-campaign-evidence/8"
+MANUAL_CHECKPOINT_SELECTION_VERSION = "spectra-manual-checkpoint-selection/1"
+_MANUAL_CHECKPOINT_FIELDS = frozenset(
+    {
+        "schema_version",
+        "selection_claim",
+        "winner_candidate_id",
+        "selected_graph_digest",
+        "selected_result_digest",
+        "manual_choice_digest",
+        "checkpoint_digest",
+        "settlement_digest",
+    }
+)
 _REVIEWED_FIELDS = frozenset(
     {
         "schema_version",
@@ -237,6 +251,25 @@ def _reviewed_decision(value: Any, candidates: tuple[dict[str, Any], ...]) -> di
     decision["winner_candidate_id"] = _identifier(decision["winner_candidate_id"], "selected candidate")
     for key in _REVIEWED_FIELDS - {"schema_version", "selection_claim", "winner_candidate_id", "reason_code"}:
         _digest_value(decision[key], key)
+    _require_explicit_selected_trial(decision, candidates)
+    return decision
+
+
+def _manual_checkpoint_decision(value: Any, candidates: tuple[dict[str, Any], ...]) -> dict[str, Any]:
+    decision = _closed(value, _MANUAL_CHECKPOINT_FIELDS, "manual checkpoint selection")
+    if (
+        decision["schema_version"] != MANUAL_CHECKPOINT_SELECTION_VERSION
+        or decision["selection_claim"] != "scientist_selected_final_development_checkpoint"
+    ):
+        raise CanonicalCampaignEvidenceError("manual checkpoint selection claim is invalid")
+    decision["winner_candidate_id"] = _identifier(decision["winner_candidate_id"], "selected candidate")
+    for key in _MANUAL_CHECKPOINT_FIELDS - {"schema_version", "selection_claim", "winner_candidate_id"}:
+        _digest_value(decision[key], key)
+    _require_explicit_selected_trial(decision, candidates)
+    return decision
+
+
+def _require_explicit_selected_trial(decision: dict[str, Any], candidates: tuple[dict[str, Any], ...]) -> None:
     selected = next((item for item in candidates if item["candidate_id"] == decision["winner_candidate_id"]), None)
     if (
         selected is None
@@ -252,10 +285,19 @@ def _reviewed_decision(value: Any, candidates: tuple[dict[str, Any], ...]) -> di
     }
     if len(populations) != 1:
         raise CanonicalCampaignEvidenceError("reviewed candidate populations differ")
-    return decision
+
+
+def _evidence_version(decision: Mapping[str, Any]) -> str:
+    if decision.get("schema_version") == MANUAL_CHECKPOINT_SELECTION_VERSION:
+        return MANUAL_CHECKPOINT_EVIDENCE_VERSION
+    if decision.get("schema_version") == REVIEWED_SELECTION_VERSION:
+        return REVIEWED_CAMPAIGN_EVIDENCE_VERSION
+    return CANONICAL_CAMPAIGN_EVIDENCE_VERSION
 
 
 def _decision(value: Any, candidates: tuple[dict[str, Any], ...], *, historical_context=None) -> dict[str, Any]:
+    if isinstance(value, Mapping) and value.get("schema_version") == MANUAL_CHECKPOINT_SELECTION_VERSION:
+        return _manual_checkpoint_decision(value, candidates)
     if isinstance(value, Mapping) and value.get("schema_version") == REVIEWED_SELECTION_VERSION:
         return _reviewed_decision(value, candidates)
     try:
@@ -308,7 +350,11 @@ class CanonicalCampaignEvidence:
         if historical_context is not None and type(historical_context) is not HistoricalReconstructionContext:
             raise CanonicalCampaignEvidenceError("historical evidence requires the packaged reconstruction context")
         root = _closed(value, _ROOT_FIELDS, "canonical campaign evidence")
-        if root["schema_version"] not in {CANONICAL_CAMPAIGN_EVIDENCE_VERSION, REVIEWED_CAMPAIGN_EVIDENCE_VERSION}:
+        if root["schema_version"] not in {
+            CANONICAL_CAMPAIGN_EVIDENCE_VERSION,
+            REVIEWED_CAMPAIGN_EVIDENCE_VERSION,
+            MANUAL_CHECKPOINT_EVIDENCE_VERSION,
+        }:
             raise CanonicalCampaignEvidenceError("canonical campaign evidence version is unsupported")
         campaign = _closed(root["campaign"], _CAMPAIGN_FIELDS, "campaign identity")
         campaign["campaign_id"] = _identifier(campaign["campaign_id"], "campaign_id")
@@ -335,9 +381,9 @@ class CanonicalCampaignEvidence:
         )
         if campaign["optimization_lane"] == "class_modelling" and not reviewed:
             raise CanonicalCampaignEvidenceError("class modelling requires reviewed selection evidence")
-        if reviewed != (root["schema_version"] == REVIEWED_CAMPAIGN_EVIDENCE_VERSION):
+        if not isinstance(root["decision"], Mapping) or root["schema_version"] != _evidence_version(root["decision"]):
             raise CanonicalCampaignEvidenceError("selection interpretation differs from evidence version")
-        if reviewed:
+        if reviewed or root["schema_version"] == MANUAL_CHECKPOINT_EVIDENCE_VERSION:
             lane = campaign["optimization_lane"]
             for candidate in successful:
                 validation = candidate["validation_execution"]
@@ -383,11 +429,7 @@ class CanonicalCampaignEvidence:
         """Create then re-admit one closed, data-free campaign evidence record."""
 
         unsigned = {
-            "schema_version": (
-                REVIEWED_CAMPAIGN_EVIDENCE_VERSION
-                if decision.get("schema_version") == REVIEWED_SELECTION_VERSION
-                else CANONICAL_CAMPAIGN_EVIDENCE_VERSION
-            ),
+            "schema_version": _evidence_version(decision),
             "campaign": deepcopy(dict(campaign)),
             "candidates": [deepcopy(dict(item)) for item in candidates],
             "decision": deepcopy(dict(decision)),

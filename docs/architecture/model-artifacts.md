@@ -155,6 +155,40 @@ the new dataset's eligible rows, not the training dataset's row positions.
 For example, a PLS model trained on absorbance spectra from 4000-650 cm^-1 should not be applied blindly to transmittance spectra, truncated axes, different resolution, or spectra preprocessed outside the saved workflow contract.
 
 
+## Portable manual checkpoint selection
+
+The closed campaign evidence reader accepts three distinct selection origins:
+`spectra-canonical-campaign-evidence/6` retains the recorded automatic or direct
+scientist selection, and `/7` retains `spectra-scientist-reviewed-selection/1`.
+Their fields and interpretation are unchanged. Evidence `/8` carries the new
+`spectra-manual-checkpoint-selection/1` origin for an explicitly chosen manual
+parameter-grid study checkpoint. A reader that does not support `/8` must refuse
+it; changing its version to `/6` or `/7` does not make it compatible.
+
+The manual selection record has exactly these fields: `schema_version`,
+`selection_claim`, `winner_candidate_id`, `selected_graph_digest`,
+`selected_result_digest`, `manual_choice_digest`, `checkpoint_digest`, and
+`settlement_digest`. Its claim is
+`scientist_selected_final_development_checkpoint`. The candidate, graph and
+result name a successful member of the complete, ordered development ledger;
+its successful candidates must retain the same population and split identity.
+The three authority digests refer to the actual immutable manual choice,
+checkpoint, and original batch settlement. They are distinct identities, not
+aliases for an automatic winner or a managed reviewed decision. No reason code,
+managed approval receipt or direct `scientist_selection` is inferred.
+
+At managed export, the source, tenant/project, complete development ledger,
+choice, checkpoint, successful refit terminal and artifact are re-admitted
+before a package can be signed. The existing terminal-captured local model
+record remains unchanged: its campaign derivation binds the original settlement
+and declared candidate ordinal. Publisher input identifies
+`manual-checkpoint-selection:<manual_choice_digest>`. Package, signature,
+download, CLI inspection and import then use the normal Campaign Review path.
+Neither the portable digest nor a publisher signature grants scientific
+correctness, new execution or independent-validation authority. A CV-only
+conclusion remains development evidence; importing it does not access held-out
+data or fit another model.
+
 ## Historical inspection catalogs
 
 The public package includes exact, digest-pinned contract catalogs so older

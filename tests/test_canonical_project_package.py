@@ -1057,3 +1057,70 @@ def _archive_with_new_manifest(members: dict[str, bytes]) -> bytes:
         members=[ArchiveMember(name, data) for name, data in source.items()],
         package_mode="full",
     )
+
+
+@pytest.mark.parametrize("drift", [None, "checkpoint", "choice", "order", "count", "candidate", "search"])
+def test_manual_local_model_matcher_uses_settlement_and_declared_ordinal_with_failed_sibling(drift):
+    package = _package()
+    original = package.campaign_evidence.as_dict()
+    winner = next(
+        row for row in original["candidates"] if row["candidate_id"] == original["decision"]["winner_candidate_id"]
+    )
+    winner["declared_ordinal"] = 3
+    failed = deepcopy(original["candidates"][0])
+    failed.update(candidate_id="failed-sibling", declared_ordinal=2)
+    failed.pop("ordinal")
+    failed.pop("validation_execution")
+    failed.update(status="failed", failure_status="scientific_failure", failure_code="insufficient_samples")
+    original["candidates"].insert(1, failed)
+    # Synthetic portable matcher control: no private checkpoint admission is
+    # asserted by this SDK fixture. The actual producer/package path is tested
+    # with a genuine checkpoint in the private integration suite.
+    choice = {
+        "schema_version": "spectra-manual-checkpoint-selection/1",
+        "selection_claim": "scientist_selected_final_development_checkpoint",
+        "winner_candidate_id": winner["candidate_id"],
+        "selected_graph_digest": winner["graph_digest"],
+        "selected_result_digest": winner["result_digest"],
+        "manual_choice_digest": hashlib.sha256(b"manual-choice").hexdigest(),
+        "checkpoint_digest": hashlib.sha256(b"checkpoint").hexdigest(),
+        "settlement_digest": original["campaign"]["decision_digest"],
+    }
+    evidence = CanonicalCampaignEvidence.build(
+        campaign=original["campaign"],
+        candidates=original["candidates"],
+        decision=choice,
+        winner_refit=original["winner_refit"],
+    )
+    record = package.local_model_record.as_dict()
+    campaign = record["derivation"]["campaign"]
+    campaign.update(
+        candidate_count=3, candidate_ordinal=3, candidate_ids=[row["candidate_id"] for row in original["candidates"]]
+    )
+    if drift in {"checkpoint", "choice"}:
+        campaign["decision_digest"] = choice["checkpoint_digest" if drift == "checkpoint" else "manual_choice_digest"]
+    elif drift == "order":
+        campaign["candidate_ids"][:2] = reversed(campaign["candidate_ids"][:2])
+    elif drift == "count":
+        campaign["candidate_ids"].append("unrelated-extra-candidate")
+        campaign["candidate_count"] = 4
+    elif drift == "candidate":
+        campaign.update(candidate_id=campaign["candidate_ids"][0], candidate_ordinal=1)
+    elif drift == "search":
+        campaign["search_space_digest"] = "0" * 64
+    record["record_digest"] = hashlib.sha256(
+        json.dumps(
+            {key: value for key, value in record.items() if key != "record_digest"},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode()
+    ).hexdigest()
+    verified = LocalModelRecord.from_dict(record)
+    if drift is None:
+        verified.require_matches_campaign_evidence(evidence)
+        assert winner["ordinal"] == 2 and winner["declared_ordinal"] == 3
+    else:
+        with pytest.raises(LocalModelRecordError):
+            verified.require_matches_campaign_evidence(evidence)

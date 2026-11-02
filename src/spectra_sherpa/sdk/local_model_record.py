@@ -313,25 +313,23 @@ class LocalModelRecord:
         )
         if winner is None or not all(isinstance(candidate, Mapping) for candidate in candidates):
             raise LocalModelRecordError("local model record cannot bind campaign evidence")
+        explicit_checkpoint = decision.get("schema_version") in {
+            "spectra-scientist-reviewed-selection/1",
+            "spectra-manual-checkpoint-selection/1",
+        }
         expected = {
             "campaign_id": evidence_campaign.get("campaign_id"),
             "candidate_id": winner_id,
-            "candidate_ordinal": (
-                winner.get("declared_ordinal")
-                if decision.get("schema_version") == "spectra-scientist-reviewed-selection/1"
-                else winner.get("ordinal")
-            ),
+            "candidate_ordinal": (winner.get("declared_ordinal") if explicit_checkpoint else winner.get("ordinal")),
             "candidate_count": len(candidates),
             "candidate_ids": [candidate.get("candidate_id") for candidate in candidates],
             "baseline_candidate_id": candidates[0].get("candidate_id"),
             "search_space_digest": evidence_campaign.get("search_space_digest"),
             "selection_status": "selected",
-            # Structural refits retain the immutable development settlement;
-            # the separate reviewed decision additionally binds the promotion.
+            # Checkpoint refits retain the immutable development settlement;
+            # the separate explicit choice binds its promotion/checkpoint.
             "decision_digest": (
-                decision.get("settlement_digest")
-                if decision.get("schema_version") == "spectra-scientist-reviewed-selection/1"
-                else evidence_campaign.get("decision_digest")
+                decision.get("settlement_digest") if explicit_checkpoint else evidence_campaign.get("decision_digest")
             ),
         }
         if self.payload["derivation"]["campaign"] != expected:
