@@ -121,10 +121,15 @@ model, its exact producing workflow and the source bindings. A partial-export
 warning identifies omitted models; models actually included in the archive can
 still be transferred.
 
-Optimization is optional. A candidate can be opened in Workflow, executed and
-exported through the same project route. Optimize also retains an independent
-**Model package** download for completed fitted campaign applications. A saved
-campaign conclusion alone contains no new fitted model. See
+Optimization is optional. Use **Open workflow** on the selected candidate,
+execute that workflow, then export its project package through the same route.
+This transfer does not require concluding the campaign.
+
+In v0.6.4, **Conclude campaign** records the selected candidate in a checkpoint
+and starts its refit. The conclusion record itself is not a fitted model; after
+the refit succeeds, Optimize also offers an independent **Model package**
+download. Saving a conclusion without starting a refit, and recording **Keep
+starting model** as a conclusion, are not part of this release. See
 [export contracts](../architecture/export.md#signed-campaign-review-packages-and-local-application).
 
 In local OSS, choose **Make Application** on a saved model to open its eligible
