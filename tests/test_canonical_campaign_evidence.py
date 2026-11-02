@@ -159,6 +159,16 @@ def test_campaign_evidence_round_trips_a_complete_candidate_ledger() -> None:
         assert f'"{forbidden_field}"'.encode() not in encoded
 
 
+@pytest.mark.parametrize("version", ["v6", "v7"])
+def test_original_selection_archives_keep_their_exact_bytes_and_digests(version):
+    # Synthetic immutable records produced by the pre-/8 reader at9909082;
+    # these are compatibility fixtures, not scientific qualification receipts.
+    encoded = (Path(__file__).parent / "fixtures" / "canonical_campaign_evidence" / f"{version}.json").read_bytes()
+    loaded = CanonicalCampaignEvidence.from_dict(json.loads(encoded))
+    assert loaded.canonical_bytes() == encoded
+    assert loaded == (_record() if version == "v6" else _reviewed_record())
+
+
 def test_campaign_evidence_retains_failed_candidate_without_using_it_as_a_metric() -> None:
     baseline = _candidate(candidate_id="baseline", ordinal=1, rmse=1.0, seed="a")
     selected = _candidate(candidate_id="candidate-selected", ordinal=2, rmse=0.8, seed="f")
@@ -329,6 +339,151 @@ def test_reviewed_selection_preserves_scientist_choice_without_claiming_metric_s
     assert evidence.payload["decision"]["winner_candidate_id"] == "baseline"
     assert CanonicalCampaignEvidence.from_dict(evidence.as_dict()) == evidence
     assert _record().payload["schema_version"] == "spectra-canonical-campaign-evidence/6"
+
+
+def _manual_checkpoint_record():
+    original = _reviewed_record().as_dict()
+    choice = original["decision"]
+    choice.pop("reason_code")
+    choice["schema_version"] = "spectra-manual-checkpoint-selection/1"
+    choice["selection_claim"] = "scientist_selected_final_development_checkpoint"
+    choice["manual_choice_digest"] = choice.pop("promotion_decision_digest")
+    return CanonicalCampaignEvidence.build(
+        campaign=original["campaign"],
+        candidates=original["candidates"],
+        decision=choice,
+        winner_refit=original["winner_refit"],
+    )
+
+
+def test_manual_checkpoint_selection_is_explicit_without_managed_or_direct_receipts():
+    evidence = _manual_checkpoint_record()
+    assert evidence.payload["schema_version"] == "spectra-canonical-campaign-evidence/8"
+    assert CanonicalCampaignEvidence.from_dict(evidence.as_dict()) == evidence
+    assert evidence.payload["decision"]["winner_candidate_id"] == "baseline"
+    assert "reason_code" not in evidence.payload["decision"]
+    assert "promotion_decision_digest" not in evidence.payload["decision"]
+    assert "scientist_selection" not in evidence.payload["decision"]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("winner_candidate_id", "candidate-scale"),
+        ("selected_graph_digest", "0" * 64),
+        ("selected_result_digest", "0" * 64),
+        ("selection_claim", "automatic_metric_winner"),
+        ("manual_choice_digest", "missing"),
+        ("checkpoint_digest", "missing"),
+        ("settlement_digest", "missing"),
+        ("reason_code", "primary_metric"),
+        ("scientist_selection", {}),
+    ],
+)
+def test_manual_checkpoint_selection_refuses_substitution_or_extra_authority(field, value):
+    record = _manual_checkpoint_record().as_dict()
+    record["decision"][field] = value
+    with pytest.raises(CanonicalCampaignEvidenceError):
+        CanonicalCampaignEvidence.build(
+            campaign=record["campaign"],
+            candidates=record["candidates"],
+            decision=record["decision"],
+            winner_refit=record["winner_refit"],
+        )
+
+
+@pytest.mark.parametrize("version", ["spectra-canonical-campaign-evidence/6", "spectra-canonical-campaign-evidence/7"])
+def test_manual_checkpoint_cannot_claim_automatic_or_reviewed_evidence_version(version):
+    record = _manual_checkpoint_record().as_dict()
+    record["schema_version"] = version
+    record["content_digest"] = hashlib.sha256(
+        json.dumps(
+            {key: value for key, value in record.items() if key != "content_digest"},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode()
+    ).hexdigest()
+    with pytest.raises(CanonicalCampaignEvidenceError, match="interpretation differs"):
+        CanonicalCampaignEvidence.from_dict(record)
+
+
+@pytest.mark.parametrize("origin", ["direct", "reviewed"])
+def test_automatic_or_reviewed_origin_cannot_acquire_manual_interpretation(origin):
+    record = (_record() if origin == "direct" else _reviewed_record()).as_dict()
+    record["schema_version"] = "spectra-canonical-campaign-evidence/8"
+    record["content_digest"] = hashlib.sha256(
+        json.dumps(
+            {key: value for key, value in record.items() if key != "content_digest"},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode()
+    ).hexdigest()
+    with pytest.raises(CanonicalCampaignEvidenceError, match="interpretation differs"):
+        CanonicalCampaignEvidence.from_dict(record)
+
+
+@pytest.mark.parametrize(
+    "drift", ["population", "split", "declared_ordinal", "success_ordinal", "duplicate_id", "content_digest"]
+)
+def test_manual_checkpoint_preserves_ledger_population_ordinals_and_content_digest(drift):
+    record = _manual_checkpoint_record().as_dict()
+    second = record["candidates"][1]
+    if drift == "population":
+        second["validation_execution"]["capability_content_digest"] = _digest("different population")
+    elif drift == "split":
+        second["validation_execution"]["split_plan_digest"] = _digest("different split")
+    elif drift == "declared_ordinal":
+        second["declared_ordinal"] = 3
+    elif drift == "success_ordinal":
+        second["ordinal"] = 4
+    elif drift == "duplicate_id":
+        second["candidate_id"] = record["candidates"][0]["candidate_id"]
+    else:
+        record["content_digest"] = "0" * 64
+    with pytest.raises(CanonicalCampaignEvidenceError):
+        if drift == "content_digest":
+            CanonicalCampaignEvidence.from_dict(record)
+        else:
+            CanonicalCampaignEvidence.build(
+                campaign=record["campaign"],
+                candidates=record["candidates"],
+                decision=record["decision"],
+                winner_refit=record["winner_refit"],
+            )
+
+
+def test_manual_checkpoint_retains_failed_sibling_and_refuses_selecting_it():
+    record = _manual_checkpoint_record().as_dict()
+    failed = _candidate(candidate_id="failed-sibling", ordinal=2, rmse=0.7, seed="j")
+    failed.pop("ordinal")
+    failed.pop("validation_execution")
+    failed.update(status="failed", failure_status="scientific_failure", failure_code="insufficient_samples")
+    record["candidates"][1]["declared_ordinal"] = 3
+    record["candidates"].insert(1, failed)
+    valid = CanonicalCampaignEvidence.build(
+        campaign=record["campaign"],
+        candidates=record["candidates"],
+        decision=record["decision"],
+        winner_refit=record["winner_refit"],
+    )
+    assert [row["status"] for row in valid.payload["candidates"]] == ["succeeded", "failed", "succeeded"]
+    record["decision"].update(
+        winner_candidate_id=failed["candidate_id"],
+        selected_graph_digest=failed["graph_digest"],
+        selected_result_digest=failed["result_digest"],
+    )
+    record["winner_refit"]["candidate_id"] = failed["candidate_id"]
+    with pytest.raises(CanonicalCampaignEvidenceError, match="successful trial"):
+        CanonicalCampaignEvidence.build(
+            campaign=record["campaign"],
+            candidates=record["candidates"],
+            decision=record["decision"],
+            winner_refit=record["winner_refit"],
+        )
 
 
 @pytest.mark.parametrize(
