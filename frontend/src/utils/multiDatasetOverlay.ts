@@ -1,4 +1,5 @@
 import { seriesPalette } from "@/utils/colors";
+import { getYAxisLabel, isRowCoordinateTitle } from "@/utils/plotLabels";
 import type { DatasetPlotMember, DatasetPlotSource, SherpaDatasetDict } from "@/types";
 
 const LINE_DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"];
@@ -32,6 +33,7 @@ interface AdmittedPlotSource {
   xQuantity: string;
   yTitle: string;
   yUnits: string;
+  yDisplayTitle: string;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -254,11 +256,14 @@ function admitSource(
     nonemptyString(dataset.x_axis?.title) || nonemptyString(metadata?.x_title) || "Feature";
   const xUnits = nonemptyString(dataset.x_axis?.units) || nonemptyString(metadata?.x_units);
   const xQuantity = nonemptyString(dataset.x_axis?.quantity);
-  const yTitle =
-    nonemptyString(domain?.data_quantity) ||
-    nonemptyString(metadata?.data_quantity) ||
-    nonemptyString(metadata?.y_title);
+  const yQuantity = nonemptyString(domain?.data_quantity) || nonemptyString(metadata?.data_quantity);
+  const yTitle = yQuantity || nonemptyString(metadata?.y_title);
   const yUnits = nonemptyString(dataset.units) || nonemptyString(metadata?.value_units);
+  // Legacy row titles are not signal quantities. Keep the raw authority for
+  // overlay compatibility; format only its display through the shared rule.
+  const yDisplayTitle = !yQuantity && isRowCoordinateTitle(yTitle)
+    ? getYAxisLabel({ y_title: yTitle, value_units: yUnits })
+    : displayAxisTitle(yTitle, yUnits);
   const selectedIndexes = source.selectedFileNames
     ? selectedDatasetRows(dataset, source.selectedFileNames)
     : null;
@@ -281,6 +286,7 @@ function admitSource(
     xQuantity,
     yTitle,
     yUnits,
+    yDisplayTitle,
   };
 }
 
@@ -483,6 +489,6 @@ export function buildMultiDatasetOverlay(
     displayedSpectra,
     totalSpectra: admitted.reduce((total, source) => total + source.rows.length, 0),
     xAxisTitle: displayAxisTitle(first.xTitle, first.xUnits),
-    yAxisTitle: displayAxisTitle(first.yTitle, first.yUnits),
+    yAxisTitle: first.yDisplayTitle,
   };
 }

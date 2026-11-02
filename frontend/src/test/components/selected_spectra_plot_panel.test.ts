@@ -75,6 +75,52 @@ function source(
 }
 
 describe("SelectedSpectraPlotPanel", () => {
+  it.each(["Absorbance", "Transmittance"])("does not duplicate %s units in a legacy physical ordinate", title => {
+    const value = dataset("sample-1");
+    delete value.domain;
+    value.units = title.toLowerCase();
+    value.metadata = { is_spectra: true, y_title: title };
+    const wrapper = mount(SelectedSpectraPlotPanel, {
+      props: {
+        plotDatasetCount: 1, plotFileCount: 1,
+        plotDatasets: [source(1, "Physical", [{ id: 1, name: "physical.csv", dataset: value }])],
+      },
+    });
+    const chart = wrapper.getComponent({ name: "PlotlyChart" });
+    expect(chart.props("layout").yaxis.title).toBe(title);
+    expect(chart.props("data")[0].y).toEqual(value.data[0]);
+    wrapper.unmount();
+  });
+
+  it.each([
+    ["absorbance", "Absorbance"],
+    ["dimensionless", "Intensity (dimensionless)"],
+    ["normalized", "Normalized intensity"],
+    ["", "Intensity"],
+  ])("shows the spectral ordinate rather than the specimen row title with %s units", (units, expected) => {
+    const value = dataset("corn-m5-001");
+    delete value.domain;
+    value.units = units;
+    value.x_axis = { data: [1100, 1200, 1300], title: "Wavelength", units: "nm" };
+    value.metadata = { is_spectra: true, y_title: "Specimen", y_units: "seconds" };
+    const original = JSON.stringify(value);
+    const wrapper = mount(SelectedSpectraPlotPanel, {
+      props: {
+        plotDatasetCount: 1, plotFileCount: 1,
+        plotDatasets: [source(1, "Corn M5", [{ id: 1, name: "corn.csv", dataset: value }])],
+      },
+    });
+    const chart = wrapper.getComponent({ name: "PlotlyChart" });
+    expect(chart.props("layout").xaxis.title).toBe("Wavelength (nm)");
+    expect(chart.props("layout").yaxis.title).toBe(expected);
+    expect(chart.props("data")[0]).toMatchObject({
+      name: "corn-m5-001", x: [1100, 1200, 1300], y: [0.1, 0.2, 0.3],
+      customdata: Array.from({ length: 3 }, () => ["corn-m5-001", "corn.csv"]),
+    });
+    expect(JSON.stringify(value)).toBe(original);
+    wrapper.unmount();
+  });
+
   function retainedSource(): DatasetPlotSource {
     const full = dataset("A");
     full.n_samples = 3;

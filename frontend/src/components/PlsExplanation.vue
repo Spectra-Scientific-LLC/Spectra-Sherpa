@@ -8,10 +8,6 @@
       {{ unavailable || "This run has no PLS explanation evidence. Rerun to enable explanations." }}
     </p>
     <template v-else>
-      <p>
-        Select observations in the review charts or table, then choose one to explain. Variable
-        highlights below do not mark or exclude observations.
-      </p>
       <label
         >Sample to explain
         <select v-model="sample" aria-label="Sample to explain">
@@ -28,19 +24,15 @@
       <p>
         Reference: {{ detail.reference_count }} retained calibration observations. Fitted Y mean for
         {{ responseNames[target] }}: {{ format(detail.baseline[target]) }} {{ units }}.
-        Contributions use the input to PLS after workflow preprocessing:
+        Preprocessing:
         {{ detail.preprocessing.map(preprocessorLabel).join(" → ") || "none before PLS" }}. Internal
-        autoscaling is {{ detail.internal_scale ? "on" : "off" }}; the saved coefficients already
-        account for it. Contributions are in response units, relative to the fitted X mean.
+        autoscaling: {{ detail.internal_scale ? "on" : "off" }}.
       </p>
       <template v-if="row">
         <p>
           <strong>{{ reviewRowLabel(rows.find((row) => row.id === sample), sample) }}</strong> · {{ role }}
         </p>
-        <p v-if="observation?.role === 'held_out_test'" role="note">
-          Held-out inspection: using this explanation to tune the model makes subsequent development
-          adaptive. Every original test observation remains in full-test metrics.
-        </p>
+        <p v-if="observation?.role === 'held_out_test'" role="note">Held-out sample: tuning on it voids independent validation.</p>
         <p>
           Prediction: {{ format(row.prediction) }} {{ units }} = fitted reference
           {{ format(detail.baseline[target]) }} + total signed contribution
@@ -49,14 +41,9 @@
           {{ format(observation?.residual?.[target]) }} {{ units }}.
         </p>
         <p>
-          These terms explain the prediction, not the residual error or chemical causation.
-          Correlated variables can cancel; smoothing and derivatives mix neighboring variables.
-        </p>
-        <p>
           Showing {{ row.variables.length }} of {{ detail.feature_count }} variables, ranked by
           absolute contribution. Omitted signed sum: {{ format(row.omitted_signed) }}; omitted
-          absolute mass: {{ format(row.omitted_absolute) }} {{ units }}. Omitted variables are not
-          zero; a small signed remainder can hide cancellation.
+          absolute mass: {{ format(row.omitted_absolute) }} {{ units }}.
         </p>
         <PlotlyChart
           :key="`contribution:${plotReset}`"
@@ -126,18 +113,12 @@
         </label>
         <p v-if="profile === 'coefficients'">
           Coefficients are in {{ units }} per
-          {{ detail.signal_units || "model-input signal unit (unspecified)" }}. Feature-coordinate
-          units such as wavelength do not define coefficient units.
+          {{ detail.signal_units || "model-input signal unit (unspecified)" }}.
         </p>
         <p v-else-if="profile === 'loadings'">
-          PLS X loadings describe the centered{{ detail.internal_scale ? "/autoscaled" : "" }}
-          latent model. They are not response coefficients or orthonormal PCA directions. Switching
-          components does not change the prediction contributions.
+          X loadings of the centered{{ detail.internal_scale ? "/autoscaled" : "" }} PLS model.
         </p>
-        <p v-else>
-          Combined VIP summarizes all fitted responses; it is neither response-specific nor a signed
-          contribution, and is not a significance test or automatic variable-selection rule.
-        </p>
+        <p v-else>Combined VIP across all fitted responses.</p>
         <PlotlyChart
           :key="`profile:${plotReset}`"
           :data="profileTrace"
@@ -148,9 +129,7 @@
           @selected="selectFeatures"
           @deselect="features = []"
         />
-        <p>
-          All {{ detail.feature_count }} fitted variables shown. Lasso highlights variables only.
-        </p>
+        <p>All {{ detail.feature_count }} fitted variables shown.</p>
       </template>
       <p v-else>{{ detail.profiles_unavailable_reason }}</p>
       <details>

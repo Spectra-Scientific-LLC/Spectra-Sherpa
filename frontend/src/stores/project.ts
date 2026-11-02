@@ -277,19 +277,32 @@ export const useProjectStore = defineStore("project", () => {
     }
   }
 
-  let pendingProject: { id: number; ticket: ScopedRequestTicket; promise: Promise<ProjectDetail | null> } | null = null;
-  function fetchProject(id: number): Promise<ProjectDetail | null> {
-    if (pendingProject?.id === id && pendingProject.ticket.isCurrent()) return pendingProject.promise;
+  // A navigation may cancel its selecting read. The canonical read ticket still
+  // owns admission, errors and loading; independent callers never share that owner.
+  type SelectionOwner = { signal?: AbortSignal; onInvalidated?: () => void };
+  let pendingProject: { id: number; ticket: ScopedRequestTicket; owner?: AbortSignal;
+    promise: Promise<ProjectDetail | null> } | null = null;
+  function fetchProject(id: number, owner: SelectionOwner = {}): Promise<ProjectDetail | null> {
+    if (owner.signal?.aborted) return Promise.resolve(null);
+    if (pendingProject?.id === id && pendingProject.owner === owner.signal
+      && pendingProject.ticket.isCurrent()) return pendingProject.promise;
     // An earlier accepted write may still refresh inventories, but cannot
     // select its result after the user has requested another project.
     // A same-project refresh is not navigation and must not retire write errors.
     if (id !== currentProjectId.value) workspaceMutation.invalidate();
     const request = projectRead.begin();
+    const cancel = () => { if (request.isCurrent()) projectRead.invalidate(); };
+    const invalidated = () => owner.onInvalidated?.();
+    owner.signal?.addEventListener("abort", cancel, { once: true });
+    request.signal.addEventListener("abort", invalidated, { once: true });
     requestedProjectId = id;
     beginLoading(request);
     error.value = null;
-    const promise = loadProject(id, request);
-    pendingProject = { id, ticket: request, promise };
+    const promise = loadProject(id, request).finally(() => {
+      owner.signal?.removeEventListener("abort", cancel);
+      request.signal.removeEventListener("abort", invalidated);
+    });
+    pendingProject = { id, ticket: request, owner: owner.signal, promise };
     return promise;
   }
 
@@ -425,7 +438,8 @@ export const useProjectStore = defineStore("project", () => {
     return fetchProject(id);
   }
 
-  async function ensureProjectForBrowserTab(): Promise<ProjectDetail | null> {
+  async function ensureProjectForBrowserTab(owner: SelectionOwner = {}): Promise<ProjectDetail | null> {
+    if (owner.signal?.aborted) return null;
     const request = captureMutationScope();
     if (currentProject.value) {
       return currentProject.value;
@@ -434,15 +448,15 @@ export const useProjectStore = defineStore("project", () => {
     if (projects.value.length === 0) {
       await fetchProjects();
     }
-    if (!request.isCurrent()) return null;
+    if (!request.isCurrent() || owner.signal?.aborted) return null;
 
     const lastActiveId = getLastActiveProjectId();
     if (lastActiveId && projects.value.some((project) => project.id === lastActiveId)) {
-      return fetchProject(lastActiveId);
+      return fetchProject(lastActiveId, owner);
     }
 
     const recent = recentProjects.value[0];
-    return recent ? fetchProject(recent.id) : null;
+    return recent ? fetchProject(recent.id, owner) : null;
   }
 
   // ── Link / Unlink ─────────────────────────────────────────────

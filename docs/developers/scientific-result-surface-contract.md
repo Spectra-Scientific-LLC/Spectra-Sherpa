@@ -70,6 +70,10 @@ identities and predicted class column order alongside the retained counts.
 Class names remain intact, including punctuation and long names; sample-label
 splitting or compaction must not change them. Explicit invalid axis labels or
 contradictory dimension roles must not fall back to similarly sized sample labels.
+When an evaluator declares a confusion presentation on a generic Visualization,
+the shared presentation adapter binds its unlabeled generic dimensions to that
+port's own class names after validating the matrix and axis sizes. This is a
+display projection; retained descriptors, contracts and counts remain unchanged.
 
 Peak Table headings use the retained coordinate and per-column units in both
 standalone and embedded Data View. Consensus-group rows and record columns are

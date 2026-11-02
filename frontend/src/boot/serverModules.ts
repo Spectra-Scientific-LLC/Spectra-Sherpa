@@ -50,7 +50,7 @@ import {
  */
 import { markRaw, ref, watch } from "vue";
 import type { Component } from "vue";
-import type { Router, RouteRecordRaw } from "vue-router";
+import type { Router, RouteRecordRaw, RouteRecordNormalized, RouteLocationNormalized } from "vue-router";
 import { storeToRefs } from "pinia";
 
 import { useAppConfig } from "@/composables/useAppConfig";
@@ -180,10 +180,18 @@ function buildContext(
       const remove = router.addRoute(scope ? {
         ...route, beforeEnter: [() => scope.current() ? true : "/", ...before],
       } as RouteRecordRaw : route);
+      const records = scope ? router.getRoutes().filter(record =>
+        route.name != null ? record.name === route.name : record.path === route.path) : [];
+      for (const record of records) extensionRouteRecords.add(record);
       scope?.cleanups.push(() => {
-        const active = router.currentRoute.value.matched.some((item) => item.name === route.name && route.name != null);
+        const active = router.currentRoute.value.matched.filter(record => records.includes(record));
         remove();
-        if (active) void router.replace("/").catch(() => undefined);
+        if (active.length) {
+          const retired = retiredExtensionRoutes.get(router) ?? new Set<RouteRecordNormalized>();
+          for (const record of active) retired.add(record);
+          retiredExtensionRoutes.set(router, retired);
+          leaveRetiredExtension(router);
+        }
       });
     },
     mountShell: (component, id) => {
@@ -233,7 +241,29 @@ interface RegistrationScope {
 }
 
 const extensionScopes = new Map<string, RegistrationScope>();
+// Remember normalized records, including a route being replaced during refresh.
+// This classifies navigation only; the final live matcher/route guards admit it.
+const extensionRouteRecords = new WeakSet<RouteRecordNormalized>();
+interface ExtensionNavigationOwner {
+  target: RouteLocationNormalized;
+  controller: AbortController;
+  current(): boolean;
+}
+const extensionNavigationOwners = new WeakMap<Router, ExtensionNavigationOwner>();
+const retiredExtensionRoutes = new WeakMap<Router, Set<RouteRecordNormalized>>();
+
+function leaveRetiredExtension(router: Router): void {
+  // Retiring a scope always disables its actions immediately. Its Dashboard
+  // fallback must not compete with an owned navigation replacing that view.
+  if (extensionNavigationOwners.get(router)?.current()) return;
+  const retired = retiredExtensionRoutes.get(router);
+  retiredExtensionRoutes.delete(router);
+  if (retired && router.currentRoute.value.matched.some(record => retired.has(record))) {
+    void router.replace("/").catch(() => undefined);
+  }
+}
 let stopExtensions: (() => void) | undefined;
+let stopExtensionNavigation: (() => void) | undefined;
 
 function disposeExtension(id: string): void {
   const scope = extensionScopes.get(id);
@@ -281,6 +311,9 @@ function ensureServerStylesheet(): void {
   serverStylesInjected = true;
 }
 
+// Bound both import and async registration; a timed-out scope cannot contribute later.
+const EXTENSION_REGISTRATION_TIMEOUT_MS = 30_000;
+
 async function loadAndRegister(
   url: string,
   contributorId: string,
@@ -292,17 +325,33 @@ async function loadAndRegister(
   scope?: RegistrationScope,
 ): Promise<boolean> {
   ensureServerStylesheet();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let cancelRegistration: (() => void) | undefined;
   try {
-    const mod = await importModule(url);
-    if (scope && !scope.current()) return false;
-    if (scope && mod.contextualActionsVersion !== CONTEXTUAL_ACTIONS_VERSION) {
-      throw new Error(`Unsupported contextual action contract from ${url}`);
+    const registration = (async () => {
+      const mod = await importModule(url);
+      if (scope && !scope.current()) return;
+      if (scope && mod.contextualActionsVersion !== CONTEXTUAL_ACTIONS_VERSION) {
+        throw new Error(`Unsupported contextual action contract from ${url}`);
+      }
+      const register = mod.register ?? mod.default;
+      if (typeof register !== "function") {
+        throw new Error(`Server module ${url} did not export a register() function`);
+      }
+      await register(buildContext(contributorId, router, appConfig, scope));
+    })();
+    if (scope) {
+      const ended = new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error("Server module registration timed out")),
+          EXTENSION_REGISTRATION_TIMEOUT_MS);
+        cancelRegistration = () => reject(new Error("Server module registration ended"));
+        scope.controller.signal.addEventListener("abort", cancelRegistration, { once: true });
+        if (scope.controller.signal.aborted) cancelRegistration();
+      });
+      await Promise.race([registration, ended]);
+    } else {
+      await registration;
     }
-    const register = mod.register ?? mod.default;
-    if (typeof register !== "function") {
-      throw new Error(`Server module ${url} did not export a register() function`);
-    }
-    await register(buildContext(contributorId, router, appConfig, scope));
     if (scope && !scope.current()) return false;
 
     // vue-router resolves the initial navigation when `app.use(router)`
@@ -343,6 +392,9 @@ async function loadAndRegister(
       ];
     }
     return false;
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+    if (cancelRegistration) scope?.controller.signal.removeEventListener("abort", cancelRegistration);
   }
 }
 
@@ -373,6 +425,8 @@ export function __resetServerModulesForTests(): void {
   adminLoaded = false;
   stopExtensions?.();
   stopExtensions = undefined;
+  stopExtensionNavigation?.();
+  stopExtensionNavigation = undefined;
   for (const id of extensionScopes.keys()) disposeExtension(id);
   invalidateActionContext();
   usePrimaryNavigation().clear();
@@ -432,6 +486,8 @@ export async function bootServerModules(
   if (config.value?.implicitIdentity === true && !identity.user) await identity.initializeActor();
   stopExtensions?.();
   stopExtensions = undefined;
+  stopExtensionNavigation?.();
+  stopExtensionNavigation = undefined;
   // Restore host-owned project context before extensions capture their scope.
   // Otherwise a bookmarked extension starts with a null project, and restoring
   // it later disposes the active route and sends the scientist to Dashboard.
@@ -461,6 +517,7 @@ export async function bootServerModules(
     config.value?.uiExtensions,
     config.value?.features,
   ]);
+  let navigationGuardInstalled = false;
   const registerConfiguredExtensions = async (): Promise<void> => {
     for (const id of extensionScopes.keys()) disposeExtension(id);
     invalidateActionContext();
@@ -497,7 +554,7 @@ export async function bootServerModules(
         extensionConfig,
         importModule,
         entry.required === true,
-        reresolveCurrentRoute,
+        reresolveCurrentRoute && !navigationGuardInstalled,
         scope,
       ));
     }
@@ -506,16 +563,134 @@ export async function bootServerModules(
 
   // The first extension registration is part of boot. Dynamic routes must be
   // present before app.use(router) resolves a bookmarked managed URL.
+  const registrationEpoch = ref(0);
+  let pendingRegistration: Promise<void>;
+  const refreshExtensions = () => {
+    registrationEpoch.value += 1;
+    const registration = pendingRegistration = registerConfiguredExtensions();
+    // Re-resolving inside registration would wait on its own readiness guard.
+    // Late re-resolution starts only after that registration promise settles.
+    if (navigationGuardInstalled && reresolveCurrentRoute) void registration.then(() => {
+      if (pendingRegistration !== registration) return;
+      const cur = router.currentRoute.value;
+      const matched = router.resolve(cur.fullPath).matched;
+      if ((cur.matched.length === 0 || cur.name === "not-found")
+        && matched.some(record => extensionRouteRecords.has(record))) {
+        void router.replace(cur.fullPath).catch(() => undefined);
+      }
+    });
+    return registration;
+  };
   const initialRegistrationKey = extensionRegistrationKey();
-  await registerConfiguredExtensions();
+  await refreshExtensions();
   if (extensionRegistrationKey() !== initialRegistrationKey) {
-    await registerConfiguredExtensions();
+    await refreshExtensions();
   }
   stopExtensions = watch(
     extensionRegistrationKey,
-    () => { void registerConfiguredExtensions(); },
+    () => { void refreshExtensions(); },
     { flush: "sync" },
   );
+
+  // Sign-in can navigate before its identity-triggered dynamic import settles.
+  // Wait before committing an unresolved location, then rematch only if an
+  // extension actually registered that exact URL. Unknown paths remain 404s.
+  let navigation: ExtensionNavigationOwner | undefined;
+  const removeNavigationGuard = router.beforeEach(async (to) => {
+    navigation?.controller.abort();
+    const request = new AbortController();
+    const actorId = identity.user?.id;
+    const sessionRevision = identity.sessionRevision;
+    const current = () => !request.signal.aborted && identity.user?.id === actorId
+      && identity.sessionRevision === sessionRevision;
+    navigation = { target: to, controller: request, current };
+    extensionNavigationOwners.set(router, navigation);
+    if (to.meta.public || !identity.user || config.value?.mode === "local"
+      || !config.value?.uiExtensions?.length
+      || (to.matched.length > 0 && to.name !== "not-found"
+        && !to.matched.some(record => extensionRouteRecords.has(record)))) return true;
+
+    const stopOwner = watch(() => JSON.stringify([identity.user?.id, identity.sessionRevision]),
+      () => request.abort(), { flush: "sync" });
+    const cancelled = new Promise<false>((resolve) => {
+      request.signal.addEventListener("abort", () => resolve(false), { once: true });
+    });
+    const ready = async () => {
+      // Follow actual registration changes while this same navigation/session
+      // owns the wait; a harmless config refresh is not a new navigation.
+      while (current()) {
+        const epoch = registrationEpoch.value;
+        let stopChanged = () => {};
+        const changed = new Promise<void>((resolve) => {
+          stopChanged = watch(registrationEpoch, () => resolve(), { flush: "sync", once: true });
+        });
+        try {
+          await Promise.race([pendingRegistration, changed, cancelled]);
+          if (!current()) return false;
+          if (registrationEpoch.value === epoch) return true;
+        } finally { stopChanged(); }
+      }
+      return false;
+    };
+    try {
+      if (!await ready()) return false;
+      if (!router.resolve(to.fullPath).matched.some(record => extensionRouteRecords.has(record))) return true;
+
+      // Hydrate the URL's project through the existing scoped admission before
+      // the extension captures its final project. No workspace-cache authority.
+      const project = useProjectStore();
+      const owner = { signal: request.signal, onInvalidated: () => request.abort() };
+      const linked = to.query.project_id !== undefined ? to.query.project_id : to.query.project;
+      if (linked !== undefined) {
+        const valid = typeof linked === "string" && /^[1-9][0-9]*$/.test(linked)
+          && Number.isSafeInteger(Number(linked))
+          && (to.query.project_id === undefined || to.query.project === undefined
+            || to.query.project_id === to.query.project);
+        const id = Number(linked);
+        const result = valid && (project.currentProjectId === id && project.currentProject?.id === id
+          ? project.currentProject : await Promise.race([project.fetchProject(id, owner), cancelled]));
+        if (!current()) return false;
+        if (!result) {
+          project.currentProjectId = null;
+          project.currentProject = null;
+          return { name: "project-unavailable" };
+        }
+      } else {
+        await Promise.race([project.ensureProjectForBrowserTab(owner), cancelled]);
+        if (!current()) return false;
+      }
+      const projectId = project.currentProjectId;
+      if (!await ready() || project.currentProjectId !== projectId) return false;
+      // Returning the same full path is vue-router's canonical addRoute rematch;
+      // it preserves query/hash and runs the registered route's own guards.
+      const matched = router.resolve(to.fullPath).matched;
+      return matched.length !== to.matched.length
+        || matched.some((record, index) => record !== to.matched[index]) ? to.fullPath : true;
+    } finally {
+      stopOwner();
+    }
+  });
+  const finishNavigation = (to: RouteLocationNormalized) => {
+    // A stale abort/error must not retire a newer navigation's owner.
+    if (navigation?.target === to) {
+      navigation.controller.abort();
+      if (extensionNavigationOwners.get(router) === navigation) extensionNavigationOwners.delete(router);
+      navigation = undefined;
+    }
+    leaveRetiredExtension(router);
+  };
+  const removeNavigationSettled = router.afterEach(to => finishNavigation(to));
+  const removeNavigationError = router.onError((_error, to) => finishNavigation(to));
+  navigationGuardInstalled = true;
+  stopExtensionNavigation = () => {
+    navigation?.controller.abort();
+    if (extensionNavigationOwners.get(router) === navigation) extensionNavigationOwners.delete(router);
+    navigation = undefined;
+    removeNavigationGuard();
+    removeNavigationSettled();
+    removeNavigationError();
+    leaveRetiredExtension(router);
+  };
 
   // User-level: admin UI module. Lazily loaded when the host user
   // resolves with capabilities.admin. Watched rather than eagerly

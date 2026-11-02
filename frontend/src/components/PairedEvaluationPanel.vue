@@ -1,7 +1,7 @@
 <template>
   <section class="paired-evaluation" aria-label="Common protocol and paired robustness">
     <h3>Evaluate under a common protocol</h3>
-    <p>Optional development check for two saved PLS recipes. Each recipe uses the same training rows and folds. Held-out samples stay excluded; repeated CV is not independent validation.</p>
+    <p>Compare two saved PLS recipes on the same training rows and folds.</p>
     <template v-if="recipes.length === 2">
       <label>Development population
         <select v-model.number="population" :disabled="busy" @change="clearPreview">
@@ -10,13 +10,13 @@
       </label>
       <label>Folds <input v-model.number="folds" type="number" min="2" max="20" :disabled="busy" @input="clearPreview" /></label>
       <label>Repetitions <input v-model.number="repetitions" type="number" min="1" max="10" :disabled="busy" @input="clearPreview" /></label>
-      <p>Use one repetition for common CV or five for a paired robustness check. Grouped data supports one intact-group assessment; randomized grouped repetitions are refused.</p>
+      <p>Grouped data allows one repetition.</p>
       <details><summary>Advanced settings</summary>
         <label>First random seed <input v-model.number="seed" type="number" min="0" :disabled="busy" @input="clearPreview" /></label>
         <label>Meaningful RMSECV difference (response units)
           <input v-model.number="margin" type="number" min="0" step="any" :disabled="busy" @input="clearPreview" />
         </label>
-        <p>Zero reports numerical direction only. Set a scientifically meaningful difference before execution. No significance claim is made from overlapping repetitions.</p>
+        <p>Zero reports direction only.</p>
       </details>
       <button type="button" :disabled="busy" @click="previewProtocol">Review evaluation protocol</button>
       <div v-if="preview">
@@ -25,9 +25,9 @@
         <button type="button" :disabled="busy" @click="start">Run evaluation</button>
       </div>
       <button v-if="busy && jobId" type="button" @click="cancel">Cancel evaluation</button>
-      <p v-if="busy" role="status">Evaluation running. You can leave this view; its status is retained in Runs. Cancellation stops between recipe evaluations.</p>
+      <p v-if="busy" role="status">Evaluation running; status is kept in Runs.</p>
       <p v-if="error" role="alert">{{ error }}</p>
-      <p v-if="status && !busy">{{ status }}. {{ status === 'completed' ? 'The source runs are unchanged.' : 'Incomplete evaluations do not support comparison. Restart creates a new record; resume is unavailable.' }}</p>
+      <p v-if="status && !busy">{{ status }}. {{ status === 'completed' ? 'The source runs are unchanged.' : 'Restart to create a new evaluation.' }}</p>
       <button v-if="runId" type="button" @click="router.push({ path: `/runs/${runId}` })">Open saved evaluation</button>
       <PairedEvaluationResults v-if="record && runId" :record="record" :run-id="runId" />
     </template>

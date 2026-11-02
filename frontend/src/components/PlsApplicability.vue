@@ -1,15 +1,8 @@
 <template>
   <section class="pls-applicability" aria-label="PLS predictor-space applicability">
     <h3>PLS predictor-space novelty</h3>
-    <p>
-      Scores describe position in the fitted predictor space. T² measures distance in retained score
-      space; Q measures predictor signal not reconstructed by the model. Neither measures response
-      error. Passing a global screen does not establish local support or prediction certainty.
-    </p>
-    <p v-if="stale" role="status">
-      Previous-fit applicability is hidden while the workflow is changed or running. Reopen the
-      intended saved run or rerun to inspect its predictor evidence.
-    </p>
+    <p>T²: distance in score space. Q: predictor residual. Neither measures prediction certainty.</p>
+    <p v-if="stale" role="status">Previous-fit applicability is hidden while the workflow changes. Rerun to update.</p>
     <p v-else-if="!detail" role="status">
       {{
         unavailable ||
@@ -22,25 +15,18 @@
         {{ detail.components }} latent variables · score covariance rank
         {{ detail.score_covariance_rank }} of {{ detail.components }}. {{ detail.space }}. Score
         units: {{ detail.score_units }}. Q units: {{ detail.q_units }}. Preprocessing:
-        {{ preprocessingLabel }}. Global screening is provisional and uses
-        {{ format(100 * detail.confidence) }}% nominal limits, not prediction confidence.
+        {{ preprocessingLabel }}. Limits: {{ format(100 * detail.confidence) }}% nominal.
       </p>
       <p>
         Solid T² limit: calibration {{ format(detail.calibration_t2_limit) }}. Dashed T² limit:
         held-out and excluded applications {{ format(detail.application_t2_limit) }}. Q limit:
-        {{ format(detail.q_limit) }}, derived from the calibration reference. Groups retain their
-        colours; sample role and scientist marks retain their symbols.
+        {{ format(detail.q_limit) }}.
       </p>
       <p v-if="detail.t2_unavailable_reason" role="status">
-        T² unavailable: {{ detail.t2_unavailable_reason }}. Q and scores remain available where
-        retained.
+        T² unavailable: {{ detail.t2_unavailable_reason }}.
       </p>
       <p v-if="detail.q_unavailable_reason" role="status">
         Q screening unavailable: {{ detail.q_unavailable_reason }}.
-      </p>
-      <p>
-        Local neighborhood support: unavailable from the retained aggregate state. Investigate
-        independent spectral and reference evidence before judging a prediction.
       </p>
       <div class="component-controls">
         <label
@@ -56,14 +42,7 @@
           </select></label
         >
       </div>
-      <p v-if="detail.components === 1">
-        One latent variable was retained. The score plot uses zero vertical position for display
-        only; it is not a second latent variable.
-      </p>
-      <p>
-        Changing displayed score components does not change the all-component T²/Q values or
-        screening decisions.
-      </p>
+      <p v-if="detail.components === 1">One latent variable: the vertical axis is not a second latent variable.</p>
       <div class="applicability-plots">
         <PlotlyChart
           :data="scoreTraces"
@@ -83,15 +62,10 @@
         />
       </div>
       <p v-if="missingScores || missingQ" role="status">
-        {{ missingScores }} observations lack the displayed score pair; {{ missingQ }} lack Q. They
-        remain in the linked sample table with their unavailable reason.
+        {{ missingScores }} observations lack the displayed score pair; {{ missingQ }} lack Q.
       </p>
       <details>
         <summary>Explain selected predictor-space novelty</summary>
-        <p>
-          Choose a selected observation. These terms explain predictor-space novelty, separately
-          from the response-specific prediction contributions below.
-        </p>
         <label
           >Applicability sample
           <select v-model="sample" aria-label="Applicability sample">
@@ -115,15 +89,11 @@
             }}
             · Q limit: {{ format(detail.q_limit) }}.
           </p>
-          <p v-if="observation.role === 'held_out_test'">
-            Held-out inspection does not change its cohort or full-test metrics. Using this evidence
-            to tune a model is adaptive development, not independent validation.
-          </p>
+          <p v-if="observation.role === 'held_out_test'">Held-out sample: tuning on it voids independent validation.</p>
         </template>
         <template v-if="terms">
           <p>
-            Full Q: {{ format(terms.q_total) }} · Full T²: {{ format(terms.t2_total) }}. The
-            contributions use all retained latent variables and the fitted reference center.
+            Full Q: {{ format(terms.q_total) }} · Full T²: {{ format(terms.t2_total) }}.
           </p>
           <p v-if="terms.decomposition_unavailable_reason" role="status">
             Variable explanation unavailable: {{ terms.decomposition_unavailable_reason }}.
@@ -131,19 +101,12 @@
           <template v-else>
             <p>
               Showing {{ terms.variables.length }} of {{ detail.feature_count }} variables: union of
-              the leading {{ detail.top_per_statistic }} Q and absolute signed T² terms. Omitted
-              variables are not zero.
+              the leading {{ detail.top_per_statistic }} Q and absolute signed T² terms.
             </p>
             <p>
               Omitted Q: {{ format(terms.omitted_q) }} · Omitted signed T²:
               {{ format(terms.omitted_t2) }} · Omitted absolute T² mass:
-              {{ format(terms.omitted_t2_absolute) }}. A small signed remainder may hide
-              cancellation.
-            </p>
-            <p>
-              Q terms are squared predictor residuals. Negative T² terms mean signed cancellation,
-              not negative distance. These are model-space descriptions, not chemical causes or
-              prediction-error attributions.
+              {{ format(terms.omitted_t2_absolute) }}. Negative T² terms are signed cancellation.
             </p>
             <div class="applicability-plots">
               <PlotlyChart
@@ -188,9 +151,7 @@
               </table>
             </div>
             <p aria-live="polite">
-              {{ features.length }} applicability variables highlighted. Use “Explain these
-              applicability variables” in Ask Sherpa above. Variable highlights do not mark or
-              exclude observations.
+              {{ features.length }} applicability variables highlighted.
             </p>
             <button type="button" @click="resetFeatures">
               Reset applicability variable highlights

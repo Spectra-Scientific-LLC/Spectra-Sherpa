@@ -72,6 +72,13 @@ consumer's handwritten transport boundary through an explicit generated-type
 adapter or document why its view-model type is not a transport declaration.
 The count must not grow to accommodate new copies.
 
+The 0.6.4 saved-route correction adds one browser-local `SelectionOwner` alias
+in `stores/project.ts`. Its `AbortSignal` and invalidation callback own a pending
+selection; neither is API JSON or a replacement for generated project fields.
+The reviewed object-alias ceiling for that file moves from 0 to 1; its interface
+and inline-API ceilings, and the five-file legacy transport inventory, are
+unchanged. This permits the lifecycle type only, not another wire contract.
+
 At 0.6.4 release-prep review, publish the before/after inventory and remaining
 named boundaries with the [release checklist](release-preparation.md).
 At the next cohesion review, each remaining boundary needs an owning migration

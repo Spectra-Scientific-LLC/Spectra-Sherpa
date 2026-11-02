@@ -6,8 +6,8 @@
     <template v-else-if="review">
       <p>
         Run #{{ review.run_id }} · {{ review.n_calibration }} retained calibration samples ·
-        {{ review.n_components }} components. ○ Calibration · □ Held-out test · ◇ Marked outlier · ×
-        Excluded projection or test review omission. Colours identify sample groups.
+        {{ review.n_components }} components. ○ Calibration · □ Held-out · ◇ Marked outlier · ×
+        Excluded.
       </p>
       <p v-if="decisionUnavailable" role="status">{{ decisionUnavailable }}</p>
       <div class="saved-diagnostics__controls">
@@ -46,7 +46,7 @@
         <button type="button" @click="selected = []">Clear sample selection</button>
       </div>
       <p v-if="review.n_components === 1">
-        The vertical score coordinate is zero for display only; it is not a second component.
+        One component: the vertical axis is not a second component.
       </p>
       <div class="saved-diagnostics__plots">
         <PlotlyChart
@@ -94,9 +94,7 @@
       <p v-if="!loadingRows" role="status">Fitted loadings are unavailable for this saved model.</p>
       <p>
         Influence limits: fitted calibration T² {{ number(t2Limit ?? null) }}; projected application
-        T² {{ number(applicationT2Limit ?? null) }}; Q {{ number(qLimit ?? null) }}. Each
-        observation is assessed against the limit for its role. Dashed T² line marks the application
-        limit.
+        T² {{ number(applicationT2Limit ?? null) }} (dashed); Q {{ number(qLimit ?? null) }}.
       </p>
       <p aria-live="polite">{{ selected.length }} observations selected.</p>
       <label>Find observation <input v-model="query" type="search" /></label>

@@ -24,7 +24,7 @@
     "src/stores/job.ts": [0, 0, 0],
     "src/stores/llm.ts": [2, 0, 0],
     "src/stores/notification.ts": [1, 0, 0],
-    "src/stores/project.ts": [3, 0, 1],
+    "src/stores/project.ts": [3, 1, 1],
     "src/stores/projectProvenance.ts": [2, 0, 0],
     "src/stores/projectScopeRegistry.ts": [0, 0, 0],
     "src/stores/report.ts": [11, 0, 1],
@@ -45,5 +45,10 @@
     "src/types/pairedEvaluation.ts": [1, 0, 0],
     "src/types/scientificComparison.ts": [4, 0, 0],
     "src/types/scientificPlotProjection.ts": [10, 0, 0]
+  },
+  "reviewed_local_types": {
+    "src/stores/project.ts": {
+      "SelectionOwner": "Browser-local selecting-read ownership only: AbortSignal and invalidation callback, never serialized as API data. Reviewed with real-router and canonical project-store cancellation controls; no generated transport fields duplicated."
+    }
   }
 }

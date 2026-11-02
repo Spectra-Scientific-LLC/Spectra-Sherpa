@@ -41,6 +41,85 @@ function source(experimentId: number, name: string, value: SherpaDatasetDict): D
 }
 
 describe("multi-dataset spectral overlay", () => {
+  it.each([
+    ["Absorbance", "absorbance", "Absorbance"],
+    ["Transmittance", "transmittance", "Transmittance"],
+    ["Response", "dimensionless", "Response (dimensionless)"],
+    ["Response", "normalized", "Response (normalized)"],
+  ])("preserves legacy non-row title formatting for %s / %s", (title, units, expected) => {
+    const value = dataset(["A"], [[1, 2, 3]], ["one"]);
+    delete value.domain;
+    value.units = units;
+    value.metadata = { is_spectra: true, y_title: title };
+    const original = JSON.stringify(value);
+    const result = buildMultiDatasetOverlay([source(1, "Physical", value)]);
+    expect(result.error).toBeNull();
+    expect(result.yAxisTitle).toBe(expected);
+    expect(JSON.stringify(value)).toBe(original);
+  });
+
+  it.each([
+    ["absorbance", "Absorbance"],
+    ["dimensionless", "Intensity (dimensionless)"],
+    ["normalized", "Normalized intensity"],
+    ["", "Intensity"],
+  ])("separates a legacy specimen row title from signal units %s", (units, expected) => {
+    const value = dataset(["Corn 1", "Corn 2"], [[1, 2, 3], [4, 5, 6]], ["one", "two"]);
+    delete value.domain;
+    value.units = units;
+    value.metadata = { is_spectra: true, y_title: "Specimen", y_units: "seconds" };
+    value.sample_axis = {
+      labels: ["Corn 1", "Corn 2"],
+      sample_table: { sample_id: ["observation-1", "observation-2"] },
+      include_mask: [true, false],
+    };
+    const original = JSON.stringify(value);
+    const result = buildMultiDatasetOverlay([source(1, "Corn M5", value)]);
+    expect(result.error).toBeNull();
+    expect(result.yAxisTitle).toBe(expected);
+    expect(result.traces.map((trace) => trace.y)).toEqual(value.data);
+    expect(result.traces.map((trace) => trace.customdata)).toEqual([
+      Array.from({ length: 3 }, () => ["Corn 1", "Corn M5", "Corn M5.spa", "one"]),
+      Array.from({ length: 3 }, () => ["Corn 2", "Corn M5", "Corn M5.spa", "two"]),
+    ]);
+    expect(JSON.stringify(value)).toBe(original);
+  });
+
+  it("uses measured metadata units without appending units twice or borrowing row units", () => {
+    const value = dataset(["A"], [[1, 2, 3]], ["one"]);
+    delete value.domain;
+    delete value.units;
+    value.metadata = { is_spectra: true, y_title: "CO2", y_units: "seconds", value_units: "ppm" };
+    expect(buildMultiDatasetOverlay([source(1, "Response", value)]).yAxisTitle).toBe("CO2 (ppm)");
+    value.units = "percent";
+    expect(buildMultiDatasetOverlay([source(1, "Response", value)]).yAxisTitle).toBe("CO2 (percent)");
+  });
+
+  it.each(["domain", "metadata"])("preserves a declared %s quantity over a legacy row title", (location) => {
+    const value = dataset(["A"], [[1, 2, 3]], ["one"]);
+    value.metadata = { is_spectra: true, y_title: "Specimen", data_quantity: "Transmittance" };
+    if (location === "metadata") {
+      delete value.domain;
+      value.units = "percent";
+    }
+    expect(buildMultiDatasetOverlay([source(1, "Physical", value)]).yAxisTitle)
+      .toBe(location === "domain" ? "Absorbance" : "Transmittance (percent)");
+  });
+
+  it("keeps blank ordinate labels and incompatible raw ordinate authorities unchanged", () => {
+    const first = dataset(["A"], [[1, 2, 3]], ["one"]);
+    delete first.domain;
+    delete first.units;
+    first.metadata = { is_spectra: true };
+    expect(buildMultiDatasetOverlay([source(1, "Unknown", first)]).yAxisTitle).toBe("");
+    first.metadata.y_title = "Specimen";
+    const second = structuredClone(first);
+    second.metadata = { is_spectra: true, y_title: "Sample" };
+    const result = buildMultiDatasetOverlay([source(1, "First", first), source(2, "Second", second)]);
+    expect(result.traces).toEqual([]);
+    expect(result.error).toContain("incompatible ordinate quantities");
+  });
+
   it("filters retained rows, labels and values without changing the source dataset", () => {
     const value = dataset(
       ["A", "B"],

@@ -1,0 +1,523 @@
+{
+  "node_type": "diagnostics.classification_evaluator",
+  "result": {
+    "default": {
+      "schema_version": "spectrasherpa.classification-evaluation/1",
+      "task_type": "classification",
+      "n_samples": 37,
+      "label_domain": "text",
+      "labels": [
+        "setosa",
+        "versicolor",
+        "virginica"
+      ],
+      "observed_labels": [
+        "setosa",
+        "versicolor",
+        "virginica"
+      ],
+      "predicted_only_labels": [],
+      "accuracy": 0.7297297297297297,
+      "balanced_accuracy": 0.7286324786324786,
+      "macro_precision": 0.7416666666666667,
+      "macro_recall": 0.7286324786324786,
+      "macro_specificity": 0.8633333333333333,
+      "macro_f1": 0.7305438189995911,
+      "confusion_matrix": [
+        [
+          11,
+          1,
+          0
+        ],
+        [
+          0,
+          6,
+          6
+        ],
+        [
+          0,
+          3,
+          10
+        ]
+      ],
+      "per_class": [
+        {
+          "label": "setosa",
+          "support": 12,
+          "predicted_count": 11,
+          "precision": 1.0,
+          "recall": 0.9166666666666666,
+          "specificity": 1.0,
+          "f1": 0.9565217391304348
+        },
+        {
+          "label": "versicolor",
+          "support": 12,
+          "predicted_count": 10,
+          "precision": 0.6,
+          "recall": 0.5,
+          "specificity": 0.84,
+          "f1": 0.5454545454545454
+        },
+        {
+          "label": "virginica",
+          "support": 13,
+          "predicted_count": 16,
+          "precision": 0.625,
+          "recall": 0.7692307692307693,
+          "specificity": 0.75,
+          "f1": 0.6896551724137931
+        }
+      ]
+    },
+    "comparison": {
+      "schema_version": "spectrasherpa-classification-comparison/1",
+      "shape": [
+        37,
+        5
+      ],
+      "data": [
+        {
+          "sample": "Evaluation row 1",
+          "reference": "setosa",
+          "predicted": "setosa",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 2",
+          "reference": "setosa",
+          "predicted": "setosa",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 3",
+          "reference": "setosa",
+          "predicted": "setosa",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 4",
+          "reference": "setosa",
+          "predicted": "setosa",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 5",
+          "reference": "setosa",
+          "predicted": "setosa",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 6",
+          "reference": "setosa",
+          "predicted": "setosa",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 7",
+          "reference": "setosa",
+          "predicted": "setosa",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 8",
+          "reference": "setosa",
+          "predicted": "setosa",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 9",
+          "reference": "setosa",
+          "predicted": "setosa",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 10",
+          "reference": "setosa",
+          "predicted": "setosa",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 11",
+          "reference": "setosa",
+          "predicted": "setosa",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 12",
+          "reference": "setosa",
+          "predicted": "versicolor",
+          "correct": false,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 13",
+          "reference": "versicolor",
+          "predicted": "versicolor",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 14",
+          "reference": "versicolor",
+          "predicted": "versicolor",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 15",
+          "reference": "versicolor",
+          "predicted": "versicolor",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 16",
+          "reference": "versicolor",
+          "predicted": "versicolor",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 17",
+          "reference": "versicolor",
+          "predicted": "versicolor",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 18",
+          "reference": "versicolor",
+          "predicted": "versicolor",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 19",
+          "reference": "versicolor",
+          "predicted": "virginica",
+          "correct": false,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 20",
+          "reference": "versicolor",
+          "predicted": "virginica",
+          "correct": false,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 21",
+          "reference": "versicolor",
+          "predicted": "virginica",
+          "correct": false,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 22",
+          "reference": "versicolor",
+          "predicted": "virginica",
+          "correct": false,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 23",
+          "reference": "versicolor",
+          "predicted": "virginica",
+          "correct": false,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 24",
+          "reference": "versicolor",
+          "predicted": "virginica",
+          "correct": false,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 25",
+          "reference": "virginica",
+          "predicted": "versicolor",
+          "correct": false,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 26",
+          "reference": "virginica",
+          "predicted": "versicolor",
+          "correct": false,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 27",
+          "reference": "virginica",
+          "predicted": "versicolor",
+          "correct": false,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 28",
+          "reference": "virginica",
+          "predicted": "virginica",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 29",
+          "reference": "virginica",
+          "predicted": "virginica",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 30",
+          "reference": "virginica",
+          "predicted": "virginica",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 31",
+          "reference": "virginica",
+          "predicted": "virginica",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 32",
+          "reference": "virginica",
+          "predicted": "virginica",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 33",
+          "reference": "virginica",
+          "predicted": "virginica",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 34",
+          "reference": "virginica",
+          "predicted": "virginica",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 35",
+          "reference": "virginica",
+          "predicted": "virginica",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 36",
+          "reference": "virginica",
+          "predicted": "virginica",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "Evaluation row 37",
+          "reference": "virginica",
+          "predicted": "virginica",
+          "correct": true,
+          "role": "unqualified_evaluation"
+        }
+      ],
+      "metadata": {
+        "column_names": [
+          "sample",
+          "reference",
+          "predicted",
+          "correct",
+          "role"
+        ],
+        "n_samples": 37,
+        "n_correct": 27,
+        "role": "unqualified_evaluation",
+        "sample_identity": "row_position_only"
+      }
+    },
+    "visualization": {
+      "type": "confusion_matrix",
+      "data": [
+        [
+          11,
+          1,
+          0
+        ],
+        [
+          0,
+          6,
+          6
+        ],
+        [
+          0,
+          3,
+          10
+        ]
+      ],
+      "metadata": {
+        "type": "ClassificationTest",
+        "labels": [
+          "setosa",
+          "versicolor",
+          "virginica"
+        ],
+        "n_samples": 37,
+        "accuracy": 0.7297297297297297,
+        "predicted_only_labels": []
+      }
+    }
+  },
+  "descriptors": {
+    "default": {
+      "schema_version": "spectrasherpa-scientific-value/1",
+      "port_name": "default",
+      "type_ref": "spectrasherpa://types/ValidationResult/1.0",
+      "label": "Evaluation Metrics",
+      "scientific_kind": "validation_result",
+      "view_kind": "metric_record",
+      "shape": null,
+      "dimensions": [],
+      "view_modes": [
+        "record"
+      ],
+      "content_categories": [
+        "aggregate_metrics"
+      ],
+      "shape_valid": true,
+      "shape_issue": null
+    },
+    "comparison": {
+      "schema_version": "spectrasherpa-scientific-value/1",
+      "port_name": "comparison",
+      "type_ref": "spectrasherpa://types/ClassificationComparison/1.0",
+      "label": "Reference vs Predicted Classes",
+      "scientific_kind": "classification_comparison",
+      "view_kind": "record_table",
+      "shape": [
+        37,
+        5
+      ],
+      "dimensions": [
+        {
+          "role": "observation",
+          "size": 37
+        },
+        {
+          "role": "comparison_field",
+          "size": 5,
+          "labels": [
+            "Sample",
+            "Reference",
+            "Predicted",
+            "Correct",
+            "Role"
+          ]
+        }
+      ],
+      "view_modes": [
+        "table"
+      ],
+      "content_categories": [
+        "reference_targets",
+        "sample_level_results"
+      ],
+      "shape_valid": true,
+      "shape_issue": null
+    },
+    "visualization": {
+      "schema_version": "spectrasherpa-scientific-value/1",
+      "port_name": "visualization",
+      "type_ref": "spectrasherpa://types/Visualization/1.0",
+      "label": "Confusion Matrix",
+      "scientific_kind": "visualization",
+      "view_kind": "visualization",
+      "shape": [
+        3,
+        3
+      ],
+      "dimensions": [
+        {
+          "role": "axis_1",
+          "size": 3
+        },
+        {
+          "role": "axis_2",
+          "size": 3
+        }
+      ],
+      "view_modes": [
+        "plot",
+        "table"
+      ],
+      "content_categories": [
+        "visualizations",
+        "unclassified"
+      ],
+      "shape_valid": true,
+      "shape_issue": null
+    }
+  },
+  "presentation_contract": {
+    "digest": "929d09b51f9fc07aa1a3a3418319a32dfe690c8eed2a499aff6c6d5d406aedfa",
+    "payload": {
+      "schema_version": "spectrasherpa-node-presentation/1",
+      "default_presentation": "sample_comparison",
+      "presentations": [
+        {
+          "presentation_id": "sample_comparison",
+          "label": "Predicted vs Reference",
+          "kind": "classification_comparison",
+          "source_ports": [
+            "comparison"
+          ],
+          "modes": [
+            "table"
+          ],
+          "description": "One explicit reference class and predicted class for every held-out sample."
+        },
+        {
+          "presentation_id": "metrics",
+          "label": "Classification Evaluation Metrics",
+          "kind": "metric_record",
+          "source_ports": [
+            "default"
+          ],
+          "modes": [
+            "record",
+            "table"
+          ],
+          "description": "Accuracy, balanced accuracy, macro metrics, and per-class held-out performance."
+        },
+        {
+          "presentation_id": "confusion",
+          "label": "Confusion Matrix",
+          "kind": "confusion_matrix",
+          "source_ports": [
+            "visualization"
+          ],
+          "modes": [
+            "plot",
+            "table"
+          ],
+          "description": "Counts and row-normalized rates for every observed and predicted class."
+        }
+      ]
+    }
+  }
+}

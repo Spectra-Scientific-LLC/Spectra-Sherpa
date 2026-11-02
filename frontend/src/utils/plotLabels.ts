@@ -70,6 +70,11 @@ export function buildAxisLabel(
   return title || fallback;
 }
 
+/** A row-coordinate title does not name the measured spectral signal. */
+export function isRowCoordinateTitle(title?: string | null): boolean {
+  return /^(samples?|specimens?|acquisitions?|components?)(\s+(index|id))?$/i.test(title || "");
+}
+
 /**
  * Get Y-axis label from plot metadata.
  * Priority: y_units with y_title > y_title alone > "Response" (ML default)
@@ -79,7 +84,7 @@ export function getYAxisLabel(metadata?: PlotMetadata | null): string {
   const fallbackUnits = metadata.value_units_label || metadata.value_units;
   const units = metadata.y_units || fallbackUnits;
   // A sample dimension names the rows, not the measured spectral ordinate.
-  if (/^(samples?|specimens?|acquisitions?|components?)(\s+(index|id))?$/i.test(metadata.y_title || "")) {
+  if (isRowCoordinateTitle(metadata.y_title)) {
     // Row-coordinate units (for example acquisition seconds) are not signal units.
     if (/^(absorbance|transmittance)$/i.test(fallbackUnits || "")) return fallbackUnits![0].toUpperCase() + fallbackUnits!.slice(1);
     if (fallbackUnits === "dimensionless") return "Intensity (dimensionless)";

@@ -47,6 +47,15 @@ separately authorized.
 
 ### Staging GUI corrections
 
+- Data comparison previews use signal labels rather than legacy sample-coordinate
+  titles, preserving declared quantities, unit deduplication and compatibility checks.
+- Signing in through a saved Optimize link waits for its add-on route and linked
+  project to be ready, preserving the saved URL without a page reload. Unknown
+  routes and inaccessible projects keep their normal refusals. Add-on import and
+  registration have a 30-second deadline; a timed-out add-on cannot contribute later.
+- Evaluator confusion tables and CSV exports show reference-class row names
+  alongside prediction-class columns. Generic display axes use the declared
+  confusion presentation; explicit axes, counts and retained records are unchanged.
 - Runs Compare groups retained evidence into collapsible Summary, Results and
   Validation sections. Consistent numbered run headings align qualified metrics
   within calibration, training CV and held-out roles; workflow settings and raw
