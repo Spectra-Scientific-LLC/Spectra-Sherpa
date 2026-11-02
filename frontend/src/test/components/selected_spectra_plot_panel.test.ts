@@ -75,6 +75,23 @@ function source(
 }
 
 describe("SelectedSpectraPlotPanel", () => {
+  it.each(["Absorbance", "Transmittance"])("does not duplicate %s units in a legacy physical ordinate", title => {
+    const value = dataset("sample-1");
+    delete value.domain;
+    value.units = title.toLowerCase();
+    value.metadata = { is_spectra: true, y_title: title };
+    const wrapper = mount(SelectedSpectraPlotPanel, {
+      props: {
+        plotDatasetCount: 1, plotFileCount: 1,
+        plotDatasets: [source(1, "Physical", [{ id: 1, name: "physical.csv", dataset: value }])],
+      },
+    });
+    const chart = wrapper.getComponent({ name: "PlotlyChart" });
+    expect(chart.props("layout").yaxis.title).toBe(title);
+    expect(chart.props("data")[0].y).toEqual(value.data[0]);
+    wrapper.unmount();
+  });
+
   it.each([
     ["absorbance", "Absorbance"],
     ["dimensionless", "Intensity (dimensionless)"],

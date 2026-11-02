@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { getYAxisLabel } from "@/utils/plotLabels";
+import { getYAxisLabel, isRowCoordinateTitle } from "@/utils/plotLabels";
 
 describe("spectral ordinate labels", () => {
+  it.each(["Specimen", "Sample index", "Acquisition ID"])("recognizes row-coordinate title %s", title => {
+    expect(isRowCoordinateTitle(title)).toBe(true);
+  });
+  it.each(["Absorbance", "Component score", ""])("keeps non-row title %s outside the row guard", title => {
+    expect(isRowCoordinateTitle(title)).toBe(false);
+  });
   it("retains declared dimensionless and normalized signal context", () => {
     expect(getYAxisLabel({ y_title: "Samples", value_units: "dimensionless" })).toBe("Intensity (dimensionless)");
     expect(getYAxisLabel({ y_title: "Samples", value_units: "normalized" })).toBe("Normalized intensity");

@@ -398,8 +398,13 @@ describe("bootServerModules", () => {
     expect(router.hasRoute("managed")).toBe(true);
   });
 
-  async function postLoginRouter(firstImportOnly = false, reresolveCurrentRoute = false) {
+  async function postLoginRouter(firstImportOnly = false, reresolveCurrentRoute = false, required = false) {
     extensionConfig();
+    if (required) {
+      mockConfig.value = { ...mockConfig.value, uiExtensions: [
+        { id: "mock", url: "/ui/mock.js", contractVersion: 1, required: true },
+      ] };
+    }
     useAuthStore().user = null;
     const router = createRouter({ history: createMemoryHistory(), routes: [
       { path: "/", component: { template: "<div />" } },
@@ -702,6 +707,100 @@ describe("bootServerModules", () => {
     await router.push("/campaigns?project_id=134");
     expect(router.currentRoute.value.name).toBe("not-found");
     expect(project.fetchProject).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("bounds a stuck saved-link import and rejects its late registration (required=%s)", async required => {
+    vi.useFakeTimers();
+    try {
+      const { router, saved, finish, register, project } = await postLoginRouter(false, false, required);
+      let settled = false;
+      const navigation = router.push(saved).then(() => { settled = true; });
+      await flushAsync();
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(settled).toBe(false);
+      expect(project.fetchProject).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(settled).toBe(true);
+      await navigation;
+      if (required) {
+        expect(serverModuleLoadFailed.value?.module).toBe("/ui/mock.js");
+        expect(nonCriticalModuleLoadFailures.value).toHaveLength(0);
+      } else {
+        expect(serverModuleLoadFailed.value).toBeNull();
+        expect(nonCriticalModuleLoadFailures.value.map(item => item.module)).toEqual(["/ui/mock.js"]);
+      }
+      expect(project.fetchProject).not.toHaveBeenCalled();
+      expect(router.currentRoute.value.name).toBe("not-found");
+      finish();
+      await flushAsync();
+      expect(register).not.toHaveBeenCalled();
+      expect(router.hasRoute("managed")).toBe(false);
+      expect(router.currentRoute.value.name).toBe("not-found");
+    } finally {
+      __resetServerModulesForTests();
+      vi.useRealTimers();
+    }
+  });
+
+  it("times out async registration, revokes its partial route, and ignores late contributions", async () => {
+    vi.useFakeTimers();
+    try {
+      const { router, saved, finish, register } = await postLoginRouter();
+      let resume!: () => void;
+      const registered = new Promise<void>(resolve => { resume = resolve; });
+      let context!: CurrentHostContext;
+      register.mockImplementation(async ctx => {
+        context = ctx;
+        ctx.addRoute({ name: "partial", path: "/campaigns", component: { template: "<div />" } });
+        await registered;
+        ctx.addRoute({ name: "late", path: "/late", component: { template: "<div />" } });
+        ctx.extensions.addActions([{ id: "late", label: "Late", available: () => true, execute: vi.fn() }]);
+      });
+      let settled = false;
+      const navigation = router.push(saved).then(() => { settled = true; });
+      finish();
+      await flushAsync();
+      expect(router.hasRoute("partial")).toBe(true);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(settled).toBe(true);
+      await navigation;
+      expect(router.hasRoute("partial")).toBe(false);
+      expect(context.extensions.isCurrent()).toBe(false);
+      expect(context.extensions.signal.aborted).toBe(true);
+      resume();
+      await flushAsync();
+      expect(router.hasRoute("late")).toBe(false);
+      expect(router.currentRoute.value.name).toBe("not-found");
+      expect(nonCriticalModuleLoadFailures.value.map(item => item.module)).toEqual(["/ui/mock.js"]);
+    } finally {
+      __resetServerModulesForTests();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not let an abandoned registration deadline fail a refreshed owner", async () => {
+    vi.useFakeTimers();
+    try {
+      const { router, saved, finish, register } = await postLoginRouter(true);
+      const navigation = router.push(saved);
+      await flushAsync();
+      await vi.advanceTimersByTimeAsync(15_000);
+      useAuthStore().user!.capabilities = { admin: false };
+      await flushAsync();
+      await navigation;
+      expect(router.currentRoute.value.fullPath).toBe(saved);
+      const calls = register.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(30_000);
+      finish();
+      await flushAsync();
+      expect(register.mock.calls).toHaveLength(calls);
+      expect(router.currentRoute.value.fullPath).toBe(saved);
+      expect(serverModuleLoadFailed.value).toBeNull();
+      expect(nonCriticalModuleLoadFailures.value).toEqual([]);
+    } finally {
+      __resetServerModulesForTests();
+      vi.useRealTimers();
+    }
   });
 
   it("waits for post-login registration and rematches the exact saved URL despite boot re-resolve=false", async () => {

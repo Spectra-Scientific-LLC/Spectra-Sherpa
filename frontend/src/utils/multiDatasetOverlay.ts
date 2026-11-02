@@ -1,5 +1,5 @@
 import { seriesPalette } from "@/utils/colors";
-import { getYAxisLabel } from "@/utils/plotLabels";
+import { getYAxisLabel, isRowCoordinateTitle } from "@/utils/plotLabels";
 import type { DatasetPlotMember, DatasetPlotSource, SherpaDatasetDict } from "@/types";
 
 const LINE_DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"];
@@ -261,7 +261,7 @@ function admitSource(
   const yUnits = nonemptyString(dataset.units) || nonemptyString(metadata?.value_units);
   // Legacy row titles are not signal quantities. Keep the raw authority for
   // overlay compatibility; format only its display through the shared rule.
-  const yDisplayTitle = !yQuantity && yTitle
+  const yDisplayTitle = !yQuantity && isRowCoordinateTitle(yTitle)
     ? getYAxisLabel({ y_title: yTitle, value_units: yUnits })
     : displayAxisTitle(yTitle, yUnits);
   const selectedIndexes = source.selectedFileNames

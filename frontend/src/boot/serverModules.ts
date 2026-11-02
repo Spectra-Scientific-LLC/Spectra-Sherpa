@@ -311,6 +311,9 @@ function ensureServerStylesheet(): void {
   serverStylesInjected = true;
 }
 
+// Bound both import and async registration; a timed-out scope cannot contribute later.
+const EXTENSION_REGISTRATION_TIMEOUT_MS = 30_000;
+
 async function loadAndRegister(
   url: string,
   contributorId: string,
@@ -322,17 +325,33 @@ async function loadAndRegister(
   scope?: RegistrationScope,
 ): Promise<boolean> {
   ensureServerStylesheet();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let cancelRegistration: (() => void) | undefined;
   try {
-    const mod = await importModule(url);
-    if (scope && !scope.current()) return false;
-    if (scope && mod.contextualActionsVersion !== CONTEXTUAL_ACTIONS_VERSION) {
-      throw new Error(`Unsupported contextual action contract from ${url}`);
+    const registration = (async () => {
+      const mod = await importModule(url);
+      if (scope && !scope.current()) return;
+      if (scope && mod.contextualActionsVersion !== CONTEXTUAL_ACTIONS_VERSION) {
+        throw new Error(`Unsupported contextual action contract from ${url}`);
+      }
+      const register = mod.register ?? mod.default;
+      if (typeof register !== "function") {
+        throw new Error(`Server module ${url} did not export a register() function`);
+      }
+      await register(buildContext(contributorId, router, appConfig, scope));
+    })();
+    if (scope) {
+      const ended = new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error("Server module registration timed out")),
+          EXTENSION_REGISTRATION_TIMEOUT_MS);
+        cancelRegistration = () => reject(new Error("Server module registration ended"));
+        scope.controller.signal.addEventListener("abort", cancelRegistration, { once: true });
+        if (scope.controller.signal.aborted) cancelRegistration();
+      });
+      await Promise.race([registration, ended]);
+    } else {
+      await registration;
     }
-    const register = mod.register ?? mod.default;
-    if (typeof register !== "function") {
-      throw new Error(`Server module ${url} did not export a register() function`);
-    }
-    await register(buildContext(contributorId, router, appConfig, scope));
     if (scope && !scope.current()) return false;
 
     // vue-router resolves the initial navigation when `app.use(router)`
@@ -373,6 +392,9 @@ async function loadAndRegister(
       ];
     }
     return false;
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+    if (cancelRegistration) scope?.controller.signal.removeEventListener("abort", cancelRegistration);
   }
 }
 

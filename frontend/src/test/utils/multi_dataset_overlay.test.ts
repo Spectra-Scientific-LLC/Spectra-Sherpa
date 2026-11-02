@@ -42,6 +42,23 @@ function source(experimentId: number, name: string, value: SherpaDatasetDict): D
 
 describe("multi-dataset spectral overlay", () => {
   it.each([
+    ["Absorbance", "absorbance", "Absorbance"],
+    ["Transmittance", "transmittance", "Transmittance"],
+    ["Response", "dimensionless", "Response (dimensionless)"],
+    ["Response", "normalized", "Response (normalized)"],
+  ])("preserves legacy non-row title formatting for %s / %s", (title, units, expected) => {
+    const value = dataset(["A"], [[1, 2, 3]], ["one"]);
+    delete value.domain;
+    value.units = units;
+    value.metadata = { is_spectra: true, y_title: title };
+    const original = JSON.stringify(value);
+    const result = buildMultiDatasetOverlay([source(1, "Physical", value)]);
+    expect(result.error).toBeNull();
+    expect(result.yAxisTitle).toBe(expected);
+    expect(JSON.stringify(value)).toBe(original);
+  });
+
+  it.each([
     ["absorbance", "Absorbance"],
     ["dimensionless", "Intensity (dimensionless)"],
     ["normalized", "Normalized intensity"],
