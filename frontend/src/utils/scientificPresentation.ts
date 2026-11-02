@@ -420,6 +420,34 @@ export const projectScientificPresentation = (
     projectedMetadata.is_spectra = false;
   }
   let data = portOutput.data;
+  let descriptor = portOutput.descriptor;
+  // A Visualization's generic axes do not contradict its declared confusion
+  // presentation. Bind this view to that port's own reference/prediction names;
+  // never replace explicit semantic axes or borrow the parent's sample labels.
+  if (presentation.kind === "confusion_matrix" && sourcePorts.length === 1
+    && descriptor?.type_ref === "spectrasherpa://types/Visualization/1.0"
+    && descriptor.scientific_kind === "visualization" && descriptor.shape_valid
+    && descriptor.shape?.length === 2 && descriptor.dimensions.length === 2
+    && descriptor.dimensions.every((dimension, index) =>
+      dimension.role === `axis_${index + 1}` && dimension.labels === undefined)) {
+    const labels = portOutput.metadata.labels;
+    if (Array.isArray(labels) && labels.length > 0
+      && labels.every(label => (typeof label === "string" && label.trim().length > 0)
+        || (typeof label === "number" && Number.isFinite(label)))
+      && new Set(labels.map(String)).size === labels.length
+      && data.length === labels.length && data.every(row => Array.isArray(row) && row.length === labels.length)
+      && descriptor.shape.every(size => size === labels.length)
+      && descriptor.dimensions.every(dimension => dimension.size === labels.length)) {
+      descriptor = {
+        ...descriptor,
+        dimensions: descriptor.dimensions.map((dimension, index) => ({
+          ...dimension,
+          role: index === 0 ? "actual_class" : "predicted_class",
+          labels: labels.map(String),
+        })),
+      };
+    }
+  }
   if (presentation.kind === "classification_responses") {
     // Response columns are classes, not the parent model's latent variables.
     for (const key of ["pc_labels", "component_labels", "feature_names", "x_axis", "wavenumbers", "x_units"]) {
@@ -449,7 +477,7 @@ export const projectScientificPresentation = (
       : data,
     metadata: {
       ...projectedMetadata,
-      ...(portOutput.descriptor ? { scientific_value: portOutput.descriptor } : {}),
+      ...(descriptor ? { scientific_value: descriptor } : {}),
       scientific_presentation: {
         schema_version: "spectrasherpa-node-presentation/1",
         contract_digest: contractDigest,
@@ -463,7 +491,7 @@ export const projectScientificPresentation = (
       },
     },
     plots: portOutput.plots,
-    descriptor: portOutput.descriptor,
+    descriptor,
     primary_port: sourcePort,
     presentation_value: presentationValue,
   };
