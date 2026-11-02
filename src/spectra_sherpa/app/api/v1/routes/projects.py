@@ -926,6 +926,42 @@ async def _project_experiment_ids(project_id: int, user_id: int, session: AsyncS
     return set(result.scalars().all())
 
 
+def _node_display_name(workflow: dict[str, Any], node: dict[str, Any]) -> str:
+    workflow_name = workflow.get("name") or workflow.get("id")
+    return f'workflow "{workflow_name}", node "{node.get("label") or node.get("node_id")}"'
+
+
+def _preflight_workflow_file_selections(snapshot: dict[str, Any]) -> None:
+    """Refuse an archive whose workflow selects files it does not carry.
+
+    Import cannot restore such a selection exactly, so name the node here,
+    where the user can still reselect its data.
+    """
+
+    for project_snapshot in _iter_project_snapshots(snapshot):
+        experiment_files = {
+            _as_int(experiment.get("id")): {
+                _as_int(file.get("id")) for file in experiment.get("files", []) if isinstance(file, dict)
+            }
+            for experiment in project_snapshot.get("experiments", [])
+            if isinstance(experiment, dict)
+        }
+        for workflow in project_snapshot.get("workflows", []):
+            if not isinstance(workflow, dict):
+                continue
+            for node in workflow.get("nodes", []):
+                parameters = node.get("parameters") if isinstance(node, dict) else None
+                if not isinstance(parameters, dict) or not parameters.get("selected_file_ids"):
+                    continue
+                experiment_id = _as_int(parameters.get("experiment_id", parameters.get("dataset_id")))
+                available = experiment_files.get(experiment_id, set())
+                if any(_as_int(member) not in available for member in parameters["selected_file_ids"]):
+                    raise ProjectSnapshotStateError(
+                        f"{_node_display_name(workflow, node)} selects a file that is no longer in its "
+                        "experiment. Reselect its data, then export again."
+                    )
+
+
 async def _verify_saved_scientific_collections(
     snapshot: dict[str, Any],
     *,
@@ -935,6 +971,7 @@ async def _verify_saved_scientific_collections(
 ) -> None:
     """Re-admit every saved definition and compare its complete decoded projection."""
 
+    _preflight_workflow_file_selections(snapshot)
     for project_snapshot in _iter_project_snapshots(snapshot):
         for experiment in project_snapshot.get("experiments", []):
             if not isinstance(experiment, dict):
@@ -4604,6 +4641,18 @@ async def _verify_restored_collection_binding(
     """Re-admit pinned source identities from restored bytes, never filenames."""
     from spectra_sherpa.app.services.model_application import load_project_dataset
 
+    if parameters.get("experiment_id") is None and not any(
+        parameters.get(field)
+        for field in (
+            "selected_file_ids",
+            "asset_id",
+            "source_manifest_sha256",
+            "collection_definition_sha256",
+            "scientific_collection_sha256",
+        )
+    ):
+        # A draft node with no data chosen yet carries no binding to prove.
+        return
     try:
         loaded = await load_project_dataset(
             session,
@@ -4710,20 +4759,25 @@ async def _restore_workflows_from_snapshot(
         for node_data in wf_data.get("nodes", []):
             if not isinstance(node_data, dict):
                 continue
-            parameters = _remap_workflow_parameters(
-                node_data.get("parameters") or {},
-                data_source_remap,
-                experiment_remap,
-                file_remap,
-                file_experiments=file_experiments,
-            )
-            if canonical_node_type(node_data["node_type"]) == "data.collection_load":
-                await _verify_restored_collection_binding(
-                    parameters,
-                    session=session,
-                    user_id=user_id,
-                    project_id=project.id,
+            try:
+                parameters = _remap_workflow_parameters(
+                    node_data.get("parameters") or {},
+                    data_source_remap,
+                    experiment_remap,
+                    file_remap,
+                    file_experiments=file_experiments,
                 )
+                if canonical_node_type(node_data["node_type"]) == "data.collection_load":
+                    await _verify_restored_collection_binding(
+                        parameters,
+                        session=session,
+                        user_id=user_id,
+                        project_id=project.id,
+                    )
+            except HTTPException as exc:
+                raise HTTPException(
+                    exc.status_code, f"{exc.detail} ({_node_display_name(wf_data, node_data)})"
+                ) from exc
             session.add(
                 WorkflowNode(
                     workflow_id=workflow.id,
