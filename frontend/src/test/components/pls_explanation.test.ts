@@ -83,7 +83,7 @@ describe("PLS exact-fit explanations", () => {
   it("switches response contributions, baseline, units and coefficients without changing sample", async () => {
     const w = view();
     expect(w.text()).toContain("10.000 %");
-    expect(w.text()).toContain("not the residual error");
+    expect(w.text()).toContain("Fitted Y mean for");
     expect(w.text()).toContain("omitted absolute mass: 3.0000");
     expect(w.findAllComponents(PlotlyChart)[0].props("data")[0].y).toEqual([-2, 5]);
     await w.get('select[aria-label="Explanation response"]').setValue("1");
@@ -130,7 +130,7 @@ describe("PLS exact-fit explanations", () => {
   it("labels heldout inspection and excluded projection, resetting and hiding stale fits", async () => {
     const w = view(["a", "b", "c"]);
     await w.get('select[aria-label="Sample to explain"]').setValue("c");
-    expect(w.text()).toContain("Every original test observation remains");
+    expect(w.text()).toContain("tuning on it voids independent validation");
     await w.get('select[aria-label="Sample to explain"]').setValue("b");
     expect(w.text()).toContain("not used to fit it");
     await w.get('input[aria-label="Highlight variable 1"]').setValue(true);

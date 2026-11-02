@@ -6,7 +6,7 @@
       <tbody><tr v-for="(difference, index) in record.paired_rmsecv_differences" :key="index"><th>{{ index + 1 }}</th><td>{{ number(record.results[index * 2]?.execution.metrics.rmse) }}</td><td>{{ number(record.results[index * 2 + 1]?.execution.metrics.rmse) }}</td><td>{{ number(difference) }}</td></tr></tbody></table>
     <p>{{ record.interpretation }}</p>
     <p>Right meaningfully better: {{ record.summary.right_meaningfully_better }}; left: {{ record.summary.left_meaningfully_better }}; within declared margin: {{ record.summary.within_margin }}.</p>
-    <p>Inspect the saved evaluation for separate calibration, training CV and held-out results. Each recipe has one frozen full-development fit; changing the CV repetition does not refit its calibration or held-out predictions. Only training CV contributes to the paired robustness summary.</p>
+    <p>Summary uses training CV only.</p>
     <details><summary>Exact protocol and provenance</summary><p>Protocol: {{ record.protocol_digest }}</p><p v-for="(split, index) in record.splits" :key="index">Partition {{ index + 1 }}: {{ split.digest }}</p></details>
     <button type="button" @click="downloadJson(record, `paired-evaluation-${runId}.json`)">Download exact evaluation record</button>
   </section>

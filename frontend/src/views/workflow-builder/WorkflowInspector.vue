@@ -129,9 +129,8 @@
           <div>
             <strong>Validation groups active: {{ activeValidationGroupColumn }}</strong>
             <span>
-              Random, stratified, and sequential splits hold out whole groups. Kennard–Stone,
-              DUPLEX, and SPXY select individual samples by spectral distance and cover the extremes
-              across every group instead of holding one out.
+              Random, stratified and sequential splits hold out whole groups; Kennard–Stone, DUPLEX
+              and SPXY do not.
             </span>
           </div>
         </div>
@@ -182,9 +181,7 @@
                 <div v-if="filterMatrixPreviewOnly" class="filter-scope-warning">
                   <i class="pi pi-info-circle" aria-hidden="true"></i>
                   <span>
-                    This panel has only a saved preview of the upstream matrix. Index filters are
-                    still available; intensity filters need a fresh run with the full matrix in
-                    memory.
+                    Intensity filters need a fresh upstream run.
                   </span>
                 </div>
 
@@ -205,8 +202,7 @@
                 </div>
 
                 <div v-if="localParams.field === 'source_inclusion'" class="filter-rule-card">
-                  Uses the source dataset's saved sample inclusion. Opening this panel does not
-                  replace that rule. Choose another method only to deliberately change it.
+                  Uses the source dataset's saved sample inclusion.
                 </div>
                 <div v-else-if="localParams.field === 'sample_index'" class="filter-rule-card">
                   <div class="field">

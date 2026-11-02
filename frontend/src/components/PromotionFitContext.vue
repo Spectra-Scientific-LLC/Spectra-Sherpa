@@ -5,9 +5,8 @@
     <p v-if="error" role="alert">{{ error }}</p>
     <template v-if="review">
       <p>Source: saved Run {{ review.source_run_id ?? 'not recorded' }}, artifact {{ artifactUid }}. Fitted samples: {{ review.population.fitted_count ?? 'not recorded' }}; held-out samples: {{ review.population.held_out_count ?? 'not recorded' }}.</p>
-      <p v-if="review.fitting_plan?.state === 'complete_declared_development_fit'">The existing artifact already fits all {{ review.fitting_plan.declared_development_count }} declared development samples. Reuse it if the recipe and population are unchanged.</p>
-      <p>This sheet shows the current editable workflow, not a pinned replay of the source run. Review data selection and exclusions, preprocessing and components before explicitly clicking Run. Never add validation or outlier-challenge samples automatically. Run creates new saved evidence and a fitted artifact for a new promotion review.</p>
-      <p>Opening this sheet has not started a fit or changed its population.</p>
+      <p v-if="review.fitting_plan?.state === 'complete_declared_development_fit'">The existing artifact already fits all {{ review.fitting_plan.declared_development_count }} declared development samples.</p>
+      <p>Editable workflow, not a pinned replay of the source run. Opening it has not started a fit; Run creates a new model for review.</p>
     </template>
   </aside>
 </template>

@@ -76,7 +76,7 @@ describe("PLS predictor-space workbench", () => {
     expect(w.text()).toContain("Q above limit");
     expect(w.text()).toContain("prediction certainty");
     await w.get('[aria-label="Applicability sample"]').setValue("c");
-    expect(w.text()).toContain("Held-out inspection does not change its cohort");
+    expect(w.text()).toContain("tuning on it voids independent validation");
     expect(w.text()).toContain("Within global screen — local support unknown");
     w.unmount();
   });

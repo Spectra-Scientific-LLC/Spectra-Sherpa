@@ -11,7 +11,7 @@
       <p v-if="review.fitting_plan?.state === 'complete_declared_development_fit'" role="status">Complete development fit · {{ review.fitting_plan.declared_development_count }} samples · Run {{ review.source_run_id }}</p>
       <p v-else>Full development-population coverage is not established.</p>
       <details v-if="!canonicalArtifactId"><summary>Change the final fitting recipe or population (optional)</summary>
-        <ol><li>Open the training workflow and review its current data selection, exclusions, preprocessing and component count against the saved source run.</li><li>Keep validation and outlier-challenge samples excluded. Any deliberate population change needs a new recorded evaluation and review.</li><li>Save the intended recipe and explicitly click Run. This existing workflow action fits the model and saves a new run/artifact; opening the sheet never runs it.</li><li>Inspect the new run and return to Review for promotion for its new artifact. Previous qualification does not transfer automatically.</li></ol>
+        <ol><li>Open the training workflow and check it against the source run.</li><li>Keep validation and outlier-challenge samples excluded.</li><li>Run it to fit a new model.</li><li>Review the new model for promotion; qualification does not carry over.</li></ol>
         <button v-if="review.workflow_id" type="button" @click="openWorkflow">Open workflow to prepare final fit</button>
       </details>
       <ul><li v-for="blocker in review.blockers" :key="blocker">{{ blocker }}</li></ul>
@@ -28,8 +28,7 @@
       <details><summary>Scientific basis and limitations</summary>
         <p>{{ review.guidance.scientific_basis }}</p>
         <ul><li v-for="item in review.limitations" :key="item">{{ item }}</li></ul>
-        <p>If the recipe or fitting population must change, return to the workflow, explicitly run the intended development population, then review the new artifact. Validation data must stay excluded from fitting.</p>
-        <p v-if="canonicalArtifactId">This imported sheet applies frozen state. To change the fitting population, reproduce the development recipe in a training workflow and review its new artifact.</p>
+        <p v-if="canonicalArtifactId">This imported sheet applies a frozen model; refit it from a training workflow.</p>
       </details>
       <ScientificBasisHelp />
       <ModelOutlierChallenge v-if="projectId && (artifactUid || canonicalArtifactId)" :artifact-uid="artifactUid" :canonical-artifact-id="canonicalArtifactId" :project-id="projectId" />

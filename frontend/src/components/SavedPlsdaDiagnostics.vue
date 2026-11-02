@@ -11,7 +11,7 @@
       <p>
         Fitted global screen: {{ receipt.screening_method }}; Q limit method
         {{ receipt.q_limit_method }}; score covariance rank {{ receipt.score_covariance_rank }} /
-        {{ receipt.components }}. This is a calibration cohort view, not independent test evidence.
+        {{ receipt.components }}. Calibration cohort only.
       </p>
       <div class="plsda-diagnostics__controls">
         <label
@@ -124,8 +124,7 @@
         <p>
           Unshown Q contribution: {{ number(focused.terms.omitted_q) }}; unshown signed T²
           contribution: {{ number(focused.terms.omitted_t2) }} (absolute mass
-          {{ number(focused.terms.omitted_t2_absolute) }}). Signed T² terms can be negative and
-          should be interpreted together.
+          {{ number(focused.terms.omitted_t2_absolute) }}).
         </p>
       </template>
       <section aria-label="Ask Sherpa about saved PLS-DA diagnostics">
@@ -151,11 +150,6 @@
       <button v-if="workflowId && selected.length" type="button" @click="emit('open-workflow')">
         Open source workflow
       </button>
-      <p>
-        This saved PLS-DA diagnostic view is read-only. It does not carry a selection into workflow
-        exclusion; review the source dataset and create a new fit deliberately. Saved fitted
-        evidence remains unchanged after a later decision.
-      </p>
     </template>
   </section>
 </template>

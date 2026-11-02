@@ -249,14 +249,13 @@
           </template>
         </p>
         <p v-if="isPls">
-          Residual = reference − predicted. ○ Calibration · □ Held-out test · ◇ Scientist-marked
-          outlier · × Excluded projection / omitted test subset. Colours preserve sample groups.
+          Residual = reference − predicted. ○ Calibration · □ Held-out · ◇ Marked outlier · ×
+          Excluded.
 
         </p>
         <p v-else>
-          ○ Calibration · ◇ Scientist-marked outlier · × Excluded — projected. Colour preserves
-          sample group. Statistical screening is shown separately in the table. Dashed T² is the
-          application limit for excluded projections; solid T² is the calibration limit.
+          ○ Calibration · ◇ Marked outlier · × Excluded (projected). Solid T²: calibration limit;
+          dashed: application limit.
         </p>
         <p role="status" aria-live="polite">
           {{ selected.length }} samples selected
