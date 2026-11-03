@@ -51,6 +51,26 @@ flowchart LR
 
 A calibration or classifier is useful only if it can be reapplied to compatible spectra. The artifact should carry enough contract information to explain what the model expects, why it was saved, and what has to match at apply time.
 
+## Project transfer source binding
+
+Fresh executor publications record `producer_node_type` from the executing node.
+For producing-run-only artifacts, project export checks that identity and the
+artifact UID against the exact retained producing workflow. This provenance field does not select application
+dispatch: `native_node_type` remains reserved for native fitted-state artifacts.
+A current canvas is never substituted for a missing producing-run definition.
+
+The training-source resolver requires one valid source operation in the retained
+preprocessing history, regardless of where target attachment appears. Ambiguous
+source operations are refused. Import remaps experiment and selected-file IDs
+together, preserves their ordered subset, and verifies the restored scientific
+bindings before admitting the source.
+
+A transferred run is external evidence, not a newly executed local run. Its
+original run/project/workflow identifiers and graph digest remain in the imported
+workflow version's `external_source_run_provenance`; import does not invent a
+local execution record. Fitted arrays, compatibility checks and recorded
+validation scope remain separate from local application availability.
+
 ## Publication custody
 
 Application-owned model files have a private ownership claim before publication.

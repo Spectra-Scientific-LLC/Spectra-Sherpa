@@ -61,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onScopeDispose, ref } from "vue";
 import { useRouter } from "vue-router";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
@@ -70,6 +70,9 @@ import ProjectImportDestinationDialog from "@/components/ProjectImportDestinatio
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
 import { useProjectAvailability } from "@/composables/useProjectAvailability";
+import { useScopedRequest } from "@/composables/useScopedRequest";
+import { useAuthStore } from "@/stores/auth";
+import { useDeployStore } from "@/stores/deploy";
 import { useProjectStore, type ProjectReferenceArtifactRequirement } from "@/stores/project";
 import type { ProjectDetail } from "@/types";
 
@@ -78,7 +81,12 @@ interface ImportDestination { subscription_id: number; workspace_id: number | nu
 const router = useRouter();
 const toast = useToast();
 const projectStore = useProjectStore();
+const auth = useAuthStore();
+const deployStore = useDeployStore();
+let disposed = false;
+onScopeDispose(() => { disposed = true; });
 const { config: appConfig, appMode, isCapabilityDisabled } = useAppConfig();
+const navigation = useScopedRequest(() => [auth.user?.id, auth.sessionRevision, projectStore.currentProjectId, appMode.value]);
 const { qualified } = useProjectAvailability();
 const { isDemoMode, uploadsLastWeek, uploadsLimitWeek, uploadsResetWeekAt, fetchQuota } = useDemoMode();
 
@@ -148,14 +156,34 @@ function referenceDisplayName(artifactId: string): string {
 }
 
 async function finishImport(project: ProjectDetail, detail?: string): Promise<void> {
-  await fetchQuota();
+  if (disposed || projectStore.currentProjectId !== project.id) return;
+  const request = navigation.begin();
   const application = projectStore.lastImportedApplication;
+  await fetchQuota();
+  if (!request.isCurrent()) return;
   if (application?.handle) {
-    await router.push({ path: "/deploy", query: { project: String(project.id), application: application.handle } });
+    if (application.project_id !== project.id || !Number.isSafeInteger(application.workflow_id) || application.workflow_id <= 0) {
+      toast.add({ severity: "warn", summary: `Imported ${project.name}`, detail: "The imported application identity is unavailable.", life: 4500 });
+      return;
+    }
+    try {
+      // Deploy owns the released-application projection; an import status is
+      // about data binding, not permission to deploy the imported model.
+      await deployStore.fetchApplications(project.id);
+    } catch {
+      if (request.isCurrent()) toast.add({ severity: "warn", summary: `Imported ${project.name}`, detail: "Application readiness could not be checked.", life: 4500 });
+      return;
+    }
+    if (!request.isCurrent()) return;
+    const released = deployStore.applications.some(item => item.application_handle === application.handle
+      && item.workflow_id === application.workflow_id && item.deploy_ready);
+    await router.push(released
+      ? { path: "/deploy", query: { project: String(project.id), application: application.handle } }
+      : { path: "/runs", query: { project: String(project.id), tab: "models", review_workflow: String(application.workflow_id) } });
   } else {
     await router.push("/project");
   }
-  toast.add({ severity: "success", summary: `Imported ${project.name}`, detail: detail || "A separate project was created and selected.", life: 3500 });
+  if (request.isCurrent()) toast.add({ severity: "success", summary: `Imported ${project.name}`, detail: detail || "A separate project was created and selected.", life: 3500 });
 }
 
 function selectPublisherKey(event: Event): void {

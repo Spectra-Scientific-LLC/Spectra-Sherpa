@@ -2,35 +2,144 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { reactive, ref } from "vue";
 import PrimeVue from "primevue/config";
-const m = vi.hoisted(() => ({ get: vi.fn(), push: vi.fn(), replace: vi.fn(), params: {} as Record<string, string>, query: {} as Record<string, string>, runs: null as any, project: null as any }));
-vi.mock("@/api/client", () => ({ default: { get: m.get } }));
+const m = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn(), toast: vi.fn(), mode: "local", auth: null as any, push: vi.fn(), replace: vi.fn(), params: {} as Record<string, string>, query: {} as Record<string, string>, runs: null as any, project: null as any }));
+vi.mock("@/api/client", () => ({ default: { get: m.get, patch: m.patch } }));
 vi.mock("vue-router", () => ({ useRouter: () => ({ push: m.push, replace: m.replace }), useRoute: () => ({ query: m.query, params: m.params }), RouterLink: { props: ['to'], template: "<a :href=\"to\"><slot /></a>" } }));
-vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: vi.fn() }) }));
+vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: m.toast }) }));
 vi.mock("@/stores/project", () => ({ useProjectStore: () => m.project }));
 vi.mock("@/stores/runs", () => ({ useRunsStore: () => m.runs }));
-vi.mock("@/stores/auth", () => ({ useAuthStore: () => ({ user: { id: 1 } }) }));
+vi.mock("@/stores/auth", () => ({ useAuthStore: () => m.auth }));
 vi.mock("@/stores/workflow", () => ({ useWorkflowStore: () => ({ workflowId: null, nodes: [], edges: [] }) }));
 vi.mock("@/stores/advisor", () => ({ useAdvisorStore: () => ({ switchScope: vi.fn() }) }));
-vi.mock("@/composables/useAppConfig", () => ({ useAppConfig: () => ({ config: ref({}), appMode: ref("local"), isCapabilityDisabled: () => false }) }));
+vi.mock("@/composables/useAppConfig", () => ({ useAppConfig: () => ({ config: ref({}), appMode: ref(m.mode), isCapabilityDisabled: () => false }) }));
 vi.mock("@/composables/useDemoMode", () => ({ useDemoMode: () => ({ isDemoMode: ref(false) }) }));
 import ModelsContent from "@/views/models/ModelsContent.vue";
 function mountView(realTables = false) {
   return mount(ModelsContent, { global: { plugins: [PrimeVue], renderStubDefaultSlot: true,
     stubs: { WorkspaceHeader: true, WorkspaceContext: true, WorkspaceContextItem: true, RunDetailContent: true,
       BatchRunTab: true, EvidenceComparisonView: true, ComparisonPanel: true, QualificationApplications: true, QualificationPanel: true,
-      SavedModelProjectTable: true, SavedModelQualification: true,
+      SavedModelProjectTable: true, SavedModelQualification: true, ModelPromotionReview: true,
       Dialog: true, DataTable: !realTables, Dropdown: true, Button: true,
       InputText: true, ProgressSpinner: true, Tag: true, Textarea: true, LabelChips: true },
     directives: { tooltip: () => undefined } } });
 }
 describe("Runs workspace", () => {
   beforeEach(() => {
-    vi.clearAllMocks(); localStorage.clear(); m.query = {}; m.params = {};
+    vi.clearAllMocks(); localStorage.clear(); m.query = {}; m.params = {}; m.mode = "local";
+    m.auth = reactive({ user: { id: 1 }, sessionRevision: 0 });
     m.project = { ensureProjectForBrowserTab: vi.fn(), currentProjectId: 1, currentProject: { id: 1, name: "Corn" } };
     m.runs = { runs: [], total: 0, selectedRunIds: new Set(), selectedCount: 0, runsLoading: false, comparison: null, loadError: null,
       fetchProjectRuns: vi.fn(), clearSelection: vi.fn() };
     m.get.mockImplementation(async (path: string) => ({ data: path === "/deploy/capabilities" ? { privateBatchUpload: true } : path === "/runs" ? { runs: [], total: 0 } : [] }));
   });
+  const fitted = { project_id: 1, artifact_uid: 'fitted-1', name: 'Saved PLS', model_type: 'pls', n_features: 13,
+    n_components: 3, workflow_id: 7, workflow_version_id: 9, source_run_id: 42, is_deploy_ready: false };
+  async function selectedModelView(listed = true) {
+    m.query = { tab: 'models' };
+    m.project = reactive(m.project);
+    m.get.mockImplementation(async (path: string) => ({ data: path === '/models' ? (listed ? [fitted] : [])
+      : path === '/models/fitted-1' ? fitted
+      : path === '/deploy/applications' ? [{ handle: 'app-exact', model_artifact_uid: 'fitted-1', workflow_id: 7 }]
+      : path === '/deploy/capabilities' ? { privateBatchUpload: true } : {} }));
+    m.patch.mockResolvedValue({ data: { ...fitted, is_deploy_ready: true } });
+    const view = mountView(); await flushPromises();
+    if (listed) await view.get('.object-row').trigger('click');
+    else await (view.vm as unknown as { selectOverviewModel: (uid: string) => Promise<void> }).selectOverviewModel('fitted-1');
+    await flushPromises();
+    return view;
+  }
+  it('makes a local application without a promotion decision and opens the exact released application', async () => {
+    const view = await selectedModelView();
+    expect(view.get('#selected-model-detail [label="Make Application"]').exists()).toBe(true);
+    await view.get('#selected-model-detail [label="Make Application"]').trigger('click'); await flushPromises();
+    expect(m.patch).toHaveBeenCalledExactlyOnceWith('/models/fitted-1', { is_deploy_ready: true });
+    expect(m.push).toHaveBeenCalledWith({ path: '/deploy', query: { project: 1, artifact: 'fitted-1', application: 'app-exact' } });
+    expect(view.findComponent({ name: 'ModelPromotionReview' }).exists()).toBe(false);
+    expect(view.findComponent({ name: 'SavedModelQualification' }).exists()).toBe(true);
+    view.unmount();
+  });
+  it('copies only the selected model metadata as text instead of downloading a model-list file', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const view = await selectedModelView();
+    await (view.vm as unknown as { exportActiveTab: () => Promise<void> }).exportActiveTab();
+    expect(writeText).toHaveBeenCalledOnce();
+    expect(JSON.parse(writeText.mock.calls[0][0])).toEqual(fitted);
+    expect(m.patch).not.toHaveBeenCalled();
+    view.unmount();
+  });
+  it('makes the exact selected model available even when it is outside the current catalog page', async () => {
+    const view = await selectedModelView(false);
+    expect(m.get).toHaveBeenCalledWith('/models/fitted-1');
+    expect(view.findAll('.object-row')).toHaveLength(0);
+    await view.get('#selected-model-detail [label="Make Application"]').trigger('click'); await flushPromises();
+    expect(m.patch).toHaveBeenCalledExactlyOnceWith('/models/fitted-1', { is_deploy_ready: true });
+    expect(m.push).toHaveBeenCalledWith({ path: '/deploy', query: { project: 1, artifact: 'fitted-1', application: 'app-exact' } });
+    view.unmount();
+  });
+  it.each(['enterprise', 'hybrid'])('retains the formal review flow for %s without a lightweight PATCH', async mode => {
+    m.mode = mode;
+    const view = await selectedModelView();
+    expect(view.find('[label="Make Application"]').exists()).toBe(false);
+    await view.get('#selected-model-detail [label="Review for promotion"]').trigger('click'); await flushPromises();
+    expect(view.findComponent({ name: 'ModelPromotionReview' }).exists()).toBe(true);
+    expect(m.patch).not.toHaveBeenCalled(); expect(m.push).not.toHaveBeenCalled();
+    view.unmount();
+  });
+  it('keeps local withdrawal explicit rather than reopening or automatically remaking the application', async () => {
+    const view = await selectedModelView();
+    (view.vm as any).selectedModel = { ...fitted, is_deploy_ready: true }; await flushPromises();
+    m.patch.mockResolvedValue({ data: { ...fitted, is_deploy_ready: false } });
+    await view.get('#selected-model-detail [label="Withdraw deploy-ready"]').trigger('click'); await flushPromises();
+    expect(m.patch).toHaveBeenCalledExactlyOnceWith('/models/fitted-1', { is_deploy_ready: false });
+    expect(m.push).not.toHaveBeenCalled();
+    view.unmount();
+  });
+  it.each(['project', 'session', 'selection', 'unmount'])('ignores a late local application response after %s changes', async scope => {
+    const view = await selectedModelView();
+    let finish!: (value: unknown) => void;
+    m.patch.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    await view.get('#selected-model-detail [label="Make Application"]').trigger('click');
+    if (scope === 'project') { m.project.currentProjectId = 2; m.project.currentProjectId = 1; }
+    if (scope === 'session') m.auth.sessionRevision++;
+    if (scope === 'selection') (view.vm as any).selectedModel = null;
+    if (scope === 'unmount') view.unmount();
+    finish({ data: { ...fitted, is_deploy_ready: true } }); await flushPromises();
+    expect(m.push).not.toHaveBeenCalled(); expect(m.toast).not.toHaveBeenCalled();
+    if (scope !== 'unmount') view.unmount();
+  });
+  it.each(['wrong_project', 'wrong_artifact', 'not_ready', 'missing_release'])('refuses a mismatched or unavailable local result: %s', async reason => {
+    const view = await selectedModelView();
+    if (reason === 'missing_release') m.get.mockImplementation(async () => ({ data: [] }));
+    else m.patch.mockResolvedValueOnce({ data: { ...fitted, is_deploy_ready: reason !== 'not_ready',
+      ...(reason === 'wrong_project' ? { project_id: 99 } : {}), ...(reason === 'wrong_artifact' ? { artifact_uid: 'other' } : {}) } });
+    await view.get('#selected-model-detail [label="Make Application"]').trigger('click'); await flushPromises();
+    expect(m.push).not.toHaveBeenCalled(); expect(m.toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+    expect(view.findComponent({ name: 'ModelPromotionReview' }).exists()).toBe(false);
+    view.unmount();
+  });
+  it('does not navigate from a late released-application lookup after project A to B to A', async () => {
+    const view = await selectedModelView();
+    let finish!: (value: unknown) => void;
+    const prior = m.get.getMockImplementation();
+    m.get.mockImplementation((path: string) => path === '/deploy/applications'
+      ? new Promise(resolve => { finish = resolve; }) : prior!(path));
+    await view.get('#selected-model-detail [label="Make Application"]').trigger('click'); await flushPromises();
+    m.project.currentProjectId = 2; m.project.currentProjectId = 1;
+    finish({ data: [{ handle: 'app-exact', model_artifact_uid: 'fitted-1', workflow_id: 7 }] }); await flushPromises();
+    expect(m.push).not.toHaveBeenCalled(); view.unmount();
+  });
+
+  it('keeps a rejected local application out of Deploy and does not create a review decision', async () => {
+    const view = await selectedModelView();
+    m.patch.mockRejectedValueOnce(new Error('Saved artifact incompatible'));
+    await view.get('#selected-model-detail [label="Make Application"]').trigger('click'); await flushPromises();
+    expect(m.push).not.toHaveBeenCalled();
+    expect(m.toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Application unavailable' }));
+    expect(view.findComponent({ name: 'ModelPromotionReview' }).exists()).toBe(false);
+    view.unmount();
+  });
+
   it("offers a History map link without reading individual output payloads", async () => {
     m.query = { tab: "run_history" };
     m.runs.runs = [{ id: 42, name: "Saved run", status: "completed", run_kind: "data", executed_at: "2026-10-31", labels: [] }];

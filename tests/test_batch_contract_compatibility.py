@@ -168,7 +168,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         "model.kmeans": "c65f7f11e6d2089abdec190e2c7aee80088eed4f2545ce55c0b92db1b2ebef30",
         "model.parafac": "caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
         "classification.plsda": "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
-        "model.load_apply": "272022dfaa41de8e593ed606612f4a3fd00d8fed2b0e8ca7080d33786bc43ee2",
+        "model.load_apply": "a6d6a6712ac63ce16ff15d96dae43b785496c43b3ce19169b7b7b28da59ca23b",
         "model.apply_fitted_linear_regression": "520728c0451ffd8f5904ea5c3227c40698d601647365a6e38bebf69144d78e2c",
         "model.apply_fitted_pcr": "f09403b8c0f41c32ea591a1761e9e8dfa57149746634c5748be9b27d876f228c",
         "model.apply_fitted_pls": "cd9c84a4d7b44d1768db8f627418c8e04899a2a1fb8b8aeb44016cbaa42df648",
@@ -268,6 +268,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
             "spectra_sherpa.app.services.dag.nodes.preprocessing.smooth_node",
             "spectra_sherpa.app.services.dag.nodes.selection.variable_select_node",
             "spectra_sherpa.core.execution_runtime",
+            "spectra_sherpa.core.model_artifact",
         ],
         "model.parafac": [
             "spectra_sherpa.app.lib.sample_identity",
@@ -460,3 +461,63 @@ def test_native_application_refuses_unknown_predecessor_or_serializer(historical
         arrays = {STATE_ARRAY: np.frombuffer(json.dumps(payload).encode(), dtype=np.uint8)}
         with pytest.raises(ValueError, match="contract is incompatible"):
             apply_saved_native_model(case["manifest"], arrays, dataset, dataset.X)
+
+
+def test_load_apply_prospective_binding_changes_only_reviewed_source_component():
+    """Reconstruct the previous pin; do not relabel a historical execution."""
+    from spectra_sherpa.app.services.dag.stable_execution_contract import implementation_digest_for_components
+    from spectra_sherpa.core import model_artifact
+
+    current = node_registry.get_metadata("model.load_apply").resolved_execution_contract()
+    assert current.digest == "a6d6a6712ac63ce16ff15d96dae43b785496c43b3ce19169b7b7b28da59ca23b"
+    current_payload = current.as_dict()
+    preceding_payload = deepcopy(current_payload)
+    # Exact source bytes from immutable Git074f13ad, recorded in the review.
+    old_source_sha = "a524606fd2c56c05c93e820b4ce3993fdd5e49af7447cd3a9b0d802a94426bd8"
+    new_source_sha = "890b29c9afc00a40c7a35a08870b2cb0936a23c5b8d40113b23854155434de9a"
+    assert hashlib.sha256(Path(model_artifact.__file__).read_bytes()).hexdigest() == new_source_sha
+    source = next(
+        component
+        for component in preceding_payload["implementation_components"]
+        if component["component_id"] == "spectra_sherpa.core.model_artifact"
+    )
+    assert source["digest"] == new_source_sha
+    source["digest"] = old_source_sha
+    preceding_payload["implementation_digest"] = implementation_digest_for_components(
+        preceding_payload["implementation_components"]
+    )
+    preceding = NodeExecutionContract.from_dict(preceding_payload)
+    assert preceding.digest == "272022dfaa41de8e593ed606612f4a3fd00d8fed2b0e8ca7080d33786bc43ee2"
+    assert {
+        key: value
+        for key, value in preceding_payload.items()
+        if key not in {"implementation_components", "implementation_digest"}
+    } == {
+        key: value
+        for key, value in current_payload.items()
+        if key not in {"implementation_components", "implementation_digest"}
+    }
+
+
+def test_load_apply_review_keeps_historical_inspection_and_refuses_execution(historical):
+    catalog = predecessor_catalog()
+    original = deepcopy(catalog)
+    archived = catalog["contracts"]["model.load_apply"]
+    context = HistoricalReconstructionContext()
+    restored = context.contract("model.load_apply", archived["digest"])
+    assert restored.as_dict() == archived["payload"]
+    assert restored.digest == archived["digest"]
+    assert restored.digest != node_registry.get_metadata("model.load_apply").resolved_execution_contract().digest
+    # Use actual immutable predecessor graph bytes, not a new graph labeled old.
+    old_graph = historical["cases"]["model.fitted_pls"]["graph"]
+    graph_bytes = deepcopy(old_graph)
+    inspected = context.graph(old_graph)
+    assert inspected.as_dict() == graph_bytes
+    with pytest.raises(ValidationGraphError, match="historical or noncanonical"):
+        assert_admitted_validation_graph(inspected, require_live_runtime=False)
+    with pytest.raises(ValidationGraphError):
+        validation_graph_from_dict(old_graph, require_live_runtime=False)
+    assert not any(entry.operation_id == "model.load_apply" for entry in saved_state_compatibilities())
+    with pytest.raises(ValidationGraphError):
+        context.contract("model.load_apply", "f" * 64)
+    assert catalog == original and predecessor_catalog() == original

@@ -1369,7 +1369,7 @@ class TestExportImport:
                     node_id="source_1",
                     node_type="data.file_load",
                     label="Source",
-                    parameters={"experiment_id": 1, "file_id": 1, "stage": "raw"},
+                    parameters={"stage": "raw"},
                     position_x=0,
                     position_y=0,
                 ),

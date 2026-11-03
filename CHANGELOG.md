@@ -47,6 +47,8 @@ separately authorized.
 
 ### Staging GUI corrections
 
+- Local OSS fitted models can become applications without a formal promotion review.
+  Technically ready imports open in Deploy; existing managed review remains unchanged.
 - Manual-search model packages retain the explicit conclusion checkpoint separately
   from the original round settlement, supporting normal download, workflow import
   and model review. Existing package formats remain readable.

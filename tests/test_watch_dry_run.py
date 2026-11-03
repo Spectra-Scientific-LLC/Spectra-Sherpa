@@ -247,7 +247,7 @@ def test_campaign_star_requires_recorded_validation():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["local", "enterprise"])
-async def test_new_unreviewed_model_never_gets_released_identity(
+async def test_local_technical_application_does_not_waive_managed_review(
     test_session, test_user, ordinary_watch, deployment_artifact_factory, monkeypatch, mode
 ):
     from spectra_sherpa.app.services.application_release import ensure_model_release
@@ -258,9 +258,10 @@ async def test_new_unreviewed_model_never_gets_released_identity(
     monkeypatch.setattr(app_config, "mode", mode)
     if mode == "local":
         release = await ensure_model_release(test_session, model=model, user_id=test_user.id)
-        assert release.state == "revoked"
-        assert release.readiness["review_state"] == "review_required"
-        assert not release.readiness["ready"]
+        assert release.state == "released"
+        assert release.readiness["review_state"] == "not_required"
+        assert release.readiness["ready"]
+        assert release.provenance.get("promotion_review") is None
     else:
         with pytest.raises(ValueError, match="not released"):
             await ensure_model_release(test_session, model=model, user_id=test_user.id)

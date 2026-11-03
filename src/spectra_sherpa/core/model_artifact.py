@@ -74,24 +74,43 @@ def assign_model_artifact_authority(manifest: dict[str, Any]) -> str:
     return require_model_artifact_authority(manifest)
 
 
-def experiment_training_dataset_id(manifest: dict[str, Any]) -> int | None:
-    """Return the strict workspace-local training source link, when declared."""
+def experiment_training_source_step(manifest: dict[str, Any]) -> dict[str, Any] | None:
+    """Resolve one workspace source without assuming processing-history order.
+
+    History may include response attachment before the reader's provenance.
+    Its order is scientific history, so inspect it without sorting or rewriting.
+    Multiple source operations are ambiguous even when their integers agree.
+    """
 
     chain = manifest.get("preprocessing_chain")
-    if not isinstance(chain, list) or not chain:
+    if not isinstance(chain, list):
         return None
-    source = chain[0]
-    if not isinstance(source, dict) or source.get("op_id") not in {
-        _EXPERIMENT_DATASET_READ_OPERATION,
-        "data.file_load",
-    }:
+    sources = [
+        step
+        for step in chain
+        if isinstance(step, dict) and step.get("op_id") in {_EXPERIMENT_DATASET_READ_OPERATION, "data.file_load"}
+    ]
+    if len(sources) > 1:
+        raise ModelArtifactIntegrityError("model artifact experiment training source link is ambiguous")
+    if not sources:
         return None
+    source = sources[0]
     parameters = source.get("parameters")
     key = "experiment_id" if source["op_id"] == "data.file_load" else "dataset_id"
     dataset_id = parameters.get(key) if isinstance(parameters, dict) else None
     if isinstance(dataset_id, bool) or not isinstance(dataset_id, int) or dataset_id < 1:
         raise ModelArtifactIntegrityError("model artifact experiment training source link is invalid")
-    return dataset_id
+    return source
+
+
+def experiment_training_dataset_id(manifest: dict[str, Any]) -> int | None:
+    """Return the unique strict workspace-local training source link."""
+
+    source = experiment_training_source_step(manifest)
+    if source is None:
+        return None
+    key = "experiment_id" if source["op_id"] == "data.file_load" else "dataset_id"
+    return source["parameters"][key]
 
 
 def require_experiment_training_dataset_id(manifest: dict[str, Any], expected_dataset_id: int) -> int | None:
@@ -101,6 +120,20 @@ def require_experiment_training_dataset_id(manifest: dict[str, Any], expected_da
     if observed is not None and observed != expected_dataset_id:
         raise ModelArtifactIntegrityError("model artifact experiment training source link is stale")
     return observed
+
+
+def require_artifact_producer_node_type(manifest: dict[str, Any]) -> str:
+    """Read executor-recorded provenance without selecting native dispatch."""
+    from spectra_sherpa.core.node_identity import canonical_node_type
+
+    producer = manifest.get("producer_node_type")
+    if not isinstance(producer, str) or not producer or producer != producer.strip():
+        raise ModelArtifactIntegrityError("model artifact producing-node provenance is missing or invalid")
+    producer = canonical_node_type(producer)
+    native = manifest.get("native_node_type")
+    if native is not None and (not isinstance(native, str) or canonical_node_type(native) != producer):
+        raise ModelArtifactIntegrityError("model artifact producer contradicts its native dispatch authority")
+    return producer
 
 
 def require_artifact_identity(manifest: dict[str, Any], *, expected_uid: str | None = None) -> str:
@@ -203,6 +236,7 @@ __all__ = [
     "assign_model_artifact_authority",
     "CANONICAL_MODEL_ARTIFACT_AUTHORITY",
     "experiment_training_dataset_id",
+    "experiment_training_source_step",
     "ModelArtifactIntegrityError",
     "ModelManifestJSONError",
     "ORDINARY_MODEL_ARTIFACT_AUTHORITY",
@@ -210,6 +244,7 @@ __all__ = [
     "load_verified_artifact_directory",
     "parse_model_manifest_json",
     "require_artifact_identity",
+    "require_artifact_producer_node_type",
     "require_experiment_training_dataset_id",
     "require_model_artifact_authority",
     "sha256_file",

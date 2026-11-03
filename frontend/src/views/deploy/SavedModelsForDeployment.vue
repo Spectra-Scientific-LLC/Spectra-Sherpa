@@ -6,12 +6,13 @@
     <ul v-else class="saved-models">
       <li v-for="model in models" :key="model.artifact_uid">
         <span>{{ model.display_name || model.name }} <small>{{ model.model_type }}</small></span>
-        <Button :label="model.is_deploy_ready ? 'Review application' : 'Make application'" class="p-button-sm p-button-outlined"
-          :aria-label="`${model.is_deploy_ready ? 'Review application' : 'Make application'}: ${model.display_name || model.name}`"
+        <Button
+          :label="modelActionLabel(model)" class="p-button-sm p-button-outlined"
+          :aria-label="`${modelActionLabel(model)}: ${model.display_name || model.name}`"
           @click="openModel(model.artifact_uid)" />
       </li>
     </ul>
-    <p v-if="models.length" class="model-review-note">Review the model and its validation in Models before promotion.</p>
+    <p v-if="models.length" class="model-review-note"><template v-if="isLocalApplication">Inspect fitted models and their recorded validation in Models. Available applications are listed below.</template><template v-else>Review the model and its validation in Models before promotion.</template></p>
     <div v-if="offset || models.length === pageSize" class="model-pages">
       <Button label="Previous" class="p-button-text p-button-sm" :disabled="loading || !offset" @click="changePage(-pageSize)" />
       <Button label="Next" class="p-button-text p-button-sm" :disabled="loading || models.length < pageSize" @click="changePage(pageSize)" />
@@ -19,7 +20,7 @@
   </Panel>
 </template>
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import Panel from "primevue/panel";
 import Button from "primevue/button";
@@ -28,7 +29,19 @@ import api from "@/api/client";
 import { useProjectStore } from "@/stores/project";
 import { useAuthStore } from "@/stores/auth";
 import { useScopedRequest } from "@/composables/useScopedRequest";
+import { useAppConfig } from "@/composables/useAppConfig";
+import { useDeployStore } from "@/stores/deploy";
 const project = useProjectStore(), auth = useAuthStore(), router = useRouter();
+const deploy = useDeployStore();
+const { appMode } = useAppConfig();
+const isLocalApplication = computed(() => appMode.value === "local");
+function modelActionLabel(model: { artifact_uid: string; is_deploy_ready?: boolean }): string {
+  if (isLocalApplication.value) {
+    return deploy.applications.some(application => application.artifact_uid === model.artifact_uid
+      && application.application_handle && application.deploy_ready) ? "View model" : "Make application";
+  }
+  return model.is_deploy_ready ? "Review application" : "Make application";
+}
 const models = ref<Array<{ artifact_uid: string; name: string; display_name?: string | null; model_type: string; is_deploy_ready?: boolean }>>([]);
 const loading = ref(false), error = ref(""), offset = ref(0), pageSize = 25;
 const read = useScopedRequest(() => [auth.user?.id, auth.sessionRevision, project.currentProjectId, offset.value], () => { models.value = []; loading.value = false; error.value = ""; });

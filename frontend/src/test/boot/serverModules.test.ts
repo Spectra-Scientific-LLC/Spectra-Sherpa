@@ -866,7 +866,7 @@ describe("bootServerModules", () => {
     const navigation = router.push(saved);
     await flushAsync();
     useAuthStore().user = null;
-    useAuthStore().token = "replacement-login";
+    useAuthStore().token = "new-login";
     useAuthStore().user = { id: 1, username: "scientist" };
     await navigation;
     finish();

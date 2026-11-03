@@ -3,12 +3,22 @@ import { createPinia, setActivePinia } from "pinia";
 import api from "@/api/client";
 import { useDeployStore } from "@/stores/deploy";
 import { useAuthStore } from "@/stores/auth";
+import { packageTrust } from "@/api/adapters/deploy";
+import { packageTrustHint, packageTrustLabel } from "@/utils/packageTrust";
 
 vi.mock("@/api/client", () => ({ default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
 
 const get = vi.mocked(api.get);
 
 describe("deploy application projection", () => {
+  it("keeps unsigned, verified and unestablished trust distinct from approval", () => {
+    expect(packageTrust({})).toBeNull();
+    expect(packageTrust({ package_trust: { status: "unsigned" } })).toBe("unsigned");
+    expect(packageTrust({ package_trust: { status: "verified" } })).toBe("unverified");
+    expect(packageTrust({ package_trust: { status: "verified", authentication_digest: "a".repeat(64) } })).toBe("verified");
+    expect(packageTrustLabel("unsigned")).toBe("Imported package · Unsigned");
+    expect(packageTrustHint("verified")).toContain("not approval");
+  });
   beforeEach(() => {
     setActivePinia(createPinia());
     get.mockReset();

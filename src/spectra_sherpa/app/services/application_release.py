@@ -39,6 +39,7 @@ async def ensure_model_release(
     model: ModelArtifact,
     user_id: int,
     promotion_review: dict | None = None,
+    application_enabled: bool | None = None,
 ) -> ApplicationRelease:
     """Return a release identity without treating local executability as approval."""
 
@@ -46,21 +47,44 @@ async def ensure_model_release(
         select(ApplicationRelease).where(ApplicationRelease.model_artifact_uid == model.artifact_uid)
     )
     readiness = _model_readiness(model)
+    provenance = dict(existing.provenance or {}) if existing else {}
+    if application_enabled is not None:
+        provenance["application_withdrawn"] = not application_enabled
+    if is_local() and readiness["ready"] and not provenance.get("application_withdrawn"):
+        # A local release is an application capability, not an approval. Its
+        # exact stored model and producing graph still have to be usable now.
+        from spectra_sherpa.app.services.deployment_binding import resolve_deployment_binding
+        from spectra_sherpa.core.model_artifact import ModelArtifactIntegrityError
+
+        try:
+            await resolve_deployment_binding(
+                session, user_id=user_id, workflow_id=model.workflow_id, artifact_uid=model.artifact_uid
+            )
+        except (ValueError, PermissionError, OSError, ModelArtifactIntegrityError):
+            readiness["ready"] = False
+            readiness["blockers"] = ["Stored fitted model or producing workflow cannot be verified"]
     reviewed = promotion_review or ((existing.provenance or {}).get("promotion_review") if existing else None)
     legacy_release = existing is not None and existing.state == "released" and not reviewed
-    readiness["review_state"] = "reviewed" if reviewed else "legacy_unreviewed" if legacy_release else "review_required"
+    readiness["review_state"] = (
+        "reviewed"
+        if reviewed
+        else "not_required" if is_local() else "legacy_unreviewed" if legacy_release else "review_required"
+    )
     if reviewed and not model.is_deploy_ready:
         readiness["ready"] = False
         if "model is not marked deploy-ready" not in readiness["blockers"]:
             readiness["blockers"] = [*readiness["blockers"], "model is not marked deploy-ready"]
-    if not reviewed and not legacy_release:
+    if not is_local() and not reviewed and not legacy_release:
         readiness["ready"] = False
         readiness["blockers"] = [
             *readiness["blockers"],
             "Review for promotion is required before a new readiness decision",
         ]
+    if provenance.get("application_withdrawn"):
+        readiness["ready"] = False
+        readiness["blockers"] = [*readiness["blockers"], "application was withdrawn"]
     if existing is not None:
-        existing.provenance = {**(existing.provenance or {}), "promotion_review": reviewed}
+        existing.provenance = {**provenance, "promotion_review": reviewed}
         existing.state = "released" if readiness["ready"] else "revoked"
         existing.readiness = readiness
         existing.label = model.display_name or model.name
@@ -86,6 +110,7 @@ async def ensure_model_release(
         label=model.display_name or model.name,
         readiness=readiness,
         provenance={
+            **provenance,
             "promotion_review": reviewed,
             "artifact_uid": model.artifact_uid,
             "model_type": model.model_type,
@@ -115,11 +140,15 @@ async def ensure_canonical_release(
     )
     reviewed = promotion_review or ((existing.provenance or {}).get("promotion_review") if existing else None)
     legacy_release = existing is not None and existing.state == "released" and not reviewed
-    ready = bool(readiness.get("ready")) and bool(reviewed or legacy_release)
+    ready = bool(readiness.get("ready")) and bool(is_local() or reviewed or legacy_release)
     readiness = {
         **readiness,
         "ready": ready,
-        "review_state": "reviewed" if reviewed else "legacy_unreviewed" if legacy_release else "review_required",
+        "review_state": (
+            "reviewed"
+            if reviewed
+            else "not_required" if is_local() else "legacy_unreviewed" if legacy_release else "review_required"
+        ),
     }
     if not ready and not readiness.get("blockers"):
         readiness["blockers"] = ["Review for promotion is required before a new readiness decision"]

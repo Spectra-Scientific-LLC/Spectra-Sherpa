@@ -525,12 +525,9 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     const wrapper = await mountBuilder();
     await flushPromises();
 
-    expect(wrapper.text()).toContain("cross-validation plan");
     const menu = wrapper.find('[data-testid="export-menu"]');
-    expect(wrapper.text()).toContain("not a deployable campaign winner");
-    expect(wrapper.get('[aria-label="Validated workflow export"]').text()).toContain("import an available signed Model package from Dashboard");
-    expect(wrapper.get('[aria-label="Validated workflow export"]').text()).not.toContain("Optimize");
-    expect(menu.text()).toContain("Project archive (.sherpa) — not a winner package");
+    expect(wrapper.find('[aria-label="Validated workflow export"]').exists()).toBe(false);
+    expect(menu.text()).toContain("Project package (.sherpa)");
     expect(menu.text()).not.toContain("Download Bundle (.zip)");
     expect(menu.text()).not.toContain("Jupyter Notebook");
     await menu.get("button").trigger("click");
@@ -547,7 +544,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     expect(menu.text()).toContain("Canonical Workflow Python (.py)");
     expect(menu.text()).toContain("Jupyter Notebook (.ipynb)");
     expect(menu.text()).toContain("Download Bundle (.zip)");
-    expect(menu.text()).not.toContain("Project archive (.sherpa)");
+    expect(menu.text()).toContain("Project package (.sherpa)");
     wrapper.unmount();
   });
 

@@ -142,6 +142,19 @@ class DAGExecutor:
             metadata = artifact.get("metadata", {})
             arrays = artifact.get("arrays", {})
             metadata.setdefault("node_id", artifact.get("node_id", node_id))
+            producer = self.nodes.get(node_id)
+            if producer is not None:
+                from spectra_sherpa.core.model_artifact import require_artifact_producer_node_type
+                from spectra_sherpa.core.node_identity import canonical_node_type
+
+                producer_type = canonical_node_type(producer.metadata.node_type)
+                declared = metadata.get("producer_node_type")
+                if metadata["node_id"] != node_id or (declared is not None and declared != producer_type):
+                    raise ValueError("Model artifact contradicts its executing producer")
+                # Data-free provenance only: native_node_type selects a
+                # different application path and must never be synthesized.
+                metadata["producer_node_type"] = producer_type
+                require_artifact_producer_node_type(metadata)
             if metadata.get("native_node_type") == "model.fitted_pls":
                 from spectra_sherpa.sdk.saved_model_qualification import retain_pls_training_specimens
 

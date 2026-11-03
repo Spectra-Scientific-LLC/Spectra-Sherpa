@@ -103,12 +103,15 @@ async def test_revoke_stale_release_when_canonical_readiness_fails(test_session,
 
 
 @pytest.mark.asyncio
-async def test_canonical_listing_cannot_create_new_reviewed_readiness(test_session, test_user):
+async def test_canonical_listing_cannot_create_new_reviewed_readiness(test_session, test_user, monkeypatch):
     from types import SimpleNamespace
 
     from spectra_sherpa.app.models.project import Project
     from spectra_sherpa.app.models.workflow import Workflow
+    from spectra_sherpa.app.services import application_release
     from spectra_sherpa.app.services.application_release import ensure_canonical_release
+
+    monkeypatch.setattr(application_release, "is_local", lambda: False)
 
     project = Project(user_id=test_user.id, name="Review")
     test_session.add(project)
@@ -144,12 +147,14 @@ async def test_canonical_listing_cannot_create_new_reviewed_readiness(test_sessi
 @pytest.mark.asyncio
 async def test_local_executable_model_does_not_fabricate_new_readiness(test_session, test_user, monkeypatch):
     from types import SimpleNamespace
+    from unittest.mock import AsyncMock
 
     from spectra_sherpa.app.models.project import Project
     from spectra_sherpa.app.models.workflow import Workflow
-    from spectra_sherpa.app.services import application_release
+    from spectra_sherpa.app.services import application_release, deployment_binding
 
     monkeypatch.setattr(application_release, "is_local", lambda: True)
+    monkeypatch.setattr(deployment_binding, "resolve_deployment_binding", AsyncMock())
     project = Project(user_id=test_user.id, name="Local scientific review")
     test_session.add(project)
     await test_session.flush()
@@ -172,9 +177,14 @@ async def test_local_executable_model_does_not_fabricate_new_readiness(test_sess
         validation_evidence_digest=None,
     )
     pending = await application_release.ensure_model_release(test_session, model=model, user_id=test_user.id)
-    assert pending.state == "revoked"
-    assert pending.readiness["review_state"] == "review_required"
-    assert not pending.readiness["ready"]
+    assert pending.state == "released"
+    assert pending.readiness["review_state"] == "not_required"
+    assert pending.readiness["ready"]
+    assert pending.provenance["promotion_review"] is None
+    withdrawn = await application_release.ensure_model_release(
+        test_session, model=model, user_id=test_user.id, application_enabled=False
+    )
+    assert withdrawn.state == "revoked"
     assert (
         await application_release.ensure_model_release(test_session, model=model, user_id=test_user.id)
     ).state == "revoked"
@@ -184,6 +194,7 @@ async def test_local_executable_model_does_not_fabricate_new_readiness(test_sess
         model=model,
         user_id=test_user.id,
         promotion_review={"review_digest": "a" * 64, "protocol": "exploratory"},
+        application_enabled=True,
     )
     assert reviewed.handle == pending.handle and reviewed.state == "released"
     assert reviewed.readiness["review_state"] == "reviewed"

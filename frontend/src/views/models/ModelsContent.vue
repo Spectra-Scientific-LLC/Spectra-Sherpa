@@ -2,7 +2,9 @@
   <section class="models-content">
     <WorkspaceHeader title="Runs" :actions="headerActionItems">
       <span v-show="activeTab === TAB_INSPECT" ref="inspectActionsTarget" />
-      <Button label="Export" icon="pi pi-download" class="p-button-text p-button-sm"
+      <Button
+        :label="activeTab === TAB_MODELS ? 'Copy model metadata' : 'Export'" :icon="activeTab === TAB_MODELS ? 'pi pi-copy' : 'pi pi-download'" class="p-button-text p-button-sm"
+        :title="activeTab === TAB_MODELS ? selectedModel ? 'Copy metadata as text; use Project export to transfer the fitted model.' : 'Select a model to copy its metadata.' : undefined"
         :disabled="!canExportActiveTab" @click="exportActiveTab" />
     </WorkspaceHeader>
 
@@ -210,10 +212,10 @@
             <Button icon="pi pi-chevron-right" class="p-button-text p-button-sm" aria-label="Next models" :disabled="!moreModels || loading" @click="changeModelPage(50)" />
             <Button
               v-if="!isDemoMode || privatePredictionAllowed"
-              label="Review for promotion"
+              :label="isLocalApplication ? 'Make Application' : 'Review for promotion'"
               icon="pi pi-check"
               class="p-button-text p-button-sm"
-              :disabled="selectedArtifactUidList.length === 0"
+              :disabled="selectedArtifactUidList.length === 0 || makingApplication"
               @click="markSelectedDeployReady"
             />
           </div>
@@ -268,9 +270,10 @@
               <div class="detail-actions">
                 <Button
                   v-if="!isDemoMode || privatePredictionAllowed"
-                  :label="selectedModel.is_deploy_ready ? 'Withdraw deploy-ready' : 'Review for promotion'"
+                  :label="selectedModel.is_deploy_ready ? 'Withdraw deploy-ready' : isLocalApplication ? 'Make Application' : 'Review for promotion'"
                   :icon="selectedModel.is_deploy_ready ? 'pi pi-check' : 'pi pi-circle'"
                   class="p-button-sm p-button-text"
+                  :disabled="makingApplication"
                   @click="toggleSelectedDeployReady"
                 />
                 <Button
@@ -411,7 +414,7 @@
     </template>
 
     <ModelPromotionReview
-      v-if="promotionQueue.length"
+      v-if="!isLocalApplication && promotionQueue.length"
       :key="promotionQueue[0]"
       :artifact-uid="promotionQueue[0]"
       :project-id="projectStore.currentProjectId"
@@ -575,6 +578,7 @@ const workflowStore = useWorkflowStore();
 const advisorStore = useAdvisorStore();
 const { isDemoMode } = useDemoMode();
 const { appMode, siteProfile } = useAppConfig();
+const isLocalApplication = computed(() => appMode?.value === "local");
 const isHostedPro = computed(() => appMode?.value === "enterprise" && siteProfile?.value === "pro");
 const privatePredictionAllowed = ref(false);
 watch(
@@ -595,8 +599,8 @@ const inspectContent = ref<InstanceType<typeof RunDetailContent> | null>(null);
 const headerActionItems = computed(() => [
   ...(activeTab.value === TAB_INSPECT ? inspectContent.value?.headerActions || [] : []),
   {
-    label: "Export",
-    icon: "pi pi-download",
+    label: activeTab.value === TAB_MODELS ? "Copy model metadata" : "Export",
+    icon: activeTab.value === TAB_MODELS ? "pi pi-copy" : "pi pi-download",
     disabled: !canExportActiveTab.value,
     command: exportActiveTab,
   },
@@ -817,6 +821,13 @@ const canSaveRun = computed(
 );
 
 const selectedArtifactUidList = computed(() => [...selectedArtifactUids.value]);
+const makingApplication = ref(false);
+const applicationActions = useScopedRequest(
+  () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId, appMode?.value,
+    selectedModel.value?.artifact_uid, selectedArtifactUidList.value.join("|")],
+  () => { makingApplication.value = false; },
+  { abortOnInvalidate: false },
+);
 
 const runKindOptions = [
   { label: "All", value: "all" },
@@ -837,7 +848,7 @@ const filteredModels = computed(() => {
 
 const canExportActiveTab = computed(() => {
   if (activeTab.value === TAB_RUN_HISTORY) return runsStore.runs.length > 0;
-  if (activeTab.value === TAB_MODELS) return models.value.length > 0;
+  if (activeTab.value === TAB_MODELS) return selectedModel.value != null;
   return false;
 });
 
@@ -1398,10 +1409,16 @@ async function handleDelete(): Promise<void> {
   }
 }
 
-function exportActiveTab(): void {
+async function exportActiveTab(): Promise<void> {
   const projectSlug = safeFilename(activeProjectName.value || "project");
   if (activeTab.value === TAB_MODELS) {
-    downloadJson(models.value, `${projectSlug}-models.json`);
+    if (!selectedModel.value) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(selectedModel.value, null, 2));
+      toast.add({ severity: "success", summary: "Model metadata copied", life: 2500 });
+    } catch {
+      toast.add({ severity: "warn", summary: "Copy unavailable", detail: "Your browser did not allow clipboard access.", life: 3500 });
+    }
     return;
   }
   downloadJson(runsStore.runs, `${projectSlug}-run-history.json`);
@@ -1504,12 +1521,48 @@ async function toggleSelectedDeployReady(): Promise<void> {
   if (!selectedModel.value) return;
   if (selectedModel.value.is_deploy_ready) {
     await patchModel(selectedModel.value.artifact_uid, { is_deploy_ready: false });
+  } else if (isLocalApplication.value) {
+    await makeLocalApplications([selectedModel.value.artifact_uid]);
   } else {
     promotionQueue.value = [selectedModel.value.artifact_uid];
   }
 }
-function markSelectedDeployReady(): void {
-  promotionQueue.value = [...selectedArtifactUidList.value];
+async function markSelectedDeployReady(): Promise<void> {
+  if (isLocalApplication.value) await makeLocalApplications([...selectedArtifactUidList.value]);
+  else promotionQueue.value = [...selectedArtifactUidList.value];
+}
+async function makeLocalApplications(uids: string[]): Promise<void> {
+  const projectId = projectStore.currentProjectId;
+  if (!isLocalApplication.value || makingApplication.value || projectId == null || !uids.length) return;
+  const ticket = applicationActions.begin();
+  makingApplication.value = true;
+  try {
+    for (const uid of uids) {
+      if (!ticket.isCurrent()) return;
+      const { data } = await api.patch<ModelSummary>(`/models/${uid}`, { is_deploy_ready: true });
+      if (!ticket.isCurrent()) return;
+      if (data.artifact_uid !== uid || data.project_id !== projectId || !data.is_deploy_ready)
+        throw new Error("The application response does not match the selected model.");
+      const index = models.value.findIndex(model => model.artifact_uid === uid);
+      if (index !== -1) models.value[index] = { ...models.value[index], ...data };
+      if (selectedModel.value?.artifact_uid === uid) selectedModel.value = { ...selectedModel.value, ...data };
+    }
+    const { data } = await api.get<Array<{ handle: string; model_artifact_uid?: string; workflow_id: number }>>(
+      "/deploy/applications", { params: { project_id: projectId }, signal: ticket.signal });
+    if (!ticket.isCurrent()) return;
+    const requestedModel = uids.length === 1
+      ? models.value.find(model => model.artifact_uid === uids[0])
+        ?? (selectedModel.value?.artifact_uid === uids[0] ? selectedModel.value : undefined)
+      : undefined;
+    const application = uids.length === 1 ? data.find(item => item.model_artifact_uid === uids[0]
+      && item.workflow_id === requestedModel?.workflow_id) : undefined;
+    if (uids.length === 1 && !application?.handle) throw new Error("The selected application is not available in Deploy.");
+    await router.push({ path: "/deploy", query: { project: projectId,
+      ...(application ? { artifact: uids[0], application: application.handle } : {}) } });
+  } catch (err) {
+    if (ticket.isCurrent()) toast.add({ severity: "error", summary: "Application unavailable",
+      detail: getErrorMessage(err, "The fitted application could not be opened."), life: 5000 });
+  } finally { if (ticket.isCurrent()) makingApplication.value = false; }
 }
 async function promotionConfirmed(): Promise<void> {
   promotionQueue.value = promotionQueue.value.slice(1);
