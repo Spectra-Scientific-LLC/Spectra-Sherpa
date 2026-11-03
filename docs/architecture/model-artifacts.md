@@ -71,6 +71,16 @@ workflow version's `external_source_run_provenance`; import does not invent a
 local execution record. Fitted arrays, compatibility checks and recorded
 validation scope remain separate from local application availability.
 
+Reference restoration prepares member directories inside the newly owned
+experiment before persisting verified bytes. The reference checksum and
+scientific projection must still match; a filename is not sufficient.
+
+Application distinguishes validated source-import provenance from numerical
+preprocessing. Source-import records describe how the calibration data was read;
+they do not import those calibration observations into a new prediction batch.
+Feature, axis and unit checks still apply to incoming data, and actual
+preprocessing must have supported replay. Unknown operations remain refused.
+
 ## Publication custody
 
 Application-owned model files have a private ownership claim before publication.
