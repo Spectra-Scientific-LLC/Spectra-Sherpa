@@ -115,7 +115,7 @@ test("workspace sections keep actions and context without duplicate introduction
   await expect(page.getByText("Select a workflow to generate a report", { exact: true })).toHaveCount(0);
 });
 
-test("Inspect opens its exact fitted model under Models without promoting it", async ({ page, request }) => {
+test("Inspect opens its exact fitted model under Models without promoting it @smoke", async ({ page, request }) => {
   const dataset = await createDataset(request, "Model navigation", { source: "sklearn", name: "iris" });
   const workflow = await instantiate(request, dataset, "pca");
   const result = await runWorkflow(page, workflow, dataset.project);
@@ -160,7 +160,8 @@ test("Inspect opens its exact fitted model under Models without promoting it", a
     await expect(page.getByRole("button", { name: "Models", exact: true })).toHaveAttribute("aria-current", "true");
     await expect(page.locator("#selected-model-detail")).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Model name", exact: true })).toHaveValue(model.display_name || model.name);
-    await expect(page.locator("#selected-model-detail").getByRole("button", { name: model.is_deploy_ready ? "Withdraw deploy-ready" : "Review for promotion", exact: true })).toBeVisible();
+    await expect(page.locator("#selected-model-detail").getByRole("button", { name: model.is_deploy_ready ? "Withdraw deploy-ready" : "Make Application", exact: true })).toBeVisible();
+    await expect(page.locator("#selected-model-detail").getByRole("button", { name: "Review for promotion", exact: true })).toHaveCount(0);
   }
   const after = await request.get(`/api/v1/models/${encodeURIComponent(uid)}`);
   expect((await after.json()).is_deploy_ready).toBe(model.is_deploy_ready);
