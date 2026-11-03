@@ -444,7 +444,7 @@ def delete_experiment_files(experiment_id: int) -> None:
     exp_dir = experiment_dir(experiment_id)
     if exp_dir.exists():
         for path in sorted(exp_dir.rglob("*"), reverse=True):
-            if path.is_file():
+            if path.is_symlink() or path.is_file():
                 path.unlink()
             elif path.is_dir():
                 path.rmdir()

@@ -36,6 +36,7 @@ from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.workflow_population import WORKFLOW_POPULATION_OPERATION
 from spectra_sherpa.app.services.artifact_preprocessing_authority import (
     validate_experiment_source_provenance,
+    validate_registered_matlab_source_provenance,
     validate_variable_selection_provenance,
 )
 from spectra_sherpa.app.services.collection_definitions import read_collection_definition
@@ -850,6 +851,10 @@ def _prepare_artifact_input(
     replay_source = copy.copy(source_dataset) if isinstance(source_dataset, SherpaDataset) else None
     y_work = y[indices] if y is not None else None
 
+    source_imports = {"import.matlab_dso", "import.registered_reference"}
+    if any(isinstance(step, Mapping) and step.get("op_id") in source_imports for step in chain):
+        validate_registered_matlab_source_provenance(chain)
+
     non_transforming_provenance = {
         "data.file_load",
         "data.attach_target",
@@ -868,6 +873,10 @@ def _prepare_artifact_input(
         if not isinstance(op_id, str) or not op_id or not isinstance(params, Mapping):
             raise ValueError("model artifact preprocessing provenance is malformed")
         params = dict(params)
+        if op_id in source_imports:
+            # The closed reader/reference pair was admitted above. These
+            # describe the already-decoded source, not numerical preprocessing.
+            continue
         if op_id in non_transforming_provenance:
             continue
         if op_id == "spectrasherpa.experiment_dataset_read/2":

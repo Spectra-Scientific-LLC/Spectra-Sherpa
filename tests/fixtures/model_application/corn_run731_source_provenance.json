@@ -1,0 +1,166 @@
+{
+  "description": "Exact Run731 reader/registered-reference/target/collection provenance metadata. Synthetic train marker replaces cohort positions; no model, fitted weights, specimen IDs or provider measurements. Registry names/hashes identify user-acquired Eigenvector Corn; this fixture grants no redistribution or analytical qualification.",
+  "preprocessing_chain": [
+    {
+      "op_id": "import.matlab_dso",
+      "parameters": {
+        "parser_id": "spectrasherpa.matlab",
+        "parser_version": "6",
+        "source_sha256": "e28fd4be274a54ca57b1f2c67ef5a8bf4981f8314bcc73e4c64836fe658c46b5",
+        "source_size_bytes": 1445616,
+        "asset_id": "m5spec",
+        "storage_version": "matlab-v5",
+        "source_variable": "m5spec",
+        "source_dtype": "<f8",
+        "source_shape": [
+          80,
+          700
+        ]
+      }
+    },
+    {
+      "op_id": "import.registered_reference",
+      "parameters": {
+        "artifact_id": "eigenvector-corn-archive-v1",
+        "artifact_sha256": "8a2d1a03648b6ad334caaafa5d8377bf945ba1477a5082c4963d705d07cca795",
+        "member_sha256": "e28fd4be274a54ca57b1f2c67ef5a8bf4981f8314bcc73e4c64836fe658c46b5",
+        "native_reader_contract": "spectrasherpa.matlab-dso/1",
+        "projection_id": "public-corn-m5-moisture-v1",
+        "scientific_sha256": "27007609c7a8f53d144e235eaeb61829b4f306e33a129980a08f882a800f040e",
+        "target_object_name": "propvals",
+        "analysis_profile": {
+          "primary_role": "X_spectra",
+          "modality": "spectra",
+          "technique": "NIR",
+          "target_type": "continuous",
+          "target_fields": [
+            "Moisture",
+            "Oil",
+            "Protein",
+            "Starch"
+          ],
+          "identity_fields": [
+            "sample_id",
+            "specimen_id",
+            "instrument"
+          ],
+          "group_fields": [
+            "specimen_id",
+            "instrument"
+          ],
+          "ordered_samples": false
+        },
+        "dataset_package": {
+          "package_id": "eigenvector-corn-v1",
+          "package_title": "Eigenvector Corn",
+          "package_description": "The same 80 corn specimens measured on three near-infrared instruments, with one shared four-property annotation table.",
+          "assembly_mode": "homogeneous_collection",
+          "artifact_ids": [
+            "eigenvector-corn-archive-v1"
+          ],
+          "view_id": "corn-m5",
+          "view_label": "M5",
+          "instrument": "M5",
+          "cohort": "corn-80",
+          "annotation_table": {
+            "annotation_table_id": "corn-properties",
+            "object_name": "propvals",
+            "n_rows": 80,
+            "fields": [
+              {
+                "index": 0,
+                "name": "Moisture",
+                "target_type": "continuous",
+                "units": null
+              },
+              {
+                "index": 1,
+                "name": "Oil",
+                "target_type": "continuous",
+                "units": null
+              },
+              {
+                "index": 2,
+                "name": "Protein",
+                "target_type": "continuous",
+                "units": null
+              },
+              {
+                "index": 3,
+                "name": "Starch",
+                "target_type": "continuous",
+                "units": null
+              }
+            ],
+            "values_sha256": "86c8c4889eefdc398ac31124d72d4169b182f53596f273cf802645a0cd4ad7e6"
+          },
+          "initially_selected": true,
+          "relations": [
+            {
+              "relation_id": "corn-instrument-views",
+              "relation_type": "same_specimens_aligned",
+              "view_ids": [
+                "corn-m5",
+                "corn-mp5",
+                "corn-mp6"
+              ],
+              "row_identity": "source_row_index"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op_id": "data.attach_target",
+      "parameters": {
+        "target_authority": {
+          "schema_version": "spectrasherpa-target-authority/1",
+          "column": "Moisture",
+          "target_type": "continuous",
+          "units": null,
+          "source_digest": "d7c8efa1523934281a5bf56d1e55f146dfc3668bbf6106ac2395f61319aa6947"
+        },
+        "target_source": "sample_table_column",
+        "target_column": "Moisture",
+        "group_column": null,
+        "target_shape": [
+          80
+        ],
+        "target_names": [
+          "Moisture"
+        ],
+        "sample_identity_checked": true,
+        "sample_table_schema": null,
+        "sample_table_source_file_id": null,
+        "sample_table_identity_checked": true,
+        "supervision_binding_sha256": "362a4a1854580474160e1f51e3d94f937e31b40978241387e5afa182172e2577"
+      }
+    },
+    {
+      "op_id": "spectrasherpa.experiment_dataset_read/2",
+      "parameters": {
+        "dataset_id": 215,
+        "file_count": 1,
+        "target_mode": "single",
+        "target_authority": {
+          "schema_version": "spectrasherpa-target-authority/1",
+          "column": "Moisture",
+          "target_type": "continuous",
+          "units": null,
+          "source_digest": "d7c8efa1523934281a5bf56d1e55f146dfc3668bbf6106ac2395f61319aa6947"
+        },
+        "stage": "raw",
+        "asset_id": null,
+        "source_manifest_sha256": "d5d7895ae466f2b706217860f8cf53e6390bd0f1044624e7afcca2cb442186bf",
+        "collection_definition_sha256": "fdd433afdba3c34fdd16b75db8d86e9ea15eb474db0325b3477f8ece70ff2c97",
+        "scientific_collection_sha256": "d7c8efa1523934281a5bf56d1e55f146dfc3668bbf6106ac2395f61319aa6947"
+      }
+    },
+    {
+      "op_id": "data.train_test_split",
+      "parameters": {
+        "split": "train"
+      }
+    }
+  ]
+}

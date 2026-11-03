@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -10,6 +11,95 @@ import numpy as np
 
 from spectra_sherpa.app.lib.collection_assembly import MAX_COLLECTION_MEMBERS
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+
+def validate_registered_matlab_source_provenance(chain: list[Any]) -> None:
+    """Admit an already-decoded, registered 2-D source, never a transform.
+
+    The recorded acquisition population belongs to the registry. Application
+    may have any number of observations; only its feature space must match.
+    Other readers/views require their own admission rather than an import-prefix
+    exemption. No source bytes are loaded or numerical processing replayed here.
+    """
+    from spectra_sherpa.app.lib.reference_artifacts import load_reference_artifact_registry
+    from spectra_sherpa.app.lib.reference_materialization import portable_reference_manifest
+    from spectra_sherpa.io.formats.matlab import MatlabPlugin
+
+    operations = ("import.matlab_dso", "import.registered_reference")
+    records = [step for step in chain if isinstance(step, Mapping) and step.get("op_id") in operations]
+    if (
+        len(records) != 2
+        or len(chain) < 2
+        or any(chain[i] is not records[i] or records[i].get("op_id") != op for i, op in enumerate(operations))
+        or any(set(record) != {"op_id", "parameters"} for record in records)
+        or any(not isinstance(record.get("parameters"), Mapping) for record in records)
+    ):
+        raise ValueError("registered MATLAB source provenance requires one leading reader/reference pair")
+    reader, reference = (record["parameters"] for record in records)
+    reader_fields = {
+        "parser_id",
+        "parser_version",
+        "source_sha256",
+        "source_size_bytes",
+        "asset_id",
+        "storage_version",
+        "source_variable",
+        "source_dtype",
+        "source_shape",
+    }
+    if set(reader) != reader_fields:
+        raise ValueError("registered MATLAB source reader has unsupported fields or image view")
+    registry = load_reference_artifact_registry()
+    projection = registry.projection(reference.get("projection_id")).as_dict()
+    portable = portable_reference_manifest(projection["projection_id"], registry=registry)
+    expected = {
+        key: portable[key]
+        for key in (
+            "artifact_id",
+            "artifact_sha256",
+            "member_sha256",
+            "native_reader_contract",
+            "projection_id",
+            "scientific_sha256",
+            "analysis_profile",
+        )
+    }
+    expected["target_object_name"] = projection["target_object_name"]
+    if "dataset_package" in portable:
+        expected["dataset_package"] = portable["dataset_package"]
+    try:
+        canonical_reference = json.dumps(dict(reference), sort_keys=True, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("registered MATLAB source reference is malformed") from exc
+    if (
+        canonical_reference != json.dumps(expected, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        or portable["native_reader_contract"] != "spectrasherpa.matlab-dso/1"
+        or portable["source_scope"] != "registered_projection"
+        or projection["analysis"]["primary_role"] != "X_spectra"
+    ):
+        raise ValueError("registered MATLAB source reference differs from its canonical authority")
+    shape = reader["source_shape"]
+    if (
+        reader["parser_id"] != MatlabPlugin.parser_id
+        or reader["parser_version"] != MatlabPlugin.parser_version
+        or reader["source_sha256"] != portable["member_sha256"]
+        or type(reader["source_size_bytes"]) is not int
+        or reader["source_size_bytes"] != portable["member_size_bytes"]
+        or reader["asset_id"] != reader["source_variable"]
+        or reader["source_variable"] != projection["object_name"]
+        or reader["storage_version"] not in ("matlab-v5", "matlab-v7.3")
+        or not isinstance(shape, list)
+        or len(shape) != 2
+        or any(type(n) is not int for n in shape)
+        or shape != [projection["n_samples"], projection["n_features"]]
+    ):
+        raise ValueError("registered MATLAB source reader differs from its canonical authority")
+    try:
+        dtype = np.dtype(reader["source_dtype"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("registered MATLAB source dtype is invalid") from exc
+    if dtype.kind not in "biuf" or dtype.str != reader["source_dtype"]:
+        raise ValueError("registered MATLAB source dtype is not a canonical real numeric dtype")
 
 
 def validate_experiment_source_provenance(params: Mapping[str, Any]) -> None:
