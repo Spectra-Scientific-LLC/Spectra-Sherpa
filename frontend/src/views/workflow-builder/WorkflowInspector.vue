@@ -29,7 +29,7 @@
               data-testid="inspector-canonical-node-type"
               :title="selectedNode.type"
             >
-              Canonical node: {{ selectedNode.type }}
+              Node: {{ selectedNode.type }}
             </span>
             </details>
           </div>

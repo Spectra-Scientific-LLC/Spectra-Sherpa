@@ -48,7 +48,7 @@
       <label><input v-model="allowExclusions" type="checkbox" /> Explicitly exclude missing reference rows and retain their identities and reasons. Infinite references and nonfinite predictors still refuse.</label>
       <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy || !fileId || !policyText.trim() || !contextText.trim()" @click="assess">Execute frozen application and assess</button>
     </details>
-    <p v-else>Import a canonical PLS application to run an assessment.</p>
+    <p v-else>Import a PLS model package to run an assessment.</p>
   </section>
 </template>
 <script setup lang="ts">

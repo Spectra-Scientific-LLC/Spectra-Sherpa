@@ -734,7 +734,7 @@ function formatModelVersion(run: ExecutionRunDetail): string {
   ];
   if (ids.length === 0) return "—";
   if (ids.length === 1) return shortUid(ids[0]);
-  return `${ids.length} artifacts: ${ids.slice(0, 2).map(shortUid).join(", ")}${ids.length > 2 ? "..." : ""}`;
+  return `${ids.length} models: ${ids.slice(0, 2).map(shortUid).join(", ")}${ids.length > 2 ? "..." : ""}`;
 }
 
 function formatWorkflowVersion(run: ExecutionRunDetail): string {
@@ -745,7 +745,7 @@ function formatWorkflowVersion(run: ExecutionRunDetail): string {
 
 function formatArtifactList(ids: string[] | null | undefined): string {
   if (!ids || ids.length === 0) return "—";
-  return ids.length === 1 ? shortUid(ids[0]) : `${ids.length} artifacts`;
+  return ids.length === 1 ? shortUid(ids[0]) : `${ids.length} models`;
 }
 
 function shortUid(uid: string): string {

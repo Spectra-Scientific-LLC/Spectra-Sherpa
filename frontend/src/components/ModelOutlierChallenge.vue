@@ -13,7 +13,7 @@
     <article v-for="record in records" :key="record.record_digest">
       <h4>{{ record.evidence.outlier_type }}</h4>
       <p>{{ record.evidence.detected }} detected · {{ record.evidence.missed }} missed · {{ record.evidence.unavailable }} unavailable / {{ record.evidence.evaluated_count }} evaluated; {{ record.evidence.excluded_count }} excluded.</p>
-      <p v-if="!record.digest_verified || !record.matches_artifact_digest" role="alert">Historical evidence no longer verifies against this artifact.</p>
+      <p v-if="!record.digest_verified || !record.matches_artifact_digest" role="alert">Historical evidence no longer verifies against this model.</p>
       <p>False-alarm rate: not assessed (no declared in-domain cohort).</p>
       <table><thead><tr><th>Specimen</th><th>Outcome</th><th>Prediction</th></tr></thead><tbody><tr v-for="row in record.evidence.rows" :key="row.specimen_id"><td>{{ row.specimen_id }}</td><td>{{ row.outcome }}</td><td>{{ row.prediction }}</td></tr></tbody></table>
       <details><summary>Frozen limits, prediction errors and provenance</summary><pre>{{ JSON.stringify(record.evidence, null, 2) }}</pre></details>

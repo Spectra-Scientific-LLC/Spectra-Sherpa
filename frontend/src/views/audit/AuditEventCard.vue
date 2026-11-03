@@ -5,7 +5,7 @@
       <div class="event-main">
         <div>
           <p class="event-action">{{ event.action }}</p>
-          <p class="event-target">{{ event.target_type }} {{ event.target_id }}</p>
+          <p class="event-target">{{ targetLabel(event.target_type) }} {{ event.target_id }}</p>
         </div>
         <time :datetime="event.ts_app_utc">{{ formatDate(event.ts_app_utc) }}</time>
       </div>
@@ -34,6 +34,10 @@
 <script setup lang="ts">
 import { formatDate, hasEventState, renderEventState, shortId } from "./auditFormatters";
 import type { AuditEventRecord } from "./types";
+
+// Stored target types are record names; show the product noun the filter uses.
+const TARGET_LABELS: Record<string, string> = { ModelArtifact: "Model", ProjectDataSource: "Project data source" };
+const targetLabel = (type: string | null | undefined) => (type ? TARGET_LABELS[type] ?? type : "");
 
 defineProps<{
   event: AuditEventRecord;

@@ -23,7 +23,7 @@
           <option value="">Any</option>
           <option value="Project">Project</option>
           <option value="Workflow">Workflow</option>
-          <option value="ModelArtifact">Model artifact</option>
+          <option value="ModelArtifact">Model</option>
           <option value="ProjectDataSource">Project data source</option>
         </select>
       </label>

@@ -74,7 +74,7 @@
           <span id="target-columns-title">Target columns</span>
           <i
             class="pi pi-info-circle section-info"
-            title="Define one or more continuous or categorical responses. The selected response enters this DAG; the others remain in the portable sample table."
+            title="Define one or more continuous or categorical responses. The selected response enters this workflow; the others remain in the portable sample table."
             aria-label="About target columns"
           />
         </button>

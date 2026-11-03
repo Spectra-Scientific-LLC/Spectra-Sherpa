@@ -1,11 +1,11 @@
 <template>
   <aside aria-label="Final fitting context">
     <h3>Prepare final fit using the workflow Run action</h3>
-    <p v-if="loading" role="status">Verifying the source artifact and saved run…</p>
+    <p v-if="loading" role="status">Verifying the source model and saved run…</p>
     <p v-if="error" role="alert">{{ error }}</p>
     <template v-if="review">
-      <p>Source: saved Run {{ review.source_run_id ?? 'not recorded' }}, artifact {{ artifactUid }}. Fitted samples: {{ review.population.fitted_count ?? 'not recorded' }}; held-out samples: {{ review.population.held_out_count ?? 'not recorded' }}.</p>
-      <p v-if="review.fitting_plan?.state === 'complete_declared_development_fit'">The existing artifact already fits all {{ review.fitting_plan.declared_development_count }} declared development samples.</p>
+      <p>Source: saved Run {{ review.source_run_id ?? 'not recorded' }}, model {{ artifactUid }}. Fitted samples: {{ review.population.fitted_count ?? 'not recorded' }}; held-out samples: {{ review.population.held_out_count ?? 'not recorded' }}.</p>
+      <p v-if="review.fitting_plan?.state === 'complete_declared_development_fit'">The existing model already fits all {{ review.fitting_plan.declared_development_count }} declared development samples.</p>
       <p>Editable workflow, not a pinned replay of the source run. Opening it has not started a fit; Run creates a new model for review.</p>
     </template>
   </aside>
@@ -29,7 +29,7 @@ watch(identity, async () => {
     const { data } = await api.get<Review>(`/models/${encodeURIComponent(props.artifactUid)}/promotion-review`, { signal: request.signal });
     if (!request.isCurrent()) return;
     if (data.workflow_id !== props.workflowId || data.source_run_id !== props.sourceRunId) {
-      throw new Error('The source artifact/run does not belong to this workflow. Return to Review for promotion.');
+      throw new Error('The source model/run does not belong to this workflow. Return to Review for promotion.');
     }
     review.value = data;
   } catch (e) { if (request.isCurrent()) error.value = getErrorMessage(e, 'Source fitting context is unavailable.'); }

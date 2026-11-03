@@ -1110,7 +1110,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     const activeSheet = useWorkbookStore().activeSheet;
     if (activeSheet?.purpose === "managed_candidate_authority") {
       throw new Error(
-        "Managed candidate authority workflows may only be executed by the governed Harness",
+        "Campaign candidate workflows can only be run by their Optimize campaign",
       );
     }
     assertNumericExecutionInputs();
@@ -1327,7 +1327,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     const sheet = workbookStore.sheets.find((s) => s.workflowId === targetWorkflowId);
     if (sheet?.purpose === "managed_candidate_authority") {
       throw new Error(
-        "Managed candidate authority workflows may only be executed by the governed Harness",
+        "Campaign candidate workflows can only be run by their Optimize campaign",
       );
     }
     // Trial tabs mirror the source workflow's run state — see executeWorkflow.
@@ -1377,7 +1377,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   ): Promise<WorkflowExecuteResponse> {
     if (useWorkbookStore().activeSheet?.purpose === "managed_candidate_authority") {
       throw new Error(
-        "Managed candidate authority workflows may only be executed by the governed Harness",
+        "Campaign candidate workflows can only be run by their Optimize campaign",
       );
     }
     assertNumericExecutionInputs(nodeId);

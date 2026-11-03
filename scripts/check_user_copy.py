@@ -16,6 +16,15 @@ BASELINE = ROOT / "docs/developers/user-copy-baseline.json"
 RULES = {
     "execute-workflow": (r"\bexecute workflow\b", "Run workflow"),
     "scientific-summary": (r"\bshort scientific summary\b", "Short summary"),
+    # Upper-case only: "dag" also appears in identifiers and paths that are not copy.
+    "dag-copy": (r"(?-i:\bDAG\b)", "workflow"),
+    "canonical-node-catalog": (r"\bcanonical node catalog\b", "Node catalog"),
+    "canonical-workflow-python": (r"\bCanonical Workflow Python\b", "Workflow Python"),
+    "artifact-application-copy": (r"\bartifact application\b", "model application"),
+    "artifact-apply-copy": (r"\bartifact apply\b", "model apply"),
+    "omitted-model-artifact-copy": (r"\bsaved model artifact\(s\)\b", "saved model(s)"),
+    "harness-authority-badge": (r"\bHarness authority\b", "Campaign candidate"),
+    "governed-harness-copy": (r"\bgoverned Harness\b", "its Optimize campaign"),
 }
 ATTRIBUTES = {"label", "title", "header", "placeholder", "aria-label", "alt"}
 

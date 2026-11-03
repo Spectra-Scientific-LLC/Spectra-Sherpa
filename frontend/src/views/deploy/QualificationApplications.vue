@@ -3,7 +3,7 @@
     <MethodHelp topic="qualification" label="Analytical qualification" />
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-else-if="loading">Loading imported models…</p>
-    <p v-else-if="!applications.length">No imported canonical application is available in this project.</p>
+    <p v-else-if="!applications.length">No imported model is available in this project.</p>
     <label v-else>Application
       <select v-model="selectedId" class="p-inputtext p-inputtext-sm">
         <option :value="null">Select an application</option>

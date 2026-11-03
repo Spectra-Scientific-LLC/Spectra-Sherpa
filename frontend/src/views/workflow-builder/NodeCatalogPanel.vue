@@ -1,7 +1,7 @@
 <template>
-  <section class="node-catalog" aria-label="Canonical node catalog">
+  <section class="node-catalog" aria-label="Node catalog">
     <div class="catalog-intro">
-      <strong>Canonical node catalog</strong>
+      <strong>Node catalog</strong>
       <span>{{ filteredNodes.length }} of {{ nodes.length }} operations</span>
     </div>
 
@@ -54,8 +54,8 @@
         <span>Application</span>
         <select v-model="application" data-testid="catalog-application-filter">
           <option value="all">All operations</option>
-          <option value="artifact">Artifact application</option>
-          <option value="not_artifact">Not artifact application</option>
+          <option value="artifact">Model application</option>
+          <option value="not_artifact">Not model application</option>
         </select>
       </label>
       <label>
@@ -72,7 +72,7 @@
     </div>
 
     <div v-if="filteredNodes.length === 0" class="catalog-empty" data-testid="catalog-empty">
-      No canonical operations match these filters.
+      No operations match these filters.
     </div>
 
     <div v-else class="catalog-results" data-testid="catalog-results">
@@ -94,7 +94,7 @@
           <span class="catalog-badges">
             <span class="badge">{{ nodeCategoryLabel(node.category) }}</span>
             <span v-if="isManaged(node)" class="badge managed">Managed</span>
-            <span v-if="isArtifactApplication(node)" class="badge artifact">Artifact apply</span>
+            <span v-if="isArtifactApplication(node)" class="badge artifact">Model apply</span>
             <span v-if="node.requires_scp" class="badge optional">Optional SCP</span>
           </span>
           <button
@@ -270,7 +270,7 @@
           </section>
 
           <section v-if="isArtifactApplication(node)">
-            <h4>Artifact application</h4>
+            <h4>Model application</h4>
             <p>
               This operation applies admitted fitted state; it does not train or validate a new
               model.
@@ -450,7 +450,7 @@ const validationCautions = (node: NodeTypeMetadata): string[] => {
   }
   if (isArtifactApplication(node)) {
     cautions.push(
-      "Application results inherit the admitted fitted artifact and must not be described as a new fit.",
+      "Application results inherit the admitted fitted model and must not be described as a new fit.",
     );
   }
   if (!isManaged(node)) {

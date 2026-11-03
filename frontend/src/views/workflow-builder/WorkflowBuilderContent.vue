@@ -9,10 +9,10 @@
         <span
           v-if="isManagedCandidateAuthority"
           class="workflow-meta-badge"
-          title="Persisted candidate DAG for governed Harness execution; inspectable but not runnable from the canvas"
+          title="Persisted candidate workflow from a governed campaign; inspectable but not runnable from the canvas"
         >
           <i class="pi pi-shield"></i>
-          Harness authority
+          Campaign candidate
         </span>
       </template>
         <div class="toolbar-action-group">
@@ -365,7 +365,7 @@
         :execution-disabled-reason="
           pendingDataSelection
             ? 'Choose an analysis starter to bind the incoming My Dataset selection before running.'
-            : 'Managed candidate authority is inspectable here, but only the governed Harness may execute it.'
+            : 'This campaign candidate can be inspected here; only its Optimize campaign can run it.'
         "
         @update-params="onUpdateParams"
         @execute-node="onExecuteNode"
@@ -2237,7 +2237,7 @@ const exportToPython = async () => {
     toast.add({
       severity: "success",
       summary: "Exported",
-      detail: "Canonical workflow Python script downloaded",
+      detail: "Workflow Python script downloaded",
       life: 2000,
     });
   } catch (err: unknown) {
@@ -2305,7 +2305,7 @@ const exportProjectArchive = async () => {
   if (projectStore.error) {
     toast.add({ severity: "error", summary: "Export Failed", detail: projectStore.error, life: 5000 });
   } else if (projectStore.lastExportOmittedModels > 0) {
-    toast.add({ severity: "warn", summary: "Partial project archive exported", detail: `${projectStore.lastExportOmittedModels} saved model artifact(s) lacked portable training-source provenance and were omitted. The sheet remains, but workflows using those models may need retraining.`, life: 9000 });
+    toast.add({ severity: "warn", summary: "Partial project package exported", detail: `${projectStore.lastExportOmittedModels} saved model(s) had no portable link to their training data and were omitted. The sheet remains, but workflows using those models may need retraining.`, life: 9000 });
   } else {
     toast.add({ severity: "success", summary: "Project package exported", life: 4000 });
   }
@@ -2320,7 +2320,7 @@ const exportMenuItems = computed(() => [
   ...(workflowStore.hasFoldValidationPlan ? [] : [
   { separator: true },
   {
-    label: "Canonical Workflow Python (.py)",
+    label: "Workflow Python (.py)",
     icon: "pi pi-file",
     command: exportToPython,
   },

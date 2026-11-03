@@ -352,7 +352,7 @@
               </template>
             </Column>
 
-            <Column header="Artifacts" style="min-width: 170px">
+            <Column header="Models" style="min-width: 170px">
               <template #body="{ data }">
                 <span
                   class="workflow-ref"
@@ -421,7 +421,7 @@
                       {{ pred.processing_time_ms ? `${pred.processing_time_ms}ms` : "\u2014" }}
                     </template>
                   </Column>
-                  <Column header="Artifact" style="min-width: 130px">
+                  <Column header="Model" style="min-width: 130px">
                     <template #body="{ data: pred }">
                       <span class="workflow-ref" :title="pred.model_id || ''">
                         {{ shortModelId(pred.model_id) }}

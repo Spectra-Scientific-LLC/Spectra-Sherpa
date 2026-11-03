@@ -435,7 +435,7 @@
             >
               <span class="inspector-toggle-title">
                 <i class="pi pi-bookmark" />
-                Saved Model Artifact
+                Saved Model
               </span>
               <i
                 :class="
@@ -445,7 +445,7 @@
             </button>
             <div v-if="outputSubsections.modelArtifact" class="model-artifact">
               <div v-if="artifactLoading" class="model-artifact__status">
-                <i class="pi pi-spin pi-spinner" /> Loading artifact metadata…
+                <i class="pi pi-spin pi-spinner" /> Loading model metadata…
               </div>
               <div
                 v-else-if="artifactError"
@@ -493,7 +493,7 @@
                     <span class="insp-value mono">{{ artifactHeadlineMetric.value }}</span>
                   </div>
                   <div class="inspector-item">
-                    <span class="insp-label">Artifact UID</span>
+                    <span class="insp-label">Model ID</span>
                     <span class="insp-value mono" :title="artifact.artifact_uid">
                       {{ artifact.artifact_uid.slice(0, 8) }}…
                     </span>
@@ -858,7 +858,7 @@ watch(
       artifact.value = data;
     } catch (error: unknown) {
       artifact.value = null;
-      artifactError.value = getErrorMessage(error, "Artifact metadata unavailable");
+      artifactError.value = getErrorMessage(error, "Model metadata unavailable");
     } finally {
       artifactLoading.value = false;
     }
