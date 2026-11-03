@@ -337,7 +337,7 @@
                     <code>{{ productProposalOperations.join(" → ") }}</code>
                   </div>
                   <details class="product-proposal-card__details">
-                    <summary>Review exact DAG and parameters</summary>
+                    <summary>Review exact workflow and parameters</summary>
                     <pre>{{ productProposalDag }}</pre>
                   </details>
                   <p class="product-proposal-card__notice">
@@ -589,7 +589,7 @@ const diagnosticScopeLabel = computed(() => {
   const scope = sherpaStore.diagnosticScope;
   if (!scope) return "";
   if ("kind" in scope.reference && scope.reference.kind === "saved_application")
-    return `Diagnostic discussion · Saved application artifact ${scope.reference.artifact_uid} · Run ${scope.reference.run_id} · Applied dataset position ${scope.reference.sample_index + 1}`;
+    return `Diagnostic discussion · Saved application model ${scope.reference.artifact_uid} · Run ${scope.reference.run_id} · Applied dataset position ${scope.reference.sample_index + 1}`;
   if ("kind" in scope.reference && scope.reference.kind === "saved_run_application")
     return `Diagnostic discussion · Saved prediction run ${scope.reference.run_id} · Node ${scope.reference.node_id} · File dataset position ${scope.reference.sample_index + 1}`;
   if ("kind" in scope.reference && scope.reference.kind === "saved_model_qualification")
@@ -599,7 +599,7 @@ const diagnosticScopeLabel = computed(() => {
     ? "All retained observations"
     : `${count} selected observation${count === 1 ? "" : "s"}`;
   if ("kind" in scope.reference)
-    return `Diagnostic discussion · Saved PLS-DA artifact ${scope.reference.artifact_uid} · Run ${scope.reference.run_id} · ${selection} · calibration only`;
+    return `Diagnostic discussion · Saved PLS-DA model ${scope.reference.artifact_uid} · Run ${scope.reference.run_id} · ${selection} · calibration only`;
   const response = scope.model_kind === "pls"
     ? ` · ${scope.response_label || `Response ${scope.reference.response_index + 1}`}`
     : "";
@@ -1240,7 +1240,7 @@ const confirmProductProposal = async () => {
     toast.add({
       severity: "success",
       summary: "Workflow proposal applied",
-      detail: "A new, unexecuted workflow sheet was created with Product Advisor provenance.",
+      detail: "A new, unexecuted workflow sheet was created from Product Advisor.",
       life: 3500,
     });
   } catch (error: unknown) {

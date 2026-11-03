@@ -5,7 +5,7 @@
     <template v-if="review">
       <h3>Use existing fitted model</h3>
       <p>No refit; held-out population unchanged.</p>
-      <details><summary>Artifact identity</summary>{{ artifactUid || `canonical:${canonicalArtifactId}` }}</details>
+      <details><summary>Model identity</summary>{{ artifactUid || `Imported model package #${canonicalArtifactId}` }}</details>
       <p>Fit on {{ review.population.fitted_count ?? 'an unrecorded number of' }} development samples. Held-out count: {{ review.population.held_out_count ?? 'not recorded' }}.</p>
       <p>{{ review.guidance.reason }}</p>
       <p v-if="review.fitting_plan?.state === 'complete_declared_development_fit'" role="status">Complete development fit · {{ review.fitting_plan.declared_development_count }} samples · Run {{ review.source_run_id }}</p>
@@ -36,7 +36,7 @@
         <p>{{ review.qualification.dataset_use.notice }}</p>
         <ul><li v-for="population in review.qualification.dataset_use.populations" :key="population.identity || 'unknown'">Results available: {{ population.results_revealed === true ? 'yes' : 'unknown' }}. Known selection use: {{ population.influenced_development === true ? 'yes' : 'unknown' }}. Recorded fitting overlap: {{ population.known_fit_overlap_count ?? 'unknown' }}.</li></ul>
       </details>
-      <details v-if="projectId"><summary>Validate the frozen artifact (optional for exploratory use)</summary>
+      <details v-if="projectId"><summary>Validate the frozen model (optional for exploratory use)</summary>
         <SavedModelQualification v-if="artifactUid" :artifact-uid="artifactUid" :project-id="projectId" :workflow-id="workflowId" :run-id="runId" @changed="load" />
         <QualificationPanel v-else-if="canonicalArtifactId && workflowId" :canonical-artifact-id="canonicalArtifactId" :workflow-id="workflowId" :project-id="projectId" />
         <button v-if="canonicalArtifactId" type="button" @click="load">Refresh review after validation</button>

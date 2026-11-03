@@ -21,7 +21,7 @@ const FEATURE_LABELS: Record<string, string> = {
   sherpaWriteReport: 'Report Writing',
   sherpaWorkflowGenerationRun: 'Workflow generation and runs',
   sherpaCampaignGeneration: 'Campaign generation',
-  sherpaFullContext: 'Full DAG Context',
+  sherpaFullContext: 'Full Workflow Context',
   sherpaAdvisor: 'Sherpa Advisor',
 }
 

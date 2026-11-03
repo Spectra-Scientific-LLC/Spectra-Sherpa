@@ -334,7 +334,7 @@
               </dl>
               <p class="sample-table-next-step">
                 Existing workflows remain bound to their previous file IDs. Start or rebind a
-                canonical workflow to use saved file #{{ sampleTableMessage.fileId }}; no prior
+                workflow to use saved file #{{ sampleTableMessage.fileId }}; no prior
                 result changed.
               </p>
             </template>

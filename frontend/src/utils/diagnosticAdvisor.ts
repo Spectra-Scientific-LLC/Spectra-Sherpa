@@ -147,10 +147,10 @@ export function diagnosticCitation(
   const evidenceIdentity =
     "kind" in reference
       ? reference.kind === "saved_model_qualification"
-        ? `Artifact ${reference.artifact_uid} · Dossier ${reference.dossier_digest.slice(0, 12)}`
+        ? `Model ID ${reference.artifact_uid} · Dossier ${reference.dossier_digest.slice(0, 12)}`
         : reference.kind === "saved_run_application"
         ? `Run ${reference.run_id} · Node ${reference.node_id}`
-        : `Artifact ${reference.artifact_uid} · Run ${reference.run_id}`
+        : `Model ID ${reference.artifact_uid} · Run ${reference.run_id}`
       : `Run ${reference.run_id} · Review ${reference.review_revision}`;
   return {
     title: fact.meaning || key,

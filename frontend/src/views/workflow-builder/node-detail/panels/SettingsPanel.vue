@@ -78,7 +78,7 @@
             <div v-else-if="param.type === 'model_select'" class="model-select-row">
               <div v-if="!modelSelectOptions.length && !modelOptionsLoading" class="model-select-banner">
                 <i class="pi pi-info-circle"></i>
-                <span>No trained artifacts yet — run a training node first.</span>
+                <span>No trained models yet — run a training node first.</span>
               </div>
               <Dropdown
                 panelClass="ss-panel-theme"
@@ -88,7 +88,7 @@
                 :options="modelSelectOptions"
                 optionLabel="label"
                 optionValue="value"
-                placeholder="Select saved artifact"
+                placeholder="Select saved model"
                 class="full-width"
                 filter
                 showClear
@@ -98,7 +98,7 @@
               <Button
                 icon="pi pi-refresh"
                 class="p-button-text p-button-sm"
-                title="Refresh saved artifacts"
+                title="Refresh saved models"
                 :loading="modelOptionsLoading"
                 @click="loadModelOptions"
               />

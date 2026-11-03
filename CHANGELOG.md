@@ -47,6 +47,10 @@ separately authorized.
 
 ### Staging GUI corrections
 
+- Product labels follow the glossary: panels say workflow (not DAG) and model
+  (not artifact), the node picker is the Node catalog, and the Python export is
+  Workflow Python (.py). Managed-candidate sheets show Campaign candidate.
+  Behavior and identifiers are unchanged.
 - Local OSS fitted models can become applications without a formal promotion review.
   Technically ready imports open in Deploy; existing managed review remains unchanged.
 - Manual-search model packages retain the explicit conclusion checkpoint separately

@@ -174,7 +174,7 @@
                 :node-label="selectedDefinition?.label || selectedNode" />
               <section v-if="nodeTrust" class="application-trust" aria-label="Retained prediction trust">
                 <h3>Per-file prediction trust</h3>
-                <p>Fitted model artifact: {{ values.model_id }}</p>
+                <p>Fitted model: {{ values.model_id }}</p>
                 <p>Applied workflow version: {{ detail.run.workflow_version_id ?? 'Unavailable' }}</p>
                 <p>{{ nodeTrust.claimScope }} Method: {{ nodeTrust.method || 'Unavailable' }} · Fitted reference: {{ nodeTrust.referenceCount ?? 'Unavailable' }} samples · T² limit: {{ nodeTrust.t2Limit ?? 'Unavailable' }} · Q limit: {{ nodeTrust.qLimit ?? 'Unavailable' }}</p>
                 <p v-if="nodeTrust.rows.length > 200">Showing the first 200 of {{ nodeTrust.rows.length }} rows. Download the complete table.</p>

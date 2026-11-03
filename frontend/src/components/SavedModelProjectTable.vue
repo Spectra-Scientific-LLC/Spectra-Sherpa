@@ -60,7 +60,7 @@
               <small v-if="row.analytical_qualification_applicable">Analytical qualification: {{ row.qualification?.state || 'unavailable' }}</small>
               <small v-if="row.gaps?.length || row.unavailable_reason">{{ row.gaps?.join('; ') || row.unavailable_reason }}</small>
             </td>
-            <td :title="row.evidence?.component_curve_sha256 || undefined">Artifact {{ row.artifact_uid }} · run #{{ row.evidence?.source_run_id ?? '—' }}<small>Curve {{ row.evidence?.component_curve_sha256?.slice(0, 12) || 'unavailable' }}</small></td>
+            <td :title="row.evidence?.component_curve_sha256 || undefined">Model ID {{ row.artifact_uid }} · run #{{ row.evidence?.source_run_id ?? '—' }}<small>Curve {{ row.evidence?.component_curve_sha256?.slice(0, 12) || 'unavailable' }}</small></td>
           </tr>
         </tbody>
       </table>

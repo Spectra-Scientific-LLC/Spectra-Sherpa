@@ -541,7 +541,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     await flushPromises();
 
     const menu = wrapper.find('[data-testid="export-menu"]');
-    expect(menu.text()).toContain("Canonical Workflow Python (.py)");
+    expect(menu.text()).toContain("Workflow Python (.py)");
     expect(menu.text()).toContain("Jupyter Notebook (.ipynb)");
     expect(menu.text()).toContain("Download Bundle (.zip)");
     expect(menu.text()).toContain("Project package (.sherpa)");
@@ -1218,7 +1218,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     await nextTick();
 
     expect(wrapper.get('[data-action="run_workflow"]').attributes("disabled")).toBeDefined();
-    expect(wrapper.text()).toContain("Harness authority");
+    expect(wrapper.text()).toContain("Campaign candidate");
     expect(wrapper.get('[data-testid="workflow-canvas"]').isVisible()).toBe(true);
     expect(
       wrapper.get('[data-testid="workflow-inspector"]').attributes("data-execution-disabled"),
@@ -1227,7 +1227,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
       wrapper
         .get('[data-testid="workflow-inspector"]')
         .attributes("data-execution-disabled-reason"),
-    ).toContain("only the governed Harness may execute it");
+    ).toContain("only its Optimize campaign can run it");
   });
 
   it("flushes a pending autosave before route navigation without prompting", async () => {

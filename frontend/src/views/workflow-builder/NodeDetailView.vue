@@ -9,7 +9,7 @@
           <details>
             <summary>Node identity</summary>
             <span class="node-instance-id">Instance ID: {{ nodeId }}</span>
-            <span class="node-type-badge">Canonical node: {{ nodeType }}</span>
+            <span class="node-type-badge">Node: {{ nodeType }}</span>
           </details>
         </div>
       </div>

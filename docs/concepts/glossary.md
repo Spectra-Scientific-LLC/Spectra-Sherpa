@@ -10,6 +10,9 @@ For product copy, use **Run workflow** and **Short summary**. Use **Data Portfol
 for the saved analysis selection shown on My Dataset, workflow sheets, and Analysis
 Starter. **Dataset** refers to the underlying measurements and scientific payload;
 **Save portfolio** preserves a named selection without replacing those measurements.
+In product copy, say **workflow** (not DAG) and **model** (not artifact); an artifact
+is named only where the serialized record itself is the subject, such as a package
+schema or file format. A model's identifier is its **Model ID**. Bounded phrases are enforced by `scripts/check_user_copy.py`.
 
 | Term | Meaning and example |
 | --- | --- |
@@ -18,6 +21,8 @@ Starter. **Dataset** refers to the underlying measurements and scientific payloa
 | **Project** | The scientist's workspace containing named dataset selections, workflow sheets, saved Runs, reports, and models. See [Projects, Datasets, and Runs](../workflows/projects-datasets-runs.md). |
 | **Experiment** | Internal import/source data container holding files, specimens, metadata, and versions; it can belong to a Project. It is distinct from the Project workspace, not a synonym for it. |
 | **Runs** | Navigation for saved workflow executions and their evidence. Results are the scientific outputs within a run, not the navigation label. |
+| **Application** | The deployable form of a fitted model in Deploy, used for interactive prediction or folder watches. Local availability is a technical check, not an approval; managed deployments gate it on promotion review. |
+| **Workflow sheet** | One workflow canvas in a project workbook. Product copy may say "sheet" only in this compound; the object itself is a workflow. |
 | **Models** | User-facing collection of retained fitted models. An artifact is the underlying serialized fitted-state record, not a replacement navigation noun. |
 | **Admitted** | Accepted after the relevant structure, bounds, and identity checks pass. Example: a `.spa` file is admitted only by its qualified native reader. See [Data Import](../workflows/data-import.md). |
 | **Authority** | The single declared source allowed to decide a fact. Example: the node registry, rather than UI text, is the authority for a node's parameters. See [Workflow Execution](../architecture/workflows.md). |
@@ -43,6 +48,6 @@ Starter. **Dataset** refers to the underlying measurements and scientific payloa
 | **Source identity** | The exact originating file or governed source record. Example: a curve hover can retain its `.spa` filename while the collection has a different title. |
 | **Starter** | A readable, qualified workflow template that still requires the scientist to confirm data and intent. Example: the PCA starter connects loading, centering, PCA, plots, and outlier diagnostics. |
 | **Target** | The response or class a supervised analysis predicts. Example: moisture is continuous; botanical group is categorical. |
-| **Template** | A versioned starter DAG with declared data roles and qualification status. See [Templates](../workflow-templates/index.md). |
+| **Template** | A versioned starter workflow with declared data roles and qualification status. See [Templates](../workflow-templates/index.md). |
 | **Workflow** | A directed graph of typed nodes, parameters, and connections that records an analysis recipe. See [Workflow Execution](../architecture/workflows.md). |
 

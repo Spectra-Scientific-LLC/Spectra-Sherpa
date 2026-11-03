@@ -100,7 +100,7 @@ export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
     actionVersion: 1,
     route: "/runs",
     label: "Explain results",
-    prompt: "Explain the latest saved run and model artifacts in this project, including what I should compare next.",
+    prompt: "Explain the latest saved run and models in this project, including what I should compare next.",
     expectedScope: { tabKey: "models", subscopeKey: "run_history" },
   },
   new_project: {

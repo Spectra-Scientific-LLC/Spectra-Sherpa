@@ -111,11 +111,11 @@
             }}
           </h3>
           <p>
-            The fitted artifact and application DAG passed integrity checks during import. The
+            The fitted model and its application workflow passed integrity checks during import. The
             package contains no sample data. Bind a file for interactive application, or configure a local folder watch for incoming files.
           </p>
           <p v-if="canonicalArtifactDigest" class="canonical-project-panel__digest">
-            Artifact {{ canonicalArtifactDigest }}
+            Model identity {{ canonicalArtifactDigest }}
           </p>
         </div>
 
@@ -191,7 +191,7 @@
               {{ canonicalAssetError }}
             </small>
             <Button
-              label="Bind data to application DAG"
+              label="Bind data to application workflow"
               icon="pi pi-link"
               class="p-button-sm"
               :loading="canonicalBinding"
@@ -557,12 +557,12 @@ const canonicalDependencyBlocked = computed(
 const canonicalDependencyRemediation = computed(() => {
   const readiness = canonicalProjectMetadata.value?.dependency_readiness;
   if (!readiness || typeof readiness !== "object" || Array.isArray(readiness)) {
-    return "Install the application dependencies required by this canonical package.";
+    return "Install the application dependencies required by this model package.";
   }
   const remediation = (readiness as Record<string, unknown>).remediation;
   return Array.isArray(remediation) && remediation.every((value) => typeof value === "string")
     ? remediation.join(" ")
-    : "Install the application dependencies required by this canonical package.";
+    : "Install the application dependencies required by this model package.";
 });
 const canonicalExperimentOptions = computed(() =>
   experiments.value.map((experiment) => ({
@@ -876,7 +876,7 @@ async function bindCanonicalData(): Promise<void> {
       severity: result.status === "ready_for_application" ? "success" : "warn",
       summary:
         result.status === "ready_for_application"
-          ? "Local data bound to canonical DAG"
+          ? "Local data bound to the application workflow"
           : "Application dependencies are unavailable",
       life: 3500,
     });
@@ -939,8 +939,8 @@ async function onExportProject(project: ProjectSummary): Promise<void> {
   } else if (projectStore.lastExportOmittedModels > 0) {
     toast.add({
       severity: "warn",
-      summary: "Partial project archive downloaded",
-      detail: `${projectStore.lastExportOmittedModels} saved model artifact(s) lacked portable training-source provenance and were omitted. The archive records their identities; workflows using them may need retraining.`,
+      summary: "Partial project package downloaded",
+      detail: `${projectStore.lastExportOmittedModels} saved model(s) had no portable link to their training data and were omitted. The package records their identities; workflows using them may need retraining.`,
       life: 9000,
     });
   }

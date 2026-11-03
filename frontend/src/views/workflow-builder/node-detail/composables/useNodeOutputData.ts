@@ -36,9 +36,9 @@ const META_TOOLTIPS: Record<string, string> = {
   spe_mean: "Mean Squared Prediction Error (SPE/Q residuals) across samples.",
   spe_p95: "95th percentile of SPE; common control limit for residual outliers.",
   data_role:
-    "Canonical dataset role: X_spectra has an ordered spectral axis; X_features is a multivariate feature table.",
+    "Dataset role: X_spectra has an ordered spectral axis; X_features is a multivariate feature table.",
   "sherpa.data_role":
-    "Canonical dataset role: X_spectra has an ordered spectral axis; X_features is a multivariate feature table.",
+    "Dataset role: X_spectra has an ordered spectral axis; X_features is a multivariate feature table.",
   finite_fraction:
     "Fraction of numeric matrix cells that are finite and usable for numerical methods.",
 };
