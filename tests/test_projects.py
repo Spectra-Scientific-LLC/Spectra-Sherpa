@@ -52,6 +52,29 @@ from spectra_sherpa.app.services.experiments import (
 )
 
 
+def test_project_import_cleanup_unlinks_symlinks_without_following(tmp_path, monkeypatch):
+    from spectra_sherpa.app.services import experiments
+
+    owned = tmp_path / "owned-experiment"
+    owned.mkdir()
+    (owned / "nested").mkdir()
+    (owned / "nested" / "partial.mat").write_bytes(b"partial imported member")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    preserved = outside / "keep.mat"
+    preserved.write_bytes(b"unrelated source bytes")
+    (owned / "raw").symlink_to(outside, target_is_directory=True)
+    (owned / "linked.mat").symlink_to(preserved)
+    (owned / "missing.mat").symlink_to(outside / "missing-target.mat")
+    monkeypatch.setattr(experiments, "experiment_dir", lambda _experiment_id: owned)
+
+    experiments.delete_experiment_files(17)
+
+    assert not owned.exists()
+    assert preserved.read_bytes() == b"unrelated source bytes"
+    assert sorted(path.name for path in outside.iterdir()) == ["keep.mat"]
+
+
 def test_project_export_marks_only_model_without_portable_training_source_as_omitted(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1682,16 +1705,24 @@ class TestExportImport:
         assert executed["results"]["source_1"]["default"]["shape"] == [3, 3]
 
     @pytest.mark.anyio
+    @pytest.mark.parametrize("failure_case", [None, "materialization", "symlink_escape"])
+    @pytest.mark.parametrize(
+        "relative_member_path", ["raw/reference.mat", "raw/288a715e9c6c40de911b609907aef37d/reference.mat"]
+    )
     async def test_registered_reference_project_import_requires_and_atomically_rebinds_exact_provider_artifact(
         self,
         auth_client: AsyncClient,
         test_session: AsyncSession,
         test_user: User,
         monkeypatch: pytest.MonkeyPatch,
+        relative_member_path: str,
+        failure_case: str | None,
+        tmp_path,
     ) -> None:
         from types import SimpleNamespace
 
         from spectra_sherpa.app.api.v1.routes import projects as project_routes
+        from spectra_sherpa.app.lib.reference_materialization import ReferenceMaterializationError
 
         member = b"qualified native DSO member"
         artifact = b"user-downloaded provider ZIP bytes"
@@ -1727,13 +1758,13 @@ class TestExportImport:
         metadata_file = metadata_path_for(experiment.id)
         write_metadata(metadata_file, {"source": "registered-reference"})
         experiment.metadata_path = relative_to_data_dir(metadata_file)
-        member_path = experiment_dir(experiment.id) / "raw" / "reference.mat"
+        member_path = experiment_dir(experiment.id) / relative_member_path
         member_path.parent.mkdir(parents=True, exist_ok=True)
         member_path.write_bytes(member)
         test_session.add(
             ExperimentFile(
                 experiment_id=experiment.id,
-                file_path="raw/reference.mat",
+                file_path=relative_member_path,
                 file_type="mat",
                 stage="raw",
                 file_size_bytes=len(member),
@@ -1749,10 +1780,18 @@ class TestExportImport:
         )
         monkeypatch.setattr(project_routes, "write_registered_reference_sidecar", lambda *_args, **_kwargs: None)
 
+        materialized_paths = []
+
         def _materialize(_artifact_path, projection_id, *, persist_member_to):
             assert projection_id == reference["projection_id"]
-            persist_member_to.parent.mkdir(parents=True, exist_ok=True)
-            persist_member_to.write_bytes(member)
+            assert persist_member_to.parent.is_dir(), "importer must prepare the validated destination parent"
+            assert not persist_member_to.parent.is_symlink()
+            assert not persist_member_to.exists()
+            materialized_paths.append(persist_member_to)
+            with persist_member_to.open("xb") as destination:
+                destination.write(member)
+            if failure_case == "materialization":
+                raise ReferenceMaterializationError("controlled failure after destination write")
             return SimpleNamespace(portable_reference=reference)
 
         monkeypatch.setattr(project_routes, "materialize_reference_projection", _materialize)
@@ -1766,7 +1805,7 @@ class TestExportImport:
             assert archived_file["archive_status"] == "external_reference"
             assert archived_file["external_reference"] == reference
             assert archived_file["archive_member"] is None
-            assert f"data/experiments/{experiment.id}/raw/reference.mat" not in names
+            assert f"data/experiments/{experiment.id}/{relative_member_path}" not in names
 
         original_count = await test_session.scalar(select(func.count(Project.id)))
         missing = await auth_client.post(
@@ -1793,6 +1832,25 @@ class TestExportImport:
         await test_session.rollback()
         await test_session.refresh(test_user)
 
+        baseline_counts = [
+            await test_session.scalar(select(func.count(model.id)))
+            for model in (Project, Experiment, ExperimentFile, ModelArtifact)
+        ]
+        outside = tmp_path / "outside-experiment"
+        outside.mkdir()
+        sentinel = outside / "preserve.txt"
+        sentinel.write_bytes(b"unrelated owned test file")
+        created_experiments = []
+        original_ensure_dirs = project_routes.ensure_experiment_dirs
+
+        def prepare_import_dirs(experiment_id):
+            original_ensure_dirs(experiment_id)
+            created_experiments.append(experiment_id)
+            if failure_case == "symlink_escape":
+                (experiment_dir(experiment_id) / "raw").symlink_to(outside, target_is_directory=True)
+
+        monkeypatch.setattr(project_routes, "ensure_experiment_dirs", prepare_import_dirs)
+
         imported = await auth_client.post(
             "/api/v1/projects/import",
             files=[
@@ -1800,9 +1858,30 @@ class TestExportImport:
                 ("reference_files", ("anything.zip", io.BytesIO(artifact), "application/zip")),
             ],
         )
+        if failure_case is not None:
+            assert imported.status_code == (422 if failure_case == "materialization" else 400), imported.text
+            if failure_case == "materialization":
+                assert imported.json()["detail"]["code"] == "project_reference_mismatch"
+                assert len(materialized_paths) == 1
+            else:
+                assert imported.json()["detail"] == "Invalid project data file path"
+                assert materialized_paths == []
+            assert [
+                await test_session.scalar(select(func.count(model.id)))
+                for model in (Project, Experiment, ExperimentFile, ModelArtifact)
+            ] == baseline_counts
+            assert len(created_experiments) == 1
+            assert not experiment_dir(created_experiments[0]).exists()
+            assert sentinel.read_bytes() == b"unrelated owned test file"
+            assert sorted(path.name for path in outside.iterdir()) == ["preserve.txt"]
+            assert member_path.read_bytes() == member
+            return
+
         assert imported.status_code == 201, imported.text
         imported_experiment_id = imported.json()["experiments"][0]["id"]
-        assert (experiment_dir(imported_experiment_id) / "raw" / "reference.mat").read_bytes() == member
+        assert (experiment_dir(imported_experiment_id) / relative_member_path).read_bytes() == member
+        assert materialized_paths == [experiment_dir(imported_experiment_id) / relative_member_path]
+        assert member_path.read_bytes() == member
         assert await test_session.scalar(select(func.count(Project.id))) == original_count + 1
 
     @pytest.mark.anyio

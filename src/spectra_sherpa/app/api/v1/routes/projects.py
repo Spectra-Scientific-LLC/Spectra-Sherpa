@@ -4481,6 +4481,9 @@ async def _restore_project_experiments(
                             _project_external_reference_requirements(project_json)
                         ),
                     )
+                # The importer owns this already-validated experiment destination,
+                # just as it does for embedded archive members below.
+                target_path.parent.mkdir(parents=True, exist_ok=True)
                 try:
                     materialized = await asyncio.to_thread(
                         materialize_reference_projection,
