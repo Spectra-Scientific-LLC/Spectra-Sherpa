@@ -13,15 +13,19 @@ const { get, react, on } = vi.hoisted(() => ({ get: vi.fn(), react: vi.fn(), on:
 vi.mock("@/api/client", () => ({ default: { get } }));
 vi.mock("plotly.js-cartesian-dist-min", () => ({ default: { react, relayout: vi.fn(), restyle: vi.fn(), purge: vi.fn(), Plots: { resize: vi.fn() } } }));
 const refs = [0, 1, 2].map(i => `data:${"a".repeat(64)}:${i}`);
-const metadata = { output_ports: [{ name: "default" }, { name: "T2" }, { name: "Q" }, { name: "flags" }] } as NodeTypeMetadata;
+const metadata = { output_ports: [{ name: "model" }, { name: "T2" }, { name: "Q" }, { name: "flags" }] } as NodeTypeMetadata;
 const contract = { digest: "b".repeat(64), payload: { schema_version: "spectrasherpa-node-presentation/1", default_presentation: "diagnostics",
   presentations: [{ presentation_id: "diagnostics", kind: "t2_q_diagnostics", label: "T²/Q", source_ports: ["T2", "Q", "flags"],
     sample_labels_field: "sample_labels", modes: ["plot", "table"] }] } } as NodePresentationContract;
 function fixture(view: "plot" | "table", bad = false) {
-  const values: Record<string, unknown> = { default: { type: "PCA" }, T2: [1, 20, 3], Q: [2, 3, 4], flags: [false, true, false],
+  const values: Record<string, unknown> = { model: { type: "PCA" }, T2: [1, 20, 3], Q: [2, 3, 4], flags: [false, true, false],
     sample_labels: ["Duplicate", "Duplicate", "Third"], metadata: { observation_axis: { labels: ["Duplicate", "Duplicate", "Third"],
-      workflow_observation_refs: refs, include_mask: [true, true, true] } } };
+      workflow_observation_refs: refs, include_mask: null } } };
   const output = ref(buildNodeOutput(values, metadata.output_ports, null, null, contract));
+  // Real diagnostics.outliers declares model/T2/Q/flags, not default or metadata.
+  // Its retained metadata companion is intentionally absent from normalized ports.
+  expect(output.value?.ports?.metadata).toBeUndefined();
+  expect(output.value?.primary_port).toBe("T2");
   get.mockImplementation(async (url: string) => ({ data: { value: values[url.split("/").at(-1)!],
     evidence: { state: bad && url.endsWith("/metadata") ? "reduced" : "exact", storage: "file" } } }));
   const change = vi.fn(), unavailable = vi.fn();

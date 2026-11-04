@@ -401,7 +401,10 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                     },
                 }
             )
+            source_count = registered.source_counts.get(split)
             summary = PopulationSummary(
+                source_count=source_count,
+                excluded_count=None if source_count is None else source_count - plan["n_samples"],
                 admitted_count=plan["n_samples"],
                 development_count=len(plan["train_indices"]),
                 held_out_count=None if standalone_plan else len(plan["test_indices"]),
@@ -414,7 +417,14 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                 source_receipt=namespace,
                 verification="partial",
                 limitations=[
-                    "Source exclusions and prior inspection independence are not established by the split receipt."
+                    (
+                        "Prior inspection independence is not established by the retained source and split receipts."
+                        if source_count is not None
+                        else (
+                            "Source exclusions and prior inspection independence "
+                            "are not established by the split receipt."
+                        )
+                    )
                 ],
             )
             populations.append(summary)

@@ -16,9 +16,13 @@ separately authorized.
 
 - Reopened T²/Q plots and tables load exact retained observation references,
   restoring workflow exclusion controls without using labels as identities.
+  The retained companion is loaded even when the node declares non-default
+  output ports; exclusions can be restored from the rerun diagnostic table.
 - Registered-source run comparison follows a retained penalized baseline before
   the split back to its verified catalog source. Counts, units and metrics remain
   available; changed split membership still prevents a paired-population verdict.
+  Curated runs verify the full retained catalog source and reproduce its exact
+  workflow exclusions before binding the admitted split rows.
 
 ### Penalized-baseline automatic validation
 

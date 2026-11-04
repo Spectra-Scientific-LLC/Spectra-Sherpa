@@ -483,3 +483,140 @@ def test_baseline_recovery_keeps_raw_source_and_transformed_split_checks(registe
     records, population, _ = resolve_baseline(outputs)
     assert not records
     assert population.limitations
+
+
+@pytest.mark.parametrize("baseline", [False, True])
+@pytest.mark.parametrize("damage", [None, "mask", "content", "branch_ids"])
+def test_registered_recovery_uses_declared_inclusion_before_split(registered, baseline, damage):
+    from spectra_sherpa.app.services.dag.nodes.data.split_planner import prepare_split_source
+
+    root = registered[0]
+    axis = root.sample_axis.model_dump(mode="python")
+    axis["include_mask"] = [True] * root.n_samples
+    axis["include_mask"][2] = False
+    root.sample_axis = SampleAxis.model_validate(axis)
+    outputs = (
+        baseline_case(registered)
+        if baseline
+        else {
+            "data": {"default": root},
+            "__workflow__": {"definition": registered[3]},
+        }
+    )
+    source = outputs["baseline" if baseline else "data"]["default"]
+    admitted, x, y, context, source_indices = prepare_split_source(source, None)
+    plan = plan_train_test_split(x, y, method="random")
+    split = materialize_split_outputs(
+        admitted, x, y, plan, node_id="split", target_context=context, source_indices=source_indices
+    )
+    predictions = split["X_test"].target + 0.2
+    comparison = build_regression_comparison(
+        split["X_test"].target,
+        predictions,
+        role="held_out_test",
+        target_names=["Glucose"],
+        sample_dataset=split["X_test"],
+    )
+    comparison["metadata"]["population_authority"] = {
+        "qualification": "graph_verified",
+        "population": ["split", "test"],
+        "fitted_populations": [["split", "train"]],
+    }
+    outputs.update({"split": split, "predict": {"default": predictions}, "eval": {"comparison": comparison}})
+    if damage == "mask":
+        # Keep the count identical but swap which observation is excluded.
+        for key in ("data", "baseline") if baseline else ("data",):
+            dataset = outputs[key]["default"]
+            axis = dataset.sample_axis.model_dump(mode="python")
+            axis["include_mask"][2], axis["include_mask"][3] = True, False
+            dataset.sample_axis = SampleAxis.model_validate(axis)
+    elif damage == "content":
+        outputs["data"]["default"].data[0, 0] += 1
+    elif damage == "branch_ids":
+        axis = split["X_test"].sample_axis.model_dump(mode="python")
+        axis["sample_table"]["sample_id"].reverse()
+        split["X_test"].sample_axis = SampleAxis.model_validate(axis)
+    records, population, complete = resolve_baseline(outputs)
+    if damage:
+        assert not records and population.limitations
+        return
+    assert complete and len(records) == 1
+    assert population.admitted_count == 11 and population.units == "wt%"
+    assert population.source_count == 12 and population.excluded_count == 1
+    assert [sid.rsplit(":", 1)[-1] for sid in records[0].sample_ids] == split["X_test"].sample_axis.sample_table[
+        "sample_id"
+    ]
+    assert all(not sid.endswith(":obs-2") for sid in (*records[0].sample_ids, *records[0].fitted_sample_ids))
+
+
+@pytest.mark.parametrize("baseline", [False, True])
+@pytest.mark.parametrize("damage", [None, "missing_full", "active_rows", "decision", "full_content"])
+def test_registered_workflow_exclusions_recover_from_exact_full_source(registered, baseline, damage):
+    import asyncio
+
+    from spectra_sherpa.app.lib.workflow_population import source_population_outputs
+    from spectra_sherpa.app.services.dag.population_display import retain_population_display
+
+    root, _, _, definition, _ = registered
+    initial = source_population_outputs(root, node_id="data")
+    decision = {
+        "source_digest": initial["exclusions"]["source_digest"],
+        "excluded_refs": [initial["exclusions"]["rows"][2]["observation_ref"]],
+    }
+    definition["nodes"][0]["parameters"] = {"workflow_exclusions": decision}
+    source = source_population_outputs(root, node_id="data", exclusions=decision)
+    executor = SimpleNamespace(nodes={"data": object()}, results={"data": source})
+    asyncio.run(retain_population_display(executor, "data"))
+    active = source["default"]
+    outputs = (
+        baseline_case((active, registered[1], registered[2], definition, registered[4]))
+        if baseline
+        else {
+            "data": source,
+            "__workflow__": {"definition": definition},
+        }
+    )
+    outputs["data"] = source
+    split_source = outputs["baseline"]["default"] if baseline else active
+    plan = plan_train_test_split(split_source.data, split_source.target, method="random")
+    split = materialize_split_outputs(
+        split_source,
+        split_source.data,
+        split_source.target,
+        plan,
+        node_id="split",
+        target_context=split_source.target_context,
+    )
+    predictions = split["X_test"].target + 0.2
+    comparison = build_regression_comparison(
+        split["X_test"].target,
+        predictions,
+        role="held_out_test",
+        target_names=["Glucose"],
+        sample_dataset=split["X_test"],
+    )
+    comparison["metadata"]["population_authority"] = {
+        "qualification": "graph_verified",
+        "population": ["split", "test"],
+        "fitted_populations": [["split", "train"]],
+    }
+    outputs.update({"split": split, "predict": {"default": predictions}, "eval": {"comparison": comparison}})
+    if damage == "missing_full":
+        source.pop("__workflow_population")
+    elif damage == "active_rows":
+        active.data[0, 0] += 1
+    elif damage == "decision":
+        outputs["__workflow__"]["definition"]["nodes"][0]["parameters"]["workflow_exclusions"] = None
+    elif damage == "full_content":
+        source["__workflow_population"]["outputs"]["default"].data[0, 0] += 1
+    records, population, complete = resolve_baseline(outputs)
+    if damage:
+        assert not records and population.limitations
+        return
+    assert complete and len(records) == 1
+    assert population.admitted_count == 11 and population.units == "wt%"
+    assert population.source_count == 12 and population.excluded_count == 1
+    assert [sid.rsplit(":", 1)[-1] for sid in records[0].sample_ids] == split["X_test"].sample_axis.sample_table[
+        "sample_id"
+    ]
+    assert all(not sid.endswith(":obs-2") for sid in (*records[0].sample_ids, *records[0].fitted_sample_ids))
