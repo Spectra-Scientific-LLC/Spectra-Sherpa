@@ -200,3 +200,13 @@ def test_historical_profile_cannot_be_rebound_to_new_version():
     context = HistoricalReconstructionContext(PROFILE)
     with pytest.raises(ValidationGraphError, match="unknown historical managed profile"):
         context.require_profile({"profile_id": "first_party_pls", "profile_version": "10", "profile_digest": PROFILE})
+
+
+def test_exact_prebaseline_catalog_is_explicitly_packaged():
+    import tomllib
+
+    includes = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["poetry"]["include"]
+    assert {
+        "path": "src/spectra_sherpa/core/contract_predecessors_baseline_cv.json",
+        "format": ["sdist", "wheel"],
+    } in includes
