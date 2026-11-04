@@ -3020,6 +3020,9 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     const yIdx = featureYAxis.value;
     const xName = featureNames[xIdx] || `Feature ${xIdx + 1}`;
     const yName = featureNames[yIdx] || `Feature ${yIdx + 1}`;
+    const sampleLabels = pcaSampleLabels.value.length === data.length
+      ? pcaSampleLabels.value
+      : data.map((_: unknown, i: number) => `Result row ${i + 1}`);
 
     const grouping = typedMetadataGrouping.value;
     if (grouping.kind === "valid" && grouping.colorOptions.length > 0) {
@@ -3050,7 +3053,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           x: classIndices.map((i: number) => data[i][xIdx]),
           y: classIndices.map((i: number) => data[i][yIdx]),
           name: className,
-          text: classIndices.map((i: number) => pcaSampleLabels.value[i] ?? `Result row ${i + 1}`),
+          text: classIndices.map((i: number) => sampleLabels[i]),
           ...observationTraceMetadata(primaryOutputPayload.value?.sample_axis ?? primaryOutputPayload.value?.y_axis, data.length, classIndices),
           marker: {
             color: colors[classIdx % colors.length],
@@ -3069,7 +3072,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           x: data.map((row: number[]) => row[xIdx]),
           y: data.map((row: number[]) => row[yIdx]),
           name: "Samples",
-          text: data.map((_: unknown, i: number) => pcaSampleLabels.value[i] ?? `Result row ${i + 1}`),
+          text: sampleLabels,
           ...observationTraceMetadata(primaryOutputPayload.value?.sample_axis ?? primaryOutputPayload.value?.y_axis, data.length),
           marker: {
             color: SCIENTIFIC_COLORS.observation,

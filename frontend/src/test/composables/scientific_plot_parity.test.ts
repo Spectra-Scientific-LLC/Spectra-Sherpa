@@ -343,13 +343,48 @@ describe("observation exclusion coverage", () => {
 
 
 describe("feature scatter exclusion coverage", () => {
+  it.each([false, true].flatMap(grouped => [
+    { grouped, labels: undefined },
+    { grouped, labels: [] },
+    { grouped, labels: ["Wrong cohort A", "Wrong cohort B"] },
+    { grouped, labels: ["Wrong cohort A", "Wrong cohort B", "Wrong cohort C", "Wrong cohort D"] },
+    { grouped, labels: ["Duplicate", "Duplicate", "Third"] },
+  ]))("aligns legacy labels before grouping=$grouped, labels=$labels", ({ grouped, labels }) => {
+    const data = [[1, 10], [2, 20], [3, 30]];
+    const refs = ["ref-c", "ref-a", "ref-b"];
+    const output = { data, metadata: { is_generic_dataset: true, sample_labels: labels,
+      ...(grouped ? { target: [0, 1, 0], target_names: ["A", "B"] } : {}) },
+      primary_port: "data", ports: { data: { value: { data, sample_axis: {
+        workflow_observation_refs: refs, include_mask: [true, false, true],
+      } } } } } as unknown as NodeOutput;
+    const before = structuredClone(output);
+    const { detail, quick } = views(output, "data.file_load");
+    quick.selectedPlotKey.value = "generic_scatter";
+    const expected = labels?.length === data.length
+      ? labels : ["Result row 1", "Result row 2", "Result row 3"];
+    const traces = detail.plotBag.value.genericScatterData;
+    expect(traces[0].text).toEqual(grouped ? [expected[0], expected[2]] : expected);
+    expect(traces[0].meta).toEqual({
+      workflow_observation_refs: grouped ? [refs[0], refs[2]] : refs,
+      workflow_included: grouped ? [true, true] : [true, false, true],
+    });
+    if (grouped) {
+      expect(traces[1].text).toEqual([expected[1]]);
+      expect(traces[1].meta).toEqual({ workflow_observation_refs: [refs[1]], workflow_included: [false] });
+    }
+    expect(quick.plotData.value).toEqual(traces);
+    expect(output).toEqual(before);
+  });
+
   it.each([false, true])("preserves reordered refs in detail scatter with grouping=%s", grouped => {
     const axis = { labels: ["Same", "Same", "Third"], workflow_observation_refs: ["ref-c", "ref-a", "ref-b"], include_mask: [true, true, true] };
     const data = [[1, 10], [2, 20], [3, 30]];
-    const output = { data, metadata: grouped ? { target: [0, 1, 0], target_names: ["A", "B"] } : {},
+    const output = { data, metadata: { sample_labels: ["Stale A", "Stale B", "Stale C"],
+      ...(grouped ? { target: [0, 1, 0], target_names: ["A", "B"] } : {}) },
       primary_port: "data", ports: { data: { value: { data, sample_axis: axis } } } } as unknown as NodeOutput;
     const { detail } = views(output, "data.file_load");
     const traces = detail.plotBag.value.genericScatterData;
+    expect(traces[0].text).toEqual(grouped ? ["Same", "Third"] : axis.labels);
     expect(traces[0].meta.workflow_observation_refs).toEqual(grouped ? ["ref-c", "ref-b"] : axis.workflow_observation_refs);
     if (grouped) expect(traces[1].meta.workflow_observation_refs).toEqual(["ref-a"]);
   });
