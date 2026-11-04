@@ -124,7 +124,7 @@ def registered(tmp_path, monkeypatch):
     definition = {
         "schema_version": 1,
         "nodes": [
-            {"node_id": "data", "node_type": "data.file_load"},
+            {"node_id": "data", "node_type": "data.collection_load"},
             {"node_id": "split", "node_type": "data.train_test_split"},
             {"node_id": "eval", "node_type": "diagnostics.regression_evaluator"},
         ],
@@ -230,7 +230,7 @@ def test_registered_recovery_refuses_drift_but_keeps_retained_response(registere
         assert population.response == "Glucose" and population.units == "wt%"
         assert population.verification == "unknown" and population.limitations
     if damage == "generic_dso":
-        assert LEGACY_IDENTITY_REASON in population.limitations
+        assert "canonical source authority" in " ".join(population.limitations)
     if damage == "invalid_refusal":
         assert INVALID_IDENTITY_REASON in population.limitations
 
@@ -360,3 +360,126 @@ def test_calibration_population_namespace_uses_raw_split_signal_not_fitted_trans
     assert sections["calibration"].state == "comparable"
     assert sections["held_out"].state == sections["training_cv"].state == "unavailable"
     assert not sections["held_out"].metric_values and not sections["training_cv"].metric_values
+
+
+def baseline_case(registered):
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.penalized_baseline_node import (
+        BaselinePenalizedLSNode,
+        _build_penalized_baseline_result,
+        _penalized_baseline_dispatch,
+    )
+
+    root, _, _, definition, _ = deepcopy(registered)
+    params = BaselinePenalizedLSNode.metadata.canonicalize_parameters({"method": "als"})
+    corrected, diagnostics = _penalized_baseline_dispatch(root.data, **params)
+    result = _build_penalized_baseline_result(corrected, root, params, diagnostics, node_id="baseline")
+    plan = plan_train_test_split(result.data, root.target, method="random")
+    split = materialize_split_outputs(
+        result, result.data, root.target, plan, node_id="split", target_context=root.target_context
+    )
+    comparison = build_regression_comparison(
+        split["X_test"].target,
+        split["X_test"].target + 0.2,
+        role="held_out_test",
+        target_names=["Glucose"],
+        sample_dataset=split["X_test"],
+    )
+    comparison["metadata"]["population_authority"] = {
+        "qualification": "graph_verified",
+        "population": ["split", "test"],
+        "fitted_populations": [["split", "train"]],
+    }
+    definition["nodes"].append({"node_id": "baseline", "node_type": "baseline.penalized_ls", "parameters": params})
+    definition["edges"][0]["from_node_id"] = "baseline"
+    definition["edges"].append(
+        {"from_node_id": "data", "from_output": "default", "to_node_id": "baseline", "to_input": "default"}
+    )
+    outputs = {
+        "data": {"default": root},
+        "baseline": {"default": result},
+        "split": split,
+        "predict": {"default": split["X_test"].target + 0.2},
+        "eval": {"comparison": comparison},
+        "__workflow__": {"definition": definition},
+    }
+    return outputs
+
+
+def resolve_baseline(outputs):
+    run = SimpleNamespace(id="baseline", user_id=1, evidence_completeness=retention.retain_run_outputs(1, outputs, {}))
+    return retained_regression_evidence(run)
+
+
+def test_registered_baseline_before_split_compares_to_raw_without_rewriting_evidence(registered):
+    from spectra_sherpa.app.contracts.comparison_evidence import ResolvedComparisonEvidence
+    from spectra_sherpa.app.schemas.scientific_comparison import EvidenceReference
+    from spectra_sherpa.app.services.scientific_comparison import compare_evidence
+
+    outputs = baseline_case(registered)
+    before = outputs["baseline"]["default"].scientific_digest
+    baseline = resolve_baseline(outputs)
+    raw = resolve(registered)
+    assert baseline[2] and len(baseline[0]) == 1
+    assert baseline[1].units == "wt%" and baseline[1].admitted_count == 12
+    assert baseline[0][0].sample_ids == raw[0][0].sample_ids
+    assert baseline[0][0].feature_receipt == raw[0][0].feature_receipt
+    assert outputs["baseline"]["default"].scientific_digest == before
+    result = compare_evidence(
+        [
+            ResolvedComparisonEvidence(
+                EvidenceReference(kind="run", provider="runs", id=str(i), revision=str(i) * 64),
+                f"Run {i}",
+                evidence[0],
+                evidence[1],
+            )
+            for i, evidence in enumerate([raw, baseline], 1)
+        ]
+    )
+    held_out = next(s for s in result.pairs[0].sections if s.role == "held_out")
+    assert held_out.state == "comparable" and held_out.metric_values
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "raw_content",
+        "rows",
+        "target",
+        "axis",
+        "custody",
+        "provenance",
+        "parameters",
+        "multisource",
+        "unsupported",
+        "missing",
+    ],
+)
+def test_baseline_recovery_keeps_raw_source_and_transformed_split_checks(registered, damage):
+    outputs = baseline_case(registered)
+    root, corrected = outputs["data"]["default"], outputs["baseline"]["default"]
+    definition = outputs["__workflow__"]["definition"]
+    if damage == "raw_content":
+        root.data[0, 0] += 1
+    elif damage == "rows":
+        axis = corrected.sample_axis.model_dump(mode="python")
+        axis["sample_table"]["sample_id"].reverse()
+        corrected.sample_axis = SampleAxis.model_validate(axis)
+    elif damage == "target":
+        corrected.target[0] += 1
+    elif damage == "axis":
+        corrected.feature_axis = corrected.feature_axis.model_copy(update={"units": "cm^-1"})
+    elif damage == "custody":
+        corrected.meta["source_collection"] = {}
+    elif damage == "provenance":
+        corrected.provenance = root.provenance
+    elif damage == "parameters":
+        definition["nodes"][-1]["parameters"]["lam"] *= 2
+    elif damage == "multisource":
+        definition["edges"].append({**definition["edges"][-1], "from_node_id": "other"})
+    elif damage == "unsupported":
+        definition["nodes"][-1]["node_type"] = "preprocess.pca"
+    else:
+        del outputs["data"]
+    records, population, _ = resolve_baseline(outputs)
+    assert not records
+    assert population.limitations

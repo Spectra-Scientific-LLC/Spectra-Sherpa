@@ -136,8 +136,10 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
       // buildNodeOutput merges result.metadata into the original primary output.
       // Rehydrate that same companion, never the compact summary's metadata or
       // primary specimen labels for an independently selected secondary port.
+      // T²/Q is a joint row diagnostic: its declared renderer consumes the
+      // producer's observation_axis companion for all three diagnostic vectors.
       const primaryMetadata = view !== "detail" && source?.ports?.metadata && source.primary_port &&
-        sourcePorts.includes(source.primary_port) ? ["metadata"] : [];
+        (sourcePorts.includes(source.primary_port) || selected?.presentation.kind === "t2_q_diagnostics") ? ["metadata"] : [];
       const retainedPorts = view === "detail" && !source ? [] : [...new Set([
         // Tables use this exact companion only to qualify omitted identities;
         // their numerical cells remain bound to the active source ports.

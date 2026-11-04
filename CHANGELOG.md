@@ -12,6 +12,14 @@ establish publication or qualification; release receipts identify the exact
 source revision and artifact hashes. Desktop packaging remains paused until
 separately authorized.
 
+### Reopened outlier review and baseline comparison
+
+- Reopened T²/Q plots and tables load exact retained observation references,
+  restoring workflow exclusion controls without using labels as identities.
+- Registered-source run comparison follows a retained penalized baseline before
+  the split back to its verified catalog source. Counts, units and metrics remain
+  available; changed split membership still prevents a paired-population verdict.
+
 ### Penalized-baseline automatic validation
 
 - ALS, arPLS and airPLS baseline correction is now admitted as qualified

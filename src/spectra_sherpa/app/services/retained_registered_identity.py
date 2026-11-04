@@ -1,7 +1,8 @@
 """Read-only identity recovery from an exact registered split-input receipt.
 
 This does not amend producer metadata or change runtime identity admission.
-Only a direct, single-source split and its exact retained row mapping qualify.
+A direct source or one retained penalized baseline may precede the split.
+The catalog source and the actual split input are verified separately.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ class RetainedRegisteredIdentity:
         self.definition = definition
         self.exact = exact
         self.roots = {}
+        self.source_inputs = {}
 
     def _root(self, split, plan):
         if split in self.roots:
@@ -52,6 +54,60 @@ class RetainedRegisteredIdentity:
             raise RegisteredIdentityUnavailable(
                 "Registered split input does not reproduce its retained scientific receipt."
             ) from None
+        split_input = root
+        _need(root.n_samples == plan["n_samples"], "Registered root and retained split counts differ.")
+        _need(
+            array_content_digest(np.asarray(root.data, dtype=float)) == plan["x_content_digest"],
+            "Registered split input differs from the retained split feature receipt.",
+        )
+        nodes = {node["node_id"]: node for node in self.definition.get("nodes", [])}
+        producer = nodes.get(edge["from_node_id"], {})
+        source_payload = payload
+        if producer.get("node_type") == "baseline.penalized_ls":
+            from spectra_sherpa.app.services.dag.nodes.preprocessing.penalized_baseline_node import (
+                BaselinePenalizedLSNode,
+            )
+
+            parents = [e for e in self.definition.get("edges", []) if e.get("to_node_id") == edge["from_node_id"]]
+            _need(
+                (edge.get("from_output") or "default") == "default"
+                and len(parents) == 1
+                and parents[0].get("to_input") in {None, "default"}
+                and nodes.get(parents[0]["from_node_id"], {}).get("node_type")
+                in {"data.file_load", "data.collection_load"}
+                and (parents[0].get("from_output") or "default") == "default",
+                "Registered baseline comparison requires one direct retained file source.",
+            )
+            source_payload = self.exact(parents[0]["from_node_id"], "default")
+            try:
+                root = restore_dataset(source_payload)
+            except (ValueError, TypeError, KeyError):
+                raise RegisteredIdentityUnavailable(
+                    "Registered baseline source scientific receipt is unavailable."
+                ) from None
+            history = root.provenance.to_list()
+            corrected_history = split_input.provenance.to_list()
+            _need(
+                len(corrected_history) == len(history) + 1 and corrected_history[:-1] == history,
+                "Retained baseline does not extend its exact source provenance.",
+            )
+            step = corrected_history[-1]
+            _need(
+                step.get("op_id") == "baseline.penalized_ls"
+                and step.get("node_id") == edge["from_node_id"]
+                and step.get("parameters")
+                == BaselinePenalizedLSNode.metadata.canonicalize_parameters(producer.get("parameters", {})),
+                "Retained baseline provenance differs from the saved workflow.",
+            )
+            _need(
+                split_input.shape == root.shape
+                and split_input.sample_axis.model_dump(mode="json") == root.sample_axis.model_dump(mode="json")
+                and split_input.feature_axis.model_dump(mode="json") == root.feature_axis.model_dump(mode="json")
+                and split_input.target_context == root.target_context
+                and np.array_equal(split_input.target, root.target)
+                and split_input.meta.get("source_collection") == root.meta.get("source_collection"),
+                "Retained baseline changed registered rows, response, axes or source custody.",
+            )
         source = root.meta.get("source_collection")
         try:
             validate_registered_reference_source_identity(source, root)
@@ -59,11 +115,6 @@ class RetainedRegisteredIdentity:
             raise RegisteredIdentityUnavailable(
                 "Retained registered source annotations do not reproduce their canonical source authority."
             ) from None
-        _need(root.n_samples == plan["n_samples"], "Registered root and retained split counts differ.")
-        _need(
-            array_content_digest(np.asarray(root.data, dtype=float)) == plan["x_content_digest"],
-            "Registered split input differs from the retained split feature receipt.",
-        )
         registry = load_reference_artifact_registry()
         projection_id = root.get_extra("reference.projection_id")
         projection = registry.projection(projection_id).as_dict()
@@ -127,8 +178,9 @@ class RetainedRegisteredIdentity:
             len(selected_fields) == 1 and context.target_units == selected_fields[0]["units"],
             "Registered selected response or units differ from the governed annotation column.",
         )
-        self.roots[split] = root
-        return root
+        self.source_inputs[split] = source_payload
+        self.roots[split] = split_input
+        return split_input
 
     def ids(self, dataset, split, branch, plan):
         _need(branch in {"train", "test"}, "Registered comparison branch is unknown.")
