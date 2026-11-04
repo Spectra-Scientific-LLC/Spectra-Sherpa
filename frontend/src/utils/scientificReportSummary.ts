@@ -33,7 +33,8 @@ const labels: Record<string, string> = {
   macro_f1: "Macro F1", sensitivity: "Sensitivity", specificity: "Specificity",
   precision: "Precision", recall: "Recall", f1: "F1", roc_auc: "ROC AUC",
   lof_percent: "Lack of fit (%)", lack_of_fit: "Lack of fit", converged: "Converged",
-  n_iter: "Iterations", n_iterations: "Iterations", r_squared: "R²",
+  n_iter: "Iterations", n_iterations: "Iterations", convergence_status: "Convergence status",
+  max_iter: "Maximum iterations", r_squared: "R²",
   silhouette_score: "Silhouette score", n_clusters: "Clusters",
   cumulative_variance: "Cumulative variance", explained_variance: "Explained variance",
   reconstruction_error: "Reconstruction error", n_iterations_run: "Iterations",
@@ -351,7 +352,8 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
         // Automatic selection ignores this manual field, so it is not a request.
         if ((run.params_snapshot?.[id] as Record<string, unknown> | undefined)?.component_fit_mode === "one_standard_error") continue;
         if (!rows.some(([label, actual]) => label === "Components (A)" && actual === value)) rows.unshift(["Requested components", value]);
-      } else if (["n_clusters", "method", "cv_folds", "n_splits"].includes(key)) rows.unshift([labels[key] ?? key, value]);
+      } else if (["n_clusters", "method", "cv_folds", "n_splits"].includes(key)
+        || (key === "max_iter" && node?.node_type === "model.nmf")) rows.unshift([labels[key] ?? key, value]);
     }
     const unique = rows.filter((row, i) => rows.findIndex(other => other[0] === row[0] && other[1] === row[1]) === i);
     const warnings: string[] = [];
