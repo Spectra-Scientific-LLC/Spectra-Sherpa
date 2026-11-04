@@ -228,3 +228,5 @@ before automatic PLS selection; it contains contract data, not account data or
 credentials. Its historical name and bytes are retained intentionally. It is
 a read-only inspection authority, not a saved-model application alias or
 permission to replay an older fit with current code.
+`contract_predecessors_baseline_warning.json` does the same for the profile
+captured before penalized-baseline non-convergence became a recorded warning.

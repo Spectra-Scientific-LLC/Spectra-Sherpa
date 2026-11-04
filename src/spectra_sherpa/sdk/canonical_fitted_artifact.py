@@ -61,11 +61,15 @@ class CanonicalFittedArtifact:
     state_bytes: dict[str, bytes]
 
     @classmethod
-    def from_full_refit_execution(cls, execution: object) -> "CanonicalFittedArtifact":
+    def from_full_refit_execution(
+        cls, execution: object, *, nonconverged_baseline_fits: int = 0
+    ) -> "CanonicalFittedArtifact":
         """Materialize an artifact only from an executor-issued full refit."""
 
         try:
-            evidence = CanonicalFullRefitEvidence.from_full_refit_execution(execution)
+            evidence = CanonicalFullRefitEvidence.from_full_refit_execution(
+                execution, nonconverged_baseline_fits=nonconverged_baseline_fits
+            )
         except CanonicalFullRefitEvidenceError as exc:
             raise CanonicalFittedArtifactError("canonical fitted artifact requires executor-issued refit") from exc
 

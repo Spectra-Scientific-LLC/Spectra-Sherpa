@@ -113,6 +113,13 @@ def _transform_outputs(source: SherpaDataset, transformed: np.ndarray, model_typ
     return {"result": scores, "transformed": transformed}
 
 
+def _record_baseline_warnings(metadata: dict[str, Any], replay_warnings: Any) -> None:
+    """Predictions must show these; other replay warnings keep their logged scope."""
+    warnings = [warning for warning in replay_warnings if warning.startswith("Baseline reached max_iter")]
+    if warnings:
+        metadata["baseline_warnings"] = warnings
+
+
 def _apply_model_artifact(
     manifest: dict[str, Any],
     arrays: dict[str, np.ndarray],
@@ -187,7 +194,9 @@ def _apply_model_artifact(
     if native_state:
         from .saved_native_model import apply_saved_native_model
 
-        return apply_saved_native_model(manifest, arrays, X_new, X_data)
+        applied = apply_saved_native_model(manifest, arrays, X_new, X_data)
+        _record_baseline_warnings(applied.setdefault("metadata", {}), replay_warnings)
+        return applied
 
     # The adapter supplies only product permission. Serializer, axis and consent
     # checks remain in the fingerprinted scientific implementation closure.
@@ -215,6 +224,7 @@ def _apply_model_artifact(
     }
     if legacy_warning is not None:
         metadata["legacy_exploratory_warning"] = legacy_warning
+    _record_baseline_warnings(metadata, replay_warnings)
     if model_type in _TRANSFORM_TYPES:
         transformed = _finite_result_matrix(extract.transform(X_data), model_type=model_type)
         result.update(_transform_outputs(X_new, transformed, model_type))

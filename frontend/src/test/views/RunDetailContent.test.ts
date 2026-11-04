@@ -771,6 +771,67 @@ describe("Persistent run inspection", () => {
     wrapper.unmount();
   });
 
+  it('shows a retained baseline non-convergence warning for the whole run', async () => {
+    const original = get.getMockImplementation()!;
+    const warning = 'Baseline reached max_iter before converging for 3 of 38 spectra.';
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) {
+        const data = structuredClone(fixture);
+        Object.assign(data.evidence.outputs, { __diagnostics__: { baseline: { state: 'exact', storage: 'file' } } });
+        return { data };
+      }
+      if (url.endsWith('/__workflow__/definition')) {
+        const response = await original(url);
+        const value = response.data.value;
+        return { data: { value: { ...value, nodes: [...value.nodes, { node_id: 'baseline', node_type: 'baseline.penalized_ls' }] } } };
+      }
+      if (url.endsWith('/__diagnostics__/baseline')) return { data: { value: { warning } } };
+      return original(url);
+    });
+    const { wrapper } = await open();
+    expect(wrapper.text()).toContain(`Baseline warning: ${warning}`);
+    wrapper.unmount();
+  });
+
+  function warnedRunRequests(warning: string) {
+    const original = get.getMockImplementation()!;
+    return async (url: string) => {
+      if (url.includes('/42/') && url.endsWith('/evidence')) {
+        const data = structuredClone(fixture);
+        Object.assign(data.evidence.outputs, { __diagnostics__: { baseline: { state: 'exact', storage: 'file' }, _scientific_presentations: { state: 'exact', storage: 'file' } } });
+        return { data };
+      }
+      if (url.includes('/42/') && url.endsWith('/__workflow__/definition')) {
+        const response = await original(url);
+        const value = response.data.value;
+        return { data: { value: { ...value, nodes: [...value.nodes, { node_id: 'baseline', node_type: 'baseline.penalized_ls' }] } } };
+      }
+      if (url.endsWith('/__diagnostics__/baseline')) return { data: { value: { warning } } };
+      if (url.endsWith('/__diagnostics__/_scientific_presentations')) throw new Error('presentation read failed');
+      if (url.includes('/43/') && url.endsWith('/__workflow__/definition')) throw new Error('definition unavailable');
+      return original(url);
+    };
+  }
+
+  it('keeps a baseline warning when the presentation contract cannot be read', async () => {
+    const warning = 'Baseline reached max_iter before converging for 3 of 38 spectra.';
+    get.mockImplementation(warnedRunRequests(warning));
+    const { wrapper } = await open();
+    expect(wrapper.text()).toContain(`Baseline warning: ${warning}`);
+    wrapper.unmount();
+  });
+
+  it('does not carry a baseline warning into another run', async () => {
+    const warning = 'Baseline reached max_iter before converging for 3 of 38 spectra.';
+    get.mockImplementation(warnedRunRequests(warning));
+    const { wrapper, router } = await open();
+    expect(wrapper.text()).toContain(warning);
+    await router.push('/runs/43?project=1&view=Results&node=pca');
+    await flushPromises();
+    expect(wrapper.text()).not.toContain(warning);
+    wrapper.unmount();
+  });
+
   it('shows each saved application failure from retained evidence on Summary', async () => {
     const original = get.getMockImplementation()!;
     get.mockImplementation(async (url: string) => {

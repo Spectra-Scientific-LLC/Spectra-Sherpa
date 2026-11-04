@@ -9,7 +9,8 @@ export function metricPreference(metric: string, left: number, right: number): "
   const lower = ["rmse", "mse", "mae", "sep", "bias"].includes(metric);
   const higher = ["r2", "accuracy", "balanced_accuracy", "macro_f1", "mcc"].includes(metric);
   if (!lower && !higher) return null; // RER, for example, also depends on reference range.
-  if (left === right) return "equal";
+  // Differences at floating-point resolution are not scientific differences.
+  if (Math.abs(left - right) <= 1e-12 * Math.max(1, Math.abs(left), Math.abs(right))) return "equal";
   return (lower ? right < left : right > left) ? "better" : "worse";
 }
 export function comparisonVerdict(evidence: EvidenceComparison, pair: Pair): string | null {

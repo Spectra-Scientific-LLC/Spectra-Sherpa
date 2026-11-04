@@ -145,7 +145,7 @@
           </p>
         </details>
         <p v-if="historicalExecutableExport" class="execution-export-scope" role="status">
-          This run’s original executable code is unavailable. Export current code from Workflow.
+          Code export follows the current workflow, not this saved run. Export it from Workflow.
         </p>
         <!-- Section toggles -->
         <div v-if="reportStore.isReady" class="section-toggles">

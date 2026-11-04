@@ -53,6 +53,7 @@ _EVIDENCE_FIELDS = frozenset(
         "runtime_attestation",
     }
 )
+_NONCONVERGED_BASELINE_FITS = "nonconverged_baseline_fits"
 _VALIDATION_FIELDS = frozenset(
     {
         "schema_version",
@@ -114,6 +115,7 @@ class CanonicalExecutionEvidence:
         execution: Any,
         *,
         runtime_attestation: Mapping[str, Any] | None = None,
+        nonconverged_baseline_fits: int = 0,
     ) -> "CanonicalExecutionEvidence":
         """Wrap the executor's sole digest projection without reinterpreting it."""
 
@@ -148,15 +150,17 @@ class CanonicalExecutionEvidence:
                     "nodes": [serializer() for serializer in serializers],
                 }
             )
-        return cls._validated(
-            {
-                "schema_version": CANONICAL_EXECUTION_EVIDENCE_VERSION,
-                "validation_execution": validation,
-                "validation_execution_digest": digest,
-                "node_execution_traces": traces,
-                "runtime_attestation": dict(runtime_attestation),
-            }
-        )
+        payload = {
+            "schema_version": CANONICAL_EXECUTION_EVIDENCE_VERSION,
+            "validation_execution": validation,
+            "validation_execution_digest": digest,
+            "node_execution_traces": traces,
+            "runtime_attestation": dict(runtime_attestation),
+        }
+        # Optional so evidence from fully converged trials keeps its exact digest.
+        if nonconverged_baseline_fits:
+            payload[_NONCONVERGED_BASELINE_FITS] = nonconverged_baseline_fits
+        return cls._validated(payload)
 
     @classmethod
     def from_dict(
@@ -197,7 +201,15 @@ class CanonicalExecutionEvidence:
     ) -> "CanonicalExecutionEvidence":
         if payload.get("schema_version") != CANONICAL_EXECUTION_EVIDENCE_VERSION:
             raise CanonicalExecutionEvidenceError("canonical execution evidence schema is unsupported")
-        _require_closed_mapping(payload, _EVIDENCE_FIELDS, "canonical execution evidence")
+        if _NONCONVERGED_BASELINE_FITS in payload:
+            fits = payload[_NONCONVERGED_BASELINE_FITS]
+            if type(fits) is not int or fits < 1:
+                raise CanonicalExecutionEvidenceError("canonical execution evidence baseline fit count is invalid")
+        _require_closed_mapping(
+            {key: value for key, value in payload.items() if key != _NONCONVERGED_BASELINE_FITS},
+            _EVIDENCE_FIELDS,
+            "canonical execution evidence",
+        )
         validation, actual_validation_digest = validate_canonical_validation_execution(payload["validation_execution"])
         if payload["validation_execution_digest"] != actual_validation_digest:
             raise CanonicalExecutionEvidenceError("canonical execution evidence does not reproduce validation digest")

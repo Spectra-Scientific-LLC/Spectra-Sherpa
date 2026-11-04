@@ -41,6 +41,9 @@
       <SavedPairedEvaluation v-if="detail.run.source_type === 'paired_evaluation'" :run-id="detail.run.id" />
       <template v-else>
       <p v-if="summaryError" role="status" class="summary-error">{{ summaryError }}</p>
+      <p v-for="warning in baselineWarnings" :key="warning" role="status" class="evidence-gaps">
+        <strong>Baseline warning:</strong> {{ warning }}
+      </p>
       <ModelSummaryCard :summary="modelSummary" compact display="context"
         :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
       <RetainedPopulationSummary ref="retainedSummaryAnchor" :value="detail.population_summary" :run-id="detail.run.id"
@@ -383,6 +386,7 @@ const error = ref('');
 const values = shallowRef<Record<string, any>>({});
 const diagnostics = shallowRef<any>(null);
 const nodeFailure = computed(() => typeof diagnostics.value?.error === 'string' ? diagnostics.value.error : null);
+const baselineWarnings = ref<string[]>([]);
 const descriptors = shallowRef<any>(null);
 const presentations = shallowRef<any>(null);
 const nodeInputs = shallowRef<Record<string, any>>({});
@@ -561,6 +565,7 @@ function clearRunEvidence() {
   detail.value = null; definition.value = null; error.value = ''; definitionError.value = '';
   application.value = null; applicationOutputs.value = []; applicationError.value = '';
   modelSummary.value = null; summaryError.value = ''; loading.value = false;
+  baselineWarnings.value = [];
   runNameDraft.value = '';
 }
 const runRequests = useScopedRequest(runIdentity, clearRunEvidence);
@@ -740,6 +745,7 @@ async function loadRun(allowProjectSelection = true) {
         if (!request.isCurrent()) return;
       }
     }
+    void loadBaselineWarnings(request);
     void loadModelSummary(request);
     if (!selectedNode.value && preferredNode.value) selectDefaultNode(preferredNode.value);
     else await loadNode();
@@ -804,6 +810,20 @@ function exportApplicationTrust(view: ApplicationTrustView): void {
     ['artifact_uid', 'workflow_version_id', 'model_type', 'dataset_position', 'prediction', 'global_screen', 't2', 'q', 't2_limit', 'q_limit', 'reference_count', 'method', 'reason'],
     ...view.rows.map(row => [view.artifactUid, applicationVersion(view.artifactUid), view.modelType, row.sampleIndex + 1, formatPrediction(row.prediction), trustLabel(row.status), row.t2, row.q, view.t2Limit, view.qLimit, view.referenceCount, view.method, row.reason].map(value => safeCsvCell(value))),
   ], `prediction-trust-${view.artifactUid.replace(/[^A-Za-z0-9._-]/g, '_')}.csv`);
+}
+// Separate from the model card so a failed presentation read cannot hide a warning.
+async function loadBaselineWarnings(request: ScopedRequestTicket) {
+  if (!detail.value || !definition.value) return;
+  const outputs = detail.value.evidence.outputs.__diagnostics__ ?? {};
+  const warnings: string[] = [];
+  for (const node of definition.value.nodes) {
+    if (node.node_type !== 'baseline.penalized_ls' || !outputs[node.node_id]) continue;
+    // Missing diagnostics stay silent here; the node view names read failures.
+    const value: any = await read('__diagnostics__', node.node_id).catch(() => null);
+    if (!request.isCurrent()) return;
+    if (typeof value?.warning === 'string') warnings.push(value.warning);
+  }
+  baselineWarnings.value = warnings;
 }
 // The model card reads only retained, backend-computed statistics; a record
 // that cannot be read is named rather than replaced with a recomputation.

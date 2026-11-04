@@ -348,6 +348,8 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     for (const [key, value] of reportRows(run.params_snapshot?.[id])) {
       if (key === "n_components" && !node?.node_type.match(modelTypes)) continue;
       if (key === "n_components") {
+        // Automatic selection ignores this manual field, so it is not a request.
+        if ((run.params_snapshot?.[id] as Record<string, unknown> | undefined)?.component_fit_mode === "one_standard_error") continue;
         if (!rows.some(([label, actual]) => label === "Components (A)" && actual === value)) rows.unshift(["Requested components", value]);
       } else if (["n_clusters", "method", "cv_folds", "n_splits"].includes(key)) rows.unshift([labels[key] ?? key, value]);
     }

@@ -3,8 +3,9 @@ name: PLS Regression Calibration
 slug: pls_calibration
 description: PLS with latent variables selected by the one-standard-error rule using
   cross-validation within training samples, followed by a training-only refit.
-  Reports held-out RMSEP and R². Spectra are mean-centred; feature tables are
-  autoscaled within each training fold. Requires one continuous response.
+  Samples are partitioned by Kennard-Stone. Reports held-out RMSEP and R². Spectra
+  are mean-centred; feature tables are autoscaled within each training fold.
+  Requires one continuous response.
 category: calibration
 is_active: true
 status: ready

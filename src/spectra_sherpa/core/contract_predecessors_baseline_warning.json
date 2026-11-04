@@ -1,0 +1,144 @@
+{
+  "contracts": {
+    "baseline.penalized_ls": {
+      "digest": "3572299978c258b77523d201247340fc62dce738c2feff9357583016f37574c1",
+      "payload": {
+        "axis_effect": "preserves_axis",
+        "citations": [
+          "Eilers and Boelens, Baseline Correction with Asymmetric Least Squares Smoothing (2005)",
+          "Baek et al., Baseline correction using asymmetrically reweighted penalized least squares (2015)",
+          "Zhang et al., Baseline correction using adaptive iteratively reweighted penalized least squares (2010)"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "preserves_features",
+        "fitted_state_serializer": null,
+        "group_access": "none",
+        "help_reference": "docs/nodes/preprocessing.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scipy",
+            "digest": "d88916f242e7baf3ce52f236d852f242fe86c9e8f4d391c2a57ee2093bda6193"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing.penalized_baseline_node",
+            "digest": "28596737ad0976250978f8221758a2c011799e7a3f8de6427f65e2c6adea8c7f"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.population_display",
+            "digest": "d9e60843b894d338cc305f34bb6c3ed783ce2699af883f2bfeccccf95da4791b"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.supervision_binding",
+            "digest": "9af12931b99408e6181935bf79e35df85a5c61cdbe1fa6be4fee87af58a13ff3"
+          }
+        ],
+        "implementation_digest": "34df39991a0f6c99b053a1d7e6810118a4272ea336ecc9690c176e141288c951",
+        "implementation_id": "spectrasherpa.baseline.penalized_ls",
+        "implementation_version": "1.0.1",
+        "input_rank_policy": "requires_2d",
+        "license_id": "Apache-2.0",
+        "lifecycle_kind": "stateless_transform",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "baseline.penalized_ls",
+        "parameter_schema_digest": "924123ae99dd641e3ab50b8df01dfa6458931b46cf6de9674fe618962676ba40",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 60,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 60
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scipy",
+            "version": "1.17.1"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "none",
+        "target_access": "none",
+        "unit_effect": "preserves_units"
+      }
+    }
+  },
+  "current_contracts": {
+    "baseline.penalized_ls": "3572299978c258b77523d201247340fc62dce738c2feff9357583016f37574c1"
+  },
+  "profile": {
+    "operations": {
+      "baseline.penalized_ls": "3572299978c258b77523d201247340fc62dce738c2feff9357583016f37574c1",
+      "baseline.rubberband": "e88e1efb3455a559d488106ec80066a1f8fef445ec5ed906f0e680e3adaf88ec",
+      "classification.knn": "df59b9d414abefb1c93de58ef405f3044ad4c6a02b23dd62cf8cd38c131b58a7",
+      "classification.plsda": "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
+      "classification.simca": "2a591ac8626fe115463326b7f6b30b1ad3721c6392e6e4a07af786de13777388",
+      "diagnostics.classification_evaluator": "38d89772f68ee55e8bd7fac80409dfde71da853312c403140bd97b06d917b763",
+      "diagnostics.regression_evaluator": "769f2b7129ae580721435b91c2df1fd11ee6e2400e8489d266643da74ae96684",
+      "model.fitted_linear_regression": "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
+      "model.fitted_pcr": "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
+      "model.fitted_pls": "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
+      "model.fitted_svr": "6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",
+      "preprocess.clip_floor": "aa47d6f37ec7861b0a55177b7e72fe2bc75a2cf79fadd0eef80391b116493cda",
+      "preprocess.clip_range": "c4301ba5dcfdd3cad34c66bf3ef6d0b63d25f93d4c5345c531052e72fa3a25e6",
+      "preprocess.cosmic_ray": "a9a7dd4c0eaf4926c8b42c7c3436ef695860233d3dce80322a05a8b8fc71c00a",
+      "preprocess.derivative": "ede30b45160f45b072086c5ae83aaaf7acbf86a37ffe270fc27e7cc55c69df9c",
+      "preprocess.emsc": "0da011667fde2f08550fe6f637df908a551a6157f9030a1c46052b4e97926d1f",
+      "preprocess.msc": "844ebd3436bace984337141982e3bdd3be446cc388d6f0d2c5efaac549172f13",
+      "preprocess.normalize": "b245b1e293f1b89b311663a3d73bfb36ac56a1898f586cb81a07ffefee72bd6e",
+      "preprocess.osc": "65b5b9a4b266638082d75717e7cf33d75ce0e4fb6a4fbc9d1062e65ed430bd03",
+      "preprocess.scale": "5bcce28bb446d20a2a5f1a44b43d10dc5d98c69e1b981d831151885b069b41e8",
+      "preprocess.smooth": "da86321ad34a334b778e3e3632e542fbfb6374f9283bd92c34657f1e79f1b490",
+      "selection.variable_select": "d59bb4d8dac5d77830c633a15d9da90aab42cd9f2377344269a4d80d14841f16"
+    },
+    "profile_digest": "61b569f87ff357307444ec60e1f8adbf1f6a3e0e1555408e73d6756f6ed919ed",
+    "profile_id": "first_party_pls",
+    "profile_version": "9"
+  },
+  "source": {
+    "commit": "5de2b78ad563be541e4193457b9224ec549f4f69",
+    "description": "Read-only capture from the demo-deployed v0.6.4 source. Prospective historical contract inputs; not a qualification receipt.",
+    "scope": "Exact pre-baseline-warning profile for read-only inspection; not execution or qualification evidence.",
+    "tree": "140150e9914bfe9b09c2fd2a42f59989c9498851"
+  }
+}

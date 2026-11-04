@@ -46,7 +46,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "baseline.penalized_ls": (
         "b3b824ef38585a9f7e1e673f2369f03c3d2e4900028168f79948aa35592095da",
-        "3572299978c258b77523d201247340fc62dce738c2feff9357583016f37574c1",
+        "6d0ba8461fa1aba633e96a9def01514785bff4f68bc6f90091116f3c944ad599",
     ),
     "preprocess.emsc": (
         "631c4572049eb1905849bf92a2ea724a431e4b5adb1784833e94f9f362440d16",
@@ -117,7 +117,10 @@ _INSPECTION_CONSUMERS = {
         # Producer/source provenance changes core.model_artifact source bytes,
         # not declarations or model application. Inspection only, no execution.
         # Review: docs/developers/model-load-apply-source-binding-review.md
-        "a6d6a6712ac63ce16ff15d96dae43b785496c43b3ce19169b7b7b28da59ca23b",
+        # Previous inspected consumer (retained as history):
+        # a6d6a6712ac63ce16ff15d96dae43b785496c43b3ce19169b7b7b28da59ca23b
+        # Baseline non-convergence warnings change these source bytes only.
+        "2f8785e9894436099e4e8de2755aa4107fa8930aba90ba597efacd8023b1bfbc",
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",
@@ -207,6 +210,29 @@ _PRE_AUTOMATIC_PLS_CONSUMERS = {
 }
 
 
+# Non-convergence became a recorded warning. Reading a record does not run the
+# node, so only the implementation source identity differs from this predecessor.
+_BASELINE_WARNING_CONSUMER = (
+    "baseline.penalized_ls",
+    "3572299978c258b77523d201247340fc62dce738c2feff9357583016f37574c1",
+    "6d0ba8461fa1aba633e96a9def01514785bff4f68bc6f90091116f3c944ad599",
+)
+
+
+def _baseline_warning_predecessor(catalog: Mapping, current: NodeExecutionContract) -> NodeExecutionContract:
+    operation, predecessor, _ = _BASELINE_WARNING_CONSUMER
+    if catalog["profile"]["operations"].get(operation) != predecessor:
+        raise ValidationGraphError("unknown historical operation/contract identity")
+    archived = inspection_predecessor_catalog("61b569f87ff357307444ec60e1f8adbf1f6a3e0e1555408e73d6756f6ed919ed")
+    contract = NodeExecutionContract.from_dict(archived["contracts"][operation]["payload"])
+    ignored = {"implementation_components", "implementation_digest"}
+    if contract.digest != predecessor or {k: v for k, v in contract.payload.items() if k not in ignored} != {
+        k: v for k, v in current.payload.items() if k not in ignored
+    }:
+        raise ValidationGraphError("pre-baseline-warning scientific declarations changed")
+    return contract
+
+
 def _require_plsda_identity_inspection(
     operation: str, contract: NodeExecutionContract, current: NodeExecutionContract
 ) -> None:
@@ -239,6 +265,13 @@ class HistoricalReconstructionContext:
         )
 
     @property
+    def predates_baseline_warning(self) -> bool:
+        return (
+            self._catalog["profile"]["profile_digest"]
+            == "61b569f87ff357307444ec60e1f8adbf1f6a3e0e1555408e73d6756f6ed919ed"
+        )
+
+    @property
     def predates_automatic_pls(self) -> bool:
         return (
             self._catalog["profile"]["profile_digest"]
@@ -260,7 +293,12 @@ class HistoricalReconstructionContext:
         )
 
     def added_pls_parameters(self) -> set[str]:
-        if self.predates_plsda_diagnostic_identity or self.predates_preprocessing_expansion or self.predates_grouped_cv:
+        if (
+            self.predates_baseline_warning
+            or self.predates_plsda_diagnostic_identity
+            or self.predates_preprocessing_expansion
+            or self.predates_grouped_cv
+        ):
             return set()
         if self.predates_automatic_pls:
             return {"component_fit_mode"}
@@ -335,6 +373,8 @@ class HistoricalReconstructionContext:
             raise ValidationGraphError("historical operation is not locally recognized") from exc
         if current is None:
             raise ValidationGraphError("historical operation lacks a current structural authority")
+        if (operation, digest, current.digest) == _BASELINE_WARNING_CONSUMER:
+            return _baseline_warning_predecessor(catalog, current)
         archived = self._archived_contract(operation, digest)
         if archived is None:
             if catalog["profile"]["operations"].get(operation) != digest or current.digest != digest:

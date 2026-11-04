@@ -1884,6 +1884,7 @@ const isPeakFindingStats = computed(() => {
 });
 
 const diagnosticMetricNotes = computed(() => [...new Set([
+  ...[asObject(outputMetadata.value.diagnostics)?.warning].filter((note): note is string => typeof note === "string"),
   ...scientificMetricNotes(outputMetadata.value),
   ...scientificMetricNotes(selectedPortOutput.value?.metadata),
   ...scientificMetricNotes(selectedPortOutput.value?.value),

@@ -8,6 +8,9 @@ substitution: the five persisted parameters are the five executed parameters.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 import numpy as np
@@ -41,6 +44,20 @@ from ._shared import (
 
 _METHODS = frozenset({"als", "arpls", "airpls"})
 _DEFAULT_ASYMMETRY = 0.001
+_MAX_REPORTED_INDEXES = 100
+_NONCONVERGED_FITS: ContextVar[list[int] | None] = ContextVar("penalized_ls_nonconverged_fits", default=None)
+
+
+@contextmanager
+def observe_nonconverged_fits() -> Iterator[list[int]]:
+    """Collect per-call counts for one evidence-producing execution."""
+
+    counts: list[int] = []
+    token = _NONCONVERGED_FITS.set(counts)
+    try:
+        yield counts
+    finally:
+        _NONCONVERGED_FITS.reset(token)
 
 
 def _canonical_penalized_ls_parameters(parameters: dict[str, object]) -> dict[str, object]:
@@ -260,17 +277,12 @@ def _penalized_baseline_dispatch(
         iterations.append(used)
         if not converged:
             unconverged.append(index)
-    if unconverged:
-        raise ValueError(
-            "penalized-LS did not converge within max_iter for spectrum indexes "
-            + ", ".join(str(index) for index in unconverged[:10])
-        )
 
     corrected = matrix - baselines
     diagnostics: dict[str, object] = {
         "algorithm": params["method"],
-        "converged_spectra": int(matrix.shape[0]),
-        "nonconverged_spectra": 0,
+        "converged_spectra": int(matrix.shape[0]) - len(unconverged),
+        "nonconverged_spectra": len(unconverged),
         "maximum_iterations_used": max(iterations),
         "input_feature_count": int(matrix.shape[1]),
         "baseline_mean": float(np.mean(baselines)),
@@ -279,6 +291,17 @@ def _penalized_baseline_dispatch(
         "corrected_root_mean_square": float(np.sqrt(np.mean(corrected**2))),
         "correction_magnitude_percent": float(100.0 * np.mean(np.abs(baselines)) / (np.mean(np.abs(matrix)) + 1e-12)),
     }
+    # Present only when needed, so fully converged results keep their exact bytes.
+    if unconverged:
+        observed = _NONCONVERGED_FITS.get()
+        if observed is not None:
+            observed.append(len(unconverged))
+        diagnostics["nonconverged_spectrum_indexes"] = unconverged[:_MAX_REPORTED_INDEXES]
+        diagnostics["warning"] = (
+            f"Baseline reached max_iter before converging for {len(unconverged)} of {matrix.shape[0]} spectra "
+            f"(first indexes: {', '.join(str(index) for index in unconverged[:10])}). The last baseline was kept; "
+            "review these spectra, or raise max_iter or tol."
+        )
     return (corrected[0] if was_vector else corrected), diagnostics
 
 
@@ -389,7 +412,8 @@ class BaselinePenalizedLSNode(RowLocalPopulationProjection, TransformSpecNode):
                 ),
                 step=5,
                 description=(
-                    "Hard convergence limit; non-convergence fails the node. "
+                    "Iteration limit per spectrum. A spectrum that reaches it keeps its last baseline and is reported "
+                    "in a warning. "
                     "Hosted execution admits at most 100 iterations per spectrum."
                 ),
                 required=False,
