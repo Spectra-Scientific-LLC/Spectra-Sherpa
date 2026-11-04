@@ -200,6 +200,19 @@ def _read_failure_reason(exc: Exception) -> str:
     return "A retained output could not be read; other verified results remain available."
 
 
+def _identity_failure_reasons(exc, metadata):
+    reason = (
+        str(exc)
+        if isinstance(exc, (RetainedComparisonUnavailable, RegisteredIdentityUnavailable))
+        else "Retained population evidence could not be verified; inspect individual run outputs."
+    )
+    if isinstance(exc, RegisteredIdentityUnavailable):
+        return ["Sample identities were not qualified; numerical results remain inspectable. " + reason]
+    if metadata.get("sample_identity_unavailable") == LEGACY_IDENTITY_REASON:
+        return [LEGACY_IDENTITY_REASON, reason]
+    return [reason]
+
+
 def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ...], PopulationSummary, bool]:
     evidence = RunEvidence.model_validate(run.evidence_completeness)
     if evidence.qualification != "qualified":
@@ -366,6 +379,13 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
             # Population identity belongs to the original split branch, not
             # the units/domain of a later fitted preprocessing representation.
             signal_source = dataset if standalone_plan is not None else exact(split, "X_" + branch)
+            # Registered recovery verifies the catalog source separately from
+            # a row-preserving baseline. Pair specimens in that raw source
+            # namespace while keeping the corrected split receipt above intact.
+            registered_source = registered.source_inputs.get(split)
+            if registered_source is not None:
+                signal_source = registered_source
+                identity = array_content_digest(np.asarray(registered_source["data"], dtype=float))
             namespace = _digest(
                 {
                     "source_manifest_sha256": source,
@@ -416,18 +436,7 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
             inventory_complete = False
             # One absent or invalid retained port must not erase evidence from
             # other evaluators. Keep the refusal scoped to this record.
-            reason = (
-                str(exc)
-                if isinstance(exc, (RetainedComparisonUnavailable, RegisteredIdentityUnavailable))
-                else "Retained population evidence could not be verified; inspect individual run outputs."
-            )
-            if (
-                isinstance(exc, RegisteredIdentityUnavailable)
-                or metadata.get("sample_identity_unavailable") == LEGACY_IDENTITY_REASON
-            ):
-                identity_limitations.append(LEGACY_IDENTITY_REASON)
-                reason = "Sample identities were not qualified; numerical results remain inspectable. " + reason
-            identity_limitations.append(reason)
+            identity_limitations.extend(_identity_failure_reasons(exc, metadata))
             logger.warning(
                 "RETAINED_COMPARISON_UNAVAILABLE run_id=%s node_id=%s port=%s error_type=%s",
                 run.id,
