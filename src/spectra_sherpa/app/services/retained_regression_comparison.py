@@ -27,6 +27,7 @@ from spectra_sherpa.app.services.retained_registered_identity import (
     RegisteredIdentityUnavailable,
     RetainedRegisteredIdentity,
 )
+from spectra_sherpa.app.services.retained_source_observation_identity import source_observation_ids
 from spectra_sherpa.app.services.run_output_retention import read_output
 from spectra_sherpa.app.services.run_validation_summary import (
     ValidationReadBudgetExceeded,
@@ -109,7 +110,7 @@ def _response_units(dataset, response_source, target_names, *, external):
 
 
 def _population_identities(
-    value, dataset, fitted, response_source, plan, split, branch, *, registered, node, calibration, standalone
+    value, dataset, fitted, response_source, plan, split, branch, *, registered, exact, node, calibration, standalone
 ):
     """Admit only the exact known refusal; retain other producer refusals."""
     metadata = value.get("metadata", {})
@@ -138,11 +139,18 @@ def _population_identities(
         fitted_ids = registered.ids(fitted, split, "train", plan)
         if not calibration:
             registered.comparison_inputs(node, split, branch, plan, value["data"])
+    undeclared = refusal is None and cohort_reason is None and fitted_reason is None
+    receipt_ids = False
+    if undeclared and not standalone and (cohort_ids is None or fitted_ids is None):
+        # No refusal, just no sample_id column: fall back to retained row custody.
+        cohort_ids = source_observation_ids(exact(split, "X_" + branch), split, branch, plan)
+        fitted_ids = source_observation_ids(exact(split, "X_train"), split, "train", plan)
+        receipt_ids = cohort_ids is not None and fitted_ids is not None
     if cohort_ids is None or fitted_ids is None:
         # Labels/row positions cannot qualify pairing, even when values remain readable.
         limitations.extend(reason for reason in (cohort_reason, fitted_reason) if reason)
         limitations.append(
-            "Typed sample identities were not retained; historical values remain inspectable "
+            "Typed sample identities were not declared or recoverable; historical values remain inspectable "
             "but cannot establish a paired population."
         )
         return None, None, limitations
@@ -150,6 +158,8 @@ def _population_identities(
         response_ids, response_reason = _retained_sample_identity(response_source, count)
         if response_reason == LEGACY_IDENTITY_REASON and not standalone:
             response_ids = registered.ids(response_source, split, branch, plan)
+        elif receipt_ids and response_ids is None and response_reason is None:
+            response_ids = source_observation_ids(response_source, split, branch, plan)
         if response_ids != cohort_ids:
             if response_reason:
                 limitations.append(response_reason)
@@ -334,6 +344,7 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                 split,
                 branch,
                 registered=registered,
+                exact=exact,
                 node=node,
                 calibration=nodes.get(node, {}).get("node_type") == "model.fitted_pls"
                 and port == "calibration_comparison",
