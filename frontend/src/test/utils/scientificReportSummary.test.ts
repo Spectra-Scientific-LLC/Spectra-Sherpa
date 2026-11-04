@@ -482,3 +482,63 @@ it("does not report the unused manual component field for automatic selection", 
   const rows = scientificSummaryGroups(data).flatMap(group => group.rows);
   expect(rows).not.toContainEqual(["Requested components", "3"]);
 });
+
+// Genuine retained Run743 scalar diagnostics/settings; no fitted arrays or refit.
+function retainedNmfFixture(): ReportData {
+  const data = fixture();
+  data.workflowName = "NMF";
+  data.nodes = [{ nodeId: "nmf_1", nodeType: "model.nmf", label: "NMF", positionX: 0, positionY: 0,
+    parameters: { max_iter: 999 } }]; // Current draft must not replace the saved cap.
+  const run = data.runs![0];
+  run.id = 743; run.name = "NMF"; run.evidence_gaps = [];
+  run.saved_definition = { nodes: [{ node_id: "nmf_1", node_type: "model.nmf", label: "NMF" }] };
+  run.results_summary = { nmf_1: { default: { metadata: { reconstruction_error: 0.7886245699866007 } } } };
+  run.diagnostics = { nmf_1: { n_components: 3, reconstruction_error: 0.7886245699866007,
+    n_iter: 100, convergence_status: "max_iter_reached" } };
+  run.params_snapshot = { nmf_1: { n_components: 3, max_iter: 100 } };
+  run.validation_summary = undefined;
+  return data;
+}
+
+it("keeps recorded NMF iteration-limit evidence in the shared short HTML/Markdown projection", () => {
+  const data = retainedNmfFixture();
+  const before = JSON.stringify(data);
+  const rows = scientificSummaryGroups(data).find(group => group.title === "NMF — NMF")!.rows;
+  expect(rows).toContainEqual(["Iterations", "100"]);
+  expect(rows).toContainEqual(["Convergence status", "max_iter_reached"]);
+  expect(rows).toContainEqual(["Maximum iterations", "100"]);
+  expect(rows).toContainEqual(["Reconstruction error", "0.7886"]);
+  for (const output of [generateProvenanceReport(data), generateMarkdownReport(data)]) {
+    const text = output.replace(/\\_/g, "_");
+    expect(text).toContain("Iterations");
+    expect(text).toContain("Convergence status");
+    expect(text).toContain("max_iter_reached");
+    expect(text).toContain("Maximum iterations");
+    expect(text).not.toContain("999");
+  }
+  expect(JSON.stringify(data)).toBe(before);
+});
+
+it("preserves recorded converged status and count without manufacturing a boolean", () => {
+  const data = retainedNmfFixture();
+  data.runs![0].diagnostics!.nmf_1 = { n_iter: 37, convergence_status: "converged" };
+  const rows = scientificSummaryGroups(data).find(group => group.title === "NMF — NMF")!.rows;
+  expect(rows).toContainEqual(["Iterations", "37"]);
+  expect(rows).toContainEqual(["Convergence status", "converged"]);
+  expect(rows).toContainEqual(["Maximum iterations", "100"]);
+  expect(rows.some(([label]) => label === "Converged")).toBe(false);
+});
+
+it.each(["status", "cap", "both"])("does not infer unavailable NMF %s from iteration count or current draft", missing => {
+  const data = retainedNmfFixture();
+  if (missing !== "cap") delete data.runs![0].diagnostics!.nmf_1.convergence_status;
+  if (missing !== "status") delete data.runs![0].params_snapshot!.nmf_1.max_iter;
+  const rows = scientificSummaryGroups(data).find(group => group.title === "NMF — NMF")!.rows;
+  expect(rows).toContainEqual(["Iterations", "100"]);
+  if (missing !== "cap") expect(rows.some(([label]) => label === "Convergence status")).toBe(false);
+  if (missing !== "status") expect(rows.some(([label]) => label === "Maximum iterations")).toBe(false);
+  for (const output of [generateProvenanceReport(data), generateMarkdownReport(data)]) {
+    expect(output).not.toContain("999");
+    if (missing !== "cap") expect(output).not.toContain("max_iter_reached");
+  }
+});

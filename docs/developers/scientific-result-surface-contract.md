@@ -367,6 +367,8 @@ Saved effective parameters belong to the executed record, including its
 resolved defaults. The authored graph may contain only explicit values;
 reading that sparse graph alone is insufficient. When execution authority was
 not retained, show that limitation instead of resolving today's defaults.
+Short NMF reports preserve recorded iteration counts, convergence status and
+maximum iterations when available; they never infer status or substitute current defaults.
 
 ## Practical review checklist
 
