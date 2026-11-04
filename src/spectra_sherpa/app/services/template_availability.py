@@ -11,7 +11,7 @@ def template_example_unavailable_reason(template: WorkflowTemplate) -> str | Non
     from spectra_sherpa.app.core.config import app_config
 
     if app_config.site_profile == "demo" and "reference_data_import" in get_demo_policy().disabled_capabilities:
-        return "Bundled example import is unavailable on the demo. Select a dataset already in My Dataset."
+        return "Example import is unavailable on the demo. Choose project data, then use Workflow on My Dataset."
     if not uses_managed_project_access():
         return None
     for node in (template.template_data or {}).get("nodes", []):

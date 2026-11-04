@@ -1194,6 +1194,11 @@ def stateless_application_predecessor_is_compatible(operation: str, predecessor:
 
 def inspection_predecessor_catalog(profile_digest: str | None = None) -> dict:
     """Pinned read-only campaign profiles; not saved-state application aliases."""
+    if profile_digest == "61b569f87ff357307444ec60e1f8adbf1f6a3e0e1555408e73d6756f6ed919ed":
+        raw = files("spectra_sherpa.core").joinpath("contract_predecessors_baseline_warning.json").read_bytes()
+        if hashlib.sha256(raw).hexdigest() != "259e315e4fa44e692c8642be3f59aa3315fec4ac1459516df168cecb49e9e85c":
+            raise ValueError("trusted pre-baseline-warning inspection catalog digest mismatch")
+        return json.loads(raw)
     if profile_digest == "d82af6a5a5b9922b1c57531d3ce9d121ad6e7c6f80ee3dc6bb24119f6b2f24c9":
         raw = files("spectra_sherpa.core").joinpath("contract_predecessors_plsda_identity.json").read_bytes()
         if hashlib.sha256(raw).hexdigest() != "8180787692c1f5162a0e8b0077dca5cfc530bfc8b1bbf7babe0050936dd5364d":

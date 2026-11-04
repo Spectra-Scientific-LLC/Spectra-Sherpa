@@ -475,3 +475,10 @@ it.each([generateProvenanceReport, generateMarkdownReport])("renders per-class m
   (data.runs![0].results_summary.evaluation.default as any).confusion_matrix = [];
   expect(scientificSummaryGroups(data).flatMap(group => group.rows).some(row => row[0].includes("per_class"))).toBe(true);
 });
+
+it("does not report the unused manual component field for automatic selection", () => {
+  const data = fixture();
+  data.runs![0].params_snapshot = { pls: { n_components: 3, component_fit_mode: "one_standard_error" } };
+  const rows = scientificSummaryGroups(data).flatMap(group => group.rows);
+  expect(rows).not.toContainEqual(["Requested components", "3"]);
+});

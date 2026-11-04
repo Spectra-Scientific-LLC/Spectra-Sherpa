@@ -206,14 +206,55 @@ def test_dispatch_rejects_unusable_or_nonfinite_spectra(data: np.ndarray) -> Non
         _penalized_baseline_dispatch(data, **_parameters())
 
 
-def test_nonconvergence_is_an_error_not_a_silent_result(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_nonconvergence_keeps_the_last_baseline_and_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
     def _never_converges(spectrum, **kwargs):
         del kwargs
-        return np.zeros_like(spectrum), 5, False
+        return np.full_like(spectrum, 0.25), 5, False
 
     monkeypatch.setattr(baseline_module, "_fit_als", _never_converges)
+    source = _spectra().X
 
-    with pytest.raises(ValueError, match="did not converge"):
+    corrected, diagnostics = _penalized_baseline_dispatch(source, **_parameters(max_iter=5))
+
+    np.testing.assert_allclose(corrected, source - 0.25)
+    assert diagnostics["converged_spectra"] == 0
+    assert diagnostics["nonconverged_spectra"] == source.shape[0]
+    assert diagnostics["nonconverged_spectrum_indexes"][:2] == [0, 1]
+    assert "reached max_iter" in diagnostics["warning"]
+
+
+def test_partial_nonconvergence_names_only_the_affected_spectra(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = iter(range(10_000))
+
+    def _second_fails(spectrum, **kwargs):
+        del kwargs
+        return np.zeros_like(spectrum), 5, next(calls) != 1
+
+    monkeypatch.setattr(baseline_module, "_fit_als", _second_fails)
+    source = _spectra().X
+
+    _, diagnostics = _penalized_baseline_dispatch(source, **_parameters(max_iter=5))
+
+    assert diagnostics["nonconverged_spectra"] == 1
+    assert diagnostics["converged_spectra"] == source.shape[0] - 1
+    assert diagnostics["nonconverged_spectrum_indexes"] == [1]
+
+
+def test_converged_diagnostics_add_no_nonconvergence_fields() -> None:
+    _, diagnostics = _penalized_baseline_dispatch(_spectra().X, **_parameters())
+
+    assert diagnostics["nonconverged_spectra"] == 0
+    assert "nonconverged_spectrum_indexes" not in diagnostics and "warning" not in diagnostics
+
+
+def test_non_finite_baseline_remains_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _non_finite(spectrum, **kwargs):
+        del kwargs
+        return np.full_like(spectrum, np.nan), 5, False
+
+    monkeypatch.setattr(baseline_module, "_fit_als", _non_finite)
+
+    with pytest.raises(ValueError, match="non-finite"):
         _penalized_baseline_dispatch(_spectra().X, **_parameters(max_iter=5))
 
 
@@ -271,3 +312,18 @@ def test_managed_penalized_baseline_workload_completes_within_shared_ceiling() -
 
     assert corrected.shape == matrix.shape
     assert diagnostics["converged_spectra"] == 20
+
+
+def test_saved_model_replay_reports_nonconvergence_in_application_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    from spectra_sherpa.app.services.model_application import _apply_penalized_baseline_step
+
+    def _never_converges(spectrum, **kwargs):
+        del kwargs
+        return np.zeros_like(spectrum), 5, False
+
+    monkeypatch.setattr(baseline_module, "_fit_als", _never_converges)
+    warnings: list[str] = []
+
+    _apply_penalized_baseline_step(_spectra().X, _parameters(max_iter=5), warnings)
+
+    assert len(warnings) == 1 and warnings[0].startswith("Baseline reached max_iter")

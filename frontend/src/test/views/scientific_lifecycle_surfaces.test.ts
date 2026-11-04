@@ -276,7 +276,7 @@ describe("GSC-12 saved-run executable export authority", () => {
         ReportContent,
         kind === "linked run" ? "/report?project=1&workflow=7&run=42" : "/report",
       );
-      expect(w.get(".execution-export-scope").text()).toContain("original executable code is unavailable");
+      expect(w.get(".execution-export-scope").text()).toContain("Code export follows the current workflow, not this saved run");
       for (const item of executableMenus(w)) {
         expect(item.disabled).toBe(true);
         await item.command();

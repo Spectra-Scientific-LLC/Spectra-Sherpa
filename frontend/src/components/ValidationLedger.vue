@@ -15,7 +15,7 @@
         <thead>
           <tr>
             <th>Sample</th><th v-if="hasTarget">Target</th><th class="num">Reference</th><th class="num">Predicted</th>
-            <th v-if="hasResidual" class="num">Residual</th><th v-if="hasCorrect">Correct</th><th v-if="hasRole">Set</th>
+            <th v-if="hasResidual" class="num" title="Reference minus predicted. Bias is predicted minus reference.">Residual (ref − pred)</th><th v-if="hasCorrect">Correct</th><th v-if="hasRole">Set</th>
           </tr>
         </thead>
         <tbody>

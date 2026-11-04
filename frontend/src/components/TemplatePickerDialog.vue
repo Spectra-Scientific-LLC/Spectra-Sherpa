@@ -500,7 +500,11 @@ const requiresTargetSetup = (tpl: TemplateOut): boolean =>
 
 const openDatasetReadiness = async (template?: TemplateOut): Promise<void> => {
   const binding = selectedReceiptBinding() ?? currentPrimaryDataBinding();
-  if (template && workbookStore.projectId != null) {
+  // An active sheet source has no data selection; its binding names the experiment.
+  const experimentId = binding?.experimentId ?? selectedExperimentId.value;
+  if (template && workbookStore.projectId != null && experimentId == null) {
+    toast.add({ severity: "warn", summary: "Starter choice not saved", detail: "Choose the starter again after setting the target.", life: 5000 });
+  } else if (template && workbookStore.projectId != null) {
     try {
       // Reuse the existing project-scoped Starter handoff. This stores a
       // recommendation only; the returned dataset must be admitted again.
@@ -508,10 +512,10 @@ const openDatasetReadiness = async (template?: TemplateOut): Promise<void> => {
       window.sessionStorage.setItem("sherpa:data-entry-project-id", String(workbookStore.projectId));
       window.sessionStorage.setItem("sherpa:data-entry-dataset-intent", JSON.stringify({
         schema_version: "spectra-analysis-starter-dataset-intent/1",
-        project_id: workbookStore.projectId, dataset_id: `experiment:${selectedExperimentId.value}`,
+        project_id: workbookStore.projectId, dataset_id: `experiment:${experimentId}`,
         source: "upload", name: currentPortfolioName.value || "Project data",
         label: currentPortfolioName.value || "Project data", template_slug: template.slug,
-        imported_experiment_id: selectedExperimentId.value,
+        imported_experiment_id: experimentId,
       }));
     } catch {
       toast.add({ severity: "warn", summary: "Starter choice not saved", detail: "Choose the starter again after setting the target.", life: 5000 });
@@ -531,9 +535,7 @@ const openDatasetReadiness = async (template?: TemplateOut): Promise<void> => {
             ...(binding.assetId ? { targetAsset: binding.assetId } : {}),
           } : {}),
       project_id: String(workbookStore.projectId),
-      ...(selectedExperimentId.value == null
-        ? {}
-        : { experiment: String(selectedExperimentId.value) }),
+      ...(experimentId == null ? {} : { experiment: String(experimentId) }),
     },
   });
 };

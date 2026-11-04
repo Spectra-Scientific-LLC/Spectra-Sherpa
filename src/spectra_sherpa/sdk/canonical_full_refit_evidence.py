@@ -25,6 +25,7 @@ MAX_CANONICAL_FULL_REFIT_EVIDENCE_BYTES = 64 * 1024
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _NODE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _EVIDENCE_FIELDS = frozenset({"schema_version", "full_refit_execution", "full_refit_execution_digest"})
+_NONCONVERGED_BASELINE_FITS = "nonconverged_baseline_fits"
 _REFIT_FIELDS = frozenset(
     {
         "schema_version",
@@ -56,7 +57,9 @@ class CanonicalFullRefitEvidence:
     full_refit_execution_digest: str
 
     @classmethod
-    def from_full_refit_execution(cls, execution: Any) -> "CanonicalFullRefitEvidence":
+    def from_full_refit_execution(
+        cls, execution: Any, *, nonconverged_baseline_fits: int = 0
+    ) -> "CanonicalFullRefitEvidence":
         """Wrap an executor-issued refit without serializing fitted-state bytes."""
 
         try:
@@ -70,13 +73,15 @@ class CanonicalFullRefitEvidence:
             refit, digest = _serialize_executor_issued_full_refit(execution)
         except (FoldGraphExecutionError, TypeError) as exc:
             raise CanonicalFullRefitEvidenceError("full-data refit is not serializable") from exc
-        return cls._validated(
-            {
-                "schema_version": CANONICAL_FULL_REFIT_EVIDENCE_VERSION,
-                "full_refit_execution": refit,
-                "full_refit_execution_digest": digest,
-            }
-        )
+        payload = {
+            "schema_version": CANONICAL_FULL_REFIT_EVIDENCE_VERSION,
+            "full_refit_execution": refit,
+            "full_refit_execution_digest": digest,
+        }
+        # Optional so evidence and artifacts from fully converged refits keep their exact digests.
+        if nonconverged_baseline_fits:
+            payload[_NONCONVERGED_BASELINE_FITS] = nonconverged_baseline_fits
+        return cls._validated(payload)
 
     @classmethod
     def from_dict(cls, manifest: Mapping[str, Any]) -> "CanonicalFullRefitEvidence":
@@ -109,7 +114,15 @@ class CanonicalFullRefitEvidence:
 
     @classmethod
     def _validated(cls, payload: Mapping[str, Any]) -> "CanonicalFullRefitEvidence":
-        _require_closed_mapping(payload, _EVIDENCE_FIELDS, "canonical full-refit evidence")
+        if _NONCONVERGED_BASELINE_FITS in payload:
+            fits = payload[_NONCONVERGED_BASELINE_FITS]
+            if isinstance(fits, bool) or not isinstance(fits, int) or fits < 1:
+                raise CanonicalFullRefitEvidenceError("full-data refit nonconverged baseline fit count is invalid")
+        _require_closed_mapping(
+            {key: value for key, value in payload.items() if key != _NONCONVERGED_BASELINE_FITS},
+            _EVIDENCE_FIELDS,
+            "canonical full-refit evidence",
+        )
         if payload["schema_version"] != CANONICAL_FULL_REFIT_EVIDENCE_VERSION:
             raise CanonicalFullRefitEvidenceError("canonical full-refit evidence schema is unsupported")
         refit = _mapping(payload["full_refit_execution"], "full_refit_execution")

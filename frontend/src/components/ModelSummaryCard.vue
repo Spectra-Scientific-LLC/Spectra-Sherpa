@@ -215,9 +215,10 @@ const compactWarnings = computed(() => {
   }
   const pls = summary?.componentSelection;
   if (pls?.cvStatus === "unavailable") warnings.push(`CV unavailable: ${pls.cvReason}`);
-  for (const selection of [summary?.pcaComponentSelection, summary?.plsdaComponentSelection]) {
-    if (selection && !selection.cvMethod) warnings.push(`CV unavailable: ${selection.cvReason}`);
-  }
+  const pca = summary?.pcaComponentSelection;
+  if (pca && !pca.cvMethod) warnings.push(`CV unavailable: ${pca.cvReason}`);
+  const plsda = summary?.plsdaComponentSelection;
+  if (plsda && !plsda.cvMethod) warnings.push(classificationCvMessage(plsda.cvReason));
   return warnings;
 });
 

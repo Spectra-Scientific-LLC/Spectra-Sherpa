@@ -467,6 +467,14 @@ are draft authority and must never relabel an earlier result.
 
 ## Provenance is a graph, not an ordered list
 
+For server-qualified comparisons, direction badges and the headline use the
+same numerical tie rule: relative tolerance `1e-12`, without an absolute
+unit-sized floor. Bias compares absolute magnitudes. A numerical tie is not
+measurement precision or statistical equivalence. Distinct small-unit errors
+remain directional; the headline increases display precision when four
+significant digits would otherwise print identical values. Retained numbers,
+population qualification and exported evidence remain unchanged.
+
 Comparison surfaces may show unordered executed-node inventories when topology is absent.
 An arrow path requires the exact saved edges; object insertion order, node names and result
 availability do not prove connectivity. Preserve parallel branches and disconnected nodes.

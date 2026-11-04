@@ -71,6 +71,37 @@ def test_round_trip_binds_the_application_refit_to_selected_validation_without_m
         assert forbidden not in encoded
 
 
+def test_nonconverged_count_is_digest_covered_and_absent_when_converged() -> None:
+    execution, _validation = _refit_execution()
+    clean = canonical_full_refit_evidence.CanonicalFullRefitEvidence.from_full_refit_execution(execution)
+    flagged = canonical_full_refit_evidence.CanonicalFullRefitEvidence.from_full_refit_execution(
+        execution, nonconverged_baseline_fits=12
+    )
+
+    assert "nonconverged_baseline_fits" not in clean.payload
+    assert flagged.full_refit_execution_digest == clean.full_refit_execution_digest
+    assert flagged.content_digest != clean.content_digest
+    restored = canonical_full_refit_evidence.CanonicalFullRefitEvidence.from_bytes(flagged.canonical_bytes())
+    assert restored.as_dict() == flagged.as_dict()
+    with pytest.raises(canonical_full_refit_evidence.CanonicalFullRefitEvidenceError, match="digest mismatch"):
+        canonical_full_refit_evidence.CanonicalFullRefitEvidence.from_dict(
+            {**flagged.as_dict(), "nonconverged_baseline_fits": 1}
+        )
+
+
+@pytest.mark.parametrize("value", [0, -1, True, "7", 1.5])
+def test_full_refit_evidence_rejects_a_malformed_nonconverged_count(value) -> None:
+    payload = {**_refit_evidence_payload(), "nonconverged_baseline_fits": value}
+    with pytest.raises(canonical_full_refit_evidence.CanonicalFullRefitEvidenceError, match="fit count"):
+        canonical_full_refit_evidence.CanonicalFullRefitEvidence._validated(payload)
+
+
+def _refit_evidence_payload() -> dict:
+    return canonical_full_refit_evidence.CanonicalFullRefitEvidence.from_full_refit_execution(
+        _refit_execution()[0]
+    ).payload
+
+
 def test_full_refit_evidence_rejects_a_duck_typed_forgery() -> None:
     refit, _validation = _refit_execution()
 

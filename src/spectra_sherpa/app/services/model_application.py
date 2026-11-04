@@ -558,6 +558,7 @@ async def apply_model_to_dataset(
     legacy_warning = node_metadata.get("legacy_exploratory_warning")
     if isinstance(legacy_warning, str) and legacy_warning:
         warnings.append(legacy_warning)
+    warnings.extend(node_metadata.get("baseline_warnings") or [])
 
     from spectra_sherpa.app.lib.reference_value_evidence import bound_reference_value_evidence
 
@@ -930,7 +931,7 @@ def _prepare_artifact_input(
                 _update_derivative_units(replay_source, replay_source, int(str(params["deriv"])))
             continue
         if op_id == "baseline.penalized_ls":
-            X_work = _apply_penalized_baseline_step(X_work, params)
+            X_work = _apply_penalized_baseline_step(X_work, params, warnings)
             continue
         if op_id == "baseline.rubberband":
             raise ValueError(
@@ -1177,14 +1178,18 @@ def _apply_osc_step(
     )
 
 
-def _apply_penalized_baseline_step(X: np.ndarray, params: dict[str, Any]) -> np.ndarray:
+def _apply_penalized_baseline_step(
+    X: np.ndarray, params: dict[str, Any], warnings: list[str] | None = None
+) -> np.ndarray:
     from spectra_sherpa.app.services.dag.nodes.preprocessing.penalized_baseline_node import (
         BaselinePenalizedLSNode,
         _penalized_baseline_dispatch,
     )
 
     projected = BaselinePenalizedLSNode.metadata.canonicalize_parameters(params)
-    corrected, _diagnostics = _penalized_baseline_dispatch(X, **projected)
+    corrected, diagnostics = _penalized_baseline_dispatch(X, **projected)
+    if warnings is not None and "warning" in diagnostics:
+        warnings.append(str(diagnostics["warning"]))
     return corrected
 
 
