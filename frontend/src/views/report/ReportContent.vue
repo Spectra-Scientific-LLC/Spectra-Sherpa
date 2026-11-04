@@ -276,6 +276,9 @@ import { generateMarkdownReport } from "@/utils/reportMarkdownGenerator";
 import { openReportPdfExport } from "@/utils/reportPdf";
 import { downloadBlob, downloadText, downloadJson } from "@/utils/download";
 import api from "@/api/client";
+import type { components } from "@/types/api/v1";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 
 const reportStore = useReportStore();
 const reportModeOptions = [
@@ -691,25 +694,70 @@ const reportHeaderActionItems = computed(() => [
     : []),
 ]);
 
+const authStore = useAuthStore();
+const reportLinkIdentity = () => [route.fullPath, authStore.user?.id, authStore.sessionRevision];
+const reportLinkRequests = useScopedRequest(reportLinkIdentity);
+const reportProjectRequests = useScopedRequest(() => [...reportLinkIdentity(), projectStore.currentProjectId]);
 let disposed = false;
 let reportMounted = false;
 onBeforeUnmount(() => {
   disposed = true;
 });
 onMounted(async () => {
-  const initialPath = route.fullPath;
-  const isCurrent = () => !disposed && route.fullPath === initialPath;
+  let request = reportProjectRequests.begin();
+  const isCurrent = () => !disposed && request.isCurrent();
   const workflowId = Number(route.query.workflow);
   const runId = Number(route.query.run);
-  const linkedProjectId = Number(route.query.project);
-  if (
-    Number.isSafeInteger(linkedProjectId) &&
-    linkedProjectId > 0 &&
-    linkedProjectId !== projectStore.currentProjectId
-  ) {
-    await projectStore.selectProject(linkedProjectId);
+  const hasRunLink = Number.isSafeInteger(workflowId) && workflowId > 0
+    && Number.isSafeInteger(runId) && runId > 0;
+  if (!hasRunLink && (route.query.run != null || route.query.workflow != null)) {
+    toast.add({ severity: "error", summary: "Report unavailable",
+      detail: "This report link needs a valid retained workflow and run.", life: 5000 });
+    return;
+  }
+  if (hasRunLink) {
+    try {
+      // The run read authorizes both identities. The active project and an
+      // optional URL project are navigation hints, never ownership authority.
+      const { data: run } = await api.get<components["schemas"]["ExecutionRunOut"]>(
+        `/workflows/${workflowId}/runs/${runId}`, { signal: request.signal },
+      );
+      if (!isCurrent()) return;
+      const projectId = run.project_id;
+      if (run.id !== runId || run.workflow_id !== workflowId
+        || !Number.isSafeInteger(projectId) || Number(projectId) < 1
+        || (route.query.project != null && Number(route.query.project) !== projectId)) {
+        throw new Error("The report link does not match this retained run's project.");
+      }
+      if (projectId !== projectStore.currentProjectId) {
+        const handoff = reportLinkRequests.begin();
+        const selected = await projectStore.fetchProject(Number(projectId), {
+          signal: handoff.signal, onInvalidated: () => reportLinkRequests.invalidate(),
+        });
+        if (!handoff.isCurrent()) return;
+        if (!selected || projectStore.currentProjectId !== projectId) {
+          throw new Error("The retained run's project is unavailable.");
+        }
+        request = reportProjectRequests.begin();
+      }
+    } catch {
+      // A refused or stale link must not generate a report for the active project.
+      if (!isCurrent()) return;
+      toast.add({ severity: "error", summary: "Report unavailable",
+        detail: "This retained run could not be opened in its owning project.", life: 5000 });
+      return;
+    }
   } else {
-    await projectStore.ensureProjectForBrowserTab();
+    const handoff = reportLinkRequests.begin();
+    const owner = { signal: handoff.signal, onInvalidated: () => reportLinkRequests.invalidate() };
+    const projectHint = Number(route.query.project);
+    if (Number.isSafeInteger(projectHint) && projectHint > 0) {
+      await projectStore.fetchProject(projectHint, owner);
+    } else {
+      await projectStore.ensureProjectForBrowserTab(owner);
+    }
+    if (!handoff.isCurrent()) return;
+    request = reportProjectRequests.begin();
   }
   if (!isCurrent()) return;
   reportMounted = true;
@@ -738,14 +786,6 @@ onMounted(async () => {
         .sort((a, b) => b.executed_at.localeCompare(a.executed_at))[0];
       if (latest) reportStore.selectedRunIds = [latest.id];
     }
-    return;
-  }
-  if (linkedProjectId !== projectStore.currentProjectId) {
-    toast.add({
-      severity: "error",
-      summary: "Report unavailable",
-      detail: "Select the project that owns this run.",
-    });
     return;
   }
   reportStore.selectedWorkflowId = workflowId;

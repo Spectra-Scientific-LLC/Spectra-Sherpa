@@ -2446,7 +2446,13 @@ async def preview_analysis_profile_compatibility(
         }
         for template in templates
     ]
-    readiness = build_analysis_profile_readiness(payload.analysis_profile, template_payloads)
+    readiness = build_analysis_profile_readiness(
+        payload.analysis_profile,
+        template_payloads,
+        sample_table=payload.sample_table,
+        n_samples=payload.n_samples,
+        group_column=payload.group_column,
+    )
     readiness["independence"] = independence_preview(
         payload.sample_table,
         n_samples=payload.n_samples,

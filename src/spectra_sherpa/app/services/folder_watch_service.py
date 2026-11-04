@@ -160,10 +160,19 @@ async def _recover_expired_poll_leases(session: AsyncSession, *, now: datetime |
     """Release persisted claims whose worker heartbeat has expired."""
 
     cutoff = (now or datetime.now(timezone.utc)) - POLL_LEASE_TTL
+    expired = (
+        FolderWatch.active_poll_token.is_not(None),
+        (FolderWatch.active_poll_claimed_at.is_(None)) | (FolderWatch.active_poll_claimed_at < cutoff),
+    )
+    # Even an UPDATE matching no rows takes SQLite's writer lock. Idle polling
+    # must not compete with real workflow writes. Recheck these predicates in
+    # the UPDATE so a heartbeat between the read and write remains protected.
+    if await session.scalar(select(FolderWatch.id).where(*expired).limit(1)) is None:
+        await session.rollback()
+        return 0
     result = await session.execute(
         update(FolderWatch)
-        .where(FolderWatch.active_poll_token.is_not(None))
-        .where((FolderWatch.active_poll_claimed_at.is_(None)) | (FolderWatch.active_poll_claimed_at < cutoff))
+        .where(*expired)
         .values(active_poll_token=None, active_poll_claimed_at=None, last_poll_at=None)
         .execution_options(synchronize_session=False)
     )

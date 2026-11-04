@@ -21,6 +21,7 @@ vi.mock("@/utils/download", () => ({
   downloadBlob: vi.fn(),
 }));
 vi.mock("@/stores/report", () => ({ useReportStore: () => report }));
+vi.mock("@/stores/auth", () => ({ useAuthStore: () => ({ user: { id: 1 }, sessionRevision: 1 }) }));
 vi.mock("@/stores/project", () => ({ useProjectStore: () => project }));
 vi.mock("@/stores/workbook", () => ({ useWorkbookStore: () => workbook }));
 vi.mock("@/stores/deploy", () => ({ useDeployStore: () => deploy }));
@@ -270,6 +271,7 @@ describe("GSC-12 saved-run executable export authority", () => {
       if (kind === "multiple runs") report.selectedRunIds = [42, 43];
       if (kind === "retained report")
         report.reportData = { name: "Saved A", nodes: [], edges: [], runs: [{ id: 42 }] };
+      if (kind === "linked run") mocks.get.mockResolvedValue({ data: { id: 42, workflow_id: 7, project_id: 1 } });
       const w = await open(
         ReportContent,
         kind === "linked run" ? "/report?project=1&workflow=7&run=42" : "/report",
@@ -279,7 +281,10 @@ describe("GSC-12 saved-run executable export authority", () => {
         expect(item.disabled).toBe(true);
         await item.command();
       }
-      expect(mocks.get).not.toHaveBeenCalled();
+      if (kind === "linked run") {
+        expect(mocks.get).toHaveBeenCalledOnce();
+        expect(mocks.get).toHaveBeenCalledWith("/workflows/7/runs/42", expect.any(Object));
+      } else expect(mocks.get).not.toHaveBeenCalled();
       expect(mocks.download).not.toHaveBeenCalled();
       w.unmount();
     },

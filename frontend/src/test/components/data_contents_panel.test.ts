@@ -1611,6 +1611,58 @@ describe("DataContentsPanel", () => {
     );
   });
 
+  it("recomputes class feasibility for exact included rows and leaves partial inclusion unknown", async () => {
+    const ids = Array.from({ length: 13 }, (_, index) => `sample-${index}`);
+    const labels = [...Array(6).fill("A"), ...Array(6).fill("B"), "C"];
+    const specimens = ids.map((_, index) => `specimen-${Math.floor(index / 2)}`);
+    const profile = { primary_role: "X_spectra", modality: "spectra", technique: "IR",
+      target_type: "categorical", target_fields: ["class"], identity_fields: ["sample_id"],
+      group_fields: ["specimen_id"], ordered_samples: false };
+    const base = { schema_version: "spectra-sherpa-dataset-analysis-readiness/1", scope: "structural",
+      status: "ready", profile, template_count: 1, counts: {}, decisions: [] };
+    const info = {
+      n_samples: 13, n_features: 1, data: ids.map((_, index) => [index]),
+      y_axis: { labels: ids, include_mask: Array(13).fill(true),
+        sample_table: { sample_id: ids, specimen_id: specimens, class: labels } },
+      metadata: { source_collection: sourceCollection(1) }, analysis_readiness: base,
+    };
+    mocks.dataStore.fileInfo = info;
+    mocks.dataStore = reactive(mocks.dataStore);
+    const retained = () => mocks.dataStore.fileInfo as typeof info;
+    mocks.apiPost.mockResolvedValue({ data: base });
+    const rows = ids.map(sampleId => ({ sampleId, included: true, editable: true }));
+    const wrapper = mount(DataContentsPanel, { props: { initialAnalysisTarget: "class",
+      initialAnalysisGroup: "specimen_id", sampleInclusionEnabled: true,
+      sampleInclusion: { loading: false, rows } } });
+    await flushPromises();
+    const lastRequest = () => mocks.apiPost.mock.calls.at(-1)?.[1];
+    expect(lastRequest()).toEqual(expect.objectContaining({ n_samples: 13,
+      sample_table: { sample_id: ids, specimen_id: specimens, class: labels } }));
+    await wrapper.setProps({ sampleInclusion: { loading: false,
+      rows: rows.map((row, index) => ({ ...row, included: index !== 12 })) } });
+    await flushPromises();
+    expect(lastRequest()).toEqual(expect.objectContaining({ n_samples: 12,
+      sample_table: { sample_id: ids.slice(0, 12), specimen_id: specimens.slice(0, 12), class: labels.slice(0, 12) } }));
+    await wrapper.setProps({ sampleInclusion: { loading: false, rows } });
+    await flushPromises();
+    // Returning to the same complete population reuses its retained read.
+    expect(mocks.apiPost).toHaveBeenCalledTimes(2);
+    // Source inclusion is authoritative even when a review says all rows are on.
+    retained().y_axis.include_mask[12] = false;
+    await flushPromises();
+    expect(lastRequest().n_samples).toBe(12);
+    expect(lastRequest().sample_table.class).toEqual(labels.slice(0, 12));
+    await wrapper.setProps({ sampleInclusion: { loading: true, rows } });
+    await flushPromises();
+    expect(lastRequest()).toEqual(expect.objectContaining({ n_samples: null, sample_table: null }));
+    await wrapper.setProps({ sampleInclusion: { loading: false, rows: rows.slice(0, 12) } });
+    await flushPromises();
+    expect(lastRequest()).toEqual(expect.objectContaining({ n_samples: null, sample_table: null }));
+    // Complete-source mask and table stay unchanged by preview projection.
+    expect(retained().y_axis.sample_table.class).toEqual(labels);
+    expect(retained().y_axis.include_mask.slice(0, 12)).toEqual(Array(12).fill(true));
+  });
+
   it("waits for the saved target and reuses readiness on page return", async () => {
     const baseReadiness = {
       schema_version: "spectra-sherpa-dataset-analysis-readiness/1",
@@ -1714,6 +1766,8 @@ describe("DataContentsPanel", () => {
           target_type: "categorical",
           target_fields: ["species"],
         }),
+        sample_table: expect.objectContaining({ species: ["alpha", "beta", "gamma"] }),
+        n_samples: 3,
       }),
     );
     expect(wrapper.get("[aria-label='Analysis readiness']").text()).toContain("1Available");

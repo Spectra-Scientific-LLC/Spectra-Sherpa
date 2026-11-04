@@ -182,6 +182,35 @@ async def test_disabled_accepted_poll_can_record_history_and_release_lease(
 
 
 @pytest.mark.asyncio
+async def test_idle_lease_recovery_does_not_compete_with_active_sqlite_writer(tmp_path):
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'idle-watch.sqlite'}", connect_args={"timeout": 0.05}
+    )
+    try:
+        async with engine.begin() as setup:
+            # Only lease columns are needed: no unrelated application fixture or
+            # migration may hide whether an idle poll needs SQLite's writer lock.
+            await setup.execute(
+                text(
+                    "CREATE TABLE folder_watch (id INTEGER PRIMARY KEY, active_poll_token TEXT, "
+                    "active_poll_claimed_at DATETIME, last_poll_at DATETIME)"
+                )
+            )
+            await setup.execute(text("INSERT INTO folder_watch (id) VALUES (1)"))
+        async with engine.connect() as writer:
+            await writer.execute(text("UPDATE folder_watch SET last_poll_at = CURRENT_TIMESTAMP WHERE id = 1"))
+            # Keep a real writer transaction open while another connection polls.
+            async with AsyncSession(engine) as recovery:
+                assert await _recover_expired_poll_leases(recovery) == 0
+            await writer.rollback()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_expired_orphan_lease_is_recovered_and_immediately_claimable(
     test_session: AsyncSession,
     test_user,

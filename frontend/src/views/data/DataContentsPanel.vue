@@ -1767,6 +1767,34 @@ const reviewedSampleRowIndexes = computed(() => {
   );
 });
 
+// Feasibility must describe the same included population as source execution.
+// Incomplete/misaligned inclusion is unknown, never an implicit all-rows mask.
+const readinessPopulationRowIndexes = computed<number[] | null>(() => {
+  const table = sampleTableState.value;
+  const info = dataStore.fileInfo;
+  if (!info || table.kind !== "valid" || !table.complete) return null;
+  const sourceMask = info.y_axis?.include_mask;
+  let mask: boolean[] = Array(table.rowCount).fill(true);
+  if (sourceMask != null) {
+    if (!Array.isArray(sourceMask) || sourceMask.length !== info.n_samples
+      || !sourceMask.every(value => typeof value === "boolean")) return null;
+    mask = [...selectedRows(sourceMask)];
+    if (mask.length !== table.rowCount) return null;
+  }
+  if (props.sampleInclusionEnabled) {
+    if (props.sampleInclusion.loading || sampleInclusionUnmatched.value
+      || sampleInclusionById.value.size !== props.sampleInclusion.rows.length
+      || new Set(table.sampleIds).size !== table.rowCount) return null;
+    for (let index = 0; index < table.rowCount; index++) {
+      const sampleId = table.sampleIds[index];
+      const row = sampleId == null ? null : sampleInclusionById.value.get(sampleId);
+      if (!row || typeof row.included !== "boolean") return null;
+      mask[index] = mask[index] && row.included;
+    }
+  }
+  return mask.flatMap((included, index) => included ? [index] : []);
+});
+
 type AnalysisTargetOption = {
   label: string;
   value: string;
@@ -1997,6 +2025,7 @@ const preferredIndependentGroup = computed(() => {
 
 const readinessPreview = useDatasetReadinessPreview(() => [
   ...contentsIdentity(), analysisTarget.value, analysisGroup.value, props.analysisSelectionHydrated,
+  readinessPopulationRowIndexes.value?.join(","),
 ]);
 const {
   readiness: effectiveAnalysisReadiness, loading: analysisReadinessLoading,
@@ -2097,6 +2126,7 @@ watch(
     analysisGroup,
     analysisTargetOptions,
     sampleTableState,
+    readinessPopulationRowIndexes,
     () => dataStore.fileInfo?.analysis_readiness ?? null,
     () => props.analysisSelectionHydrated,
   ],
@@ -2131,17 +2161,18 @@ watch(
           }
         : base.profile);
     const table = sampleTableState.value;
-    const previewTable = table.kind === "valid" && table.complete
+    const population = readinessPopulationRowIndexes.value;
+    const previewTable = table.kind === "valid" && population != null
       ? Object.fromEntries(
-          [...new Set([...base.profile.identity_fields, analysisGroup.value])]
+          [...new Set([...base.profile.identity_fields, analysisGroup.value, analysisTarget.value])]
             .filter(field => field in table.values)
-            .map(field => [field, table.values[field]]),
+            .map(field => [field, population.map(index => table.values[field][index])]),
         )
       : null;
     const previewRequest = {
       analysis_profile: previewProfile,
       sample_table: previewTable,
-      n_samples: table.kind === "valid" && table.complete ? table.rowCount : null,
+      n_samples: population?.length ?? null,
       group_column: analysisGroup.value || null,
     };
     await readinessPreview.load(dataStore.fileInfo, previewRequest);

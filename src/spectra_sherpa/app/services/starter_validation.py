@@ -26,6 +26,93 @@ from spectra_sherpa.core.specimen_independence import independence_violations
 from spectra_sherpa.sdk.validate import make_classification_split_plan, make_split_plan
 
 
+def starter_classification_population_refusal(
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    *,
+    sample_table: dict[str, list[Any]] | None,
+    n_samples: int | None,
+    target_names: list[str],
+    group_column: str | None,
+) -> str | None:
+    """Necessary population checks for the metadata-only My Dataset preview.
+
+    Only an unmodified source feeding a stratified classifier split is covered.
+    This never qualifies execution, spectral geometry, model rank or inner CV.
+    Unknown/incomplete populations stay with the structural decision; bound
+    starter admission still re-reads and validates the actual source.
+    """
+    if not sample_table or not isinstance(n_samples, int) or not 1 <= n_samples <= 100000 or len(target_names) != 1:
+        return None
+    labels = sample_table.get(target_names[0])
+    groups = sample_table.get(group_column) if group_column else None
+    if labels is None or len(labels) != n_samples or any(value is None for value in labels):
+        return None
+    if group_column and (groups is None or len(groups) != n_samples):
+        return None
+    by_id = {str(node["node_id"]): node for node in nodes}
+    classifiers = {str(node["node_id"]) for node in nodes if str(node["node_type"]).startswith("classification.")}
+    for node in nodes:
+        if node["node_type"] != "data.train_test_split" or not any(
+            str(edge["from_node_id"]) == str(node["node_id"])
+            and edge.get("from_output") == "X_train"
+            and str(edge["to_node_id"]) in classifiers
+            for edge in edges
+        ):
+            continue
+        incoming = [edge for edge in edges if str(edge["to_node_id"]) == str(node["node_id"])]
+        predictors = [edge for edge in incoming if edge.get("to_input", "X") in {"X", "default"}]
+        if len(predictors) != 1 or predictors[0].get("from_output", "default") != "default":
+            continue
+        source = by_id.get(str(predictors[0]["from_node_id"]), {})
+        if source.get("node_type") not in {"data.file_load", "data.collection_load"} or source.get(
+            "parameters", {}
+        ).get("workflow_exclusions"):
+            continue
+        if any(
+            edge is not predictors[0]
+            and (
+                edge.get("to_input") != "y"
+                or edge.get("from_output") != "target"
+                or edge["from_node_id"] != predictors[0]["from_node_id"]
+            )
+            for edge in incoming
+        ):
+            continue
+        p = TrainTestSplitNode.metadata.canonicalize_parameters(node.get("parameters", {}))
+        if p["split_method"] != "stratified":
+            continue
+        violations = independence_violations(
+            sample_table,
+            n_samples=n_samples,
+            target_type="categorical",
+            target_names=target_names,
+            groups=groups,
+            split_method=p["split_method"],
+            validation_goal=p["validation_goal"],
+        )
+        if violations:
+            return violations[0].message
+        try:
+            # Stratification depends only on row count, labels and groups.
+            # The shape carrier is not spectral data, and its plan/digest is
+            # deliberately discarded rather than presented as scientific evidence.
+            plan_train_test_split(
+                np.zeros((n_samples, 1)),
+                np.asarray(labels),
+                method=p["split_method"],
+                test_size=p["test_size"],
+                random_seed=p["random_seed"],
+                distance_metric=p["distance_metric"],
+                n_components=p["n_components"],
+                groups=groups,
+                held_out_groups=p["held_out_groups"],
+            )
+        except ValueError as exc:
+            return f"Cannot form this training/test partition: {exc}"
+    return None
+
+
 async def preview_starter_validation(
     nodes: list[dict[str, Any]], edges: list[dict[str, Any]], sources: dict[str, Any]
 ) -> dict[str, Any]:
