@@ -372,7 +372,6 @@ const headerMenuActions = computed(() => [...headerActions.value.map(action => {
   label: action.label, icon: action.icon, disabled: contextualRunning.value !== null,
   command: () => { void executeContextualAction(action.key); },
 }))]);
-defineExpose({ headerActions: headerMenuActions });
 const runNameDraft = ref('');
 const runNameSaving = ref(false);
 const runNameError = ref('');
@@ -566,6 +565,22 @@ function clearRunEvidence() {
 }
 const runRequests = useScopedRequest(runIdentity, clearRunEvidence);
 registerProjectScopeReset(runRequests.invalidate);
+const retainedIdentity = computed(() => {
+  const saved = detail.value;
+  if (!saved || loading.value || error.value || !activeRunTicket?.isCurrent()
+    || saved.run.id !== Number(route.params.runId)
+    || saved.run.project_id == null || saved.run.project_id !== project.currentProjectId
+    || (route.query.project != null && Number(route.query.project) !== project.currentProjectId)) return null;
+  const workflowSha = saved.integrity_hash;
+  const buildSha = saved.environment_snapshot?.backend_build_commit;
+  return {
+    runId: saved.run.id,
+    projectId: saved.run.project_id,
+    workflowSha: typeof workflowSha === 'string' && /^[a-f\d]{64}$/i.test(workflowSha) ? workflowSha : null,
+    buildSha: typeof buildSha === 'string' && /^[a-f\d]{40}$/i.test(buildSha) ? buildSha : null,
+  };
+});
+defineExpose({ headerActions: headerMenuActions, retainedIdentity });
 const failure = (err: any) => String(err?.response?.data?.detail || err?.message || 'Saved evidence could not be loaded.');
 function setTab(value: string) { if (value) void router.replace({ query: { ...route.query, view: value } }); }
 function selectNode(id: string) { void router.replace({ query: { ...route.query, node: id, presentation: undefined, output: undefined } }); }

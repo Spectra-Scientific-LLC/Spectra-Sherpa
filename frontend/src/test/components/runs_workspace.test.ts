@@ -1,6 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { reactive, ref } from "vue";
+import { defineComponent, h, reactive, ref, type Ref } from "vue";
 import PrimeVue from "primevue/config";
 const m = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn(), toast: vi.fn(), mode: "local", auth: null as any, push: vi.fn(), replace: vi.fn(), params: {} as Record<string, string>, query: {} as Record<string, string>, runs: null as any, project: null as any }));
 vi.mock("@/api/client", () => ({ default: { get: m.get, patch: m.patch } }));
@@ -14,12 +14,16 @@ vi.mock("@/stores/advisor", () => ({ useAdvisorStore: () => ({ switchScope: vi.f
 vi.mock("@/composables/useAppConfig", () => ({ useAppConfig: () => ({ config: ref({}), appMode: ref(m.mode), isCapabilityDisabled: () => false }) }));
 vi.mock("@/composables/useDemoMode", () => ({ useDemoMode: () => ({ isDemoMode: ref(false) }) }));
 import ModelsContent from "@/views/models/ModelsContent.vue";
-function mountView(realTables = false) {
+type RetainedIdentity = { runId: number; projectId: number; workflowSha: string | null; buildSha: string | null };
+function mountView(realTables = false, identity?: Ref<RetainedIdentity | null>) {
   return mount(ModelsContent, { global: { plugins: [PrimeVue], renderStubDefaultSlot: true,
-    stubs: { WorkspaceHeader: true, WorkspaceContext: true, WorkspaceContextItem: true, RunDetailContent: true,
+    stubs: { WorkspaceHeader: true, WorkspaceContext: true, WorkspaceContextItem: identity ? false : true,
+      RunDetailContent: identity ? defineComponent({ setup(_props, { expose }) {
+        expose({ retainedIdentity: identity }); return () => h('div');
+      } }) : true,
       BatchRunTab: true, EvidenceComparisonView: true, ComparisonPanel: true, QualificationApplications: true, QualificationPanel: true,
       SavedModelProjectTable: true, SavedModelQualification: true, ModelPromotionReview: true,
-      Dialog: true, DataTable: !realTables, Dropdown: true, Button: true,
+      Dialog: true, DataTable: !realTables, Dropdown: true, Button: identity ? false : true,
       InputText: true, ProgressSpinner: true, Tag: true, Textarea: true, LabelChips: true },
     directives: { tooltip: () => undefined } } });
 }
@@ -29,11 +33,72 @@ describe("Runs workspace", () => {
     m.auth = reactive({ user: { id: 1 }, sessionRevision: 0 });
     m.project = { ensureProjectForBrowserTab: vi.fn(), currentProjectId: 1, currentProject: { id: 1, name: "Corn" } };
     m.runs = { runs: [], total: 0, selectedRunIds: new Set(), selectedCount: 0, runsLoading: false, comparison: null, loadError: null,
-      fetchProjectRuns: vi.fn(), clearSelection: vi.fn() };
+      fetchProjectRuns: vi.fn(), clearSelection: vi.fn(), resetProjectScope: vi.fn() };
     m.get.mockImplementation(async (path: string) => ({ data: path === "/deploy/capabilities" ? { privateBatchUpload: true } : path === "/runs" ? { runs: [], total: 0 } : [] }));
   });
   const fitted = { project_id: 1, artifact_uid: 'fitted-1', name: 'Saved PLS', model_type: 'pls', n_features: 13,
     n_components: 3, workflow_id: 7, workflow_version_id: 9, source_run_id: 42, is_deploy_ready: false };
+  const recordedBuild = 'a673352c6a4102123547781126c90569129bcd35';
+  function inspectionContext(value: RetainedIdentity | null = {
+    runId: 42, projectId: 1, workflowSha: 'a'.repeat(64), buildSha: recordedBuild,
+  }) {
+    m.params = reactive({ runId: '42' }); m.query = reactive({ tab: 'inspect', project: '1' });
+    m.project = reactive(m.project);
+    const identity = ref(value);
+    return { view: mountView(false, identity), identity };
+  }
+  it('shows retained hashes in the second context item with full accessible values and copies complete identity', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const { view } = inspectionContext(); await flushPromises();
+    const items = view.findAll('.workspace-context-item');
+    expect(items).toHaveLength(2);
+    expect(items[0].text()).toContain('Run #42');
+    const item = items[1];
+    expect(item.text()).toContain(`Workflow SHA ${'a'.repeat(12)}`);
+    expect(item.text()).toContain(`Build SHA ${recordedBuild.slice(0, 12)}`);
+    expect(item.get('strong').attributes('title')).toBe(`Workflow SHA-256: ${'a'.repeat(64)}`);
+    expect(item.attributes('aria-label')).toContain(recordedBuild);
+    expect(item.get('.run-identity-build > span').attributes('title')).toBe(`Build SHA-1: ${recordedBuild}`);
+    await item.get('button[aria-label="Copy run identity for Run #42"]').trigger('click'); await flushPromises();
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(`Run #42\nWorkflow SHA-256: ${'a'.repeat(64)}\nBuild SHA-1: ${recordedBuild}`);
+    expect(m.toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    view.unmount();
+  });
+  it('hides stale context on route/project changes and when Inspect is left', async () => {
+    const { view, identity } = inspectionContext(); await flushPromises();
+    expect(view.findAll('.workspace-context-item')).toHaveLength(2);
+    m.query.project = '2'; await flushPromises();
+    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    m.query.project = '1'; await flushPromises();
+    m.params.runId = '43'; await flushPromises();
+    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    identity.value = { runId: 43, projectId: 1, workflowSha: 'b'.repeat(64), buildSha: recordedBuild };
+    await flushPromises(); expect(view.findAll('.workspace-context-item')).toHaveLength(2);
+    m.project.currentProjectId = 2; await flushPromises();
+    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    m.project.currentProjectId = 1; delete m.params.runId; m.query.tab = 'run_history'; await flushPromises();
+    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    view.unmount();
+  });
+  it('shows missing recorded hashes without substitution and disables copy', async () => {
+    const { view } = inspectionContext({ runId: 42, projectId: 1, workflowSha: null, buildSha: null });
+    await flushPromises();
+    const item = view.findAll('.workspace-context-item')[1];
+    expect(item.text()).toContain('Workflow SHA Not recorded');
+    expect(item.text()).toContain('Build SHA Not recorded');
+    expect(item.get('button').attributes('disabled')).toBeDefined();
+    expect(item.attributes('aria-label')).not.toContain(recordedBuild);
+    view.unmount();
+  });
+  it('reports clipboard failure without claiming success', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } });
+    const { view } = inspectionContext(); await flushPromises();
+    await view.get('button[aria-label="Copy run identity for Run #42"]').trigger('click'); await flushPromises();
+    expect(m.toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Copy failed' }));
+    expect(m.toast).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    view.unmount();
+  });
   async function selectedModelView(listed = true) {
     m.query = { tab: 'models' };
     m.project = reactive(m.project);

@@ -88,6 +88,12 @@ scientific calibration, preprocessing, and validation sheets remain usable.
 A run is one execution of a workflow. Open **Runs** to review saved executions.
 Results are the outputs and diagnostics produced by nodes within a run.
 
+In **Inspect**, the second context area shows the retained **Workflow SHA-256**
+and **Build SHA-1**. Hover for the full values or copy the identifiers. The
+workflow hash identifies the recorded workflow definition; the build hash
+identifies its recorded software revision. Neither replaces the run number,
+and missing historical identifiers are shown as not recorded.
+
 ### Comparing scientific results
 
 Compare aligns measures within their recorded evaluation role: calibration,
@@ -102,6 +108,12 @@ Older runs without retained typed sample IDs remain inspectable but cannot
 establish a matching population from their display labels. Regression tables
 retain original sample names in the actual evaluation order; names are separate
 from the typed sample IDs used for scientific matching.
+
+For registered reference datasets, comparison can recover existing typed IDs
+from an exact retained source receipt and split. It verifies the source against
+the reference catalog and checks the retained branch and evaluation inputs;
+it does not invent IDs, refit models, or alter the saved run. Response names and
+units remain visible even when population matching cannot be established.
 
 ## Models and artifacts
 

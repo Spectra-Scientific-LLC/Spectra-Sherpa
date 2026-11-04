@@ -16,9 +16,17 @@ import numpy as np
 
 from spectra_sherpa.app.contracts.comparison_evidence import EvaluationEvidence
 from spectra_sherpa.app.lib.array_identity import array_content_digest
-from spectra_sherpa.app.lib.comparison_identity import comparison_sample_ids
+from spectra_sherpa.app.lib.comparison_identity import (
+    INVALID_IDENTITY_REASON,
+    LEGACY_IDENTITY_REASON,
+    comparison_sample_ids,
+)
 from spectra_sherpa.app.schemas.run_evidence import RunEvidence
 from spectra_sherpa.app.schemas.scientific_comparison import PopulationSummary
+from spectra_sherpa.app.services.retained_registered_identity import (
+    RegisteredIdentityUnavailable,
+    RetainedRegisteredIdentity,
+)
 from spectra_sherpa.app.services.run_output_retention import read_output
 from spectra_sherpa.app.services.run_validation_summary import (
     ValidationReadBudgetExceeded,
@@ -39,10 +47,10 @@ def _digest(value):
     ).hexdigest()
 
 
-def _retained_sample_ids(dataset, count):
+def _retained_sample_identity(dataset, count):
     """Adapt retained wire axes to the canonical typed identity reader."""
     if not isinstance(dataset, dict):
-        return None
+        return None, None
     axis = dataset.get("y_axis") or {}
     return comparison_sample_ids(
         SimpleNamespace(
@@ -52,7 +60,7 @@ def _retained_sample_ids(dataset, count):
             provenance=dataset.get("provenance"),
             meta=dataset.get("extra") or {},
         )
-    )[0]
+    )
 
 
 def _response_edge(definition, node):
@@ -77,6 +85,10 @@ def _target(dataset, target_edge, standalone_plan, split, branch, exact):
 
 def _response_units(dataset, response_source, target_names, *, external):
     context = {} if external else dataset.get("target_context") or {}
+    selected = context.get("selected_target") or context.get("target_name")
+    declared_names = [selected] if selected else context.get("target_names")
+    if declared_names and declared_names != target_names:
+        raise RetainedComparisonUnavailable("Retained response names conflict with the selected target context.")
     units = context.get("target_units")
     if response_source is not None:
         # A connected response contributes its data matrix, not the
@@ -94,6 +106,56 @@ def _response_units(dataset, response_source, target_names, *, external):
         if any(candidate and candidate != target_names for candidate in (names, declared_names)):
             raise RetainedComparisonUnavailable("Retained response names conflict with the comparison.")
     return units
+
+
+def _population_identities(
+    value, dataset, fitted, response_source, plan, split, branch, *, registered, node, calibration, standalone
+):
+    """Admit only the exact known refusal; retain other producer refusals."""
+    metadata = value.get("metadata", {})
+    refusal = metadata.get("sample_identity_unavailable")
+    limitations = []
+    if refusal and refusal != LEGACY_IDENTITY_REASON:
+        if refusal == INVALID_IDENTITY_REASON:
+            limitations.append(INVALID_IDENTITY_REASON)
+        return (
+            None,
+            None,
+            [
+                *limitations,
+                "Sample identities were not qualified; numerical results remain inspectable.",
+                "The retained producer recorded an identity refusal that cannot be recovered "
+                "from registered origin.",
+            ],
+        )
+    count = len(plan["train_indices" if branch == "train" else "test_indices"])
+    cohort_ids, cohort_reason = _retained_sample_identity(dataset, count)
+    fitted_ids, fitted_reason = _retained_sample_identity(fitted, len(plan["train_indices"]))
+    if refusal == LEGACY_IDENTITY_REASON or LEGACY_IDENTITY_REASON in (cohort_reason, fitted_reason):
+        if standalone:
+            raise RegisteredIdentityUnavailable("Registered recovery requires an exact retained split input.")
+        cohort_ids = registered.ids(dataset, split, branch, plan)
+        fitted_ids = registered.ids(fitted, split, "train", plan)
+        if not calibration:
+            registered.comparison_inputs(node, split, branch, plan, value["data"])
+    if cohort_ids is None or fitted_ids is None:
+        # Labels/row positions cannot qualify pairing, even when values remain readable.
+        limitations.extend(reason for reason in (cohort_reason, fitted_reason) if reason)
+        limitations.append(
+            "Typed sample identities were not retained; historical values remain inspectable "
+            "but cannot establish a paired population."
+        )
+        return None, None, limitations
+    if response_source is not None:
+        response_ids, response_reason = _retained_sample_identity(response_source, count)
+        if response_reason == LEGACY_IDENTITY_REASON and not standalone:
+            response_ids = registered.ids(response_source, split, branch, plan)
+        if response_ids != cohort_ids:
+            if response_reason:
+                limitations.append(response_reason)
+            limitations.append("Response sample identities were not qualified against the retained population.")
+            return None, None, limitations
+    return cohort_ids, fitted_ids, limitations
 
 
 class _BoundedOutputReader:
@@ -136,7 +198,8 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
 
     definition = exact("__workflow__", "definition")
     nodes = {node["node_id"]: node for node in definition.get("nodes", [])}
-    records, populations, identity_limitations = [], [], []
+    records, populations, identity_limitations, response_facts = [], [], [], []
+    registered = RetainedRegisteredIdentity(definition, exact)
     inventory_complete = True
 
     def read_failure(node, port, exc):
@@ -249,6 +312,10 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                 target_array.reshape(-1), observed
             ):
                 continue
+            units = _response_units(dataset, response_source, target_names, external=external_response)
+            # Response facts do not establish paired population identity. Keep
+            # exact retained facts even when the independent identity gate refuses.
+            response_facts.append((target_names[0], units))
             identity = plan.get("x_content_digest")
             if not isinstance(identity, str) or len(identity) != 64:
                 continue
@@ -257,26 +324,23 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
             source = (dataset.get("extra") or {}).get("source_collection", {}).get("source_manifest_sha256")
             if not isinstance(source, str) or len(source) != 64:
                 continue
-            if metadata.get("sample_identity_unavailable"):
-                identity_limitations.append(
-                    "Sample identities were not qualified; numerical results remain inspectable."
-                )
-                continue
-            cohort_ids = _retained_sample_ids(dataset, len(indices))
             fitted = dataset if branch == "train" else exact(split, "X_train")
-            fitted_ids = _retained_sample_ids(fitted, len(plan["train_indices"]))
+            cohort_ids, fitted_ids, limitations = _population_identities(
+                value,
+                dataset,
+                fitted,
+                response_source,
+                plan,
+                split,
+                branch,
+                registered=registered,
+                node=node,
+                calibration=nodes.get(node, {}).get("node_type") == "model.fitted_pls"
+                and port == "calibration_comparison",
+                standalone=standalone_plan is not None,
+            )
+            identity_limitations.extend(limitations)
             if cohort_ids is None or fitted_ids is None:
-                # Historical values remain inspectable; display labels and row
-                # positions cannot establish an identity-qualified comparison.
-                identity_limitations.append(
-                    "Typed sample identities were not retained; historical values remain inspectable "
-                    "but cannot establish a paired population."
-                )
-                continue
-            if response_source is not None and _retained_sample_ids(response_source, len(indices)) != cohort_ids:
-                identity_limitations.append(
-                    "Response sample identities were not qualified against the retained population."
-                )
                 continue
             recorded_ids = metadata.get("sample_ids")
             if recorded_ids is not None and recorded_ids != cohort_ids:
@@ -288,6 +352,9 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                 for key in ("source_manifest_sha256", "collection_definition_sha256", "scientific_collection_sha256")
             ):
                 continue
+            # Population identity belongs to the original split branch, not
+            # the units/domain of a later fitted preprocessing representation.
+            signal_source = dataset if standalone_plan is not None else exact(split, "X_" + branch)
             namespace = _digest(
                 {
                     "source_manifest_sha256": source,
@@ -295,15 +362,14 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
                     "scientific_collection_sha256": source_collection.get("scientific_collection_sha256"),
                     "x_content_digest": identity,
                     "signal": {
-                        "units": dataset.get("units"),
-                        "domain": dataset.get("domain"),
-                        "data_role": dataset.get("data_role"),
-                        "value_units": (dataset.get("metadata") or {}).get("value_units"),
-                        "value_units_label": (dataset.get("metadata") or {}).get("value_units_label"),
+                        "units": signal_source.get("units"),
+                        "domain": signal_source.get("domain"),
+                        "data_role": signal_source.get("data_role"),
+                        "value_units": (signal_source.get("metadata") or {}).get("value_units"),
+                        "value_units_label": (signal_source.get("metadata") or {}).get("value_units_label"),
                     },
                 }
             )
-            units = _response_units(dataset, response_source, target_names, external=external_response)
             summary = PopulationSummary(
                 admitted_count=plan["n_samples"],
                 development_count=len(plan["train_indices"]),
@@ -341,9 +407,15 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
             # other evaluators. Keep the refusal scoped to this record.
             reason = (
                 str(exc)
-                if isinstance(exc, RetainedComparisonUnavailable)
+                if isinstance(exc, (RetainedComparisonUnavailable, RegisteredIdentityUnavailable))
                 else "Retained population evidence could not be verified; inspect individual run outputs."
             )
+            if (
+                isinstance(exc, RegisteredIdentityUnavailable)
+                or metadata.get("sample_identity_unavailable") == LEGACY_IDENTITY_REASON
+            ):
+                identity_limitations.append(LEGACY_IDENTITY_REASON)
+                reason = "Sample identities were not qualified; numerical results remain inspectable. " + reason
             identity_limitations.append(reason)
             logger.warning(
                 "RETAINED_COMPARISON_UNAVAILABLE run_id=%s node_id=%s port=%s error_type=%s",
@@ -359,4 +431,10 @@ def retained_regression_evidence(run: Any) -> tuple[tuple[EvaluationEvidence, ..
         else PopulationSummary(limitations=list(dict.fromkeys(identity_limitations)))
     )
     common.limitations = list(dict.fromkeys([*identity_limitations, *common.limitations]))
+    if (
+        common.verification == "unknown"
+        and response_facts
+        and all(fact == response_facts[0] for fact in response_facts)
+    ):
+        common.response, common.units = response_facts[0]
     return tuple(records), common, inventory_complete

@@ -90,6 +90,68 @@ function installIdentifiedRuns() {
   });
 }
 
+describe('retained run identity context', () => {
+  const build = 'a673352c6a4102123547781126c90569129bcd35';
+  const identity = (wrapper: VueWrapper) => (wrapper.vm as unknown as {
+    retainedIdentity: { runId: number; projectId: number; workflowSha: string | null; buildSha: string | null } | null;
+  }).retainedIdentity;
+  function evidence(id: number, workflowSha: string, projectId = 1) {
+    const saved = runEvidence(id);
+    return { data: { ...saved.data, run: { ...saved.data.run, project_id: projectId },
+      integrity_hash: workflowSha, environment_snapshot: { backend_build_commit: build } } };
+  }
+  it('exposes distinct retained workflow hashes with the same recorded build', async () => {
+    const normal = get.getMockImplementation()!;
+    get.mockImplementation((url: string, ...args: unknown[]) => url.endsWith('/evidence')
+      ? Promise.resolve(evidence(Number(url.split('/')[2]), url.includes('/42/') ? 'a'.repeat(64) : 'b'.repeat(64)))
+      : normal(url, ...args));
+    const { wrapper, router } = await open('?project=1&view=Summary');
+    expect(identity(wrapper)).toEqual({ runId: 42, projectId: 1, workflowSha: 'a'.repeat(64), buildSha: build });
+    await router.push('/runs/43?project=1&view=Summary'); await flushPromises();
+    expect(identity(wrapper)).toEqual({ runId: 43, projectId: 1, workflowSha: 'b'.repeat(64), buildSha: build });
+    auth.token = 'replacement-session';
+    expect(identity(wrapper)).toBeNull();
+  });
+  it('rejects late A-to-B-to-A responses even when their run and project match again', async () => {
+    const first = deferred<ReturnType<typeof evidence>>();
+    const other = deferred<ReturnType<typeof evidence>>();
+    const current = deferred<ReturnType<typeof evidence>>();
+    let reads = 0;
+    const normal = get.getMockImplementation()!;
+    get.mockImplementation((url: string, ...args: unknown[]) => url.endsWith('/evidence')
+      ? (++reads === 1 ? first.promise : reads === 2 ? other.promise : current.promise) : normal(url, ...args));
+    const { wrapper, router } = await open('?project=1&view=Summary');
+    expect(identity(wrapper)).toBeNull();
+    await router.push('/runs/43?project=1&view=Summary'); await flushPromises();
+    await router.push('/runs/42?project=1&view=Summary'); await flushPromises();
+    first.resolve(evidence(42, 'a'.repeat(64))); await flushPromises();
+    expect(identity(wrapper)).toBeNull();
+    current.resolve(evidence(42, 'c'.repeat(64))); await flushPromises();
+    expect(identity(wrapper)?.workflowSha).toBe('c'.repeat(64));
+    other.resolve(evidence(43, 'b'.repeat(64))); await flushPromises();
+    expect(identity(wrapper)?.workflowSha).toBe('c'.repeat(64));
+    project.currentProjectId = 2;
+    expect(identity(wrapper)).toBeNull();
+  });
+  it.each(['run', 'project'])('does not expose a mismatched response %s identity', async mismatch => {
+    const normal = get.getMockImplementation()!;
+    get.mockImplementation((url: string, ...args: unknown[]) => url.endsWith('/evidence')
+      ? Promise.resolve(evidence(mismatch === 'run' ? 43 : 42, 'a'.repeat(64), mismatch === 'project' ? 2 : 1))
+      : normal(url, ...args));
+    const { wrapper } = await open('?project=1&view=Summary');
+    expect(identity(wrapper)).toBeNull();
+  });
+  it.each([null, { backend_build_commit: 'unknown' }, { backend_build_commit: 123 }])(
+    'does not substitute the current build or workflow when retained hashes are missing', async environment => {
+      const normal = get.getMockImplementation()!;
+      get.mockImplementation((url: string, ...args: unknown[]) => url.endsWith('/evidence')
+        ? Promise.resolve({ data: { ...runEvidence(42).data, environment_snapshot: environment } }) : normal(url, ...args));
+      const { wrapper } = await open('?project=1&view=Summary');
+      expect(identity(wrapper)).toEqual({ runId: 42, projectId: 1, workflowSha: null, buildSha: null });
+    },
+  );
+});
+
 describe('retained workflow exclusions across run sections', () => {
   function populationEvidence() {
     const response = runEvidence(42);

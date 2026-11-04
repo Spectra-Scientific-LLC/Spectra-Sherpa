@@ -21,6 +21,21 @@
     <template v-else>
       <WorkspaceContext label="Runs context">
         <WorkspaceContextItem :label="activeSubtabLabel" :value="activeSubtabValue">{{ activeSubtabDetail }}</WorkspaceContextItem>
+        <WorkspaceContextItem
+          v-if="inspectedIdentity"
+          label="Run identity"
+          :value="`Workflow SHA ${inspectedIdentity.workflowSha?.slice(0, 12) || 'Not recorded'}`"
+          :detail="`Workflow SHA-256: ${inspectedIdentity.workflowSha || 'Not recorded'}`"
+          :aria-label="`Run #${inspectedIdentity.runId}; Workflow SHA-256: ${inspectedIdentity.workflowSha || 'Not recorded'}; Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`"
+        >
+          <span class="run-identity-build">
+            <span :title="`Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`" :aria-label="`Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`">Build SHA {{ inspectedIdentity.buildSha?.slice(0, 12) || 'Not recorded' }}</span>
+            <Button
+              icon="pi pi-copy" class="p-button-text p-button-sm" title="Copy run identity"
+              :aria-label="`Copy run identity for Run #${inspectedIdentity.runId}`"
+              :disabled="!inspectedIdentity.workflowSha && !inspectedIdentity.buildSha" @click="copyRunIdentity" />
+          </span>
+        </WorkspaceContextItem>
       </WorkspaceContext>
       <WorkspaceTabs v-model="activeTabId" :tab-ids="MODEL_SUBSCOPES">
         <TabPanel header="History">
@@ -596,6 +611,28 @@ watch(
 );
 const inspectActionsTarget = ref<HTMLElement | null>(null);
 const inspectContent = ref<InstanceType<typeof RunDetailContent> | null>(null);
+const inspectedIdentity = computed(() => {
+  const identity = inspectContent.value?.retainedIdentity;
+  return activeTab.value === TAB_INSPECT && identity
+    && identity.runId === Number(route.params.runId)
+    && identity.projectId === projectStore.currentProjectId
+    && (route.query.project == null || Number(route.query.project) === projectStore.currentProjectId)
+    ? identity : null;
+});
+async function copyRunIdentity() {
+  const identity = inspectedIdentity.value;
+  if (!identity || (!identity.workflowSha && !identity.buildSha)) return;
+  try {
+    await navigator.clipboard.writeText([
+      `Run #${identity.runId}`,
+      `Workflow SHA-256: ${identity.workflowSha || 'Not recorded'}`,
+      `Build SHA-1: ${identity.buildSha || 'Not recorded'}`,
+    ].join('\n'));
+    if (inspectedIdentity.value === identity) toast.add({ severity: 'success', summary: 'Run identity copied', life: 2500 });
+  } catch {
+    if (inspectedIdentity.value === identity) toast.add({ severity: 'error', summary: 'Copy failed', life: 2500 });
+  }
+}
 const headerActionItems = computed(() => [
   ...(activeTab.value === TAB_INSPECT ? inspectContent.value?.headerActions || [] : []),
   {
@@ -2158,6 +2195,11 @@ function safeFilename(value: string): string {
 </script>
 
 <style scoped>
+.run-identity-build {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
 /*
   Canonical Zen vocabulary — same tokens as ProjectContent: 0.9375rem base,
   1.75rem h1 / 1.5rem h2 at weight 500, 1080px max-width, hairline section
