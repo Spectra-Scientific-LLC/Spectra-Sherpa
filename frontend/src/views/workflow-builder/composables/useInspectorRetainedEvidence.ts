@@ -138,8 +138,11 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
       // primary specimen labels for an independently selected secondary port.
       // T²/Q is a joint row diagnostic: its declared renderer consumes the
       // producer's observation_axis companion for all three diagnostic vectors.
-      const primaryMetadata = view !== "detail" && source?.ports?.metadata && source.primary_port &&
-        (sourcePorts.includes(source.primary_port) || selected?.presentation.kind === "t2_q_diagnostics") ? ["metadata"] : [];
+      // Declared non-default ports omit that companion from the normalized port
+      // map, so its presence there cannot gate this same-run exact read.
+      const primaryMetadata = view !== "detail" && source?.primary_port &&
+        ((source.ports?.metadata && sourcePorts.includes(source.primary_port)) ||
+          selected?.presentation.kind === "t2_q_diagnostics") ? ["metadata"] : [];
       const retainedPorts = view === "detail" && !source ? [] : [...new Set([
         // Tables use this exact companion only to qualify omitted identities;
         // their numerical cells remain bound to the active source ports.
@@ -200,7 +203,7 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
         // A qualified primary containing every companion field is already
         // self-contained (e.g. Library Comparison); the duplicate need not exist.
         // Summary values establish neither identity nor fallback content here.
-        const fields = Object.keys(source.ports?.metadata.metadata ?? {});
+        const fields = Object.keys(source.ports?.metadata?.metadata ?? {});
         const inline = restored?.ports?.[source.primary_port]?.metadata ?? {};
         const selfContained = qualifiedNodePorts.has(source.primary_port) && fields.length > 0 &&
           fields.every(key => Object.prototype.hasOwnProperty.call(inline, key));

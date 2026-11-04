@@ -35,6 +35,7 @@ class RetainedRegisteredIdentity:
         self.exact = exact
         self.roots = {}
         self.source_inputs = {}
+        self.source_counts = {}
 
     def _root(self, split, plan):
         if split in self.roots:
@@ -55,14 +56,10 @@ class RetainedRegisteredIdentity:
                 "Registered split input does not reproduce its retained scientific receipt."
             ) from None
         split_input = root
-        _need(root.n_samples == plan["n_samples"], "Registered root and retained split counts differ.")
-        _need(
-            array_content_digest(np.asarray(root.data, dtype=float)) == plan["x_content_digest"],
-            "Registered split input differs from the retained split feature receipt.",
-        )
         nodes = {node["node_id"]: node for node in self.definition.get("nodes", [])}
         producer = nodes.get(edge["from_node_id"], {})
         source_payload = payload
+        source_node = edge["from_node_id"]
         if producer.get("node_type") == "baseline.penalized_ls":
             from spectra_sherpa.app.services.dag.nodes.preprocessing.penalized_baseline_node import (
                 BaselinePenalizedLSNode,
@@ -78,7 +75,8 @@ class RetainedRegisteredIdentity:
                 and (parents[0].get("from_output") or "default") == "default",
                 "Registered baseline comparison requires one direct retained file source.",
             )
-            source_payload = self.exact(parents[0]["from_node_id"], "default")
+            source_node = parents[0]["from_node_id"]
+            source_payload = self.exact(source_node, "default")
             try:
                 root = restore_dataset(source_payload)
             except (ValueError, TypeError, KeyError):
@@ -108,6 +106,7 @@ class RetainedRegisteredIdentity:
                 and split_input.meta.get("source_collection") == root.meta.get("source_collection"),
                 "Retained baseline changed registered rows, response, axes or source custody.",
             )
+        root, source_payload = self._catalog_source(root, source_payload, source_node, nodes)
         source = root.meta.get("source_collection")
         try:
             validate_registered_reference_source_identity(source, root)
@@ -178,9 +177,73 @@ class RetainedRegisteredIdentity:
             len(selected_fields) == 1 and context.target_units == selected_fields[0]["units"],
             "Registered selected response or units differ from the governed annotation column.",
         )
+        # The split consumes the declared included rows, while the catalog
+        # proves the full retained source. Reuse the producer's row selection
+        # so excluded observations never shift compacted branch identities.
+        from spectra_sherpa.app.services.dag.nodes.data.split_planner import prepare_split_source
+
+        try:
+            admitted, matrix, _, _, _ = prepare_split_source(split_input, None)
+        except (ValueError, TypeError, KeyError):
+            raise RegisteredIdentityUnavailable("Retained split inclusion cannot be reproduced.") from None
+        _need(admitted.n_samples == plan["n_samples"], "Registered included rows and retained split counts differ.")
+        _need(
+            array_content_digest(matrix) == plan["x_content_digest"],
+            "Registered split input differs from the retained split feature receipt.",
+        )
         self.source_inputs[split] = source_payload
-        self.roots[split] = split_input
-        return split_input
+        self.source_counts[split] = root.n_samples
+        self.roots[split] = admitted
+        return admitted
+
+    def _catalog_source(self, active, payload, source_node, nodes):
+        """Reproduce source curation from its retained full population only."""
+        from spectra_sherpa.app.lib.workflow_population import WORKFLOW_POPULATION_OPERATION, source_population_outputs
+        from spectra_sherpa.app.services.dag.population_display import DISPLAY_KEY
+        from spectra_sherpa.app.services.paired_evaluation import restore_dataset
+
+        if not any(step.get("op_id") == WORKFLOW_POPULATION_OPERATION for step in active.provenance.to_list()):
+            return active, payload
+        companion = self.exact(source_node, DISPLAY_KEY)
+        full_payload = companion.get("outputs", {}).get("default")
+        full = restore_dataset(full_payload)
+        state = self.exact(source_node, "exclusions")
+        rows = state.get("rows", [])
+        _need(
+            state.get("source_node_id") == source_node
+            and len(rows) == full.n_samples
+            and all(isinstance(row.get("source_included"), bool) for row in rows),
+            "Registered source curation has no exact retained original inclusion.",
+        )
+        original = full.snapshot()
+        # None and an all-true mask have different scientific projections.
+        # The retained source digest selects the exact original representation.
+        base = [row["source_included"] for row in rows]
+        parameters = nodes[source_node].get("parameters", {})
+        for original_mask in ([None, base] if all(base) else [base]):
+            original.sample_axis = original.sample_axis.model_copy(update={"include_mask": original_mask})
+            try:
+                rebuilt = source_population_outputs(
+                    original,
+                    node_id=source_node,
+                    exclusions=parameters.get("workflow_exclusions"),
+                    source_binding=parameters,
+                )
+            except ValueError:
+                continue
+            if rebuilt["exclusions"] != state:
+                continue
+            candidate = rebuilt["default"]
+            _need(
+                candidate.scientific_projection(include_provenance=False)
+                == active.scientific_projection(include_provenance=False)
+                and candidate.sample_axis.model_dump(mode="json") == active.sample_axis.model_dump(mode="json"),
+                "Registered active source differs from its exact retained curation.",
+            )
+            return full, full_payload
+        raise RegisteredIdentityUnavailable(
+            "Registered source curation does not reproduce its retained source binding."
+        )
 
     def ids(self, dataset, split, branch, plan):
         _need(branch in {"train", "test"}, "Registered comparison branch is unknown.")
