@@ -3020,6 +3020,9 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     const yIdx = featureYAxis.value;
     const xName = featureNames[xIdx] || `Feature ${xIdx + 1}`;
     const yName = featureNames[yIdx] || `Feature ${yIdx + 1}`;
+    const sampleLabels = pcaSampleLabels.value.length === data.length
+      ? pcaSampleLabels.value
+      : data.map((_: unknown, i: number) => `Result row ${i + 1}`);
 
     const grouping = typedMetadataGrouping.value;
     if (grouping.kind === "valid" && grouping.colorOptions.length > 0) {
@@ -3050,12 +3053,14 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           x: classIndices.map((i: number) => data[i][xIdx]),
           y: classIndices.map((i: number) => data[i][yIdx]),
           name: className,
+          text: classIndices.map((i: number) => sampleLabels[i]),
+          ...observationTraceMetadata(primaryOutputPayload.value?.sample_axis ?? primaryOutputPayload.value?.y_axis, data.length, classIndices),
           marker: {
             color: colors[classIdx % colors.length],
             size: 8,
             opacity: 0.8,
           },
-          hovertemplate: `${xName}: %{x:.15g}<br>${yName}: %{y:.15g}<br>${className}<extra></extra>`,
+          hovertemplate: `%{text}<br>${xName}: %{x:.15g}<br>${yName}: %{y:.15g}<br>${className}<extra></extra>`,
         };
       });
     } else {
@@ -3067,12 +3072,14 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
           x: data.map((row: number[]) => row[xIdx]),
           y: data.map((row: number[]) => row[yIdx]),
           name: "Samples",
+          text: sampleLabels,
+          ...observationTraceMetadata(primaryOutputPayload.value?.sample_axis ?? primaryOutputPayload.value?.y_axis, data.length),
           marker: {
             color: SCIENTIFIC_COLORS.observation,
             size: 8,
             opacity: 0.8,
           },
-          hovertemplate: `${xName}: %{x:.15g}<br>${yName}: %{y:.15g}<extra></extra>`,
+          hovertemplate: `%{text}<br>${xName}: %{x:.15g}<br>${yName}: %{y:.15g}<extra></extra>`,
         },
       ];
     }
@@ -3300,99 +3307,17 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
   // OUTLIER DETECTION: T² vs Q Control Chart
   // ============================================================================
 
-  const outlierChartData = computed(() => {
-    if (nodeTypeKey.value !== "diagnostics.outliers" || !hasOutput.value) return [];
-    const result = nodeOutput.value?.ports?.default?.value as Record<string, unknown> | undefined;
-    if (!result) return [];
-    const T2 = result.T2 as number[] | undefined;
-    const Q = result.Q as number[] | undefined;
-    const T2_limit = result.T2_limit as number | undefined;
-    const Q_limit = result.Q_limit as number | undefined;
-    const outliers = result.outliers as boolean[] | undefined;
-    if (!T2 || !Q) return [];
-
-    const normal_T2: number[] = [];
-    const normal_Q: number[] = [];
-    const normal_labels: string[] = [];
-    const outlier_T2: number[] = [];
-    const outlier_Q: number[] = [];
-    const outlier_labels: string[] = [];
-
-    for (let i = 0; i < T2.length; i++) {
-      const label = `Sample ${i + 1}`;
-      if (outliers && outliers[i]) {
-        outlier_T2.push(T2[i]);
-        outlier_Q.push(Q[i]);
-        outlier_labels.push(label);
-      } else {
-        normal_T2.push(T2[i]);
-        normal_Q.push(Q[i]);
-        normal_labels.push(label);
-      }
-    }
-
-    const traces: Record<string, unknown>[] = [
-      {
-        x: normal_T2,
-        y: normal_Q,
-        text: normal_labels,
-        mode: "markers",
-        type: "scatter",
-        name: "Normal",
-        marker: { color: SCIENTIFIC_COLORS.observation, size: 7 },
-        hovertemplate: "%{text}<br>T²: %{x:.15g}<br>Q: %{y:.15g}<extra></extra>",
-      },
-    ];
-    if (outlier_T2.length > 0) {
-      traces.push({
-        x: outlier_T2,
-        y: outlier_Q,
-        text: outlier_labels,
-        mode: "markers+text",
-        textposition: "top center",
-        type: "scatter",
-        name: "Outlier",
-        marker: { color: SCIENTIFIC_COLORS.alert, size: 9, symbol: "diamond" },
-        hovertemplate: "%{text}<br>T²: %{x:.15g}<br>Q: %{y:.15g}<extra></extra>",
-      });
-    }
-    // T² limit line (vertical)
-    if (T2_limit != null) {
-      const maxQ = Math.max(...Q) * 1.1;
-      traces.push({
-        x: [T2_limit, T2_limit],
-        y: [0, maxQ],
-        mode: "lines",
-        type: "scatter",
-        name: `T² limit`,
-        line: { dash: "dash", color: SCIENTIFIC_COLORS.threshold, width: 2 },
-        showlegend: true,
-      });
-    }
-    // Q limit line (horizontal)
-    if (Q_limit != null) {
-      const maxT2 = Math.max(...T2) * 1.1;
-      traces.push({
-        x: [0, maxT2],
-        y: [Q_limit, Q_limit],
-        mode: "lines",
-        type: "scatter",
-        name: `Q limit`,
-        line: { dash: "dash", color: SCIENTIFIC_COLORS.threshold, width: 2 },
-        showlegend: true,
-      });
-    }
-    return traces;
+  const outlierPlot = computed(() => {
+    if (nodeTypeKey.value !== "diagnostics.outliers" || !hasOutput.value) return null;
+    const output = nodeOutput.value;
+    const result = output?.ports?.default?.value;
+    if (!result || typeof result !== "object") return null;
+    // Share row validation, labels and exact coordinates with the declared view.
+    // Editable labels never establish observation identity.
+    return buildT2QDiagnosticsPlot(result, { ...result, ...result.metadata, ...output.metadata });
   });
-
-  const outlierChartLayout = computed(() => ({
-    ...basePlotLayout,
-    title: { text: "T² vs Q Residuals (Control Chart)", font: { color: SCIENTIFIC_COLORS.grid, size: 14 } },
-    xaxis: { title: "Hotelling T²", color: SCIENTIFIC_COLORS.reference, zeroline: false },
-    yaxis: { title: "Q Residuals (SPE)", color: SCIENTIFIC_COLORS.reference, zeroline: false },
-    showlegend: true,
-    legend: { font: { color: SCIENTIFIC_COLORS.reference } },
-  }));
+  const outlierChartData = computed(() => outlierPlot.value?.data ?? []);
+  const outlierChartLayout = computed(() => outlierPlot.value?.layout ?? basePlotLayout);
 
   // CANONICAL EVALUATOR / CROSS-VALIDATION PLOTS
   // ============================================================================

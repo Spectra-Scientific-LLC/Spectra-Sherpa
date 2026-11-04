@@ -307,3 +307,97 @@ describe("Quick Plot and detailed plot parity", () => {
     expect(new Set(traces.map((trace) => trace.marker.symbol)).size).toBeGreaterThan(1);
   });
 });
+
+describe("observation exclusion coverage", () => {
+  const refs = ["load:source:8", "load:source:2", "load:source:19"];
+  function diagnostic(axis: unknown) {
+    return { data: [], metadata: { observation_axis: axis }, ports: { default: { value: {
+      T2: [1, 9, 3], Q: [.1, .9, .3], outliers: [false, true, false],
+      sample_labels: ["Duplicate", "Duplicate", "Vial 19"], T2_limit: 5, Q_limit: .5,
+    } } } } as unknown as NodeOutput;
+  }
+  it("keeps labels and exact reordered refs through normal/outlier trace splitting", () => {
+    const output = diagnostic({ workflow_observation_refs: refs, include_mask: [true, false, true] });
+    const before = structuredClone(output);
+    const { detail } = views(output, "diagnostics.outliers");
+    const traces = detail.plotBag.value.outlierChartData;
+    expect(traces[0].text).toEqual(["Duplicate", "Vial 19"]);
+    expect(traces[0].meta).toEqual({ workflow_observation_refs: [refs[0], refs[2]], workflow_included: [true, true] });
+    expect(traces[1].text).toEqual(["Duplicate"]);
+    expect(traces[1].meta).toEqual({ workflow_observation_refs: [refs[1]], workflow_included: [false] });
+    expect(detail.plotBag.value.outlierChartLayout.shapes).toHaveLength(2);
+    expect(output).toEqual(before);
+  });
+  it.each([undefined, { workflow_observation_refs: refs.slice(1) },
+    { workflow_observation_refs: [refs[0], refs[0], refs[2]] }])("never invents identities for unavailable or invalid axes", axis => {
+    const { detail } = views(diagnostic(axis), "diagnostics.outliers");
+    expect(detail.plotBag.value.outlierChartData.every((trace: { meta?: unknown }) => !trace.meta)).toBe(true);
+  });
+  it("refuses mismatched diagnostic vectors instead of shifting point identities", () => {
+    const output = diagnostic({ workflow_observation_refs: refs });
+    (output.ports!.default.value as Record<string, unknown>).Q = [.1];
+    const { detail } = views(output, "diagnostics.outliers");
+    expect(detail.plotBag.value.outlierChartData).toEqual([]);
+  });
+});
+
+
+describe("feature scatter exclusion coverage", () => {
+  it.each([false, true].flatMap(grouped => [
+    { grouped, labels: undefined },
+    { grouped, labels: [] },
+    { grouped, labels: ["Wrong cohort A", "Wrong cohort B"] },
+    { grouped, labels: ["Wrong cohort A", "Wrong cohort B", "Wrong cohort C", "Wrong cohort D"] },
+    { grouped, labels: ["Duplicate", "Duplicate", "Third"] },
+  ]))("aligns legacy labels before grouping=$grouped, labels=$labels", ({ grouped, labels }) => {
+    const data = [[1, 10], [2, 20], [3, 30]];
+    const refs = ["ref-c", "ref-a", "ref-b"];
+    const output = { data, metadata: { is_generic_dataset: true, sample_labels: labels,
+      ...(grouped ? { target: [0, 1, 0], target_names: ["A", "B"] } : {}) },
+      primary_port: "data", ports: { data: { value: { data, sample_axis: {
+        workflow_observation_refs: refs, include_mask: [true, false, true],
+      } } } } } as unknown as NodeOutput;
+    const before = structuredClone(output);
+    const { detail, quick } = views(output, "data.file_load");
+    quick.selectedPlotKey.value = "generic_scatter";
+    const expected = labels?.length === data.length
+      ? labels : ["Result row 1", "Result row 2", "Result row 3"];
+    const traces = detail.plotBag.value.genericScatterData;
+    expect(traces[0].text).toEqual(grouped ? [expected[0], expected[2]] : expected);
+    expect(traces[0].meta).toEqual({
+      workflow_observation_refs: grouped ? [refs[0], refs[2]] : refs,
+      workflow_included: grouped ? [true, true] : [true, false, true],
+    });
+    if (grouped) {
+      expect(traces[1].text).toEqual([expected[1]]);
+      expect(traces[1].meta).toEqual({ workflow_observation_refs: [refs[1]], workflow_included: [false] });
+    }
+    expect(quick.plotData.value).toEqual(traces);
+    expect(output).toEqual(before);
+  });
+
+  it.each([false, true])("preserves reordered refs in detail scatter with grouping=%s", grouped => {
+    const axis = { labels: ["Same", "Same", "Third"], workflow_observation_refs: ["ref-c", "ref-a", "ref-b"], include_mask: [true, true, true] };
+    const data = [[1, 10], [2, 20], [3, 30]];
+    const output = { data, metadata: { sample_labels: ["Stale A", "Stale B", "Stale C"],
+      ...(grouped ? { target: [0, 1, 0], target_names: ["A", "B"] } : {}) },
+      primary_port: "data", ports: { data: { value: { data, sample_axis: axis } } } } as unknown as NodeOutput;
+    const { detail } = views(output, "data.file_load");
+    const traces = detail.plotBag.value.genericScatterData;
+    expect(traces[0].text).toEqual(grouped ? ["Same", "Third"] : axis.labels);
+    expect(traces[0].meta.workflow_observation_refs).toEqual(grouped ? ["ref-c", "ref-b"] : axis.workflow_observation_refs);
+    if (grouped) expect(traces[1].meta.workflow_observation_refs).toEqual(["ref-a"]);
+  });
+});
+
+
+it("keeps exact references and duplicate sample labels in Quick Plot feature scatter", () => {
+  const data = [[1, 10], [2, 20], [3, 30]];
+  const axis = { labels: ["Same", "Same", "Third"], workflow_observation_refs: ["ref-c", "ref-a", "ref-b"], include_mask: [true, true, true] };
+  const output = { data, metadata: { is_generic_dataset: true, labels: axis.labels },
+    presentation_value: { data, sample_axis: axis } } as unknown as NodeOutput;
+  const { quick } = views(output, "data.file_load");
+  quick.selectedPlotKey.value = "generic_scatter";
+  expect(quick.plotData.value.flatMap((trace: { meta?: { workflow_observation_refs?: string[] } }) => trace.meta?.workflow_observation_refs ?? [])).toEqual(["ref-c", "ref-a", "ref-b"]);
+  expect(quick.plotData.value.flatMap((trace: { text?: string[] }) => trace.text ?? [])).toEqual(["Same", "Same", "Third"]);
+});
