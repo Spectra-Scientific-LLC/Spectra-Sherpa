@@ -38,6 +38,27 @@ def _evidence() -> CanonicalConfirmationEvidence:
     )
 
 
+def test_nonconverged_count_is_digest_covered_and_absent_when_converged() -> None:
+    clean = _evidence()
+    flagged_value = {**clean.as_dict(), "nonconverged_baseline_fits": 12}
+    del flagged_value["evidence_digest"]
+    digest = hashlib.sha256(
+        json.dumps(flagged_value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    ).hexdigest()
+    flagged = CanonicalConfirmationEvidence.from_dict({**flagged_value, "evidence_digest": digest})
+
+    assert "nonconverged_baseline_fits" not in clean.payload
+    assert flagged.payload["nonconverged_baseline_fits"] == 12
+    with pytest.raises(CanonicalConfirmationError, match="digest mismatch"):
+        CanonicalConfirmationEvidence.from_dict({**flagged.as_dict(), "nonconverged_baseline_fits": 1})
+
+
+@pytest.mark.parametrize("value", [0, -1, True, "7", 1.5])
+def test_confirmation_evidence_rejects_a_malformed_nonconverged_count(value) -> None:
+    with pytest.raises(CanonicalConfirmationError, match="fit count"):
+        CanonicalConfirmationEvidence.from_dict({**_evidence().as_dict(), "nonconverged_baseline_fits": value})
+
+
 def test_confirmation_plan_and_evidence_are_closed_sample_free_and_reproducible() -> None:
     plan = CanonicalConfirmationPlan(100, 0.95, 42)
     assert CanonicalConfirmationPlan.from_dict(plan.as_dict()) == plan

@@ -69,6 +69,7 @@ _LEGACY_EVIDENCE_FIELDS = frozenset(
     }
 )
 _EVIDENCE_FIELDS = _LEGACY_EVIDENCE_FIELDS | {"task_type"}
+_NONCONVERGED_BASELINE_FITS = "nonconverged_baseline_fits"
 
 
 class CanonicalConfirmationError(ValueError):
@@ -272,6 +273,7 @@ class CanonicalConfirmationEvidence:
         plan: CanonicalConfirmationPlan,
         simca_membership: Sequence[Sequence[bool]] | np.ndarray | None = None,
         simca_labels: Sequence[Any] | None = None,
+        nonconverged_baseline_fits: int = 0,
     ) -> "CanonicalConfirmationEvidence":
         if not isinstance(plan, CanonicalConfirmationPlan):
             raise CanonicalConfirmationError("confirmation evidence requires the current plan")
@@ -365,6 +367,9 @@ class CanonicalConfirmationEvidence:
             "split_plan_digest",
         ):
             _require_digest(unsigned[field], field)
+        # Optional so evidence from fully converged applications keeps its exact digest.
+        if nonconverged_baseline_fits:
+            unsigned[_NONCONVERGED_BASELINE_FITS] = nonconverged_baseline_fits
         return cls._validated({**unsigned, "evidence_digest": _digest(unsigned)})
 
     @classmethod
@@ -375,7 +380,11 @@ class CanonicalConfirmationEvidence:
     def _validated(cls, value: Mapping[str, Any]) -> "CanonicalConfirmationEvidence":
         version = value.get("schema_version") if isinstance(value, Mapping) else None
         legacy = version == _LEGACY_EVIDENCE_VERSION
-        _closed(value, _LEGACY_EVIDENCE_FIELDS if legacy else _EVIDENCE_FIELDS, "canonical confirmation evidence")
+        _closed(
+            value,
+            (_LEGACY_EVIDENCE_FIELDS if legacy else _EVIDENCE_FIELDS) | _optional_evidence_fields(value, legacy=legacy),
+            "canonical confirmation evidence",
+        )
         if version not in {
             _LEGACY_EVIDENCE_VERSION,
             CANONICAL_CONFIRMATION_EVIDENCE_VERSION,
@@ -611,6 +620,15 @@ def _label_column(value: Sequence[Any] | np.ndarray, field: str) -> np.ndarray:
 def _finite(value: Any, field: str) -> None:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
         raise CanonicalConfirmationError(f"canonical confirmation {field} must be finite")
+
+
+def _optional_evidence_fields(value: Any, *, legacy: bool) -> set[str]:
+    if not isinstance(value, Mapping) or _NONCONVERGED_BASELINE_FITS not in value:
+        return set()
+    fits = value[_NONCONVERGED_BASELINE_FITS]
+    if legacy or isinstance(fits, bool) or not isinstance(fits, int) or fits < 1:
+        raise CanonicalConfirmationError("canonical confirmation nonconverged baseline fit count is invalid")
+    return {_NONCONVERGED_BASELINE_FITS}
 
 
 def _closed(value: Any, fields: set[str] | frozenset[str], name: str) -> None:

@@ -491,6 +491,47 @@ def test_promoted_preprocessing_allows_fold_local_automatic_pls(operation, param
     assert 1 <= state["n_components"] <= 3
 
 
+def test_application_counts_nonconverged_baselines_through_the_canonical_executor(tmp_path, monkeypatch):
+    from spectra_sherpa.app.services.canonical_artifact_store import init_canonical_artifact_store
+    from spectra_sherpa.app.services.dag.nodes.preprocessing import penalized_baseline_node
+    from spectra_sherpa.core.canonical_artifact import ReadOnlyCanonicalArtifactReader
+    from spectra_sherpa.core.execution_runtime import ExecutionRuntime
+    from spectra_sherpa.sdk.canonical_application_execution import execute_canonical_application
+
+    capsule, artifact = _capsule_and_artifact(
+        stateless_preprocess=(
+            "baseline.penalized_ls",
+            {"method": "als", "lam": 1e5, "p": 0.001, "max_iter": 50, "tol": 1e-6},
+        ),
+        include_scale=False,
+        model_parameters={"n_components": 2, "scale": False},
+    )
+    plan = CanonicalApplicationPlan.from_capsule_and_artifact(capsule, artifact)
+    artifact_path = artifact.write_new((tmp_path / "artifact").resolve())
+    init_canonical_artifact_store(tmp_path).install_from_directory(artifact_path)
+    runtime = ExecutionRuntime(
+        canonical_artifact_reader=ReadOnlyCanonicalArtifactReader(
+            tmp_path, allowed_artifact_digests=(artifact.artifact_digest,)
+        )
+    )
+    axis = np.linspace(900.0, 1900.0, 16)
+    incoming = SherpaDataset(
+        X=1.5 + np.arange(3)[:, None] * np.sin(axis / 175.0),
+        feature_axis=SpectralAxis(values=axis, units="cm-1"),
+    )
+    fit = penalized_baseline_node._fit_als
+
+    def _not_converged(spectrum, **kwargs):
+        baseline, iterations, _ = fit(spectrum, **kwargs)
+        return baseline, iterations, False
+
+    monkeypatch.setattr(penalized_baseline_node, "_fit_als", _not_converged)
+    with penalized_baseline_node.observe_nonconverged_fits() as counts:
+        asyncio.run(execute_canonical_application(plan, incoming, runtime=runtime))
+
+    assert sum(counts) == 3
+
+
 def test_rubberband_keeps_constant_endpoint_autoscaling_refusal():
     axis = np.linspace(900.0, 1900.0, 16)
     target = np.linspace(-1.0, 1.0, 24)
