@@ -439,7 +439,7 @@ def test_missing_held_out_identity_reason_survives_valid_calibration(tmp_path, m
     )
     resolved = resolve_run_evidence(run)
     assert [item.role for item in resolved.evaluations] == ["calibration"]
-    assert "Typed sample identities were not retained" in resolved.unavailable_reason
+    assert "Typed sample identities were not declared or recoverable" in resolved.unavailable_reason
     assert not any("Typed sample identities" in reason for reason in resolved.evaluations[0].population.limitations)
 
 
