@@ -9,8 +9,9 @@ export function metricPreference(metric: string, left: number, right: number): "
   const lower = ["rmse", "mse", "mae", "sep", "bias"].includes(metric);
   const higher = ["r2", "accuracy", "balanced_accuracy", "macro_f1", "mcc"].includes(metric);
   if (!lower && !higher) return null; // RER, for example, also depends on reference range.
-  // Differences at floating-point resolution are not scientific differences.
-  if (Math.abs(left - right) <= 1e-12 * Math.max(1, Math.abs(left), Math.abs(right))) return "equal";
+  // Relative presentation tolerance, not measurement precision or statistical
+  // equivalence. No unit-sized floor: changing units must not change direction.
+  if (Math.abs(left - right) <= 1e-12 * Math.max(Math.abs(left), Math.abs(right))) return "equal";
   return (lower ? right < left : right > left) ? "better" : "worse";
 }
 export function comparisonVerdict(evidence: EvidenceComparison, pair: Pair): string | null {
@@ -28,10 +29,15 @@ export function comparisonVerdict(evidence: EvidenceComparison, pair: Pair): str
     const first = pair.left_index + 1, second = pair.right_index + 1;
     const origins = [pair.left_index, pair.right_index].some(index => evidence.items[index]?.reference.kind === "external")
       ? ` Evaluations: Run ${first}: ${evidence.items[pair.left_index].label}; Run ${second}: ${evidence.items[pair.right_index].label}.` : "";
-    if (values.left === values.right) return `Runs ${first} and ${second} have equal ${title}: ${metric} ${scientificNumber(values.left, { significantDigits: 4 })} ${leftUnits}.${origins}`;
-    const winner = values.right < values.left ? second : first;
+    const preference = metricPreference("rmse", values.left, values.right);
+    if (preference === "equal") return `Runs ${first} and ${second} have numerically equal ${title}: ${metric} ${scientificNumber(values.left, { significantDigits: 4 })} ${leftUnits}.${origins}`;
+    const winner = preference === "better" ? second : first;
     const low = Math.min(values.left, values.right), high = Math.max(values.left, values.right);
-    return `Run ${winner} has lower ${title}: ${metric} ${scientificNumber(low, { significantDigits: 4 })} vs ${scientificNumber(high, { significantDigits: 4 })} ${leftUnits}.${origins}`;
+    // If four digits hide a directional difference, show enough precision to
+    // distinguish the retained values instead of claiming “1.000 vs 1.000”.
+    let digits = 4;
+    while (digits < 17 && scientificNumber(low, { significantDigits: digits }) === scientificNumber(high, { significantDigits: digits })) digits++;
+    return `Run ${winner} has lower ${title}: ${metric} ${scientificNumber(low, { significantDigits: digits })} vs ${scientificNumber(high, { significantDigits: digits })} ${leftUnits}.${origins}`;
   }
   return null;
 }
