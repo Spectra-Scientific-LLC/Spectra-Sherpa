@@ -431,6 +431,10 @@ def build_dataset_analysis_readiness(
 def build_analysis_profile_readiness(
     analysis_profile: Mapping[str, Any],
     templates: Sequence[Mapping[str, Any]],
+    *,
+    sample_table: dict[str, list[Any]] | None = None,
+    n_samples: int | None = None,
+    group_column: str | None = None,
 ) -> dict[str, Any]:
     """Evaluate one explicit structural profile through the canonical engine.
 
@@ -466,6 +470,27 @@ def build_analysis_profile_readiness(
                 }
             )
             continue
+        if decision["status"] == "compatible" and profile["target_type"] == "categorical":
+            from spectra_sherpa.app.services.starter_validation import starter_classification_population_refusal
+
+            graph = template.get("template_data") or {}
+            reason = starter_classification_population_refusal(
+                graph.get("nodes", []),
+                graph.get("edges", []),
+                sample_table=sample_table,
+                n_samples=n_samples,
+                target_names=profile["target_fields"],
+                group_column=group_column,
+            )
+            if reason:
+                decision = {
+                    **decision,
+                    "status": "incompatible",
+                    "compatible": False,
+                    "display_group": "incompatible",
+                    "reason_codes": [*decision["reason_codes"], "split_infeasible"],
+                    "reasons": [*decision["reasons"], {"code": "split_infeasible", "message": reason, "role": None}],
+                }
         runtime_readiness = template.get("runtime_readiness")
         runtime_unavailable = isinstance(runtime_readiness, Mapping) and runtime_readiness.get("ready") is False
         display_status = "unavailable" if runtime_unavailable else decision["display_group"]

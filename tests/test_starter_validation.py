@@ -561,3 +561,163 @@ async def test_plsda_independence_uses_actual_response_not_predictor_target(resp
     assert cv["status"] == ("unavailable" if response == "embedded_identity" else "available")
     if response != "embedded_identity":
         assert fitted.outputs["metrics"]["classes"] == ["a", "b"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("slug", ["classification_plsda", "knn_classification", "simca_classification"])
+async def test_metadata_readiness_refuses_real_lavender_singleton_via_canonical_planner(
+    auth_client,
+    test_session,
+    slug,
+):
+    from spectra_sherpa.app.core.template_loader import TemplateLoader
+    from spectra_sherpa.app.lib.dataset_compatibility import build_analysis_profile_readiness
+    from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
+
+    definition = next(item for item in TemplateLoader().load_all() if item["slug"] == slug)
+    template = WorkflowTemplate(
+        **{key: definition[key] for key in ("slug", "name", "description", "category")},
+        template_data={**definition["template_data"], "status": "ready"},
+        is_active=True,
+    )
+    test_session.add(template)
+    await test_session.commit()
+    ds = lavender("author_reported_authenticity_status")
+    profile = {
+        "primary_role": "X_spectra",
+        "modality": "spectra",
+        "technique": "IR",
+        "target_type": "categorical",
+        "target_fields": ["author_reported_authenticity_status"],
+        "identity_fields": ["sample_id", "specimen_id"],
+        "group_fields": ["specimen_id"],
+        "ordered_samples": False,
+    }
+    payload = {
+        "analysis_profile": profile,
+        "sample_table": ds.sample_axis.sample_table,
+        "n_samples": ds.n_samples,
+        "group_column": "specimen_id",
+    }
+    response = await auth_client.post("/api/v1/workflow-templates/compatibility-preview", json=payload)
+    assert response.status_code == 200, response.text
+    readiness = response.json()
+    decision = next(item for item in readiness["decisions"] if item["template_slug"] == slug)
+    assert decision["status"] == decision["display_status"] == "incompatible"
+    assert decision["reason_codes"] == ["split_infeasible"]
+    assert "every target class" in decision["reasons"][0]["message"]
+    assert sum(readiness["counts"].values()) == readiness["template_count"] == 1
+    assert readiness["counts"]["incompatible"] == 1
+    # The service builder and HTTP projection share the same decision/counters.
+    direct = build_analysis_profile_readiness(
+        profile,
+        [{**definition, "status": "ready"}],
+        sample_table=ds.sample_axis.sample_table,
+        n_samples=ds.n_samples,
+        group_column="specimen_id",
+    )
+    assert direct["decisions"] == readiness["decisions"]
+    assert direct["counts"] == readiness["counts"]
+    # A genuinely supported botanical population is not blocked by this guard.
+    botanical = lavender()
+    valid = await auth_client.post(
+        "/api/v1/workflow-templates/compatibility-preview",
+        json={
+            **payload,
+            "analysis_profile": {**profile, "target_fields": ["claimed_botanical_group"]},
+            "sample_table": botanical.sample_axis.sample_table,
+            "n_samples": botanical.n_samples,
+        },
+    )
+    assert valid.status_code == 200
+    assert valid.json()["decisions"][0]["status"] == "compatible"
+    # A partial label vector must not be expanded into an apparent population.
+    partial = await auth_client.post(
+        "/api/v1/workflow-templates/compatibility-preview",
+        json={
+            **payload,
+            "sample_table": {
+                **ds.sample_axis.sample_table,
+                "author_reported_authenticity_status": ds.sample_axis.sample_table[
+                    "author_reported_authenticity_status"
+                ][:3],
+            },
+        },
+    )
+    assert partial.status_code == 200
+    assert "split_infeasible" not in partial.json()["decisions"][0]["reason_codes"]
+
+
+def test_metadata_population_guard_bounds_allocation_and_skips_unknown_transforms(monkeypatch):
+    from spectra_sherpa.app.core.template_loader import TemplateLoader
+    from spectra_sherpa.app.services import starter_validation as service
+
+    graph = next(item for item in TemplateLoader().load_all() if item["slug"] == "classification_plsda")[
+        "template_data"
+    ]
+    ds = lavender("author_reported_authenticity_status")
+    args = dict(
+        sample_table=ds.sample_axis.sample_table,
+        n_samples=ds.n_samples,
+        target_names=["author_reported_authenticity_status"],
+        group_column="specimen_id",
+    )
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Planner must not receive an unbounded/unknown population")
+
+    monkeypatch.setattr(service, "plan_train_test_split", forbidden)
+    assert (
+        service.starter_classification_population_refusal(
+            graph["nodes"], graph["edges"], **{**args, "n_samples": 100001}
+        )
+        is None
+    )
+    changed = [
+        {**node, "node_type": "preprocess.normalize"} if node["node_id"] == "data_1" else node
+        for node in graph["nodes"]
+    ]
+    assert service.starter_classification_population_refusal(changed, graph["edges"], **args) is None
+
+
+def test_metadata_readiness_singleton_source_exclusion_matches_canonical_split():
+    from spectra_sherpa.app.core.template_loader import TemplateLoader
+    from spectra_sherpa.app.lib.dataset_compatibility import build_analysis_profile_readiness
+    from spectra_sherpa.app.services.dag.nodes.data.split_planner import plan_train_test_split
+
+    definition = next(item for item in TemplateLoader().load_all() if item["slug"] == "classification_plsda")
+    profile = {
+        "primary_role": "X_spectra",
+        "modality": "spectra",
+        "technique": "IR",
+        "target_type": "categorical",
+        "target_fields": ["class"],
+        "identity_fields": ["sample_id"],
+        "group_fields": ["specimen_id"],
+        "ordered_samples": False,
+    }
+    labels = ["A"] * 6 + ["B"] * 6 + ["C"]
+    ids = [f"specimen-{i}" for i in range(13)]
+    table = {"sample_id": ids, "specimen_id": ids, "class": labels}
+    full = build_analysis_profile_readiness(
+        profile, [definition], sample_table=table, n_samples=13, group_column="specimen_id"
+    )
+    assert full["decisions"][0]["status"] == "incompatible"
+    assert full["decisions"][0]["reason_codes"] == ["split_infeasible"]
+    # The complete source mask excludes C before the metadata request is built.
+    mask = [True] * 12 + [False]
+    included = {key: [v for v, keep in zip(values, mask, strict=True) if keep] for key, values in table.items()}
+    filtered = build_analysis_profile_readiness(
+        profile, [definition], sample_table=included, n_samples=sum(mask), group_column="specimen_id"
+    )
+    assert filtered["decisions"][0]["status"] == "compatible"
+    plan = plan_train_test_split(
+        np.arange(24).reshape(12, 2),
+        np.asarray(included["class"]),
+        groups=included["specimen_id"],
+        method="stratified",
+        test_size=0.25,
+        random_seed=42,
+    )
+    assert plan.train_indices.size + plan.test_indices.size == 12
+    assert sum(filtered["counts"].values()) == 1
