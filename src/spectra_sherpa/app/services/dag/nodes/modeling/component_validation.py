@@ -15,6 +15,7 @@ SAFE_PREMODEL_OPERATIONS = frozenset(
         "preprocess.clip_range",
         "preprocess.clip_floor",
         "baseline.rubberband",
+        "baseline.penalized_ls",  # All three algorithms fit each spectrum independently.
         "preprocess.cosmic_ray",
         "data.load_group",
         "data.synthetic_curve",

@@ -21,7 +21,7 @@ from spectra_sherpa.app.types import type_registry
 from spectra_sherpa.core.contract_compatibility import inspection_predecessor_catalog
 
 OLD = "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f"
-NEW = "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43"
+NEW = "a87402af5087cf79b58c421a3e936e7eb4521e91df0ff3318fc13eef893615fd"
 PROFILE = "d82af6a5a5b9922b1c57531d3ce9d121ad6e7c6f80ee3dc6bb24119f6b2f24c9"
 PROFILES = (
     None,

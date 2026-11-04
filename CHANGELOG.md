@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.4] - 2026-11-01
 
+### Penalized-baseline automatic validation
+
+- ALS, arPLS and airPLS baseline correction is now admitted as qualified
+  sample-local preprocessing for automatic component CV. Iteration-limit warnings
+  remain visible; no fixed-component fallback replaces an unavailable curve.
+- Exact prior model/profile identities remain inspectable and existing fitted
+  states remain applicable through reviewed directional readers. No historical
+  fits or receipts are upgraded. The general safe-list refactor remains deferred.
+
 Changes for `0.6.4` are listed below. Source version and date alone do not
 establish publication or qualification; release receipts identify the exact
 source revision and artifact hashes. Desktop packaging remains paused until

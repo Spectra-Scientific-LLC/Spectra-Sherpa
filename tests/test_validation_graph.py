@@ -315,7 +315,7 @@ def test_managed_parameter_projection_exposes_the_same_interval_only_subset() ->
 def test_first_party_profile_is_closed_versioned_and_binds_each_registered_contract() -> None:
     profile = managed_optimization_profile()
     assert profile.profile_id == "first_party_pls"
-    assert profile.profile_version == "9"
+    assert profile.profile_version == "10"
     assert len(profile.digest) == 64
     assert profile.operation_ids == {
         "preprocess.smooth",

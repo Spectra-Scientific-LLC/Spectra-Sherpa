@@ -223,3 +223,23 @@ Unknown method or precision remains a qualification gap. Replicate counts and
 digests document a declaration; review the source measurements and their
 specimen mapping before treating precision as verified. Reference precision
 does not by itself create prediction intervals.
+
+
+### Penalized baseline before automatic component CV
+
+With fixed saved parameters, `baseline.penalized_ls` (ALS, arPLS or airPLS)
+corrects each spectrum independently. Its last finite iterate remains
+sample-local even if the iteration limit is reached; the recorded warning and
+nonconverged count must still be reviewed. Automatic component selection may
+reuse this correction before its training-only folds. This is not a claim that
+population-fitted preprocessing was refitted inside those folds, nor permission
+to tune baseline parameters on held-out results. Unknown operations, non-raw
+sources and unverified/test partitions remain refused.
+
+The eligibility correction changes the exact source-bound PCA, PLS, PLS-DA and
+PLS-DA permutation consumer identities. `first_party_pls` advances from version9
+to10 with an exact new digest. The prior profile is captured by
+`core/contract_predecessors_baseline_cv.json`; historical reconstruction preserves
+its original contracts and remains read-only. Reviewed direct application rows
+preserve existing fitted-state readers without changing serializers, granting
+historical execution, rebinding receipts or inferring transitive compatibility.

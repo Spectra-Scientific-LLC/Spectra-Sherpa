@@ -79,6 +79,7 @@ def test_exact_directional_application_compatibility(entry):
 def test_scientific_authority_compatibility_is_exact_and_classifies_current_custody():
     from spectra_sherpa.core.contract_compatibility import (
         _AUTOMATIC_PLS_APPLICATION_PREDECESSORS,
+        _BASELINE_CV_APPLICATION_PREDECESSORS,
         _DIAGNOSTIC_REFUSAL_PREDECESSORS,
         _FEATURE_PRESENTATION_PREDECESSORS,
         _HANDOFF_PRESENTATION_PREDECESSORS,
@@ -125,6 +126,10 @@ def test_scientific_authority_compatibility_is_exact_and_classifies_current_cust
     )
     current_entries = tuple(_PLSDA_DIAGNOSTIC_IDENTITY_PREDECESSORS) + tuple(
         entry for entry in current_entries if entry.operation_id != "classification.plsda"
+    )
+    baseline_cv_operations = {entry.operation_id for entry in _BASELINE_CV_APPLICATION_PREDECESSORS}
+    current_entries = tuple(_BASELINE_CV_APPLICATION_PREDECESSORS) + tuple(
+        entry for entry in current_entries if entry.operation_id not in baseline_cv_operations
     )
     for entry in current_entries:
         current = node_registry.get_metadata(entry.operation_id).resolved_execution_contract()
@@ -175,7 +180,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         "model.apply_fitted_svr": "265de5fa6c87e0629cffcaa742da2c84a1fc3ed848ac1c8750fbd7f83d640a58",
         "model.fitted_linear_regression": "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
         "model.fitted_pcr": "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
-        "model.fitted_pls": "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
+        "model.fitted_pls": "404bb89c9299a89b972ca02379148ef4ed3f92b437510cc4ca1fa4d6cad43b7f",
         "model.fitted_svr": "6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",
     }
     reviewed_changes = {
