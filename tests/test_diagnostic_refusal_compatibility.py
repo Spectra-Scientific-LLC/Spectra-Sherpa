@@ -62,6 +62,7 @@ def test_source_only_registrations_preserve_all_previously_supported_producers()
             "_AUTOMATIC_PLS_APPLICATION_PREDECESSORS",
             "_PREPROCESSING_APPLICATION_PREDECESSORS",
             "_PLSDA_DIAGNOSTIC_IDENTITY_PREDECESSORS",
+            "_BASELINE_CV_APPLICATION_PREDECESSORS",
         }:
             previous.extend(entries)
     for operation, (old, current) in _REVIEWED.items():

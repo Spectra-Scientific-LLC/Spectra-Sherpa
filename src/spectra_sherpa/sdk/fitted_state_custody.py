@@ -1433,6 +1433,42 @@ _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingP
             custody_class=RETAINS_TRAINING_ROWS,
             rationale="KNN application requires the complete calibration matrix and encoded labels",
         ),
+        (
+            "spectrasherpa.model-artifact.pca/3",
+            "2bc923bbeb1055b2d795e9846efd6c735bf3f19a6ef2887923583235be481a8e",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.pca/3",
+            contract_digest="2bc923bbeb1055b2d795e9846efd6c735bf3f19a6ef2887923583235be481a8e",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale=(
+                "automatic component CV admits qualified per-spectrum baseline provenance; "
+                "the unchanged fitted state contains no calibration rows"
+            ),
+        ),
+        (
+            "spectra.sherpa-simpls-regression-json/9",
+            "404bb89c9299a89b972ca02379148ef4ed3f92b437510cc4ca1fa4d6cad43b7f",
+        ): FittedStateCustodyCapability(
+            serializer="spectra.sherpa-simpls-regression-json/9",
+            contract_digest="404bb89c9299a89b972ca02379148ef4ed3f92b437510cc4ca1fa4d6cad43b7f",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale=(
+                "automatic component CV admits qualified per-spectrum baseline provenance; "
+                "the unchanged fitted state contains no calibration rows"
+            ),
+        ),
+        (
+            "spectrasherpa.sherpa-plsda-state/5",
+            "a87402af5087cf79b58c421a3e936e7eb4521e91df0ff3318fc13eef893615fd",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="a87402af5087cf79b58c421a3e936e7eb4521e91df0ff3318fc13eef893615fd",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale=(
+                "automatic component CV admits qualified per-spectrum baseline provenance; "
+                "the unchanged fitted state contains no calibration rows"
+            ),
+        ),
     }
 )
 

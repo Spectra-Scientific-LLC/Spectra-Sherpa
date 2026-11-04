@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,12 @@ from spectra_sherpa.app.services.dag.canonical_selection_policy import (
     selection_candidate,
 )
 from spectra_sherpa.app.services.dag.executor_types import WorkflowNode
-from spectra_sherpa.app.services.dag.validation_graph import admit_validation_graph
+from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
+from spectra_sherpa.app.services.dag.validation_graph import (
+    ValidationGraphError,
+    admit_validation_graph,
+    validation_graph_from_dict,
+)
 from spectra_sherpa.app.types import type_registry
 from spectra_sherpa.sdk.canonical_campaign_evidence import (
     CanonicalCampaignEvidence,
@@ -164,9 +170,52 @@ def test_original_selection_archives_keep_their_exact_bytes_and_digests(version)
     # Synthetic immutable records produced by the pre-/8 reader at9909082;
     # these are compatibility fixtures, not scientific qualification receipts.
     encoded = (Path(__file__).parent / "fixtures" / "canonical_campaign_evidence" / f"{version}.json").read_bytes()
-    loaded = CanonicalCampaignEvidence.from_dict(json.loads(encoded))
+    expected_sha256 = {
+        "v6": "0f302eb893d31fb0666de01875f79366ce696ef38d3f7c7fbe5ce3e05beb579f",
+        "v7": "5faa76eb9ff897b1811a40edc984c79b4f427e0cb34dd7577073f3a6575d07ff",
+    }
+    assert hashlib.sha256(encoded).hexdigest() == expected_sha256[version]
+    record = json.loads(encoded)
+    # Standalone campaign data has no profile authority to guess. The package
+    # reader derives this exact context from its admitted capsule; here name it
+    # explicitly, as a reviewed structural reader, never a historical fit grant.
+    context = HistoricalReconstructionContext("4e75fd88112e9b46d8adbcf860dcc9598b994b48f9d36716651a9ede139cfd68")
+    loaded = CanonicalCampaignEvidence.from_dict(record, historical_context=context)
     assert loaded.canonical_bytes() == encoded
-    assert loaded == (_record() if version == "v6" else _reviewed_record())
+    assert loaded.as_dict() == record
+    with pytest.raises(CanonicalCampaignEvidenceError, match="not canonically admissible"):
+        CanonicalCampaignEvidence.from_dict(record)
+    # Reading an old selection never makes its graph a current execution grant.
+    with pytest.raises(ValidationGraphError):
+        validation_graph_from_dict(record["candidates"][0]["candidate_graph"], require_live_runtime=False)
+    with pytest.raises(CanonicalCampaignEvidenceError, match="packaged reconstruction context"):
+        CanonicalCampaignEvidence.from_dict(record, historical_context=object())
+    forged = deepcopy(record)
+    item = forged["candidates"][0]
+    graph = item["candidate_graph"]
+    graph["nodes"][0]["contract_digest"] = "f" * 64
+    graph["graph_digest"] = hashlib.sha256(
+        json.dumps(
+            {k: v for k, v in graph.items() if k != "graph_digest"},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode()
+    ).hexdigest()
+    item["candidate_digest"] = item["graph_digest"] = graph["graph_digest"]
+    item["validation_execution"]["graph_digest"] = graph["graph_digest"]
+    forged["content_digest"] = hashlib.sha256(
+        json.dumps(
+            {k: v for k, v in forged.items() if k != "content_digest"},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode()
+    ).hexdigest()
+    with pytest.raises(CanonicalCampaignEvidenceError, match="not canonically admissible"):
+        CanonicalCampaignEvidence.from_dict(forged, historical_context=context)
 
 
 def test_campaign_evidence_retains_failed_candidate_without_using_it_as_a_metric() -> None:

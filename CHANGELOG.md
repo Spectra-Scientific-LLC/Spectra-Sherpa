@@ -12,6 +12,15 @@ establish publication or qualification; release receipts identify the exact
 source revision and artifact hashes. Desktop packaging remains paused until
 separately authorized.
 
+### Penalized-baseline automatic validation
+
+- ALS, arPLS and airPLS baseline correction is now admitted as qualified
+  sample-local preprocessing for automatic component CV. Iteration-limit warnings
+  remain visible; no fixed-component fallback replaces an unavailable curve.
+- Exact prior model/profile identities remain inspectable and existing fitted
+  states remain applicable through reviewed directional readers. No historical
+  fits or receipts are upgraded. The general safe-list refactor remains deferred.
+
 ### Catalog observation identity and review labels
 
 - New Wine, Iris and Breast Cancer catalog imports carry typed observation IDs

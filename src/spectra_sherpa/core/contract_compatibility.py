@@ -1133,6 +1133,78 @@ _PLSDA_DIAGNOSTIC_IDENTITY_PREDECESSORS = tuple(
 )
 
 
+# Exact application-only continuity after admitting one sample-local baseline
+# to automatic component CV. No fit mathematics or state serializer changed;
+# every predecessor below was already admitted directly by the prior consumer.
+_BASELINE_CV_APPLICATION_PREDECESSORS = tuple(
+    SavedStateCompatibility(operation, predecessor, consumer, serializer)
+    for operation, serializer, consumer, predecessors in (
+        (
+            "model.pca",
+            "spectrasherpa.model-artifact.pca/3",
+            "2bc923bbeb1055b2d795e9846efd6c735bf3f19a6ef2887923583235be481a8e",
+            (
+                "1f31f0ab7581b4f68319d01574545fb3038f640c171c2f2df2dc68f48ce29b3f",
+                "2d4457cd7ca9ce699326aad70e1b4a77deb74d6cea88afd08066f106f45df161",
+                "3832e1488a123217d7068bcf33dae7aa982b5665dec00c402cfb034fd11064c4",
+                "5e809716a8266c4ddd5fb3902b8a68c264019fd05237bdb1397f664ae31dea10",
+                "7f5425b11e126eb8c8359dd480e9af00c62a1d852fa372bed41e31c08d5cbf60",
+                "85b458d4b762f028fd9e825c47642460faf9f4682122def13416c88082a879f6",
+                "869a320a282d9484457f4e3237a0a098c26403c65ed1e699482403231630b608",
+                "ad9ee0dc72e2a6e9984134d8cfd7da6176ae725641c240f488f31713b57fcf94",
+                "bcf69d89f62cb9e9ad1cfb46fc1f32b258c130dd571eb457df73fb535f685f0f",
+                "c8f6c57e2e5ffe3f7ff3a6f5528cfef28ceea6eabfdac4d2c4572481d391ca75",
+                "def76c765075b59a536e8c6bd72be0418c20d0ea4611f11ce5ec7f1a17ca891b",
+                "eeca5bea6642ec33c4a51c825acd58217d1a8c17784cfa318e4840e4c4ba73a9",
+            ),
+        ),
+        (
+            "model.fitted_pls",
+            "spectra.sherpa-simpls-regression-json/9",
+            "404bb89c9299a89b972ca02379148ef4ed3f92b437510cc4ca1fa4d6cad43b7f",
+            (
+                "0544090d89826af9fe58a26321d966d36aeb55d36373e4789b6897ef7752254a",
+                "2252dec1ff34b651be6480a68a10662470aeaa566bfb9c179eba04f0d87c83e4",
+                "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
+                "3939dc715653c735c11d3993942bd8e8baf5343fd42e21341d5cde130dafdde3",
+                "473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
+                "5ae3215d3c522a75b16baecdf35e736537052f411fbf9833509a535320ee27d5",
+                "7e577601daba52133d0e63f7496614960747b78a438c03c01297c22b28226012",
+                "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
+                "9db6a10ca3c53faf7b0a69cee4aba35ebef148019ca21bf09ed226d578456997",
+                "a4c4da78fab49c9c21badb8b0e851ff28d6c0459b267943a6a7e0183f7ed128d",
+                "ba02705c9868ae460e80af30207f8fa1c60f5ff20e8e6588be267292811472da",
+                "d1c86b21218f0191716a6c696fc97d737079c6847afbe6fd4fb168b17acf201e",
+                "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
+            ),
+        ),
+        (
+            "classification.plsda",
+            "spectrasherpa.sherpa-plsda-state/5",
+            "a87402af5087cf79b58c421a3e936e7eb4521e91df0ff3318fc13eef893615fd",
+            (
+                "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
+                "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
+                "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+                "50f7565a6e8ef6e6ce7b92e730588b9f1d1ef334015a8cf50555a793ed7815a2",
+                "526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
+                "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+                "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
+                "7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
+                "85b2a1fd3938dee8a3a12f61397a07052883cd3f0bfa4d977151b600fe4992b6",
+                "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+                "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
+                "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+                "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+                "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
+                "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824",
+            ),
+        ),
+    )
+    for predecessor in predecessors
+)
+
+
 def saved_state_predecessor_is_compatible(
     predecessor: object,
     consumer: str,
@@ -1170,6 +1242,7 @@ def saved_state_predecessor_is_compatible(
             *_PREPROCESSING_APPLICATION_PREDECESSORS,
             *_PLSDA_INDEPENDENCE_READERS,
             *_PLSDA_DIAGNOSTIC_IDENTITY_PREDECESSORS,
+            *_BASELINE_CV_APPLICATION_PREDECESSORS,
         )
         if entry.predecessor_digest == predecessor
         and entry.consumer_digest == consumer
@@ -1194,6 +1267,11 @@ def stateless_application_predecessor_is_compatible(operation: str, predecessor:
 
 def inspection_predecessor_catalog(profile_digest: str | None = None) -> dict:
     """Pinned read-only campaign profiles; not saved-state application aliases."""
+    if profile_digest == "4e75fd88112e9b46d8adbcf860dcc9598b994b48f9d36716651a9ede139cfd68":
+        raw = files("spectra_sherpa.core").joinpath("contract_predecessors_baseline_cv.json").read_bytes()
+        if hashlib.sha256(raw).hexdigest() != "9960700d4ea5e428b2f4c0ec8440160040d1f12191253247de21ff5350ba4567":
+            raise ValueError("trusted pre-baseline-CV inspection catalog digest mismatch")
+        return json.loads(raw)
     if profile_digest == "61b569f87ff357307444ec60e1f8adbf1f6a3e0e1555408e73d6756f6ed919ed":
         raw = files("spectra_sherpa.core").joinpath("contract_predecessors_baseline_warning.json").read_bytes()
         if hashlib.sha256(raw).hexdigest() != "259e315e4fa44e692c8642be3f59aa3315fec4ac1459516df168cecb49e9e85c":

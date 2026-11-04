@@ -18,7 +18,7 @@ async def test_predecessor_permutation_retained_output_and_report(tmp_path, monk
     recorded = json.loads((Path(__file__).parent / "fixtures/preprocessing_permutation_history.json").read_text())
     assert recorded["producer_contract"] == "1b4d8a3f538be250518594d0bcee7f6530598de60963e8b165427a658c7f1eff"
     assert node_registry.get_metadata("diagnostics.plsda_permutation").resolved_execution_contract().digest == (
-        "cefd94b6d587d017f5ec33a99d4443c2ea715d9294d5140e7045aae0ea9a80ec"
+        "7b903722a01c8466003fccc48799a41a76c39e4874152a1a83244e0abe86a5c5"
     )
     for relative, content in recorded["members"].items():
         destination = tmp_path / relative

@@ -110,9 +110,9 @@ from spectra_sherpa.sdk.fitted_state_custody import (
 )
 def test_exact_application_predecessor_only(operation: str, serializer: str, previous: str, current: str) -> None:
     workflow_consumers = {
-        "model.pca": "3832e1488a123217d7068bcf33dae7aa982b5665dec00c402cfb034fd11064c4",
-        "classification.plsda": "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
-        "model.fitted_pls": "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
+        "model.pca": "2bc923bbeb1055b2d795e9846efd6c735bf3f19a6ef2887923583235be481a8e",
+        "classification.plsda": "a87402af5087cf79b58c421a3e936e7eb4521e91df0ff3318fc13eef893615fd",
+        "model.fitted_pls": "404bb89c9299a89b972ca02379148ef4ed3f92b437510cc4ca1fa4d6cad43b7f",
         "model.fitted_linear_regression": "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
         "model.fitted_pcr": "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
         "model.fitted_svr": "6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",

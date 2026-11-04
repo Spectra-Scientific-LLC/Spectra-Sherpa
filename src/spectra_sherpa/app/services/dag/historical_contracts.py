@@ -108,7 +108,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "classification.plsda": (
         "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-        "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
+        "a87402af5087cf79b58c421a3e936e7eb4521e91df0ff3318fc13eef893615fd",
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
@@ -144,7 +144,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.fitted_pls": (
         "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
-        "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
+        "404bb89c9299a89b972ca02379148ef4ed3f92b437510cc4ca1fa4d6cad43b7f",
     ),
     "model.fitted_svr": (
         "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
@@ -189,7 +189,7 @@ def historical_port_topology(graph: HistoricalValidationGraph) -> dict[str, obje
 _PRE_AUTOMATIC_PLS_CONSUMERS = {
     "classification.plsda": (
         "1775c23851d9ec5231755349dbf04ee2dcade3af8963e2e68e7911657316a236",
-        "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
+        "a87402af5087cf79b58c421a3e936e7eb4521e91df0ff3318fc13eef893615fd",
     ),
     "model.fitted_linear_regression": (
         "e67835fc9e93b0a1b5dcc306ed3cfcbbcae86eb515af3f7b730fe48cc1d79782",
@@ -201,7 +201,7 @@ _PRE_AUTOMATIC_PLS_CONSUMERS = {
     ),
     "model.fitted_pls": (
         "2252dec1ff34b651be6480a68a10662470aeaa566bfb9c179eba04f0d87c83e4",
-        "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
+        "404bb89c9299a89b972ca02379148ef4ed3f92b437510cc4ca1fa4d6cad43b7f",
     ),
     "model.fitted_svr": (
         "fe7266dee9a09f27a7be7fae4ecba2c38af9c643d9f1bd71b67b8884cc49ea1d",
@@ -233,22 +233,49 @@ def _baseline_warning_predecessor(catalog: Mapping, current: NodeExecutionContra
     return contract
 
 
-def _require_plsda_identity_inspection(
+def _require_source_only_inspection(
     operation: str, contract: NodeExecutionContract, current: NodeExecutionContract
 ) -> None:
-    # This profile already has the current ports and PLS parameters.
-    # Never inherit the older classifier-output/schema exceptions.
-    if (operation, contract.digest, current.digest) != (
+    # These exact readers have the current ports/parameters. Never inherit
+    # older classifier-output/schema exceptions or infer a transitive alias.
+    triple = (operation, contract.digest, current.digest)
+    if triple not in _BASELINE_CV_INSPECTION_CONSUMERS and triple != (
         "classification.plsda",
         "65017fa4efd2c518f7f07dbdd12c332cb472b13ee6b734b69f4c9569aa445b7f",
-        "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
+        "a87402af5087cf79b58c421a3e936e7eb4521e91df0ff3318fc13eef893615fd",
     ):
-        raise ValidationGraphError("unqualified pre-diagnostic-identity inspection consumer")
+        raise ValidationGraphError("unqualified source-only inspection consumer")
     ignored = {"implementation_components", "implementation_digest"}
     if {k: v for k, v in contract.payload.items() if k not in ignored} != {
         k: v for k, v in current.payload.items() if k not in ignored
     }:
-        raise ValidationGraphError("pre-diagnostic-identity scientific declarations changed")
+        raise ValidationGraphError("source-only scientific declarations changed")
+
+
+# One-operation eligibility expansion changes only source closures. These exact
+# previous consumers retain their complete recorded declarations for inspection.
+_BASELINE_CV_INSPECTION_CONSUMERS = {
+    (
+        "classification.plsda",
+        "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
+        "a87402af5087cf79b58c421a3e936e7eb4521e91df0ff3318fc13eef893615fd",
+    ),
+    (
+        "diagnostics.plsda_permutation",
+        "cefd94b6d587d017f5ec33a99d4443c2ea715d9294d5140e7045aae0ea9a80ec",
+        "7b903722a01c8466003fccc48799a41a76c39e4874152a1a83244e0abe86a5c5",
+    ),
+    (
+        "model.fitted_pls",
+        "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
+        "404bb89c9299a89b972ca02379148ef4ed3f92b437510cc4ca1fa4d6cad43b7f",
+    ),
+    (
+        "model.pca",
+        "3832e1488a123217d7068bcf33dae7aa982b5665dec00c402cfb034fd11064c4",
+        "2bc923bbeb1055b2d795e9846efd6c735bf3f19a6ef2887923583235be481a8e",
+    ),
+}
 
 
 class HistoricalReconstructionContext:
@@ -256,6 +283,13 @@ class HistoricalReconstructionContext:
 
     def __init__(self, profile_digest: str | None = None):
         self._catalog = inspection_predecessor_catalog(profile_digest)
+
+    @property
+    def predates_baseline_cv(self) -> bool:
+        return (
+            self._catalog["profile"]["profile_digest"]
+            == "4e75fd88112e9b46d8adbcf860dcc9598b994b48f9d36716651a9ede139cfd68"
+        )
 
     @property
     def predates_plsda_diagnostic_identity(self) -> bool:
@@ -294,7 +328,8 @@ class HistoricalReconstructionContext:
 
     def added_pls_parameters(self) -> set[str]:
         if (
-            self.predates_baseline_warning
+            self.predates_baseline_cv
+            or self.predates_baseline_warning
             or self.predates_plsda_diagnostic_identity
             or self.predates_preprocessing_expansion
             or self.predates_grouped_cv
@@ -354,6 +389,20 @@ class HistoricalReconstructionContext:
         archived = catalog["contracts"].get(operation) or catalog.get("profile_contracts", {}).get(operation)
         if (
             archived is None
+            and catalog["profile"]["operations"].get(operation) == digest
+            and any(op == operation and previous == digest for op, previous, _ in _BASELINE_CV_INSPECTION_CONSUMERS)
+        ):
+            # Some earlier profiles recorded this exact contract digest without
+            # repeating its payload. The new frozen catalog supplies only those
+            # identical bytes; never infer an unknown intermediate identity.
+            baseline_cv = inspection_predecessor_catalog(
+                "4e75fd88112e9b46d8adbcf860dcc9598b994b48f9d36716651a9ede139cfd68"
+            )
+            candidate = baseline_cv["contracts"].get(operation)
+            if candidate is not None and candidate["digest"] == digest:
+                archived = candidate
+        if (
+            archived is None
             and not self.predates_plsda_diagnostic_identity
             and catalog["profile"]["operations"].get(operation) == digest
         ):
@@ -383,14 +432,17 @@ class HistoricalReconstructionContext:
         contract = NodeExecutionContract.from_dict(archived["payload"])
         if contract.digest != archived["digest"] or contract.digest != digest:
             raise ValidationGraphError("unknown historical operation/contract identity")
-        if self.predates_plsda_diagnostic_identity:
-            _require_plsda_identity_inspection(operation, contract, current)
+        if (
+            self.predates_plsda_diagnostic_identity
+            or (operation, contract.digest, current.digest) in _BASELINE_CV_INSPECTION_CONSUMERS
+        ):
+            _require_source_only_inspection(operation, contract, current)
             return contract
         if self.predates_preprocessing_expansion or self.predates_grouped_cv:
             reviewed = {
                 "model.fitted_pls": (
                     "806989d7315252bbcf7130ede99ed641d4288b4e1c0ea573633875e868e21963",
-                    "ec228e11a36dfdab98bf14f8bb1ebf829044325f57ae23f3f24016cb2a0994ac",
+                    "404bb89c9299a89b972ca02379148ef4ed3f92b437510cc4ca1fa4d6cad43b7f",
                 ),
                 "classification.plsda": (
                     (
@@ -398,7 +450,7 @@ class HistoricalReconstructionContext:
                         if self.predates_grouped_cv
                         else "ff671687b815e9647e7b1b0ead2edab5839422196dcdb150ae1de798b9cd6824"
                     ),
-                    "b4910376c363b3564a1fb959b52ab75ca93b7744f5b15d19caa582258ca43f43",
+                    "a87402af5087cf79b58c421a3e936e7eb4521e91df0ff3318fc13eef893615fd",
                 ),
             }
             if current.digest != digest and reviewed.get(operation) != (digest, current.digest):
