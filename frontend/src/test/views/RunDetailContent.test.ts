@@ -109,7 +109,7 @@ describe('retained run identity context', () => {
     expect(identity(wrapper)).toEqual({ runId: 42, projectId: 1, workflowSha: 'a'.repeat(64), buildSha: build });
     await router.push('/runs/43?project=1&view=Summary'); await flushPromises();
     expect(identity(wrapper)).toEqual({ runId: 43, projectId: 1, workflowSha: 'b'.repeat(64), buildSha: build });
-    auth.token = 'replacement-session';
+    auth.token = 'session-B';
     expect(identity(wrapper)).toBeNull();
   });
   it('rejects late A-to-B-to-A responses even when their run and project match again', async () => {
