@@ -1,137 +1,89 @@
-# SpectraSherpa by [Spectra Scientific LLC](https://spectrascientific.ai)
+# Spectra Sherpa by [Spectra Scientific LLC](https://spectrascientific.ai)
 
 [![PyPI](https://img.shields.io/pypi/v/spectra-sherpa)](https://pypi.org/project/spectra-sherpa/)
 [![Python](https://img.shields.io/pypi/pyversions/spectra-sherpa)](https://pypi.org/project/spectra-sherpa/)
-[![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey)]()
+![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green)](LICENSE)
 [![CI](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/actions/workflows/ci.yml/badge.svg)](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-spectrascientific.ai-blue)](https://docs.spectrascientific.ai)
 
-**The open chemometrics workbench — visual, reproducible, and local-first.**
+SpectraSherpa is an open-source workbench for building spectroscopic and
+chemometric models. Inspect spectra and feature tables, assemble analysis
+workflows, review validation results, and apply saved models to new data.
+The browser interface and Python SDK use the same scientific operations.
 
-SpectraSherpa turns spectra and feature tables into visible, versioned analysis
-workflows. Import supported scientific files, inspect their axes and metadata,
-then use PCA, PLS, MCR-ALS, SIMCA, PLS-DA, variable selection, calibration
-transfer, and validation without hiding the data path behind a notebook.
+**Local OSS** runs on your computer with your own data. AI assistance is optional:
+BYOK means **bring your own key** for a supported AI provider; you choose the
+provider and pay its usage charges. A configured local model is also supported.
+The **[hosted Demo](https://demo.spectrascientific.ai)** offers browser access
+with supplied or registered reference datasets and managed AI, without local
+setup or your own AI key. Hosted optimization campaigns are separate from OSS.
 
-This is the source for **SpectraSherpa 0.6.4**. See the
-[release notes](docs/releases/0.6.4.md) for changes and migration requirements.
-Check [PyPI](https://pypi.org/project/spectra-sherpa/) for package availability;
-source versions and tags alone do not establish it. Desktop packaging remains
-paused until separately authorized.
+## Why SpectraSherpa
 
-Install the latest published Workbench and Python SDK (Python 3.11 or 3.12):
+Fitting a model is only part of the work. A lab also needs to know which spectra
+were used, why observations were excluded, where preprocessing was fitted, and
+whether a reported error describes calibration or genuinely held-out samples.
+Moving between spreadsheets, notebooks, and instrument software can break that
+record before a model ever reaches another analyst or instrument.
+
+Pasting spectra or metrics into an AI chat does not preserve data custody: the
+connection between the source, transformations, and conclusions. A convincing
+explanation can omit sample identity, introduce leakage, or describe a different
+analysis from the one actually run.
+
+SpectraSherpa keeps source context, workflow versions, sample selections, and
+retained results together so you can inspect how a model was built and check
+whether it can be applied. Its approach to a trustworthy AI co-scientist is to
+ground assistance in that recorded context while scientific code performs the
+calculations. You review the suggestions and evidence. Reproduction still
+requires the original inputs and a compatible runtime.
+
+## Getting started
+
+**Try the [Demo](https://demo.spectrascientific.ai)** to explore the workflow
+with reference data. See [Demo access and limits](https://docs.spectrascientific.ai/cloud/demo-access/).
+
+**Use local OSS for your own data.** With Python 3.11 or 3.12, install the latest
+published package and open the Workbench:
 
 ```bash
 python -m pip install spectra-sherpa
 spectra-sherpa
 ```
 
-The **[hosted Demo](https://demo.spectrascientific.ai)** is a separate service
-with its own access policy and supplied/reference datasets. Use local OSS for
-your own supported files. Local OSS includes BYOK chat; managed
-Advisor and optimization campaigns are hosted features.
+Open `http://localhost:8000`; no hosted account is required. This repository
+contains **v0.6.4** source; check [PyPI](https://pypi.org/project/spectra-sherpa/)
+for availability and the [upgrade notes](docs/releases/0.6.4.md) before updating
+an existing installation. See [local setup](docs/onboarding/local-30-minutes.md)
+for source installation and provider configuration.
 
-📖 [Documentation](https://docs.spectrascientific.ai) · 🧭 [Choose your path](docs/onboarding/choose-your-path.md) · 🧩 [Node Library](docs/nodes/index.md)
+Optional extras: `scp` adds EFA, MCR-ALS, and SIMPLISMA; `hitran` and `nist` add
+reference-data integrations. [Setup and data-provider guidance](docs/workflows/datasets-and-providers.md)
+covers credentials and access. Obtain Eigenvector research datasets directly
+from their provider before importing them. Local network access is disabled by
+default; enabling an external AI provider sends permitted context to that provider.
 
-## Why SpectraSherpa
+## Chemometric toolkit
 
-A single open workbench for the chemometrics you actually run, built around five strengths:
+| Task | Methods and tools |
+| --- | --- |
+| Prepare spectra | Smoothing and derivatives, baseline correction, MSC, SNV, OSC, normalization, scaling |
+| Explore mixtures and populations | PCA, MCR-ALS, SIMPLISMA, EFA, hierarchical clustering |
+| Calibrate and classify | PLS regression, PLS-DA, SIMCA, KNN |
+| Select variables and transfer calibration | iPLS, CARS, SPA, MC-UVE, VIP, PDS, direct standardization |
+| Evaluate and apply | Cross-validation, nested CV, selection stability, model comparison, batch prediction |
 
-- **A first-class chemometric toolkit.** Preprocessing, decomposition, calibration, classification, variable selection, and calibration transfer are core features, purpose-built for spectroscopy. (Full list below.)
-- **Numbers you can defend.** Native PLS and PLS-DA share one cited Sherpa SIMPLS authority, while optional SpectroChemPy operations retain their declared upstream runtime. MCR-ALS is checked against synthetic ground truth and reference workflows.
-- **Inspect saved evidence.** Workflow versions and retained run records preserve the recorded recipe and result context. Reproduction also requires the original inputs and compatible runtime; a saved recipe alone cannot guarantee it.
-- **From exploration to production.** Export supported workflows to standalone Python or a Jupyter notebook; trained models are first-class artifacts you can batch-apply and deploy.
-- **Open and local-first.** AGPL-3.0, reads CSV, JCAMP-DX, NumPy, MATLAB
-  v4/v5/v7.3 and qualified Eigenvector DataSet Objects, qualified Galactic
-  SPC, and one-dimensional Bruker OPUS files directly, and runs entirely on
-  your machine with network egress **denied by default in local mode**.
+A **Project** holds datasets, workflows, saved runs, models, and reports.
+**Workflows** describe the analysis; **runs** retain its recorded results.
+Sample labels are distinct from observation identities, and calibration,
+cross-validation, and held-out evaluation have different meanings.
 
-Built to be an open foundation that labs and instrument makers can standardize
-on, extend, and embed. For third-party reference data, the user obtains the
-source file directly from its provider. SpectraSherpa does not download Eigenvector files on your behalf or
-redistribute them; your imported copy is stored locally for analysis. Local and paid users can select it
-through the normal upload path; a policy-constrained deployment can instead
-admit only a registered byte-identical reference. See the
-[dataset and provider guide](docs/workflows/datasets-and-providers.md).
-
-## Install & run
-
-The command above opens the Workbench at `http://localhost:8000` in your
-browser — **no login required**. The first launch initializes a local database.
-The Python SDK is included in the same installation.
-
-Choose optional capabilities when installing:
-
-```bash
-python -m pip install "spectra-sherpa[scp,hitran,nist]"
-```
-
-| Extra | Adds |
-|-------|------|
-| `scp` | SpectroChemPy runtime for EFA, MCR-ALS, and SIMPLISMA |
-| `hitran` | HITRAN/HAPI clients for live line-table downloads |
-| `nist` | NIST WebBook search and acquisition |
-
-HITRAN downloads require your personal key in **Settings → API Keys** and
-**Settings → Integrations → HITRAN/HAPI Queries** enabled. Network access is
-optional and disabled by default locally.
-
-For a source installation, use the exact reviewed revision and the
-[local installation guide](docs/onboarding/local-30-minutes.md). Build its
-frontend before installing; a Git source archive is not a prepared Python wheel.
-`pip install spectra-sherpa` installs the latest published package, which may
-differ from the source checkout.
-
-Run the canonical Python example:
-
-```bash
-python -m spectra_sherpa.examples.canonical_workflow
-```
-
-It builds and executes a typed DAG, saves and reopens its workflow, and writes
-results to `spectra-sherpa-quickstart/`. With Poetry, prefix the command with
-`poetry run`.
-
-See [Local onboarding](docs/onboarding/local-30-minutes.md),
-[Python workflows](docs/onboarding/python-canonical-workflows.md), and
-[Migrate to 0.6](docs/onboarding/migrate-to-0.6.md).
-
-## The chemometric toolkit
-
-A qualified catalog of data, preprocessing, exploratory, modeling, validation,
-transfer, and output nodes covers the workflow you actually run:
-
-- **Preprocessing** — Savitzky-Golay smoothing/derivatives, baseline correction, MSC, SNV, OSC, normalization, scaling.
-- **Exploratory** — PCA, MCR-ALS, SIMPLISMA, EFA, hierarchical clustering.
-- **Calibration & classification** — PLS regression, PLS-DA, SIMCA, KNN.
-- **Variable selection** — iPLS, CARS, SPA, MC-UVE, VIP.
-- **Calibration transfer** — PDS and direct standardization for instrument-to-instrument transfer.
-- **Validation & deployment** — cross-validation, nested CV, selection stability, model comparison, batch prediction, deploy-readiness checks.
-
-See the **[Node Library](docs/nodes/index.md)** for node parameters and ports, and **[Current Capabilities](docs/introduction/capabilities.md)** for the supported production scope.
-
-## Core concepts
-
-Keep data, workflows, runs, model artifacts, and reports together in a **Project**. See [Projects, Datasets, and Runs](docs/workflows/projects-datasets-runs.md).
-
-## For Python analysts & chemometricians
-
-Use labeled arrays through `dataset.data`, compose typed workflows in Python,
-or add a canonical node to the visual editor. The SDK and GUI share execution
-contracts. New nodes require reviewed scientific behavior and contract tests;
-see [Contributing](docs/developers/contributing.md).
-
-## Built on the work of others
-
-SpectraSherpa stands on established open science, and keeps citation guidance close to generated outputs:
-
-- **[SpectroChemPy](https://www.spectrochempy.fr/)** — upstream spectroscopic algorithms, data structures, and instrument-file readers, by Arnaud Travert and Christian Fernandez at the Laboratoire Catalyse et Spectrochimie (LCS), ENSICAEN / Université de Caen / CNRS. SpectroChemPy is optional, installed separately through the `scp` extra, and governed by its upstream [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) terms. SpectraSherpa uses a private, matrix-only adapter for exactly EFA, MCR-ALS, and SIMPLISMA; it exposes none of the upstream readers or datasets.
-- **[HITRAN](https://hitran.org/) / HAPI** — the high-resolution molecular spectroscopic database used by Data → Synthesis to build physically grounded FTIR line tables.
-- **[Eigenvector Research data sets](https://eigenvector.com/resources/data-sets/)** — recommended NIR/OES chemometrics teaching and validation datasets. The user obtains a file directly from Eigenvector; SpectraSherpa neither downloads it on the user's behalf nor redistributes the raw data.
-- **[NIST Chemistry WebBook](https://webbook.nist.gov/) (SRD 69)** and the **NIST Quantitative Infrared Database (SRD 79)** — reference IR spectra for synthesis.
-
-These databases are not owned by Spectra Scientific. Cite NIST, HITRAN, and HAPI in any report, publication, or validation package that uses synthetic datasets — [Reference Libraries and Synthesis](docs/workflows/references-synthesis.md) and the [Attributions](docs/attributions/index.md) page list the recommended attributions.
+The included **Python SDK** lets you compose and run typed workflows in code
+using the same operations as the GUI. Supported workflows can be exported to
+Python or notebooks. Start with [Python workflows](docs/onboarding/python-canonical-workflows.md);
+consult the [Node Library](docs/nodes/index.md) and
+[capability boundaries](docs/introduction/capabilities.md) for supported methods.
 
 ## Documentation
 
@@ -142,17 +94,31 @@ Full docs at **[docs.spectrascientific.ai](https://docs.spectrascientific.ai)**.
 - **Reference:** [Supported File Types](docs/introduction/file-types.md) · [Node Library](docs/nodes/index.md) · [Templates](docs/workflow-templates/index.md)
 - **Develop:** [Architecture](docs/architecture/index.md) · [Contributing](docs/developers/contributing.md) · [Developer Setup](docs/developers/setup.md)
 
-## Contributing
+## Contributing and acknowledgements
 
-We welcome contributions — see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+Help improve readers, scientific methods, workflow examples, documentation, and
+regression tests. For a scientific issue, include the data shape, processing
+steps, and expected result, using shareable data where possible. See
+[Contributing](CONTRIBUTING.md); code contributions require a signed CLA.
 
-> [!IMPORTANT]
-> This project requires a signed Contributor License Agreement (CLA). When you open a PR, a bot comments with instructions; sign by replying:
-> `I have read the CLA Document and I hereby sign the CLA`
+SpectraSherpa builds on work by the wider spectroscopy community:
 
-## License
+- **[SpectroChemPy](https://www.spectrochempy.fr/)**, by Arnaud Travert and Christian Fernandez: optional EFA, MCR-ALS, and SIMPLISMA through a matrix adapter. Upstream readers and datasets are not exposed by this integration.
+- **[HITRAN / HAPI](https://hitran.org/)**: molecular line data and tools for spectral synthesis.
+- **[Eigenvector Research (EVRI)](https://eigenvector.com/resources/data-sets/)**: chemometrics teaching and research datasets, obtained by users directly rather than redistributed here.
+- **[NIST](https://webbook.nist.gov/)**: Chemistry WebBook (SRD 69) and Quantitative Infrared Database (SRD 79) reference spectra.
 
-Copyright (C) 2026 [Spectra Scientific LLC](https://spectrascientific.ai). Licensed under **AGPL-3.0** — see [LICENSE](./LICENSE). If you distribute a modified version (including as a network service), you must release your modifications under the same license. SpectroChemPy is CeCILL-B; see [NOTICE.md](./NOTICE.md) for full third-party terms. Enterprise features and commercial licensing are available from Spectra Scientific.
+Credit the methods and data you use. See [Attributions](docs/attributions/index.md)
+and [Reference Libraries and Synthesis](docs/workflows/references-synthesis.md)
+for citations and provider terms.
+
+## License and warning
+
+Copyright © 2026 [Spectra Scientific LLC](https://spectrascientific.ai).
+Licensed under [AGPL-3.0](LICENSE); commercial licensing is available.
+Third-party terms, including SpectroChemPy’s CeCILL-B license, are listed in [NOTICE](NOTICE.md).
 
 > [!WARNING]
-> Provided "AS IS" without warranty of any kind. Spectra Scientific LLC disclaims all liability for damages arising from use, including reliance on analytical results. See [DISCLAIMER](./DISCLAIMER).
+> Provided “AS IS,” without warranty. AI suggestions and model outputs require
+> scientific review; successful execution does not establish analytical validity
+> or fitness for a particular use. See [DISCLAIMER](DISCLAIMER).
