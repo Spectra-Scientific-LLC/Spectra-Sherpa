@@ -318,6 +318,9 @@ watch(() => projectStore.currentProjectId, (id) => { void provenanceStore.refres
 watch(() => router.currentRoute.value.fullPath, refreshProjectEvidence);
 
 const computeStatus = computed(() => {
+  if (appMode.value === "enterprise" && siteProfile.value === "demo") {
+    return { class: "status-blue", tooltip: "Compute: Hosted" };
+  }
   return { class: "status-blue", tooltip: "Compute: Local" };
 });
 

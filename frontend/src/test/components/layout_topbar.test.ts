@@ -550,6 +550,7 @@ describe("Topbar action hover labels", () => {
     mocks.projectStore.currentProjectId = 1;
     mocks.authStore.user = { id: 7, username: "alice", capabilities: { admin: false } };
     mocks.appMode.value = "local";
+    mocks.siteProfile.value = null;
     mocks.workflowStore.workflowId = null;
     mocks.workflowStore.nodes = [];
     mocks.workflowStore.hasUnsavedChanges = false;
@@ -563,6 +564,17 @@ describe("Topbar action hover labels", () => {
     mocks.provenanceStore.projectId = null;
     mocks.provenanceStore.summary = null;
     mocks.provenanceStore.error = null;
+  });
+
+  it.each([
+    ["enterprise", "demo", "Hosted"],
+    ["local", null, "Local"],
+    ["hybrid", null, "Local"],
+  ])("labels compute from the user's perspective in %s/%s", (mode, profile, label) => {
+    mocks.appMode.value = mode as string;
+    mocks.siteProfile.value = profile;
+    const wrapper = mountTopbar(true);
+    expect(wrapper.get(`[aria-label="Compute: ${label}"]`).classes()).toContain("status-blue");
   });
 
   it("loads selector choices for a cold deep link and preserves the loaded project name", async () => {
