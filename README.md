@@ -15,7 +15,7 @@ The browser interface and Python SDK use the same scientific operations.
 **Local OSS** runs on your computer with your own data. AI assistance is optional:
 BYOK means **bring your own key** for a supported AI provider; you choose the
 provider and pay its usage charges. A configured local model is also supported.
-The **[hosted Demo](https://demo.spectrascientific.ai)** offers browser access
+The **[hosted Demo](https://demo.spectrascientific.ai)** is a separate service offering browser access
 with supplied or registered reference datasets and managed AI, without local
 setup or your own AI key. Hosted optimization campaigns are separate from OSS.
 
