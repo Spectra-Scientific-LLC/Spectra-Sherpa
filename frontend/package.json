@@ -23,9 +23,9 @@
   },
   "dependencies": {
     "@monaco-editor/loader": "^1.7.0",
-    "@tanstack/vue-query": "^5.105.0",
+    "@tanstack/vue-query": "^5.105.3",
     "@vueuse/core": "^11.3.0",
-    "axios": "^1.20.0",
+    "axios": "^1.21.0",
     "chart.js": "^4.6.1",
     "d3-scale": "^4.0.2",
     "date-fns": "^4.4.0",
