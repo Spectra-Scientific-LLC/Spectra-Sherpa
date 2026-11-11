@@ -23,6 +23,24 @@ or download alone does not establish scientific fidelity.
 
 For chemometrics, useful output includes the numbers and the context: sample IDs, target names, units, metric names, split design, and model parameters.
 
+## Training-set cross-validation outputs
+
+Connect the Training-set CV evaluator's default output to Plot and Data Table.
+For a sheet carrying a fold-validation plan, the plot shows each validation
+fold's RMSE and the retained pooled RMSECV as a reference line. The table shows
+pooled CV statistics first, then each fold's sample count and statistics.
+These are cross-validation results, not calibration fits or held-out test results.
+Pooled metrics are computed by the executor across validation predictions; they
+are not the arithmetic mean of fold metrics. Undefined statistics remain empty.
+
+The current sheet result carries aggregate single-response metrics, not individual
+out-of-fold predictions, so these outputs do not show predicted-versus-measured
+scatter or residual plots. Response units are not declared by this payload.
+Original-versus-current data identity, fold identity, held-out exclusion counts,
+and execution digests are retained in the output metadata; plotting does not
+establish that two runs are comparable. Multiresponse records are refused rather
+than combining different response scales. These outputs work without Advisor.
+
 ## Choosing the Right Output
 
 - Use plots for pattern recognition: spectra, scores, loadings, residual diagnostics, dendrograms, and acceptance regions.

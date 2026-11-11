@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 import numpy as np
 
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.dag import presentation_limits
+from spectra_sherpa.app.services.dag import presentation_limits, sheet_cv_presentation
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
@@ -329,6 +329,8 @@ class DataTableNode(Node):
         Anything else falls back to a key/value table (for flat scalar
         dicts like model diagnostics).
         """
+        if "fold_validation" in data and data.get("task_type") == "regression":
+            return sheet_cv_presentation.table(data, max_rows=max_rows, show_index=show_index)
         if {"method", "features", "x_units", "x_title", "n_total_variables", "selection_context"} <= data.keys():
             features = data["features"]
             if not isinstance(features, list) or any(
@@ -568,7 +570,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
     implementation_id="spectrasherpa.output.data-table",
-    implementation_version="1.0.2",
+    implementation_version="1.1.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="filters_samples",
@@ -578,7 +580,7 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 10, "cpu_seconds": 5, "memory_bytes": 536_870_912},
     license_id="Apache-2.0",
     help_reference="docs/nodes/output.md",
-    implementation_modules=(presentation_limits,),
+    implementation_modules=(presentation_limits, sheet_cv_presentation),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
 )
