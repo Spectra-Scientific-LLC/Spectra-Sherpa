@@ -13,7 +13,7 @@ import spectra_sherpa.sdk.plot_spec as plot_spec_contract
 from spectra_sherpa.app.lib import comparison_identity, sample_identity
 from spectra_sherpa.app.lib.data_roles import get_dataset_data_role
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.dag import presentation_limits
+from spectra_sherpa.app.services.dag import presentation_limits, sheet_cv_presentation
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
@@ -335,6 +335,15 @@ class PlotNode(Node):
         return await self.execute(input_data=source)
 
     def _build(self, input_data: Any) -> Dict[str, Any]:
+        if (
+            isinstance(input_data, dict)
+            and "fold_validation" in input_data
+            and input_data.get("task_type") == "regression"
+        ):
+            return sheet_cv_presentation.plot(input_data)
+        return self._build_supported(input_data)
+
+    def _build_supported(self, input_data: Any) -> Dict[str, Any]:
         """Dispatch one supported scientific result to its presentation projection."""
         plot_type = self.parameters.get("plot_type", "spectra")
         x_axis = self.parameters.get("x_axis", 0)
@@ -2007,11 +2016,12 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
     implementation_id="spectrasherpa.output.plot",
-    implementation_version="2.2.0",
+    implementation_version="2.3.0",
     implementation_modules=(
         comparison_identity,
         sample_identity,
         presentation_limits,
+        sheet_cv_presentation,
         plot_spec_contract,
         regression_comparison_contract,
         stats_summary_contract,
