@@ -131,25 +131,25 @@
       "id": "OES-03",
       "priority": "P0",
       "title": "Upload manifest and study context",
-      "change": "Reuse native ingestion and registered user-acquired imports. Compute SHA-256 on received bytes; accept optional expected SHA/manifest and fail on mismatch. Pin process companions, dictionaries, DOE/recipe files, references and parser/schema versions. Validate typed wavelength units, response units and channel blocks.",
+      "change": "Consume the shared F02 related-source manifest from architecture PR #208, not a BOSCH-only manifest. Reuse native ingestion and registered user-acquired imports. Compute SHA-256 on received bytes; accept optional expected SHA/manifest and fail on mismatch. Pin process companions, dictionaries, DOE/recipe files, references and parser/schema versions. Validate typed wavelength units, response units and channel blocks.",
       "acceptance": "Clean project → upload original files → review hashes and interpretation → immutable admitted source. Changed byte or missing required companion fails before analysis. SHA proves byte identity, not instrument custody or valid labeling.",
-      "depends_on": "OES-01",
+      "depends_on": "OES-01,F02",
       "owner": "OSS canonical + application"
     },
     {
       "id": "OES-04",
       "priority": "P0",
       "title": "Versioned DOE metadata binding",
-      "change": "Extend typed sample-table / collection-definition authority with a keyed condition attachment operation; do not introduce free-form parallel identity. Join day/lot/wafer using source-scoped keys; retain planned and actual factors, units, source cells and mapping hash.",
+      "change": "Consume F01 scoped material/lot/process-execution associations from architecture PR #208 through existing typed specimen/sample identity. Do not merge similarly named wafers across lots or infer physical identity from file hashes. Extend typed sample-table / collection-definition authority with a keyed condition attachment operation; do not introduce free-form parallel identity. Join day/lot/wafer using source-scoped keys; retain planned and actual factors, units, source cells and mapping hash.",
       "acceptance": "Reordered rows yield identical joins; missing, ambiguous or duplicate joins fail; overrides create a new revision. Imported conditioning-surface/repetition values appear in peak rows and report.",
-      "depends_on": "OES-03",
+      "depends_on": "OES-03,F01",
       "owner": "OSS canonical + application"
     },
     {
       "id": "OES-05",
       "priority": "P0",
       "title": "Reusable recorded-interval selection",
-      "change": "Reuse preprocess.bosch_phase_labels and reviewed boundary receipts. Bind clock alignment, source labels, overrides, transition retention, exclusion reasons and frame/time coverage to the workflow. Explicitly choose Preview snapshot or Full selected intervals.",
+      "change": "Reuse preprocess.bosch_phase_labels and reviewed boundary receipts. Bind clock alignment, source labels, overrides, transition retention, exclusion reasons and frame/time coverage to the workflow. Explicitly choose Preview snapshot or Full selected intervals. Extend the existing immutable interval contract to consume shared subject/event and source-role bindings only as needed; retain legacy saved portfolio support and keep BOSCH phase interpretation in its connector.",
       "acceptance": "Every acquisition is accounted for exactly once, including transitions/unmapped/no-emission; snapshot stays exactly nine, full selection expands only by explicit choice; boundary edits invalidate dependent results.",
       "depends_on": "OES-03,OES-04",
       "owner": "OSS canonical + application"
@@ -221,7 +221,7 @@
       "id": "OES-13",
       "priority": "P0",
       "title": "Qualification and release evidence",
-      "change": "Add numerical semantic tests, clean-project browser journeys, original-source replay, bounded-memory/cancel/stale-response checks, generated-contract checks, pinned runtime validation and paired source reconciliation. Preserve private/public boundaries.",
+      "change": "Add numerical semantic tests, clean-project browser journeys, original-source replay, bounded-memory/cancel/stale-response checks, generated-contract checks, pinned runtime validation and paired source reconciliation. Preserve private/public boundaries. Include F01/F02 association and manifest compatibility tests; full metrology is not a release prerequisite.",
       "acceptance": "BOSCH clean upload -> full intervals -> per-wafer medians -> DOE report passes on the actual isolated candidate. Scope tests, generated contracts and local browser/build checks are fresh. Any paired PR/release work and unexecuted platform gates are recorded separately; Eigenvector is deferred.",
       "depends_on": "OES-11",
       "owner": "Paired release owners"
@@ -271,12 +271,36 @@
     {
       "id": "A11",
       "test": "Data table and plots verified independently in-browser; include scientific source/workflow/node/port identities and actual outcome in fresh evidence. Run scoped Python/frontend checks, production build, generated-contract checks and make evidence-check; report unexecuted platform/release coverage honestly."
+    },
+    {
+      "id": "A12",
+      "test": "F01: similarly named wafers in different lots stay distinct; spectra and process companion explicitly mapped to the same wafer share material identity while preserving original observation IDs. Unknown chamber remains explicit; conditioning can have no wafer. Existing nine-spectrum portfolio remains valid."
+    },
+    {
+      "id": "A13",
+      "test": "F02: source-role and reviewed identity/companion bindings replay from a pinned manifest after restart. Changed relationships create revisions and stale dependent results; no ad hoc wafer catalog or giant per-frame manifest is required. BOSCH completes without metrology adapters or tool corrections."
     }
   ],
   "handoff": {
-    "first_step": "Read AGENTS.md, docs/AUTHORITIES.md and repository governance. Inventory PR heads and later local changes before editing. Start in isolated archive; do not alter actual Sherpa checkout.",
+    "first_step": "Read AGENTS.md, docs/AUTHORITIES.md and repository governance. Inventory PR heads and later local changes before editing. Start in isolated archive; do not alter actual Sherpa checkout. Read architecture PR #208 and agree the F01/F02 minimum contracts before implementing the BOSCH bindings.",
     "eigenvector": "Preserve generic extensibility, but defer real MATLAB channel/time/phase adapter qualification to follow-up. It must not delay or masquerade as completed BOSCH functionality.",
     "delivery": "Demonstrate the local upload-to-report journey in-app and leave a usable template and retained report at port 8012. No external merge/deploy or release qualification is implied.",
     "verification_status": "This PR is a plan. Historical local checks and audit probes do not qualify unimplemented nodes or the future template."
+  },
+  "revised_date": "2026-11-16",
+  "shared_foundations": {
+    "architecture_pr": "https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/pull/208",
+    "ownership": "PR #208 owns the generic F01/F02 contracts and shared implementation work. Coordinate one implementation; BOSCH may deliver the minimal slice first but must not introduce a competing material registry or manifest.",
+    "F01": {
+      "name": "Material and process associations",
+      "required_slice": "Persistent scoped wafer/material identity, explicit lot association and process execution identity projected to existing specimen/sample authority. Cross-file mapping is source-authored or reviewed; chamber/tool may be unknown. Preserve unique observation IDs separately from repeated material IDs."
+    },
+    "F02": {
+      "name": "Versioned related-source manifest",
+      "required_slice": "Pin daily/process source roles and SHA-256, dictionaries, parser/schema versions, condition context, subject/event links and reviewed companion/identity join rules. Use compact recording/interval associations rather than one JSON manifest row per frame."
+    },
+    "sequence": "Agree the generic contracts first, implement and test the minimal F01/F02 slice once, then consume it here. Full multichamber history, metrology site plans and tool matching are independent later slices and do not gate BOSCH delivery.",
+    "localization": "BOSCH retains source decoding, clock alignment, phase/transition interpretation and overrides, OES-specific preview, peak measurement/assignment, DOE aggregation and its report. Generalize immutable interval selection only as far as required to consume F01/F02 with legacy portfolio compatibility.",
+    "compatibility": "Retain old sample IDs, source receipts and saved portfolios. Material association revisions create new scientific bindings and stale downstream status. File identity is not physical material identity; unknown relationships remain unresolved."
   }
 }
