@@ -1,0 +1,282 @@
+{
+  "schema_version": "spectrasherpa.implementation-plan/1",
+  "title": "v0.6.5 BOSCH raw OES upload-to-report template",
+  "date": "2026-11-15",
+  "status": "Planning only; implementation must be triggered separately",
+  "implementation_scope": "Isolated local deployment only; no changes to the actual Sherpa checkout, external deployment, publishing, merging or dependency upgrades.",
+  "outcome": "A scientist uploads original BOSCH files, reviews SHA-bound interpretation and step selections, discovers and reviews peak definitions, measures all eligible original acquisitions, and generates a retained report of per-wafer critical-step median intensities by DOE conditions without developer scripts.",
+  "reuse": {
+    "oss_pr": {
+      "url": "https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/pull/156",
+      "head_sha": "e73504e174334292264842d59627daae558fcd30",
+      "head_branch": "codex/bosch-netcdf-reader",
+      "base_branch": "codex/oes-v0.6.5-integration"
+    },
+    "integration_pr": {
+      "url": "https://github.com/Spectra-Scientific-LLC/spectra/pull/1358",
+      "head_sha": "2a4e8a992aab63c568f7a7b4ae5109f02a4b19b3"
+    },
+    "local_source": "work/bosch-reader-source/packages/spectra-sherpa (isolated archive, not a Git checkout)",
+    "local_data": "work/bosch-app",
+    "local_url": "http://127.0.0.1:8012",
+    "audit": "outputs/v065-oes-template-audit.html; outputs/v065-oes-template-plan.json",
+    "local_additions_to_preserve": [
+      "Exact acquisition snapshot portfolios and data.portfolio_spectra",
+      "Reviewed phase boundaries, transition retention and relative frame overrides",
+      "Simplified step table and matched-transition selection",
+      "Identical selection in comparison and wavelength trace, wavelength grid arrows",
+      "Bounded canvas rendering for all selected spectra and crash fixes",
+      "Raw-count peak workflow and exported exact source reconstruction",
+      "UVSpectra10 local retirement and explicit stale-binding errors"
+    ],
+    "note": "PR metadata rechecked 2026-11-15: both PRs remain open. Their remote heads predate later local changes. Reconcile, do not replace the local archive with a PR checkout."
+  },
+  "inputs": {
+    "required": [
+      "Selected original Day_*.nc daily OES files",
+      "Matching Process_data.nc",
+      "SHA-pinned OES/process decoding dictionaries, reusing bundled verified bytes when applicable",
+      "Minimum versioned recipe/phase and day/lot DOE context, reusing the reviewed BOSCH preset when applicable",
+      "Versioned public or user-provided emission references with citations and coordinate conventions"
+    ],
+    "optional": [
+      "Expected source SHA-256 manifest",
+      "User-reviewed mapping, phase boundary and assignment revisions"
+    ],
+    "excluded": [
+      "Wafer metrology and etch-response joins",
+      "Microscopy, images, etch depth/rate or uniformity modeling",
+      "A requirement to upload the entire Zenodo archive",
+      "UVSpectra10 support",
+      "Eigenvector adapter implementation in the BOSCH acceptance gate",
+      "Private hosted OES assignment code or reference-library copying"
+    ]
+  },
+  "scientific_contract": {
+    "discovery": "Reuse analysis.peak_finding on bounded representative raw spectra. Height 200 counts and +1.2 nm relative shift are editable BOSCH choices, never universal defaults. Discovery threshold does not filter the quantification population.",
+    "quantification": "Freeze PeakDefinitionSet with unique IDs, raw/corrected wavelength coordinates, explicit channel/window or molecular band, units, background treatment and reference revision. Measure every eligible original acquisition, including values below the discovery cutoff. Preserve invalid/missing/nondetected/zero as distinct states.",
+    "statistic": "Primary: acquisition-weighted median of per-frame peak-window heights (or declared fixed channel / band metric), separately per day/lot, wafer, phase, channel and peak. Retain Q1, Q3, eligible/valid/excluded counts, detection rate, episode/cycle coverage and the weighting rule. Exact results must not depend on batching; no median of batch medians.",
+    "distinctions": [
+      "A peak on a median spectrum is not the median of per-acquisition peak heights.",
+      "Existing PeakFinding median_height is conditional on detected constituent peaks.",
+      "SNV/smoothed responses must not be reported as raw counts.",
+      "Molecular-band area requires its own units and must not be mislabeled counts."
+    ],
+    "doe": "Keep acquisition -> cycle/episode -> wafer -> lot/day -> condition nesting. Conditioning is a chamber/lot treatment; frames are not independent treatment replicates. Show lot summaries, observed cells and missing cells without unsupported causal claims.",
+    "known_design": "Reviewed preset: 10 lots, 96 recorded wafers across catalog dates, not necessarily all uploaded. Blank SiO2 has only 3 repetitions recorded; do not invent 1/9 cells. Do not infer a gas-number/species map from chemistry or assign endpoint-cleaning identity to unlabeled RF intervals.",
+    "assignment": "Separate detection, measurement, reference candidate match, scientist approval and explanatory prose. Retain alternatives and unassigned peaks. Nearest wavelength plus recipe context is insufficient for certainty; retain atomic/molecular distinctions, citations and wavelength convention.",
+    "population": "Account for every acquisition as a stable, transient, no-emission or unresolved interval. Preserve transition signal. Boundary overrides create revisions and invalidate dependent results; snapshot and full-interval modes are explicit."
+  },
+  "workflow": {
+    "reuse": [
+      "Native BOSCH reader/registry and typed collection/sample-table identities",
+      "preprocess.bosch_phase_labels and reviewed overrides",
+      "data.portfolio_load",
+      "analysis.peak_finding",
+      "Existing Report store, retained runs, export/report-data and artifact storage",
+      "Existing upload, template wizard, scoped-request and cancellation infrastructure"
+    ],
+    "proposed_operations": [
+      "Keyed DOE attachment through typed sample-table authority",
+      "Relative wavelength mapping with retained original axis and anchor evidence",
+      "analysis.peak_measurement",
+      "stats.grouped_peak_summary",
+      "analysis.spectral_line_match"
+    ],
+    "new_contracts": [
+      "Versioned PeakDefinitionSet",
+      "Compact per-acquisition PeakMeasurements with source/sample/acquisition/episode IDs",
+      "Grouped PeakSummary with counts, coverage and weighting",
+      "Persisted AssignmentReview revision",
+      "Retained OES report sections and checksummed export artifacts"
+    ],
+    "rules": [
+      "Inspect existing registry and typed contracts before naming or adding operations; reuse or extend canonical owners rather than duplicating scientific calculations in services or UI.",
+      "Report consumes retained node results; it must not recompute peaks, retrieve hardcoded sample IDs or reconstruct originals from bounded JSON previews.",
+      "Stream full-interval extraction in bounded batches; retain compact measurements and checksummed source pointers rather than full-day spectra in browser memory.",
+      "Ordinary Local mode must work offline using public/user references; private Demo/Pro assignment remains optional and private."
+    ]
+  },
+  "ui_journey": [
+    "Choose BOSCH raw OES template in a clean project or use existing uploaded files in the same project.",
+    "Upload selected daily files and process companion; display computed SHA-256 and validate optional expected hashes before admission. Review reused dictionary/context hashes.",
+    "Review day/wafer/step table in acquisition sequence. Choose critical stable steps, optionally transitions/no-emission; preserve easy relative frame overrides.",
+    "Choose Preview snapshot or Full selected intervals explicitly; retain begin/middle/end preview without silently substituting it for full population.",
+    "Discover peaks in raw counts, inspect representative spectra, review peak windows, relative wavelength correction and atomic/band definitions.",
+    "Review DOE mapping, intensity metric, weighting and reference candidates; save scientist assignments as a new revision.",
+    "Run the canonical workflow with progress, cancellation and actionable error recovery.",
+    "Open the retained Report with per-wafer peak median/IQR/counts/coverage and lot/condition comparisons, assignment evidence, provenance and limits.",
+    "Export source manifest, definitions, acquisition-level compact measurements, grouped summaries, assignment review and human-readable report. Reopen after restart without scripts."
+  ],
+  "work_orders": [
+    {
+      "id": "OES-01",
+      "priority": "P0",
+      "title": "Reconcile the release baseline",
+      "change": "Inventory PR #156 / #1358, the later local nine-spectrum changes, reviewed segmentation/overrides and all report scripts. Resolve branch conflicts and reconcile shared/public blobs without changing historical qualification receipts. Preserve the isolated local deployment; no git reset or wholesale replacement with the older PR head. Record exact reconciled source identities.",
+      "acceptance": "A pinned candidate contains all authorized behavior; preservation tests pass; no local-only scientific algorithm is mislabeled released.",
+      "depends_on": "",
+      "owner": "Paired OSS / integration"
+    },
+    {
+      "id": "OES-02",
+      "priority": "P0",
+      "title": "Retire UVSpectra10",
+      "change": "Remove catalog/discovery/import support, certified-dataset entries, filename-specific unit inference and packaged CSV; retain an explicit retired-binding error and external historical custody archive.",
+      "acceptance": "No supported template/catalog advertises UVSpectra10; stale binding fails clearly; generic CSV works; historical evidence remains unchanged. Local removal completed; paired release work remains.",
+      "depends_on": "OES-01",
+      "owner": "OSS application + packaging"
+    },
+    {
+      "id": "OES-03",
+      "priority": "P0",
+      "title": "Upload manifest and study context",
+      "change": "Reuse native ingestion and registered user-acquired imports. Compute SHA-256 on received bytes; accept optional expected SHA/manifest and fail on mismatch. Pin process companions, dictionaries, DOE/recipe files, references and parser/schema versions. Validate typed wavelength units, response units and channel blocks.",
+      "acceptance": "Clean project → upload original files → review hashes and interpretation → immutable admitted source. Changed byte or missing required companion fails before analysis. SHA proves byte identity, not instrument custody or valid labeling.",
+      "depends_on": "OES-01",
+      "owner": "OSS canonical + application"
+    },
+    {
+      "id": "OES-04",
+      "priority": "P0",
+      "title": "Versioned DOE metadata binding",
+      "change": "Extend typed sample-table / collection-definition authority with a keyed condition attachment operation; do not introduce free-form parallel identity. Join day/lot/wafer using source-scoped keys; retain planned and actual factors, units, source cells and mapping hash.",
+      "acceptance": "Reordered rows yield identical joins; missing, ambiguous or duplicate joins fail; overrides create a new revision. Imported conditioning-surface/repetition values appear in peak rows and report.",
+      "depends_on": "OES-03",
+      "owner": "OSS canonical + application"
+    },
+    {
+      "id": "OES-05",
+      "priority": "P0",
+      "title": "Reusable recorded-interval selection",
+      "change": "Reuse preprocess.bosch_phase_labels and reviewed boundary receipts. Bind clock alignment, source labels, overrides, transition retention, exclusion reasons and frame/time coverage to the workflow. Explicitly choose Preview snapshot or Full selected intervals.",
+      "acceptance": "Every acquisition is accounted for exactly once, including transitions/unmapped/no-emission; snapshot stays exactly nine, full selection expands only by explicit choice; boundary edits invalidate dependent results.",
+      "depends_on": "OES-03,OES-04",
+      "owner": "OSS canonical + application"
+    },
+    {
+      "id": "OES-06",
+      "priority": "P0",
+      "title": "Peak discovery and wavelength mapping",
+      "change": "Keep analysis.peak_finding unchanged as the detector; run on bounded representative spectra per phase/channel block. Add a generic relative wavelength-map operation with explicit manual or validated-anchor mode; retain original coordinates and anchor evidence. Freeze a peak/band measurement definition after review.",
+      "acceptance": "Measured and corrected axes are distinct; nm/Å and air/vacuum conventions are declared; insufficient or contradictory anchors do not apply a shift; +1.2 nm is a BOSCH preset decision, never a universal default.",
+      "depends_on": "OES-05",
+      "owner": "OSS canonical + application"
+    },
+    {
+      "id": "OES-07",
+      "priority": "P0",
+      "title": "Canonical full-population peak measurement",
+      "change": "New generic analysis.peak_measurement operation accepts pinned dense, partitioned or cube selections and a PeakDefinitionSet. Extract original-unit channel values, declared-window peak height and band area in bounded batches; reuse the existing native reader and any public numerical primitives. Refactor the private temporal helper through the public operation only by reviewed paired work.",
+      "acceptance": "Frame-level values retain source/sample/acquisition/episode IDs, windows, background treatment and quality flags. Monolithic/chunked results match; no max-over-unrelated-channel block, peak merging across detectors, full-day Plotly materialization, silent downsampling or normalized-as-counts output.",
+      "depends_on": "OES-03,OES-05,OES-06",
+      "owner": "OSS canonical + application"
+    },
+    {
+      "id": "OES-08",
+      "priority": "P0",
+      "title": "Canonical grouped intensity statistics",
+      "change": "New stats.grouped_peak_summary reducer over measured peak features: wafer/phase/channel/peak summaries, optional cycle-balanced mode, then nested lot/condition summaries. Publish statistic name, weighting, median, quartiles, valid/excluded/eligible counts, detection rate and coverage.",
+      "acceptance": "Detect-then-median is distinguished from peak-on-median-spectrum. Below-200 observations remain measurable; nondetection, invalid and missing are distinct. Exact medians are independent of chunk size; no median-of-batch-medians. Frame counts never masquerade as independent DOE replication.",
+      "depends_on": "OES-04,OES-07",
+      "owner": "OSS canonical + application"
+    },
+    {
+      "id": "OES-09",
+      "priority": "P0",
+      "title": "Local reference matching and scientist review",
+      "change": "Add a generic canonical analysis.spectral_line_match operation accepting a user-supplied/reviewed versioned reference table, plus a persisted scientist assignment review revision. Keep detection, quantification, assignment and prose separate. Represent molecular bands separately from atomic lines and preserve alternatives/unassigned groups.",
+      "acceptance": "Normal Local runs offline from public/user references and retains citations, reference hash, coordinate convention, ion stage when supported, electronic/vibrational assignments when supplied and explicit evidence status. No automatic species certainty from nearest wavelength or chemistry alone.",
+      "depends_on": "OES-06",
+      "owner": "OSS generic operation; private hosted interpreter optional"
+    },
+    {
+      "id": "OES-10",
+      "priority": "P0",
+      "title": "Report from retained evidence",
+      "change": "Extend the existing Report store/export/report-data path and artifact renderer with OES summary and DOE sections. Consume typed PeakMeasurements, PeakSummary and AssignmentReview results. Include raw spectra/compact features as checksummed artifacts, not JSON preview reconstructions.",
+      "acceptance": "Fresh/reopened report matches run and CSV values after restart. Every claim links to retained result + reviewed source; data/preprocessing/assignment revisions trigger stale status. No hardcoded sample IDs, 200 threshold, +1.2 offset, static manifest or external Python script needed.",
+      "depends_on": "OES-08,OES-09",
+      "owner": "Shared report/export surfaces"
+    },
+    {
+      "id": "OES-11",
+      "priority": "P0",
+      "title": "Publish the actual template",
+      "change": "Register OES critical-step peak intensities by condition with a BOSCH preset. Reuse the existing wizard, immutable dataset selection, typed template bindings and canonical nodes. Expose one compact setup: source, phases, factors, peak library, response metric, aggregation and report.",
+      "acceptance": "A scientist starts from Upload and reaches a retained report without a developer or edited scripts. Exploration/SNV is an optional parallel branch and never feeds the primary counts report. User reviews uncertain mapping/assignment results without handling implementation details.",
+      "depends_on": "OES-10",
+      "owner": "OSS template + UI"
+    },
+    {
+      "id": "OES-12",
+      "priority": "Deferred follow-up (not BOSCH release gate)",
+      "title": "Eigenvector native time-series/channel adapter",
+      "change": "Use the native MATLAB process-log cube, not the time-averaged catalog projection, for phase medians. Preserve 129 feature identities / 43 distinct coordinate values as declared channel blocks; establish their source meaning before splitting or combining. Bind units from verified metadata and interval labels from a documented source. Match MACHINE/RFM by wafer IDs, never row index.",
+      "acceptance": "Real uploaded OES_DATA.mat plus declared companions replays end to end; variable-length padding is excluded, time-point indices are not invented seconds, duplicate wavelengths are not averaged as presumed replicates, 126 OES vs 129 machine wafers are reconciled explicitly. Whole-interval summaries remain possible when phase metadata is absent.",
+      "depends_on": "OES-03,OES-07,OES-08",
+      "owner": "Native reader + generic adapter"
+    },
+    {
+      "id": "OES-13",
+      "priority": "P0",
+      "title": "Qualification and release evidence",
+      "change": "Add numerical semantic tests, clean-project browser journeys, original-source replay, bounded-memory/cancel/stale-response checks, generated-contract checks, pinned runtime validation and paired source reconciliation. Preserve private/public boundaries.",
+      "acceptance": "BOSCH clean upload -> full intervals -> per-wafer medians -> DOE report passes on the actual isolated candidate. Scope tests, generated contracts and local browser/build checks are fresh. Any paired PR/release work and unexecuted platform gates are recorded separately; Eigenvector is deferred.",
+      "depends_on": "OES-11",
+      "owner": "Paired release owners"
+    }
+  ],
+  "acceptance_tests": [
+    {
+      "id": "A01",
+      "test": "Clean-project UI upload of original Day and Process files -> SHA review -> template -> full selected intervals -> canonical measurements -> retained DOE report; no terminal, edited script or manual database write."
+    },
+    {
+      "id": "A02",
+      "test": "Expected SHA mismatch, changed source bytes, missing companion, changed dictionary, ambiguous DOE join or missing required units fail before admitting scientific output; original files remain intact."
+    },
+    {
+      "id": "A03",
+      "test": "Reordered DOE rows give identical keyed attachment; duplicate/missing joins fail. Override revisions alter pins and mark dependent reports stale."
+    },
+    {
+      "id": "A04",
+      "test": "Every original acquisition has exactly one recorded-interval assignment; boundary shifts preserve transition signal. Begin/middle/end snapshot stays exact; full intervals include every eligible frame with no silent downsampling."
+    },
+    {
+      "id": "A05",
+      "test": "Numerical controls distinguish median(frame maxima) from max(median spectrum) and above-threshold conditional medians from all-frame medians. Include below-200, zero, missing and invalid measurements."
+    },
+    {
+      "id": "A06",
+      "test": "Chunked and monolithic extraction match exact measurements, counts, medians and quantiles; cycle-balanced alternate is explicitly named. Verify individual values against native reader, including interval boundaries."
+    },
+    {
+      "id": "A07",
+      "test": "Check original/corrected axes, units and air/vacuum declarations; reject contradictory anchors and ambiguous windows; molecular bands retain distinct definitions and units. Review does not promote a candidate to certain merely because it is nearest."
+    },
+    {
+      "id": "A08",
+      "test": "Full selected intervals across multiple days run with bounded backend/browser memory, cancellation and stale-request protection. Changing selection during work cannot display an old result as current."
+    },
+    {
+      "id": "A09",
+      "test": "Report and exported CSV/JSON values match retained results after application restart; full-resolution originals/compact measurements come from pinned artifacts, never bounded graph previews. Invalidated revisions show stale status."
+    },
+    {
+      "id": "A10",
+      "test": "Existing exact nine-spectrum saved comparison, matched transitions, all-spectra rendering, wavelength arrows and existing unrelated workflows still work. UVSpectra10 remains absent with clear legacy-binding errors."
+    },
+    {
+      "id": "A11",
+      "test": "Data table and plots verified independently in-browser; include scientific source/workflow/node/port identities and actual outcome in fresh evidence. Run scoped Python/frontend checks, production build, generated-contract checks and make evidence-check; report unexecuted platform/release coverage honestly."
+    }
+  ],
+  "handoff": {
+    "first_step": "Read AGENTS.md, docs/AUTHORITIES.md and repository governance. Inventory PR heads and later local changes before editing. Start in isolated archive; do not alter actual Sherpa checkout.",
+    "eigenvector": "Preserve generic extensibility, but defer real MATLAB channel/time/phase adapter qualification to follow-up. It must not delay or masquerade as completed BOSCH functionality.",
+    "delivery": "Demonstrate the local upload-to-report journey in-app and leave a usable template and retained report at port 8012. No external merge/deploy or release qualification is implied.",
+    "verification_status": "This PR is a plan. Historical local checks and audit probes do not qualify unimplemented nodes or the future template."
+  }
+}
