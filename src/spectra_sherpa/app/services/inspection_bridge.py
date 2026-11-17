@@ -11,6 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from spectra_sherpa.app.models.inspection_grant import InspectionCall
+from spectra_sherpa.app.services.inspection_comparison import (
+    ComparisonArguments,
+    authorize_comparison,
+    read_comparison,
+)
 from spectra_sherpa.app.services.inspection_grants import (
     InspectionAccessDenied,
     InspectionIdentity,
@@ -51,6 +56,7 @@ ARGUMENT_MODELS = {
     "get_run": RunArguments,
     "get_results": ScientificArguments,
     "get_diagnostics": DiagnosticArguments,
+    "compare_runs": ComparisonArguments,
 }
 OPERATIONS = frozenset(ARGUMENT_MODELS)
 
@@ -113,12 +119,16 @@ class InspectionBridge:
                 asyncio.to_thread(_node_page, parsed)
                 if operation == "list_node_types"
                 else (
-                    read_scientific_facts(sessions, identity, parsed)
-                    if isinstance(parsed, ScientificArguments)
+                    read_comparison(sessions, identity, parsed)
+                    if isinstance(parsed, ComparisonArguments)
                     else (
-                        read_run_facts(sessions, identity, parsed)
-                        if isinstance(parsed, (RunArguments, RunListArguments))
-                        else read_project_facts(sessions, identity, operation, parsed)
+                        read_scientific_facts(sessions, identity, parsed)
+                        if isinstance(parsed, ScientificArguments)
+                        else (
+                            read_run_facts(sessions, identity, parsed)
+                            if isinstance(parsed, (RunArguments, RunListArguments))
+                            else read_project_facts(sessions, identity, operation, parsed)
+                        )
                     )
                 )
             )
@@ -151,7 +161,9 @@ class InspectionBridge:
                 )
                 if "metadata" not in current.disclosures:
                     raise InspectionRefused("disclosure_denied")
-                if isinstance(parsed, ScientificArguments):
+                if isinstance(parsed, ComparisonArguments):
+                    await authorize_comparison(session, current, parsed, result)
+                elif isinstance(parsed, ScientificArguments):
                     await authorize_scientific_reader(session, current, parsed, result)
                 elif isinstance(parsed, (RunArguments, RunListArguments)):
                     await authorize_run_reader(session, current, parsed, result)

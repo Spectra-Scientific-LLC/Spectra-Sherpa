@@ -137,6 +137,7 @@ async def qualify(root: Path) -> dict:
                         "get_run",
                         "get_results",
                         "get_diagnostics",
+                        "compare_runs",
                     }
                     assert catalog.tools[0].annotations.read_only_hint is True
                     first = await client.call_tool("list_node_types", {"limit": 1})
@@ -192,6 +193,13 @@ async def qualify(root: Path) -> dict:
                     assert classifier_facts["selection.q.outside"]["value"] == fixture["classifier_q_outside"]
                     assert classifier_facts["screening.t2_limit"]["value"] == fixture["classifier_t2_limit"]
                     assert "fixture-private" not in json.dumps(classifier.structured_content)
+                    compared = await client.call_tool("compare_runs", {"run_ids": fixture["comparison_run_ids"]})
+                    assert not compared.is_error
+                    calibration = next(s for s in compared.structured_content["sections"] if s["role"] == "calibration")
+                    assert calibration["state"] == "comparable"
+                    for side, expected in (("left", 0.1), ("right", 0.2)):
+                        assert abs(calibration["metric_values"]["rmse"][side] - expected) < 1e-12
+                    assert "fixture-private" not in json.dumps(compared.structured_content)
                     stop(process)
                     process = await start()
                     reopened = await client.call_tool("get_results", {"run_id": run_id})
@@ -200,6 +208,10 @@ async def qualify(root: Path) -> dict:
                         "get_diagnostics", {"run_id": run_id, "node_id": "classifier"}
                     )
                     assert reopened_classifier.structured_content == classifier.structured_content
+                    reopened_comparison = await client.call_tool(
+                        "compare_runs", {"run_ids": fixture["comparison_run_ids"]}
+                    )
+                    assert reopened_comparison.structured_content == compared.structured_content
                     resumed = await client.call_tool("list_node_types", {"limit": 1})
                     assert resumed.structured_content == first.structured_content
                     revoked = await http.delete(f"{path}/{connection['client_id']}", headers=headers)
@@ -233,6 +245,8 @@ async def qualify(root: Path) -> dict:
                     "seeded_retained_plsda_scalar_oracle",
                     "retained_provenance_projection",
                     "retained_classifier_facts_after_restart",
+                    "seeded_retained_comparison_numeric_oracle",
+                    "retained_comparison_after_restart",
                     "retained_scientific_facts_after_restart",
                     "global_privacy_denial",
                     "no_prompts_or_resources",

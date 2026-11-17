@@ -127,6 +127,7 @@ async def test_real_sdk_stdio_reads_and_revocation(test_session, test_engine, te
                         "get_run",
                         "get_results",
                         "get_diagnostics",
+                        "compare_runs",
                     }
                     assert listing.tools[0].annotations.read_only_hint is True
                     result = await client.call_tool("list_node_types", {"limit": 1})
