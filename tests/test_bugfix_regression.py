@@ -221,15 +221,19 @@ class TestComparisonOrdering:
 class TestWorkflowProvenanceFields:
     """Workflow create/update/list/snapshot/restore must include technique & sample_type."""
 
-    def test_create_workflow_passes_technique_and_sample_type(self):
-        """create_workflow route constructor includes technique and sample_type."""
-        import inspect
+    async def test_create_workflow_passes_technique_and_sample_type(self, auth_client, test_session):
+        """The HTTP response and persisted workflow retain scientific provenance."""
+        from spectra_sherpa.app.models.workflow import Workflow
 
-        from spectra_sherpa.app.api.v1.routes.workflows import create_workflow
-
-        source = inspect.getsource(create_workflow)
-        assert "technique=payload.technique" in source
-        assert "sample_type=payload.sample_type" in source
+        response = await auth_client.post(
+            "/api/v1/workflows",
+            json={"name": "Provenance", "technique": "FTIR", "sample_type": "gas", "nodes": [], "edges": []},
+        )
+        assert response.status_code == 201, response.text
+        value = response.json()
+        assert (value["technique"], value["sample_type"]) == ("FTIR", "gas")
+        workflow = await test_session.get(Workflow, value["id"])
+        assert (workflow.technique, workflow.sample_type) == ("FTIR", "gas")
 
     def test_update_workflow_handles_technique_and_sample_type(self):
         """update_workflow route sets technique and sample_type when provided."""
