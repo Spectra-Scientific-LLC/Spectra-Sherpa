@@ -197,16 +197,31 @@ and unqualified evaluation roles stay distinct. Target units preserve recorded,
 missing or ambiguous state. Validation metrics are retained canonical outputs;
 reference means are descriptive arithmetic on complete retained values. The
 reader does not refit or reconstruct validation metrics. This interface currently
-covers regression records, not every result family or validation claim.
+also includes exact retained canonical classification contracts. Their train,
+CV and test split labels remain distinct; a split label does not establish
+independent validation. Unqualified legacy accuracy fields are not promoted
+to performance claims. Class labels and confusion-matrix observation identities
+are withheld. This is not every result family or validation claim.
 
 `get_diagnostics(run_id, node_id, response_index=0)` projects whole-population
-saved PCA/PLS diagnostic facts through the existing public diagnostic authority.
+saved PCA/PLS/PLS-DA diagnostic facts through the existing public diagnostic authority.
 Quartiles use linear interpolation within each finite execution population.
 PCA screening and PLS residuals retain their different meanings; screening does
 not identify a cause. Missing/unverified or unsupported receipts are explicitly
 unavailable. No observation IDs, sample aliases, per-observation values,
 variable profiles, current review decisions or private interpretation are sent.
-Broader classification/provenance coverage remains a separate development slice.
+PLS-DA uses the same retained receipt/fitted-state validation as the public
+saved-model view. This run reader does not claim custody of a published model
+artifact. Its predictor screening describes calibration observations, not
+held-out classification performance or prediction correctness.
+
+Result context includes the recorded graph digest, workflow locator, typed
+retention inventory and source-population exclusion counts from the existing
+public authority. The source scope is before branch filtering; no current
+editor state is substituted. Inventory state is recorded metadata, not a
+guarantee that every file remains available. Current classification read gaps
+are explicit; paths and free-form failure messages are withheld. Missing source
+coverage is reported and unavailable counts remain null, never zero.
 
 Both operations require metadata, metrics and statistics disclosure classes,
 retained-result consent, and current metadata/workflow/model/spectra privacy to
