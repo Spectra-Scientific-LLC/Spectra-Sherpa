@@ -24,8 +24,35 @@ the registry wholesale. Existing provider payloads omit these fields.
 Registration rejects a duplicate `name` with `ValueError` before changing the
 existing definition or handler. Callers must not rely on silent replacement.
 Explicit unregistration remains available for lifecycle cleanup. This change
-does not introduce registry freezing or transport alias collision checks.
+does not introduce registry freezing.
 
 Contract declarations describe inputs, outputs and effects. They do not contain
 agent procedures or supplied skill content. OSS MCP transport and catalog
-projection are separate implementation steps.
+admission is a separate implementation step.
+
+## Explicit catalog projection
+
+`project_tool_catalog(registry, tool_names)` describes only the named selection.
+An empty selection returns no operations. Missing registrations, incomplete
+classification, duplicate identities and duplicate projected names raise
+`ValueError`; no partial catalog is returned. Definitions are revalidated and
+copied so a consumer cannot alter registration by editing the returned catalog.
+Results are sorted by projected name, independent of selection order.
+
+This helper does not invoke handlers, enforce actor/project permissions or
+determine which operations a transport may expose. Calling code must supply a
+reviewed selection and separately enforce admission. `tool_id` preserves the
+existing registry identity; `name` is the declared transport name. Projection
+does not install an alias in the registry or alter provider payloads.
+
+The first classified operation is `list_node_types`, version `1.0`. Its result
+describes installed catalog node types, not nodes saved in a workflow. An
+unmatched category yields an empty list. Labels are presentation text and
+descriptions are truncated to 120 characters; neither is a stable identifier.
+Its output schema resides on the registration, beside its input schema.
+
+Existing `list_nodes` and `describe_nodes` registrations remain distinct from
+`list_node_types` and `describe_node`. The former have different inputs and
+result fields. No automatic rename or bulk classification is applied. Other
+operations require interface review before selection, including their units,
+population roles, retention guarantees and refusal behavior where applicable.
