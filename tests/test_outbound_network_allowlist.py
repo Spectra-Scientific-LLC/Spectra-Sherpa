@@ -32,6 +32,7 @@ REVIEWED = {
     "spectra_sherpa.app.api.v1.routes.synthesis": "error types for reference-data downloads",
     "spectra_sherpa.app.api.v1.routes.datasets": "error types for reference-data downloads",
     "spectra_sherpa.cli": "loopback: the local server started by this CLI",
+    "spectra_sherpa.mcp.bridge_client": "literal HTTP loopback Workbench only; no proxies or redirects",
 }
 
 

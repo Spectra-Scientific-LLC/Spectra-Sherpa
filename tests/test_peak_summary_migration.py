@@ -20,7 +20,9 @@ def test_peak_and_config_branches_upgrade_to_one_head(tmp_path, starting_revisio
     _run_upgrade(url, "head")
     scripts = ScriptDirectory.from_config(_alembic_cfg())
     current_heads = scripts.get_heads()
-    assert current_heads == ["r7s9t1u3v105"]
+    # Later feature migrations may extend the merged chain. Both historical
+    # branches must still reach exactly one current head and persist that head.
+    assert len(current_heads) == 1
     engine = sa.create_engine(f"sqlite:///{database}")
     with engine.connect() as connection:
         assert connection.execute(sa.text("SELECT version_num FROM alembic_version")).scalars().all() == [
