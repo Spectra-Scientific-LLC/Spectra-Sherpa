@@ -60,6 +60,7 @@ from spectra_sherpa.app.services.run_params import (
     build_saved_definition_snapshot,
     build_workflow_version_snapshot,
 )
+from spectra_sherpa.app.services.saved_execution_admission import SavedExecutionAdmission
 from spectra_sherpa.app.services.serialization import serialize_result
 from spectra_sherpa.app.services.workflow_access import (
     admitted_model_artifact_ids,
@@ -652,6 +653,15 @@ async def execute_workflow(
     return await execute_saved_workflow(workflow_id, payload, session, current_user, idempotency_key)
 
 
+async def _verify_saved_admission(admission, session):
+    try:
+        await admission.verify_current(session)
+    except ScientificAccessDenied:
+        raise
+    except Exception as exc:
+        raise ScientificAccessDenied(403, "Execution authority is no longer available") from exc
+
+
 async def execute_saved_workflow(
     workflow_id: int,
     payload: WorkflowExecuteRequest,
@@ -660,6 +670,63 @@ async def execute_saved_workflow(
     idempotency_key: str | None = None,
     *,
     batch_binding=None,
+    admission: SavedExecutionAdmission | None = None,
+) -> WorkflowExecuteResponse:
+    """Canonical execution, optionally with one caller-owned admission record."""
+    from contextlib import AsyncExitStack
+
+    if admission is None:
+        return await _execute_saved_workflow(
+            workflow_id, payload, session, current_user, idempotency_key, batch_binding=batch_binding
+        )
+    if session.in_transaction():
+        raise ValueError("Execution admission requires a fresh dedicated session")
+    if batch_binding is not None or payload.initial_data or payload.node_id:
+        raise ValueError("Execution admission requires the complete saved workflow")
+    if validate_idempotency_key(idempotency_key) is None:
+        raise ValueError("Execution admission requires a durable run identity")
+    from spectra_sherpa.app.db.session import begin_serialized_sqlite_write
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool, get_default_pool
+
+    pool = get_default_pool()
+    if pool is not None and not isinstance(pool, IsolatedWorkerPool):
+        raise ValueError("Execution admission requires an owned cancellable worker")
+
+    async with AsyncExitStack() as sources_stack:
+        try:
+            await begin_serialized_sqlite_write(session)
+            if not session.in_transaction():
+                await session.begin()
+            transaction = session.get_transaction()
+            await admission.lock_authority(session, actor_id=current_user.id, workflow_id=workflow_id)
+            if session.get_transaction() is not transaction:
+                raise ValueError("Admission hooks cannot end their caller transaction")
+            return await _execute_saved_workflow(
+                workflow_id,
+                payload,
+                session,
+                current_user,
+                idempotency_key,
+                admission=admission,
+                sources_stack=sources_stack,
+                admission_transaction=transaction,
+            )
+        except BaseException:
+            await session.rollback()
+            raise
+
+
+async def _execute_saved_workflow(
+    workflow_id: int,
+    payload: WorkflowExecuteRequest,
+    session: AsyncSession,
+    current_user: User,
+    idempotency_key: str | None = None,
+    *,
+    batch_binding=None,
+    admission: SavedExecutionAdmission | None = None,
+    sources_stack=None,
+    admission_transaction=None,
 ) -> WorkflowExecuteResponse:
     """Execute a workflow for the authenticated user.
 
@@ -680,7 +747,8 @@ async def execute_saved_workflow(
     # authority so graph and review revision form one admission snapshot.
     from spectra_sherpa.app.db.session import begin_serialized_sqlite_write
 
-    await begin_serialized_sqlite_write(session)
+    if admission is None:
+        await begin_serialized_sqlite_write(session)
     # Load workflow with nodes and edges
     query = (
         select(Workflow)
@@ -798,6 +866,56 @@ async def execute_saved_workflow(
         wf_version_id = None  # The rebound definition is not the saved canvas version.
 
     wf_review_provenance = await snapshot_review_provenance(session, workflow_id)
+    admitted_run_id = None
+    frozen_sources = None
+    if admission is not None:
+        import copy
+
+        from spectra_sherpa.app.services.frozen_workflow_sources import freeze_workflow_sources
+        from spectra_sherpa.app.services.saved_execution_admission import SavedExecutionSnapshot
+
+        await validate_workflow_execution_access(list(workflow.nodes), None, user_id, wf_project_id, session)
+        if not _workflow_preflight(workflow).is_valid:
+            raise HTTPException(422, "Workflow is not admissible for execution")
+        frozen_sources = await sources_stack.enter_async_context(
+            freeze_workflow_sources(
+                session,
+                nodes=list(workflow.nodes),
+                actor_id=user_id,
+                project_id=wf_project_id,
+            )
+        )
+        await admission.admit(
+            session,
+            SavedExecutionSnapshot(
+                workflow_id=workflow_id,
+                actor_id=user_id,
+                project_id=wf_project_id,
+                definition=copy.deepcopy(wf_definition_snapshot),
+                params=copy.deepcopy(wf_params_snapshot),
+                selection_revisions=copy.deepcopy(wf_data_selection_revisions),
+                review_provenance=copy.deepcopy(wf_review_provenance),
+                sources=frozen_sources,
+            ),
+        )
+        reserved = await _reserve_run(
+            session,
+            workflow_id=workflow_id,
+            workflow_name=wf_name,
+            user_id=user_id,
+            project_id=wf_project_id,
+            wf_version_id=wf_version_id,
+            integrity_hash=wf_integrity_hash,
+            idempotency_key=normalized_idempotency_key,
+            params_snapshot=wf_params_snapshot,
+            commit=False,
+        )
+        if reserved is None:
+            raise RuntimeError("Canonical run reservation was not created")
+        admitted_run_id = reserved.id
+        await admission.bind_run(session, run_id=admitted_run_id)
+        if session.get_transaction() is not admission_transaction:
+            raise ValueError("Admission hooks cannot end their caller transaction")
     # Release the shared workflow/review admission lock before numerical work.
     # The graph and its decision revision are now an immutable execution receipt.
     await session.commit()
@@ -827,7 +945,9 @@ async def execute_saved_workflow(
     #      index means someone else won the race in the meantime, re-fetch
     #      and dispatch by their row's state.
     reservation_id: int | None = batch_binding.reservation_id if batch_binding is not None else None
-    if normalized_idempotency_key is not None:
+    if admitted_run_id is not None:
+        reservation_id = admitted_run_id
+    if normalized_idempotency_key is not None and admission is None:
         from sqlalchemy.exc import IntegrityError
 
         async def _replay_or_conflict(row: ExecutionRun) -> WorkflowExecuteResponse:
@@ -1160,6 +1280,7 @@ async def execute_saved_workflow(
             runtime=build_application_execution_runtime(
                 canonical_artifact_read_grant=canonical_artifact_read_grant,
                 preloaded_datasets=preloaded_datasets,
+                dataset_source_resolver=frozen_sources,
                 allowed_model_artifact_uids=allowed_model_artifact_uids,
                 pin_preloaded_members=batch_binding is not None,
                 model_owner_session=session,
@@ -1260,6 +1381,8 @@ async def execute_saved_workflow(
         await require_scientific_access(session, user_id, wf_project_id, "execute")
         if batch_binding is not None:
             await batch_binding.verify_current()
+        if admission is not None:
+            await _verify_saved_admission(admission, session)
         # Serialize results to JSON-safe format (per-node, so one failure doesn't lose all)
         logger.debug("[Serialization] Starting serialization of %s node results...", len(results))
         serialized_results = {}
@@ -1515,6 +1638,12 @@ async def execute_saved_workflow(
             try:
                 await batch_binding.verify_current()
             except BatchAuthorityChanged:
+                await discard_withdrawn_output()
+                raise
+        if admission is not None:
+            try:
+                await _verify_saved_admission(admission, session)
+            except ScientificAccessDenied:
                 await discard_withdrawn_output()
                 raise
         if uses_managed_project_access():
