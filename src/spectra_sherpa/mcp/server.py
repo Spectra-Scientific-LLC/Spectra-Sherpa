@@ -15,11 +15,21 @@ def create_server(connection: Connection):
     from spectra_sherpa import __version__
     from spectra_sherpa.app.services.inspection_bridge import ARGUMENT_MODELS
     from spectra_sherpa.app.services.tools import builtin  # noqa: F401
+    from spectra_sherpa.app.services.tools.builtin.runs import inspection_run_catalog
     from spectra_sherpa.app.services.tools.catalog import project_tool_catalog
     from spectra_sherpa.app.services.tools.registry import tool_registry
 
+    # Run readers require a trusted project context absent from ordinary
+    # provider ToolContext. Keep their contracts out of that global catalog.
+    catalog_registry = inspection_run_catalog()
+    for name in sorted(ARGUMENT_MODELS):
+        if catalog_registry.get(name) is None:
+            entry = tool_registry.get(name)
+            if entry is None:
+                raise ValueError("Unregistered inspection interface")
+            catalog_registry.register(*entry)
     tools = []
-    for entry in project_tool_catalog(tool_registry, sorted(ARGUMENT_MODELS)):
+    for entry in project_tool_catalog(catalog_registry, sorted(ARGUMENT_MODELS)):
         output_schema = entry["output_schema"]
         if entry["tool_id"] == "list_node_types":
             output_schema = {

@@ -38,6 +38,7 @@ class InspectionIdentity:
     project_id: int
     disclosures: frozenset[str]
     project_summaries: bool = False
+    retained_results: bool = False
 
 
 @dataclass(frozen=True)
@@ -73,13 +74,14 @@ async def issue_inspection_credential(
     ttl_seconds: int = 24 * 60 * 60,
     disclosures: frozenset[str] = DEFAULT_DISCLOSURES,
     project_summaries: bool = False,
+    retained_results: bool = False,
 ) -> IssuedInspectionCredential:
     """Issue once to a trusted Workbench caller; caller owns the transaction.
 
     Raw values and identifiers cannot be granted by this initial interface.
     The returned secret is shown once; only its SHA-256 digest is persisted.
     """
-    if type(project_summaries) is not bool:
+    if type(project_summaries) is not bool or type(retained_results) is not bool:
         raise ValueError("Invalid project summary consent")
     if type(ttl_seconds) is not int or not 1 <= ttl_seconds <= MAX_TTL_SECONDS:
         raise ValueError("Invalid inspection credential lifetime")
@@ -102,13 +104,14 @@ async def issue_inspection_credential(
         token_digest=hashlib.sha256(token.encode()).hexdigest(),
         disclosures=sorted(disclosures),
         project_summaries=project_summaries,
+        retained_results=retained_results,
         created_at=now,
         expires_at=now + timedelta(seconds=ttl_seconds),
     )
     session.add(grant)
     await session.flush()
     return IssuedInspectionCredential(
-        InspectionIdentity(grant.id, actor.id, project_id, frozenset(disclosures), project_summaries),
+        InspectionIdentity(grant.id, actor.id, project_id, frozenset(disclosures), project_summaries, retained_results),
         grant.expires_at,
         token,
     )
@@ -136,7 +139,12 @@ async def authenticate_inspection_client(
         raise InspectionAccessDenied("Inspection access denied")
     await _require_live_access(session, grant.user_id, grant.project_id)
     return InspectionIdentity(
-        grant.id, grant.user_id, grant.project_id, frozenset(grant.disclosures), grant.project_summaries
+        grant.id,
+        grant.user_id,
+        grant.project_id,
+        frozenset(grant.disclosures),
+        grant.project_summaries,
+        grant.retained_results,
     )
 
 

@@ -62,10 +62,12 @@ class CreateInspectionClient(BaseModel):
     ttl_seconds: int = Field(default=86400, ge=1, le=MAX_TTL_SECONDS)
     confirm_external_provider: Literal[True]
     project_summaries: bool = False
+    retained_results: bool = False
 
 
 class InspectionClientInfo(BaseModel):
     project_summaries: bool
+    retained_results: bool
     client_id: str
     project_id: int
     client_label: str
@@ -128,6 +130,7 @@ def _info(grant: InspectionGrant) -> InspectionClientInfo:
     return InspectionClientInfo(
         client_id=grant.id,
         project_summaries=grant.project_summaries,
+        retained_results=grant.retained_results,
         project_id=grant.project_id,
         client_label=grant.client_label,
         expires_at=_utc(grant.expires_at),
@@ -154,6 +157,7 @@ async def create_client(
             ttl_seconds=body.ttl_seconds,
             disclosures=frozenset({"metadata"}),
             project_summaries=body.project_summaries,
+            retained_results=body.retained_results,
         )
     except (InspectionAccessDenied, ValueError) as exc:
         raise HTTPException(400, "Inspection connection refused") from exc

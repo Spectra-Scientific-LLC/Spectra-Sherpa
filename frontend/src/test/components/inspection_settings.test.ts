@@ -33,7 +33,7 @@ describe('project-scoped inspection credentials', () => {
     await issue(wrapper);
     await flushPromises();
     expect((wrapper.get('input[readonly]').element as HTMLInputElement).value).toBe(connection.credential);
-    expect(mocks.post.mock.calls[0][1]).toMatchObject({ confirm_external_provider: true, ttl_seconds: 86400, project_summaries: false });
+    expect(mocks.post.mock.calls[0][1]).toMatchObject({ confirm_external_provider: true, ttl_seconds: 86400, project_summaries: false, retained_results: false });
     mocks.project.currentProjectId = 2;
     await nextTick();
     expect(wrapper.find('input[readonly]').exists()).toBe(false);
@@ -48,6 +48,18 @@ describe('project-scoped inspection credentials', () => {
     await issue(wrapper);
     await flushPromises();
     expect(mocks.post.mock.calls[0][1].project_summaries).toBe(true);
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false);
+    wrapper.unmount();
+  });
+  it('keeps retained-result consent separate from project summaries', async () => {
+    const wrapper = mount(InspectionSettingsSection);
+    await flushPromises();
+    const checkbox = wrapper.get('input[name=retained_results]');
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false);
+    await checkbox.setValue(true);
+    await issue(wrapper);
+    await flushPromises();
+    expect(mocks.post.mock.calls[0][1]).toMatchObject({ retained_results: true, project_summaries: false });
     expect((checkbox.element as HTMLInputElement).checked).toBe(false);
     wrapper.unmount();
   });

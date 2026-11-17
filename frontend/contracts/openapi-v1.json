@@ -2628,6 +2628,11 @@
             "title": "Project Summaries",
             "type": "boolean"
           },
+          "retained_results": {
+            "default": false,
+            "title": "Retained Results",
+            "type": "boolean"
+          },
           "ttl_seconds": {
             "default": 86400,
             "maximum": 2592000.0,
@@ -2670,6 +2675,10 @@
             "title": "Project Summaries",
             "type": "boolean"
           },
+          "retained_results": {
+            "title": "Retained Results",
+            "type": "boolean"
+          },
           "revoked_at": {
             "anyOf": [
               {
@@ -2685,6 +2694,7 @@
         },
         "required": [
           "project_summaries",
+          "retained_results",
           "client_id",
           "project_id",
           "client_label",
@@ -6120,6 +6130,10 @@
             "title": "Project Summaries",
             "type": "boolean"
           },
+          "retained_results": {
+            "title": "Retained Results",
+            "type": "boolean"
+          },
           "revoked_at": {
             "anyOf": [
               {
@@ -6135,6 +6149,7 @@
         },
         "required": [
           "project_summaries",
+          "retained_results",
           "client_id",
           "project_id",
           "client_label",

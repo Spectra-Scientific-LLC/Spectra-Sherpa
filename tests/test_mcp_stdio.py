@@ -31,11 +31,14 @@ async def test_real_sdk_stdio_reads_and_revocation(test_session, test_engine, te
     project = Project(name="MCP interoperability", user_id=test_user.id)
     test_session.add(project)
     await test_session.flush()
+    from datetime import datetime, timezone
+
     import numpy as np
 
     from spectra_sherpa.app.core import security
     from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
     from spectra_sherpa.app.models.data_egress import UserEgressDefaults
+    from spectra_sherpa.app.models.execution_run import ExecutionRun
     from spectra_sherpa.app.models.workflow import Workflow
     from spectra_sherpa.app.services.dataset_registry import dataset_registry
 
@@ -44,11 +47,24 @@ async def test_real_sdk_stdio_reads_and_revocation(test_session, test_engine, te
     workflow = Workflow(name="Saved facts", user_id=test_user.id, project_id=project.id)
     test_session.add(workflow)
     await test_session.flush()
+    run = ExecutionRun(
+        user_id=test_user.id,
+        project_id=project.id,
+        workflow_id=workflow.id,
+        name="Retained run",
+        status="completed",
+        run_kind="data",
+        params_snapshot={},
+        results_summary={},
+        executed_at=datetime.now(timezone.utc),
+    )
+    test_session.add(run)
+    await test_session.flush()
     handle = dataset_registry.register(
         SherpaDataset(X=np.zeros((3, 4))), owner_user_id=test_user.id, project_id=project.id
     )
     credential = await issue_inspection_credential(
-        test_session, test_user, project.id, "MCP SDK 2.3.0", project_summaries=True
+        test_session, test_user, project.id, "MCP SDK 2.3.0", project_summaries=True, retained_results=True
     )
     await test_session.commit()
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -107,6 +123,8 @@ async def test_real_sdk_stdio_reads_and_revocation(test_session, test_engine, te
                         "list_node_types",
                         "describe_dataset",
                         "inspect_workflow",
+                        "list_runs",
+                        "get_run",
                     }
                     assert listing.tools[0].annotations.read_only_hint is True
                     result = await client.call_tool("list_node_types", {"limit": 1})
@@ -115,6 +133,10 @@ async def test_real_sdk_stdio_reads_and_revocation(test_session, test_engine, te
                     assert not dataset.is_error and dataset.structured_content["structured"]["shape"] == [3, 4]
                     summary = await client.call_tool("inspect_workflow", {"workflow_id": workflow.id})
                     assert not summary.is_error and summary.structured_content["node_count"] == 0
+                    page = await client.call_tool("list_runs", {"limit": 1})
+                    assert not page.is_error and page.structured_content["runs"][0]["id"] == run.id
+                    detail = await client.call_tool("get_run", {"run_id": run.id})
+                    assert not detail.is_error and detail.structured_content["name"] == "Retained run"
                     denied = await client.call_tool("run_workflow", {})
                     assert denied.is_error
                     async with sessions() as session:
