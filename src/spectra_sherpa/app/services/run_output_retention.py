@@ -16,6 +16,7 @@ import shutil
 import tempfile
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,28 @@ OUTPUT_BYTES_LIMIT = settings.run_output_max_bytes
 RUN_BYTES_LIMIT = settings.run_output_run_max_bytes
 USER_BYTES_LIMIT = settings.run_output_user_max_bytes
 MAX_OUTPUT_VALUES = 1_000_000
+_read_budget: ContextVar[list[int] | None] = ContextVar("retained_read_budget", default=None)
+
+
+@contextmanager
+def retained_read_budget(max_bytes: int):
+    """Bound aggregate file I/O for one inspection, including repeated reads.
+
+    A mutable counter follows copied async/thread contexts. Ordinary Workbench
+    reads retain their existing limits when no inspection budget is installed.
+    """
+    if type(max_bytes) is not int or max_bytes < 1 or _read_budget.get() is not None:
+        raise ValueError("Invalid or nested retained read budget")
+    remaining = [max_bytes]
+    token = _read_budget.set(remaining)
+    try:
+        yield
+        if remaining[0] < 0:
+            raise ValueError("Retained inspection read budget exceeded")
+    finally:
+        _read_budget.reset(token)
+
+
 INLINE_BUDGET_BYTES = 2 * 1024 * 1024
 DETAIL_METADATA_BUDGET_BYTES = 512 * 1024
 TRUNCATION_FLAGS = {
@@ -339,7 +362,19 @@ def read_output(user_id: int, evidence: OutputEvidence) -> Any:
         raise ValueError("Invalid retained output storage")
     if path.stat().st_size > FORMAT_OUTPUT_BYTES_LIMIT:
         raise ValueError("Retained output exceeds the supported byte limit")
-    payload = path.read_bytes()
+    budget = _read_budget.get()
+    if budget is None:
+        payload = path.read_bytes()
+    else:
+        # Validate the recorded size before allocating, then read at most one
+        # byte beyond it to detect growth between stat and read.
+        size = path.stat().st_size
+        if size != evidence.byte_count or size + 1 > budget[0]:
+            budget[0] = -1
+            raise ValueError("Retained inspection read budget or size mismatch")
+        budget[0] -= size + 1
+        with path.open("rb") as stream:
+            payload = stream.read(size + 1)
     if len(payload) != evidence.byte_count or hashlib.sha256(payload).hexdigest() != evidence.sha256:
         raise ValueError("Retained output checksum mismatch")
     envelope = json.loads(payload)

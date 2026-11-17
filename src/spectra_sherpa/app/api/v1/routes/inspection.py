@@ -155,7 +155,9 @@ async def create_client(
             project_id,
             body.client_label,
             ttl_seconds=body.ttl_seconds,
-            disclosures=frozenset({"metadata"}),
+            disclosures=(
+                frozenset({"metadata", "metrics", "statistics"}) if body.retained_results else frozenset({"metadata"})
+            ),
             project_summaries=body.project_summaries,
             retained_results=body.retained_results,
         )

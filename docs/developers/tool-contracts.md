@@ -166,8 +166,7 @@ Retained-run access has its own unchecked consent option when issuing a new
 connection. Project-summary consent does not grant it. Existing credentials
 remain unchanged on upgrade. The option covers reviewed run facts, retained
 diagnostics and factual comparisons, excluding raw values and sample identities;
-only operations in the tested closed catalog are callable. Currently the run
-operations are navigation reads:
+only operations in the tested closed catalog are callable. Navigation reads are:
 
 - `list_runs`: newest-first navigation, with an ID tie-breaker, `limit` 1–25
   (default 10), and `offset` 0–4,096. The response has `runs` and `next_offset`.
@@ -190,6 +189,41 @@ to 2,048 characters in the database query before decoding, with oversize refusal
 rather than silently truncated facts. The existing 64 KiB response and concurrency
 limits also apply. Pages are live navigation, not immutable revision snapshots.
 
+## Retained scientific facts
+
+`get_results(run_id)` projects supported saved regression statistics through the
+existing Workbench summary authority. Calibration, cross-validation, held-out
+and unqualified evaluation roles stay distinct. Target units preserve recorded,
+missing or ambiguous state. Validation metrics are retained canonical outputs;
+reference means are descriptive arithmetic on complete retained values. The
+reader does not refit or reconstruct validation metrics. This interface currently
+covers regression records, not every result family or validation claim.
+
+`get_diagnostics(run_id, node_id, response_index=0)` projects whole-population
+saved PCA/PLS diagnostic facts through the existing public diagnostic authority.
+Quartiles use linear interpolation within each finite execution population.
+PCA screening and PLS residuals retain their different meanings; screening does
+not identify a cause. Missing/unverified or unsupported receipts are explicitly
+unavailable. No observation IDs, sample aliases, per-observation values,
+variable profiles, current review decisions or private interpretation are sent.
+Broader classification/provenance coverage remains a separate development slice.
+
+Both operations require metadata, metrics and statistics disclosure classes,
+retained-result consent, and current metadata/workflow/model/spectra privacy to
+LLM context. New Workbench connections receive these classes only when retained
+results are selected. Earlier metadata-only credentials are unchanged and must
+be replaced with a newly consented connection for numerical inspection. Every
+read repeats scope and privacy checks before disclosure and refuses changed
+retained metadata. Existing OSS held-out inspection remains available; commercial
+holdout-release policy is a separate admission requirement.
+
+Metadata fields are capped at 256 Ki characters in the database before JSON
+parsing, retention inventories at 128 outputs, cumulative file reads at 64 MiB,
+and responses at 64 KiB. File reads retain owner/checksum/format verification.
+A budget failure cannot be swallowed into a successful partial summary. Saved
+report rows/settings, raw scientific arrays and free-form annotations are not
+forwarded. An unavailable result never means zero error or a population of zero.
+
 ## Optional MCP stdio adapter (v0.7.0 development)
 
 Install `spectra-sherpa[mcp]` in the same environment as Workbench. The base
@@ -209,7 +243,8 @@ HTTP loopback IP (`127.0.0.1` or `::1`), with the actual Workbench port. Proxies
 redirects, remote hosts, URL credentials and arbitrary API paths are refused.
 
 The adapter advertises `list_node_types`, `describe_dataset` and
-`inspect_workflow`, `list_runs` and `get_run`. Input and output meanings come from reviewed tool contracts
+`inspect_workflow`, `list_runs`, `get_run`, `get_results` and `get_diagnostics`.
+Input and output meanings come from reviewed tool contracts
 and bounded bridge argument models. The node catalog response wraps the
 existing array as `items` plus `next_offset`; project readers return their
 existing summary objects. Input lines are

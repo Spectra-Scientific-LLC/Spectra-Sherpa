@@ -117,3 +117,16 @@ async def test_project_summary_consent_is_explicit_and_retained(endpoint, field)
     assert listed.json()[0][field] is True
     invalid = await client.post(path, headers=CONTROL, json={**CREATE, field: "true"})
     assert invalid.status_code == 422
+
+
+async def test_retained_consent_issues_scientific_classes_without_upgrading_old_grants(endpoint, test_session):
+    from spectra_sherpa.app.models.inspection_grant import InspectionGrant
+
+    client, project = endpoint
+    path = f"/projects/{project}/inspection-clients"
+    old = (await client.post(path, json=CREATE, headers=CONTROL)).json()
+    scientific = (await client.post(path, json={**CREATE, "retained_results": True}, headers=CONTROL)).json()
+    old_grant = await test_session.get(InspectionGrant, old["client_id"], populate_existing=True)
+    new_grant = await test_session.get(InspectionGrant, scientific["client_id"], populate_existing=True)
+    assert old_grant.disclosures == ["metadata"]
+    assert set(new_grant.disclosures) == {"metadata", "metrics", "statistics"}

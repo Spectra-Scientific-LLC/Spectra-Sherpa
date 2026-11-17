@@ -23,6 +23,12 @@ from spectra_sherpa.app.services.inspection_readers import (
     read_project_facts,
 )
 from spectra_sherpa.app.services.inspection_runs import authorize_run_reader, read_run_facts
+from spectra_sherpa.app.services.inspection_science import (
+    DiagnosticArguments,
+    ScientificArguments,
+    authorize_scientific_reader,
+    read_scientific_facts,
+)
 from spectra_sherpa.app.services.tools.builtin.runs import RunArguments, RunListArguments
 
 MAX_RESPONSE_BYTES = 64 * 1024
@@ -43,6 +49,8 @@ ARGUMENT_MODELS = {
     "inspect_workflow": WorkflowArguments,
     "list_runs": RunListArguments,
     "get_run": RunArguments,
+    "get_results": ScientificArguments,
+    "get_diagnostics": DiagnosticArguments,
 }
 OPERATIONS = frozenset(ARGUMENT_MODELS)
 
@@ -105,9 +113,13 @@ class InspectionBridge:
                 asyncio.to_thread(_node_page, parsed)
                 if operation == "list_node_types"
                 else (
-                    read_run_facts(sessions, identity, parsed)
-                    if isinstance(parsed, (RunArguments, RunListArguments))
-                    else read_project_facts(sessions, identity, operation, parsed)
+                    read_scientific_facts(sessions, identity, parsed)
+                    if isinstance(parsed, ScientificArguments)
+                    else (
+                        read_run_facts(sessions, identity, parsed)
+                        if isinstance(parsed, (RunArguments, RunListArguments))
+                        else read_project_facts(sessions, identity, operation, parsed)
+                    )
                 )
             )
 
@@ -139,7 +151,9 @@ class InspectionBridge:
                 )
                 if "metadata" not in current.disclosures:
                     raise InspectionRefused("disclosure_denied")
-                if isinstance(parsed, (RunArguments, RunListArguments)):
+                if isinstance(parsed, ScientificArguments):
+                    await authorize_scientific_reader(session, current, parsed, result)
+                elif isinstance(parsed, (RunArguments, RunListArguments)):
                     await authorize_run_reader(session, current, parsed, result)
                 elif operation != "list_node_types":
                     await authorize_reader(session, current, operation, parsed)
