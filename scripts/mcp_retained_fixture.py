@@ -15,10 +15,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-async def seed(project_id: int, workflow_id: int) -> int:
+async def seed(project_id: int, workflow_id: int) -> dict:
+    import numpy as np
+
     from spectra_sherpa.app.core.config import settings
     from spectra_sherpa.app.db.session import async_session, engine
+    from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset, SpectralAxis, TargetContext
     from spectra_sherpa.app.models import ExecutionRun, Workflow
+    from spectra_sherpa.app.services.dag.nodes.classification.plsda_nodes import _plsda_scientific_core
+    from spectra_sherpa.app.services.dag.nodes.classification.plsda_sample_diagnostics import build_sample_diagnostics
     from spectra_sherpa.app.services.dag.regression_comparison import build_regression_comparison
     from spectra_sherpa.app.services.pca_review_evidence import SCHEMA
     from spectra_sherpa.app.services.run_output_retention import retain_run_outputs
@@ -54,10 +59,33 @@ async def seed(project_id: int, workflow_id: int) -> int:
             target_names=["concentration"],
             sample_labels=[f"fixture-private-{i}" for i in range(4)],
         )
+        # Fit only during isolated fixture preparation, never in an inspection tool.
+        rng = np.random.default_rng(1203)
+        labels = np.repeat(["fixture-private-A", "fixture-private-B", "fixture-private-C"], 12)
+        matrix = rng.normal(size=(len(labels), 8))
+        for index, label in enumerate(np.unique(labels)):
+            matrix[labels == label, index] += 1.0
+        dataset = SherpaDataset(
+            X=matrix,
+            feature_axis=SpectralAxis(values=np.linspace(1000, 1700, 8), units="cm-1"),
+            sample_axis=SampleAxis(
+                labels=[f"fixture-private-label-{i}" for i in range(len(labels))],
+                sample_table={"sample_id": [f"fixture-private-id-{i}" for i in range(len(labels))]},
+            ),
+            target=labels,
+            target_context=TargetContext(target_type="categorical", target_names=["class"]),
+        )
+        core = _plsda_scientific_core(dataset, labels, parameters={"n_components": 2, "scale": True})
+        classifier_receipt = build_sample_diagnostics(core)
         evidence = retain_run_outputs(
             workflow.user_id,
             {
                 "model": {"comparison": comparison},
+                "classifier": {
+                    "metrics": core["metrics"],
+                    "fitted_state": core["artifact"].to_fitted_state(),
+                    "sample_diagnostics": classifier_receipt,
+                },
                 "__workflow__": {
                     "definition": {"schema_version": 1, "nodes": [], "edges": []},
                     "pca_review": {"model": receipt},
@@ -83,10 +111,14 @@ async def seed(project_id: int, workflow_id: int) -> int:
         await session.commit()
         identity = run.id
     await engine.dispose()
-    return identity
+    return {
+        "run_id": identity,
+        "classifier_q_outside": sum(row["q"] > classifier_receipt["q_limit"] for row in classifier_receipt["rows"]),
+        "classifier_t2_limit": classifier_receipt["t2_limit"],
+    }
 
 
 if __name__ == "__main__":
     with contextlib.redirect_stdout(sys.stderr):
         identity = asyncio.run(seed(int(sys.argv[1]), int(sys.argv[2])))
-    print(json.dumps({"run_id": identity}))
+    print(json.dumps(identity))

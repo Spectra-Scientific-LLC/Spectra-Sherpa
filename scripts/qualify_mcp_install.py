@@ -167,7 +167,8 @@ async def qualify(root: Path) -> dict:
                         text=True,
                         timeout=60,
                     )
-                    run_id = json.loads(seeded.stdout)["run_id"]
+                    fixture = json.loads(seeded.stdout)
+                    run_id = fixture["run_id"]
                     metrics = await client.call_tool("get_results", {"run_id": run_id})
                     assert not metrics.is_error
                     record = metrics.structured_content["regression_results"][0]
@@ -180,10 +181,25 @@ async def qualify(root: Path) -> dict:
                     assert "fixture-private" not in json.dumps(
                         [metrics.structured_content, diagnostic.structured_content]
                     )
+                    classification = metrics.structured_content["classification_results"]
+                    assert len(classification) == 1 and classification[0]["n_classes"] == 3
+                    assert classification[0]["primary_split"] == "train"
+                    assert set(classification[0]["splits"]) == {"train"}
+                    assert metrics.structured_content["retained_context"]["graph_digest"] == "b" * 64
+                    classifier = await client.call_tool("get_diagnostics", {"run_id": run_id, "node_id": "classifier"})
+                    assert not classifier.is_error and classifier.structured_content["model_kind"] == "plsda"
+                    classifier_facts = classifier.structured_content["facts"]
+                    assert classifier_facts["selection.q.outside"]["value"] == fixture["classifier_q_outside"]
+                    assert classifier_facts["screening.t2_limit"]["value"] == fixture["classifier_t2_limit"]
+                    assert "fixture-private" not in json.dumps(classifier.structured_content)
                     stop(process)
                     process = await start()
                     reopened = await client.call_tool("get_results", {"run_id": run_id})
                     assert reopened.structured_content == metrics.structured_content
+                    reopened_classifier = await client.call_tool(
+                        "get_diagnostics", {"run_id": run_id, "node_id": "classifier"}
+                    )
+                    assert reopened_classifier.structured_content == classifier.structured_content
                     resumed = await client.call_tool("list_node_types", {"limit": 1})
                     assert resumed.structured_content == first.structured_content
                     revoked = await http.delete(f"{path}/{connection['client_id']}", headers=headers)
@@ -213,6 +229,10 @@ async def qualify(root: Path) -> dict:
                     "empty_run_navigation_read",
                     "seeded_retained_regression_numeric_oracle",
                     "seeded_retained_pca_quantile",
+                    "seeded_retained_classification_scope",
+                    "seeded_retained_plsda_scalar_oracle",
+                    "retained_provenance_projection",
+                    "retained_classifier_facts_after_restart",
                     "retained_scientific_facts_after_restart",
                     "global_privacy_denial",
                     "no_prompts_or_resources",

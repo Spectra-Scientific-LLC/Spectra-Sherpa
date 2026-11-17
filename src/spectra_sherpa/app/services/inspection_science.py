@@ -14,6 +14,13 @@ from sqlalchemy import JSON, String, cast, func, select
 from spectra_sherpa.app.models.data_egress import DataType
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.schemas.run_evidence import RunEvidence
+from spectra_sherpa.app.services.inspection_evidence import (
+    ClassificationFact,
+    ReadGap,
+    RetainedContext,
+    classification_facts,
+    retained_context,
+)
 from spectra_sherpa.app.services.inspection_readers import authorize_policy
 from spectra_sherpa.app.services.inspection_runs import authorize_run_reader
 from spectra_sherpa.app.services.tools.builtin.runs import RunArguments
@@ -65,6 +72,9 @@ class MetricSummary(ClosedModel):
     availability: Literal["available", "unavailable"]
     reason: str | None
     regression_results: list[RegressionFact] = Field(max_length=128)
+    classification_results: list[ClassificationFact] = Field(max_length=128)
+    classification_read_gaps: list[ReadGap] = Field(max_length=128)
+    retained_context: RetainedContext
     limitations: list[str]
 
 
@@ -88,11 +98,12 @@ class DiagnosticSummary(ClosedModel):
     evidence_identity: str
     availability: Literal["available", "unavailable"]
     reason: str | None
-    model_kind: Literal["pca", "pls"] | None
+    model_kind: Literal["pca", "pls", "plsda"] | None
     response: DiagnosticResponse | None
     populations: dict[str, dict[str, int]]
     facts: dict[str, DiagnosticFact]
     limitations: list[str]
+    methods: dict[str, Text] = Field(default_factory=dict)
 
 
 async def _snapshot(session, identity, run_id):
@@ -196,19 +207,26 @@ def _metrics(run, digest):
                     metrics={key: metrics.get(key) for key in sorted(REGRESSION_METRIC_FIELDS - {"registry_version"})},
                 )
             )
+        classification, classification_gaps = classification_facts(run, evidence)
+        context = retained_context(run, evidence, reader)
         return MetricSummary(
             run_id=run.id,
             evidence_identity=digest,
-            availability="available" if records else "unavailable",
-            reason=None if records else "No supported qualified regression statistics were retained.",
+            availability="available" if records or classification else "unavailable",
+            reason=None if records or classification else "No supported qualified statistics were retained.",
             regression_results=records,
+            classification_results=classification,
+            classification_read_gaps=classification_gaps,
+            retained_context=context,
             limitations=[
                 "Validation metrics are retained canonical statistics; "
                 "reference means are descriptive retained-value arithmetic.",
                 "No validation metric reconstruction or fit.",
                 "Cross-validation is not an external held-out test; population roles remain separate.",
                 "Missing or ambiguous units are not inferred. Missing metrics are not zero.",
-                "This projection covers retained regression statistics, not every result family or validation claim.",
+                "Classification train/cv/test splits are retained labels, not proof of independent validation.",
+                "Retention state describes the saved inventory; current read gaps are not zero error.",
+                "This projection covers supported retained statistics, not every result family or validation claim.",
             ],
         ).model_dump(mode="json")
 
@@ -217,10 +235,18 @@ async def _diagnostics(run, digest, arguments):
     from spectra_sherpa.app.services.diagnostic_review_summary import ROLES, build_summary
     from spectra_sherpa.app.services.retained_review_receipt import retained_review_receipt
     from spectra_sherpa.app.services.run_output_retention import retained_read_budget
+    from spectra_sherpa.app.services.saved_model_diagnostics import retained_plsda_sample_diagnostics
 
     with retained_read_budget(MAX_FILE_READ_BYTES):
         try:
-            receipt = await retained_review_receipt(run, arguments.node_id)
+            evidence = RunEvidence.model_validate(run.evidence_completeness or {})
+            if "sample_diagnostics" in evidence.outputs.get(arguments.node_id, {}):
+                saved = await asyncio.to_thread(
+                    lambda: asyncio.run(retained_plsda_sample_diagnostics(run, arguments.node_id))
+                )
+                receipt = saved["receipt"]
+            else:
+                receipt = await retained_review_receipt(run, arguments.node_id)
         except (ValueError, OSError, TypeError, AttributeError):
             return DiagnosticSummary(
                 run_id=run.id,
@@ -234,7 +260,7 @@ async def _diagnostics(run, digest, arguments):
                 facts={},
                 limitations=[],
             ).model_dump(mode="json")
-        if receipt.get("model_kind", "pca") not in {"pca", "pls"}:
+        if receipt.get("model_kind", "pca") not in {"pca", "pls", "plsda"}:
             return DiagnosticSummary(
                 run_id=run.id,
                 node_id=arguments.node_id,
@@ -258,10 +284,13 @@ async def _diagnostics(run, digest, arguments):
         )
         # No S1/etc. sample facts, variable profiles, current review state or
         # report-subset interpretation. Only whole retained population facts.
+        prefixes = (*ROLES, "model")
+        if receipt.get("model_kind") == "plsda":
+            prefixes += ("screening", "selection")
         facts = {
             key: DiagnosticFact.model_validate(value)
             for key, value in summary["facts"].items()
-            if key.startswith(tuple(role + "." for role in (*ROLES, "model")))
+            if key.startswith(tuple(role + "." for role in prefixes))
             and (value["value"] is None or type(value["value"]) in (int, float))
         }
         return DiagnosticSummary(
@@ -274,11 +303,17 @@ async def _diagnostics(run, digest, arguments):
             response=summary["response"],
             populations=summary["populations"],
             facts=facts,
+            methods={
+                key: summary["facts"][key]["value"]
+                for key in ("model.q_limit_method", "screening.method", "screening.q_limit_method")
+                if key in summary["facts"] and isinstance(summary["facts"][key]["value"], str)
+            },
             limitations=[
                 "Saved whole-population diagnostic facts; no raw observation values or identities.",
                 "Quartiles use linear interpolation on finite values within each execution population.",
                 "Statistical screening does not identify a cause or establish suitability.",
                 "Current review decisions and private interpretation are outside this projection.",
+                "PLS-DA predictor screening is calibration-only, not held-out classification performance.",
             ],
         ).model_dump(mode="json")
 
@@ -311,14 +346,14 @@ def register_scientific_catalog(registry):
             ScientificArguments,
             MetricSummary,
             get_results,
-            "Read retained regression statistics with population roles and target units; no raw rows or refit.",
+            "Read retained regression/classification statistics with recorded scope and units; no raw rows or refit.",
         ),
         (
             "get_diagnostics",
             DiagnosticArguments,
             DiagnosticSummary,
             get_diagnostics,
-            "Read whole-population saved PCA/PLS diagnostic facts; no sample identities, raw values or interpretation.",
+            "Read whole-population saved PCA/PLS/PLS-DA facts; no sample identities, raw values or interpretation.",
         ),
     ):
         registry.register(

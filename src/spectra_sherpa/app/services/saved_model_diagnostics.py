@@ -13,15 +13,14 @@ from spectra_sherpa.app.services.retained_review_receipt import retained_review_
 from spectra_sherpa.app.services.run_output_retention import read_output
 
 
-async def saved_plsda_sample_diagnostics(run: Any, model: Any) -> dict[str, Any]:
-    """Read a classifier's exact retained sample terms and bind them to its artifact."""
+async def _read_plsda_run_evidence(run: Any, node_id: str):
+    """Verify retained classifier terms against their exact producing fitted state."""
 
     from spectra_sherpa.app.services.dag.nodes.classification.plsda_sample_diagnostics import MAX_BYTES, SCHEMA
     from spectra_sherpa.app.services.dag.nodes.classification.plsda_state import SherpaPLSDAArtifact
-    from spectra_sherpa.app.services.model_store import get_model_store
 
     evidence = RunEvidence.model_validate(run.evidence_completeness)
-    outputs = evidence.outputs.get(model.node_id, {})
+    outputs = evidence.outputs.get(node_id, {})
     retained = {}
     for name, limit in (("sample_diagnostics", MAX_BYTES + 64 * 1024), ("fitted_state", 6 * 1024 * 1024)):
         item = outputs.get(name)
@@ -45,10 +44,6 @@ async def saved_plsda_sample_diagnostics(run: Any, model: Any) -> dict[str, Any]
     if receipt.get("fitted_state_sha256") != digest:
         raise ValueError("PLS-DA sample diagnostics differ from the producing fitted state")
     artifact = SherpaPLSDAArtifact.from_fitted_state(state)
-    manifest, arrays = await to_thread(get_model_store().load, model.artifact_uid, verify=True)
-    stored = SherpaPLSDAArtifact.from_artifact(manifest, arrays)
-    if stored.to_fitted_state() != state:
-        raise ValueError("PLS-DA run fitted state differs from the verified saved artifact")
     screening = artifact.screening
     if screening is None:
         raise ValueError("PLS-DA fitted state has no screening reference")
@@ -70,12 +65,6 @@ async def saved_plsda_sample_diagnostics(run: Any, model: Any) -> dict[str, Any]
         or receipt.get("feature_count") != artifact.features
     ):
         raise ValueError("PLS-DA sample diagnostics contradict the fitted classifier")
-    if receipt.get("source_execution_digest") != model.training_scientific_digest:
-        raise ValueError("PLS-DA sample diagnostics differ from the saved model's training data")
-    if (model.n_components is not None and receipt.get("components") != model.n_components) or receipt.get(
-        "feature_count"
-    ) != model.n_features:
-        raise ValueError("PLS-DA diagnostic dimensions differ from the saved model")
     rows = receipt.get("rows")
     if not isinstance(rows, list) or len(rows) != receipt.get("reference_count"):
         raise ValueError("PLS-DA diagnostic reference population is malformed")
@@ -131,10 +120,39 @@ async def saved_plsda_sample_diagnostics(run: Any, model: Any) -> dict[str, Any]
             "outside_q"
         ) != (None if screening["q_limit"] is None else row["q"] > screening["q_limit"]):
             raise ValueError("PLS-DA screening flags contradict the fitted limits")
+    return receipt, state, outputs["sample_diagnostics"].sha256
+
+
+async def retained_plsda_sample_diagnostics(run: Any, node_id: str) -> dict[str, Any]:
+    """Read producing-run diagnostics; makes no saved-artifact custody claim.
+
+    The caller admits owner/project and privacy. All numerical terms, limits and
+    dimensions use the same validation as the saved-model view below.
+    """
+    receipt, _, digest = await _read_plsda_run_evidence(run, node_id)
+    return {"run_id": run.id, "node_id": node_id, "receipt_sha256": digest, "receipt": receipt}
+
+
+async def saved_plsda_sample_diagnostics(run: Any, model: Any) -> dict[str, Any]:
+    """Additionally bind the producing run to the exact published model artifact."""
+    from spectra_sherpa.app.services.dag.nodes.classification.plsda_state import SherpaPLSDAArtifact
+    from spectra_sherpa.app.services.model_store import get_model_store
+
+    receipt, state, digest = await _read_plsda_run_evidence(run, model.node_id)
+    manifest, arrays = await to_thread(get_model_store().load, model.artifact_uid, verify=True)
+    stored = SherpaPLSDAArtifact.from_artifact(manifest, arrays)
+    if stored.to_fitted_state() != state:
+        raise ValueError("PLS-DA run fitted state differs from the verified saved artifact")
+    if receipt.get("source_execution_digest") != model.training_scientific_digest:
+        raise ValueError("PLS-DA sample diagnostics differ from the saved model's training data")
+    if (model.n_components is not None and receipt.get("components") != model.n_components) or receipt.get(
+        "feature_count"
+    ) != model.n_features:
+        raise ValueError("PLS-DA diagnostic dimensions differ from the saved model")
     return {
         "run_id": run.id,
         "node_id": model.node_id,
-        "receipt_sha256": outputs["sample_diagnostics"].sha256,
+        "receipt_sha256": digest,
         "receipt": receipt,
         "reference_value_evidence": manifest.get("reference_value_evidence"),
     }

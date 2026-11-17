@@ -255,9 +255,9 @@ _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
         ("extract_cls.from_artifact", 396, 18),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/saved_model_diagnostics.py": (
-        ("SherpaPLSDAArtifact.from_fitted_state", 47, 15),
-        ("SherpaPLSDAArtifact.from_artifact", 49, 13),
-        ("stored.to_fitted_state", 50, 7),
+        ("SherpaPLSDAArtifact.from_fitted_state", 46, 15),
+        ("SherpaPLSDAArtifact.from_artifact", 143, 13),
+        ("stored.to_fitted_state", 144, 7),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/canonical_model_bridge.py": (
         ("native.to_artifact", 286, 37),
