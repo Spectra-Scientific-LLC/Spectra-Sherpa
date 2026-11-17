@@ -59,7 +59,7 @@ class ToolRegistry:
         definition: ToolDefinition,
         handler: ToolHandler,
     ) -> None:
-        """Register a tool (idempotent — last writer wins with a warning).
+        """Register a tool, rejecting duplicate names without replacing handlers.
 
         Plugin-origin tools are automatically constrained:
         - ``scope`` cannot be ``internal`` (forced to ``public``)
@@ -69,10 +69,7 @@ class ToolRegistry:
         ``origin=plugin`` regardless of what the caller declares.
         """
         if definition.name in self._tools:
-            logger.warning(
-                "Tool %r re-registered (overwriting previous handler)",
-                definition.name,
-            )
+            raise ValueError(f"Tool {definition.name!r} is already registered")
 
         # Force plugin origin when inside plugin_context()
         if self._plugin_mode and definition.origin != ToolOrigin.plugin:

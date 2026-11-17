@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from enum import Enum
-from typing import Any, Callable, Coroutine, Optional
+from typing import Any, Callable, Coroutine, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -54,6 +54,13 @@ class ToolDefinition(BaseModel):
         pattern=r"^[a-z][a-z0-9_]{0,63}$",
     )
     description: str = Field(..., description="Human-readable description shown to LLM and UI")
+    # None means unclassified legacy behavior, never permission to expose a tool.
+    version: str | None = Field(default=None, pattern=r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+    output_schema: dict[str, Any] | None = None
+    mutation: Literal["read", "write", "compute"] | None = None
+    disclosure: list[Literal["metadata", "statistics", "metrics", "values", "identifiers"]] | None = None
+    distribution: Literal["oss", "pro"] | None = None
+    mcp_name: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
     category: ToolCategory = Field(
         default=ToolCategory.system,
         description="Broad category for filtering",
