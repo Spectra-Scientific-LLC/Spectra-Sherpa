@@ -598,6 +598,24 @@ async def create_workflow(
     current_user: User = Depends(get_current_user),
 ) -> WorkflowDetail:
     """Create a new workflow for the authenticated user."""
+    result = await persist_workflow(payload, session=session, current_user=current_user)
+    await session.commit()
+    return result
+
+
+async def persist_workflow(
+    payload: WorkflowCreate,
+    *,
+    session: AsyncSession,
+    current_user: User,
+) -> WorkflowDetail:
+    """Persist an ordinary workflow inside the caller's transaction.
+
+    Reuses the HTTP creation authority, including access, current graph
+    admission, source links, channel and audit. The caller owns commit/rollback;
+    failures must roll back the surrounding transaction. This does not execute
+    the workflow or establish execution-time source/target custody.
+    """
     user_id = current_user.id
 
     if payload.purpose != ANALYSIS_WORKFLOW:
@@ -701,8 +719,7 @@ async def create_workflow(
         },
     )
 
-    await session.commit()
-    await session.refresh(workflow)
+    await session.flush()
 
     # Reload with relationships
     query = (
