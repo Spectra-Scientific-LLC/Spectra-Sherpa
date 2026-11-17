@@ -61,6 +61,7 @@ async def test_bounded_request_and_redirect_refusal(monkeypatch):
 @pytest.mark.parametrize(
     "body,valid",
     [(json.dumps({"items": [], "next_offset": None}), True), ("a" * 65537, False), ("not-json", False), ("[]", False)],
+    ids=["valid-page", "oversized-body", "invalid-json", "non-object"],
 )
 async def test_response_limits(monkeypatch, body, valid):
     original = httpx.AsyncClient
