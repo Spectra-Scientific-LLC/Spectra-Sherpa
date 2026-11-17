@@ -119,6 +119,8 @@ async def _snapshot(session, identity, run_id):
         "params_snapshot",
         "source_metadata",
         "node_statuses",
+        "diagnostics",
+        "source_type",
     )
     columns = {name: getattr(ExecutionRun, name) for name in names}
     query = select(

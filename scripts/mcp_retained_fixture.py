@@ -110,9 +110,54 @@ async def seed(project_id: int, workflow_id: int) -> dict:
         session.add(run)
         await session.commit()
         identity = run.id
+        comparison_ids = []
+        source = SherpaDataset(
+            X=np.arange(12, dtype=float).reshape(4, 3),
+            target=np.arange(4, dtype=float),
+            sample_axis=SampleAxis(sample_table={"sample_id": [f"fixture-private-{i}" for i in range(4)]}),
+            extra={"source_collection": {"source_manifest_sha256": "a" * 64}},
+        )
+        definition = {
+            "schema_version": 1,
+            "nodes": [{"node_id": "pls", "node_type": "model.fitted_pls"}],
+            "edges": [{"from_node_id": "source", "from_output": "default", "to_node_id": "pls", "to_input": "default"}],
+        }
+        for delta in (0.1, 0.2):
+            retained = retain_run_outputs(
+                workflow.user_id,
+                {
+                    "source": {"default": source},
+                    "pls": {
+                        "calibration_comparison": build_regression_comparison(
+                            source.target, source.target + delta, role="calibration"
+                        )
+                    },
+                    "__workflow__": {"definition": definition},
+                },
+                {},
+            )
+            candidate = ExecutionRun(
+                user_id=workflow.user_id,
+                project_id=project_id,
+                workflow_id=workflow_id,
+                name="Synthetic comparison fixture",
+                status="completed",
+                run_kind="training",
+                executed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                results_summary={},
+                integrity_hash=graph,
+                evidence_completeness=retained,
+                params_snapshot={},
+                source_metadata={},
+            )
+            session.add(candidate)
+            await session.flush()
+            comparison_ids.append(candidate.id)
+        await session.commit()
     await engine.dispose()
     return {
         "run_id": identity,
+        "comparison_run_ids": comparison_ids,
         "classifier_q_outside": sum(row["q"] > classifier_receipt["q_limit"] for row in classifier_receipt["rows"]),
         "classifier_t2_limit": classifier_receipt["t2_limit"],
     }

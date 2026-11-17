@@ -280,3 +280,24 @@ and restart/revocation results. It does not establish compatibility with other
 AI applications or evaluate an AI model's scientific reasoning. Public CI runs
 this probe on Ubuntu for PRs and on Linux, Windows and macOS for manual, weekly
 and main-branch qualification. Desktop packaging remains outside this probe.
+
+
+### Consented two-run comparison
+
+`compare_runs` accepts exactly two distinct runs in the connected project and
+requires retained-result consent plus metadata, metrics and statistics disclosure.
+It uses the existing OSS scientific-comparison authority for each calibration,
+training-CV, held-out and outlier-challenge role. The response preserves
+comparability states, supported scalar metrics and nullable population counts.
+Different populations or folds cannot become comparable because their scores match.
+
+Both runs are authorized and their bounded evidence snapshots are checked before
+and after reading. A combined64MiB retained-file budget and the bridge's response,
+time and concurrency limits apply. Source diagnostics used by the existing
+authority are bounded and included in snapshot identity. Sample identities, raw
+values, dataset-use payloads and free-form reasons are withheld. Detailed evidence
+remains available in Workbench; no private Advisor interpretation is reused.
+
+This operation does not choose ambiguous outputs, recommend a winner, qualify
+classification ranking or change runs. Existing OSS holdout inspection remains
+available; commercial decision-freeze/exposure controls are a separate feature.

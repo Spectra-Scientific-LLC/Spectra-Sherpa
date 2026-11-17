@@ -14,6 +14,7 @@ def create_server(connection: Connection):
 
     from spectra_sherpa import __version__
     from spectra_sherpa.app.services.inspection_bridge import ARGUMENT_MODELS
+    from spectra_sherpa.app.services.inspection_comparison import register_comparison_catalog
     from spectra_sherpa.app.services.inspection_science import register_scientific_catalog
     from spectra_sherpa.app.services.tools import builtin  # noqa: F401
     from spectra_sherpa.app.services.tools.builtin.runs import inspection_run_catalog
@@ -24,6 +25,7 @@ def create_server(connection: Connection):
     # provider ToolContext. Keep their contracts out of that global catalog.
     catalog_registry = inspection_run_catalog()
     register_scientific_catalog(catalog_registry)
+    register_comparison_catalog(catalog_registry)
     for name in sorted(ARGUMENT_MODELS):
         if catalog_registry.get(name) is None:
             entry = tool_registry.get(name)
