@@ -135,6 +135,8 @@ async def qualify(root: Path) -> dict:
                         "inspect_workflow",
                         "list_runs",
                         "get_run",
+                        "get_results",
+                        "get_diagnostics",
                     }
                     assert catalog.tools[0].annotations.read_only_hint is True
                     first = await client.call_tool("list_node_types", {"limit": 1})
@@ -151,6 +153,37 @@ async def qualify(root: Path) -> dict:
                     assert not workflow_summary.is_error and workflow_summary.structured_content["node_count"] == 0
                     run_page = await client.call_tool("list_runs", {})
                     assert not run_page.is_error and run_page.structured_content == {"runs": [], "next_offset": None}
+                    seeded = subprocess.run(
+                        [
+                            sys.executable,
+                            str(Path(__file__).resolve().with_name("mcp_retained_fixture.py")),
+                            str(project_id),
+                            str(workflow_id),
+                        ],
+                        cwd=root,
+                        env=env,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    run_id = json.loads(seeded.stdout)["run_id"]
+                    metrics = await client.call_tool("get_results", {"run_id": run_id})
+                    assert not metrics.is_error
+                    record = metrics.structured_content["regression_results"][0]
+                    assert record["role"] == "held_out_test" and record["metrics"]["n_samples"] == 4
+                    assert abs(record["metrics"]["rmse"] - 0.5**0.5) < 1e-12
+                    assert abs(record["metrics"]["bias"] - 0.5) < 1e-12
+                    diagnostic = await client.call_tool("get_diagnostics", {"run_id": run_id, "node_id": "model"})
+                    assert not diagnostic.is_error
+                    assert diagnostic.structured_content["facts"]["calibration.t2.median"]["value"] == 1.5
+                    assert "fixture-private" not in json.dumps(
+                        [metrics.structured_content, diagnostic.structured_content]
+                    )
+                    stop(process)
+                    process = await start()
+                    reopened = await client.call_tool("get_results", {"run_id": run_id})
+                    assert reopened.structured_content == metrics.structured_content
                     resumed = await client.call_tool("list_node_types", {"limit": 1})
                     assert resumed.structured_content == first.structured_content
                     revoked = await http.delete(f"{path}/{connection['client_id']}", headers=headers)
@@ -178,6 +211,9 @@ async def qualify(root: Path) -> dict:
                     "bounded_node_read",
                     "workflow_summary_read",
                     "empty_run_navigation_read",
+                    "seeded_retained_regression_numeric_oracle",
+                    "seeded_retained_pca_quantile",
+                    "retained_scientific_facts_after_restart",
                     "global_privacy_denial",
                     "no_prompts_or_resources",
                     "write_refusal",

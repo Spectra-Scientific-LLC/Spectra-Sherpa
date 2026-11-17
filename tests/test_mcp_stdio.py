@@ -125,6 +125,8 @@ async def test_real_sdk_stdio_reads_and_revocation(test_session, test_engine, te
                         "inspect_workflow",
                         "list_runs",
                         "get_run",
+                        "get_results",
+                        "get_diagnostics",
                     }
                     assert listing.tools[0].annotations.read_only_hint is True
                     result = await client.call_tool("list_node_types", {"limit": 1})
@@ -137,6 +139,8 @@ async def test_real_sdk_stdio_reads_and_revocation(test_session, test_engine, te
                     assert not page.is_error and page.structured_content["runs"][0]["id"] == run.id
                     detail = await client.call_tool("get_run", {"run_id": run.id})
                     assert not detail.is_error and detail.structured_content["name"] == "Retained run"
+                    metrics = await client.call_tool("get_results", {"run_id": run.id})
+                    assert not metrics.is_error and metrics.structured_content["availability"] == "unavailable"
                     denied = await client.call_tool("run_workflow", {})
                     assert denied.is_error
                     async with sessions() as session:
