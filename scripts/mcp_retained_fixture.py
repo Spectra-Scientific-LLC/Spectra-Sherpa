@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -26,6 +27,8 @@ async def seed(project_id: int, workflow_id: int) -> int:
     profile = Path(settings.data_dir).resolve()
     if not profile.parent.name.startswith("spectra-mcp-installed-") or profile.name != "data":
         raise ValueError("Retained fixture requires the isolated qualification profile")
+    if engine.dialect.name != "sqlite" or Path(engine.url.database or "").resolve() != profile / "sherpa.db":
+        raise ValueError("Retained fixture database must belong to the isolated qualification profile")
     async with async_session() as session:
         workflow = await session.get(Workflow, workflow_id)
         if workflow is None or workflow.project_id != project_id:
@@ -69,6 +72,8 @@ async def seed(project_id: int, workflow_id: int) -> int:
             name="Synthetic retained-reader fixture",
             status="completed",
             run_kind="training",
+            executed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            results_summary={},
             integrity_hash=graph,
             evidence_completeness=evidence,
             params_snapshot={},
