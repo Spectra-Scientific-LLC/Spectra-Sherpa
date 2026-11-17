@@ -4,7 +4,6 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from spectra_sherpa.app.models.inspection_grant import InspectionGrant
 from spectra_sherpa.app.models.project import Project
 from spectra_sherpa.app.models.user import User
 from tests.test_init_db_bootstrap import _run_downgrade, _run_upgrade
@@ -47,8 +46,8 @@ def test_populated_downgrade_refuses_to_erase_revocation_history(tmp_path):
             session.add(project)
             session.flush()
             now = datetime.now(timezone.utc)
-            session.add(
-                InspectionGrant(
+            session.execute(
+                sa.insert(sa.Table("inspection_grant", sa.MetaData(), autoload_with=engine)).values(
                     id="registered-client",
                     user_id=user.id,
                     project_id=project.id,
@@ -92,21 +91,22 @@ def test_call_history_upgrade_and_populated_downgrade(tmp_path):
             session.add(project)
             session.flush()
             now = datetime.now(timezone.utc)
-            grant = InspectionGrant(
-                id="call-client",
-                user_id=user.id,
-                project_id=project.id,
-                client_label="Client",
-                token_digest="1" * 64,
-                disclosures=["metadata"],
-                created_at=now,
-                expires_at=now + timedelta(days=1),
+            session.execute(
+                sa.insert(sa.Table("inspection_grant", sa.MetaData(), autoload_with=engine)).values(
+                    id="call-client",
+                    user_id=user.id,
+                    project_id=project.id,
+                    client_label="Client",
+                    token_digest="1" * 64,
+                    disclosures=["metadata"],
+                    created_at=now,
+                    expires_at=now + timedelta(days=1),
+                )
             )
-            session.add(grant)
             session.flush()
             session.add(
                 InspectionCall(
-                    client_id=grant.id,
+                    client_id="call-client",
                     project_id=project.id,
                     operation="list_node_types",
                     outcome="success",
@@ -119,5 +119,53 @@ def test_call_history_upgrade_and_populated_downgrade(tmp_path):
             _run_downgrade(url, "s8t0u2v4w216")
         with engine.connect() as conn:
             assert conn.scalar(sa.text("SELECT COUNT(*) FROM inspection_call")) == 1
+    finally:
+        engine.dispose()
+
+
+def test_summary_consent_upgrade_does_not_expand_existing_grants(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    database = tmp_path / "consent.db"
+    url = f"sqlite+aiosqlite:///{database}"
+    _run_upgrade(url, "t9u1v3w5x327")
+    engine = sa.create_engine(f"sqlite:///{database}")
+    try:
+        with Session(engine) as session:
+            user = User(username="catalog-owner")
+            session.add(user)
+            session.flush()
+            project = Project(user_id=user.id, name="Original consent")
+            session.add(project)
+            session.flush()
+            now = datetime.now(timezone.utc)
+            table = sa.Table("inspection_grant", sa.MetaData(), autoload_with=engine)
+            session.execute(
+                sa.insert(table).values(
+                    id="legacy-catalog",
+                    user_id=user.id,
+                    project_id=project.id,
+                    client_label="Catalog only",
+                    token_digest="a" * 64,
+                    disclosures=["metadata"],
+                    created_at=now,
+                    expires_at=now + timedelta(days=1),
+                    revoked_at=now,
+                )
+            )
+            session.commit()
+        _run_upgrade(url, "u0v2w4x6y438")
+        with engine.connect() as conn:
+            row = conn.execute(
+                sa.text("SELECT project_summaries, token_digest, revoked_at FROM inspection_grant")
+            ).one()
+            assert row.project_summaries == 0
+            assert row.token_digest == "a" * 64 and row.revoked_at is not None
+        with pytest.raises(RuntimeError, match="consent history"):
+            _run_downgrade(url, "t9u1v3w5x327")
+        with engine.begin() as conn:
+            conn.execute(sa.text("DELETE FROM inspection_grant"))
+        _run_downgrade(url, "t9u1v3w5x327")
+        assert "project_summaries" not in {c["name"] for c in sa.inspect(engine).get_columns("inspection_grant")}
     finally:
         engine.dispose()

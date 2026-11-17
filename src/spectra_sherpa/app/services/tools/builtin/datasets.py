@@ -33,13 +33,21 @@ def _metadata_text(value: Any, *, max_len: int = 120) -> str:
     return text
 
 
-def _load_dataset(dataset_id: str, user: Any = None) -> Any:
+def _load_dataset(
+    dataset_id: str,
+    user: Any = None,
+    *,
+    project_id: int | None = None,
+    max_snapshot_bytes: int | None = None,
+) -> Any:
     """Fetch a registered dataset for the current user."""
     from spectra_sherpa.app.services.dataset_registry import dataset_registry
 
     user_id = getattr(user, "id", None) if user is not None else None
     try:
-        return dataset_registry.get(dataset_id, user_id=user_id)
+        return dataset_registry.get(
+            dataset_id, user_id=user_id, project_id=project_id, max_snapshot_bytes=max_snapshot_bytes
+        )
     except KeyError as exc:
         raise ValueError(f"Unknown dataset_id: {dataset_id}") from exc
     except PermissionError as exc:
@@ -48,7 +56,23 @@ def _load_dataset(dataset_id: str, user: Any = None) -> Any:
 
 @register_tool(
     "describe_dataset",
-    "Generate a structured summary of a dataset including domain, " "processing state, and quality metrics.",
+    version="1.0",
+    mutation="read",
+    distribution="oss",
+    mcp_name="describe_dataset",
+    disclosure=["metadata", "statistics", "values", "identifiers"],
+    output_schema={
+        "type": "object",
+        "properties": {
+            "dataset_id": {"type": "string", "description": "Process-local dataset handle, not a sample identifier."},
+            "summary": {"type": "string", "description": "Existing tiered dataset summary."},
+            "structured": {"type": "object", "description": "Existing structured summary at the requested tier."},
+        },
+        "required": ["dataset_id", "summary", "structured"],
+        "additionalProperties": False,
+    },
+    description="Generate a structured summary of a dataset including domain, "
+    "processing state, and quality metrics.",
     category=ToolCategory.data,
     requires_user=True,
     parameters={
@@ -66,11 +90,18 @@ def _load_dataset(dataset_id: str, user: Any = None) -> Any:
         "required": ["dataset_id"],
     },
 )
-def describe_dataset(dataset_id: str, tier: int = 1, user: Any = None) -> dict[str, Any]:
+def describe_dataset(
+    dataset_id: str,
+    tier: int = 1,
+    user: Any = None,
+    *,
+    project_id: int | None = None,
+    max_snapshot_bytes: int | None = None,
+) -> dict[str, Any]:
     """Return a tiered summary for a registered dataset handle."""
     from spectra_sherpa.app.lib.dataset_summarizer import DatasetSummarizer
 
-    ds = _load_dataset(dataset_id, user=user)
+    ds = _load_dataset(dataset_id, user=user, project_id=project_id, max_snapshot_bytes=max_snapshot_bytes)
 
     summarizer = DatasetSummarizer()
     return {

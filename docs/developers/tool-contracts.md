@@ -82,12 +82,12 @@ integration steps.
 
 ## Local inspection connection control
 
-The initial local bridge admits only `list_node_types`, called directly through
+The local bridge admits `list_node_types`, called directly through
 its existing implementation. It returns an object with `items` and `next_offset`;
 `offset` starts at zero and `limit` is 1–100 (default 25). This is installed public
 node metadata, not project data. It does not invoke the tool registry dispatcher.
-Dataset/workflow/result reads and their existing privacy policies require separate
-admission before they can be exposed. No skill content or execution is added.
+The two project readers below use their existing privacy policies and canonical
+summaries. No skill content or execution is added.
 
 In the local browser Workbench, Settings → Integrations manages connections for
 the selected project. Creation requires acknowledgement that an external client
@@ -112,8 +112,8 @@ so revocation or loss of project access during a read prevents disclosure.
 It never accepts a project identity inside operation arguments. Nonlocal hosts
 and nonlocal product modes are refused.
 
-Requests are capped at 8 KiB with a five-second body deadline. Node metadata
-inspection has four per-process worker slots, a five-second admission/read
+Requests are capped at 8 KiB with a five-second body deadline. Inspection
+has four per-process worker slots, a five-second admission/read
 budget, a 4,096-node catalog ceiling and a 64 KiB response ceiling. A timed-out
 worker retains its slot until it exits. The HTTP operation has an additional
 20-second deadline. These limits do not authorize costly statistics or workflow
@@ -124,6 +124,41 @@ ordinary local storage, not tamper-evident commercial evidence. Cancellation,
 the outer HTTP deadline and database failures may leave no outcome record; it
 is not an exhaustive request audit. Deleting its
 project also deletes its connection and call history.
+
+## Project dataset and workflow summaries
+
+`describe_dataset` accepts only an existing `dataset_id` registered in this
+Workbench process for the credential's owner and project. It calls the existing
+canonical tier-0 descriptor: shape, axis/context metadata and descriptive text.
+It does not return raw values or sample labels, compute statistics, or interpret
+scientific suitability. Unbound and other-project handles are refused. Registry
+owner/project checks and the 16 MiB retained-object ceiling run before snapshot
+copying. Process-local handles do not survive a Workbench restart; the ordinary
+Workbench must register the dataset again.
+
+`inspect_workflow` accepts only a `workflow_id` belonging to the same owner and
+project. It returns the canonical saved-workflow summary: ID/name, node and edge
+counts, and distinct node types. The summary is a live read, not an immutable revision snapshot.
+Counts describe the saved graph, not an executed
+population or model quality. Reads select only summary columns, with ceilings of
+500 nodes and 1,000 edges. Parameters, full topology, results, exports and
+execution are outside this operation.
+
+Both readers require explicit project-summary consent when creating a new
+connection. The checkbox is off by default. Existing credentials remain
+catalog-only after upgrade; revoke and replace them to grant broader access.
+Consent is persisted and checked before and after each read.
+
+Both readers also require the connection's metadata disclosure and the existing
+global egress switch plus metadata-to-LLM-context permission. Workflow inspection
+also requires workflows-to-LLM-context permission. Connection consent does not
+override these settings. Missing fine-grained overrides use existing user defaults;
+policy lookup failures refuse disclosure. Current identity, project membership,
+object binding and privacy policy are checked again before returning results.
+A privacy change during a read therefore prevents disclosure. Tool discovery
+lists the supported interfaces, not a guarantee that the current privacy policy
+allows each call. Clients cannot request a higher tier or full graph, supply a
+project override, or dispatch arbitrary tool names.
 
 ## Optional MCP stdio adapter (v0.7.0 development)
 
@@ -143,9 +178,11 @@ control. A different environment variable name can be selected with
 HTTP loopback IP (`127.0.0.1` or `::1`), with the actual Workbench port. Proxies,
 redirects, remote hosts, URL credentials and arbitrary API paths are refused.
 
-The adapter advertises only `list_node_types`. Its input and output meanings
-come from the reviewed tool contract and bounded bridge argument model. The
-response wraps the existing array as `items` plus `next_offset`. Input lines are
+The adapter advertises `list_node_types`, `describe_dataset` and
+`inspect_workflow`. Input and output meanings come from reviewed tool contracts
+and bounded bridge argument models. The node catalog response wraps the
+existing array as `items` plus `next_offset`; project readers return their
+existing summary objects. Input lines are
 limited to 16 KiB before JSON-RPC parsing; bridge requests and responses retain
 the limits above. Normal startup messages do not enter protocol stdout.
 

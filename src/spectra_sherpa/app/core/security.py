@@ -457,6 +457,7 @@ async def check_egress_permission(
     *,
     skip_global_check: bool = False,
     fail_closed_on_fine_grained_error: bool = False,
+    fail_closed_on_policy_error: bool = False,
 ) -> bool:
     """
     Check if a user has permission for a specific egress operation.
@@ -480,6 +481,8 @@ async def check_egress_permission(
             fine-grained permission tuple cannot be evaluated. Sensitive data
             paths must use this mode so a policy-store failure cannot fall back
             to a broader user or deployment default.
+        fail_closed_on_policy_error: Deny lookup failures without changing the
+            established fallback when a fine-grained row is legitimately absent.
 
     Returns:
         True if the permission is granted, False otherwise
@@ -500,12 +503,14 @@ async def check_egress_permission(
     # user and a policy-store session. Ordinary system operations retain the
     # historical no-user behavior when strict evaluation was not requested.
     if user is None:
+        if fail_closed_on_policy_error:
+            return False
         if fail_closed_on_fine_grained_error and fine_grained_requested:
             return False
         return True
 
     if (
-        fail_closed_on_fine_grained_error
+        (fail_closed_on_fine_grained_error or fail_closed_on_policy_error)
         and fine_grained_requested
         and (session is None or getattr(user, "id", None) is None)
     ):
@@ -532,7 +537,7 @@ async def check_egress_permission(
                 return False
         except Exception:
             logger.debug("Fine-grained egress permission lookup failed", exc_info=True)
-            if fail_closed_on_fine_grained_error:
+            if fail_closed_on_fine_grained_error or fail_closed_on_policy_error:
                 return False
 
     # Check user's egress_defaults relationship for the permission.
@@ -564,6 +569,10 @@ async def check_egress_permission(
                     "UserEgressDefaults DB fallback failed for user %s",
                     getattr(user, "id", "?"),
                 )
+                if fail_closed_on_policy_error:
+                    return False
+        elif fail_closed_on_policy_error:
+            return False
 
     # No explicit permission set - apply sensible defaults.
     # These are intentionally conservative: new users are created with

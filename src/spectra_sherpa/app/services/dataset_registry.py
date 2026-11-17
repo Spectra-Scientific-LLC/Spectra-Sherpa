@@ -204,8 +204,17 @@ class DatasetRegistry:
             self._evict_lru_locked()
         return snapshot.dataset_id
 
-    def get(self, dataset_id: str, *, user_id: int | None = None) -> SherpaDataset:
+    def get(
+        self,
+        dataset_id: str,
+        *,
+        user_id: int | None = None,
+        project_id: int | None = None,
+        max_snapshot_bytes: int | None = None,
+    ) -> SherpaDataset:
         """Fetch a defensive copy of a registered dataset by handle."""
+        if max_snapshot_bytes is not None and (type(max_snapshot_bytes) is not int or max_snapshot_bytes <= 0):
+            raise ValueError("Snapshot byte limit must be a positive integer")
         now = time.time()
         with self._lock:
             self._purge_expired_locked(now)
@@ -215,6 +224,10 @@ class DatasetRegistry:
             if user_id is not None:
                 if record.owner_user_id is None or record.owner_user_id != user_id:
                     raise PermissionError(dataset_id)
+            if project_id is not None and record.project_id != project_id:
+                raise PermissionError(dataset_id)
+            if max_snapshot_bytes is not None and record.retained_bytes > max_snapshot_bytes:
+                raise DatasetRegistryCapacityError("dataset exceeds this reader's snapshot byte limit")
             record.last_accessed_at = now
             self._entries.move_to_end(dataset_id)
             # Return a defensive copy so callers cannot mutate registry state.

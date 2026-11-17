@@ -16,10 +16,15 @@ from spectra_sherpa.app.services.inspection_grants import (
     InspectionIdentity,
     authenticate_inspection_client,
 )
+from spectra_sherpa.app.services.inspection_readers import (
+    DatasetArguments,
+    WorkflowArguments,
+    authorize_reader,
+    read_project_facts,
+)
 
 MAX_RESPONSE_BYTES = 64 * 1024
 MAX_CATALOG_NODES = 4096
-OPERATIONS = frozenset({"list_node_types"})
 
 
 class NodeListArguments(BaseModel):
@@ -28,6 +33,14 @@ class NodeListArguments(BaseModel):
     category: str | None = Field(default=None, max_length=64)
     offset: int = Field(default=0, ge=0, le=MAX_CATALOG_NODES)
     limit: int = Field(default=25, ge=1, le=100)
+
+
+ARGUMENT_MODELS = {
+    "list_node_types": NodeListArguments,
+    "describe_dataset": DatasetArguments,
+    "inspect_workflow": WorkflowArguments,
+}
+OPERATIONS = frozenset(ARGUMENT_MODELS)
 
 
 class InspectionRefused(ValueError):
@@ -75,7 +88,7 @@ class InspectionBridge:
             if "metadata" not in identity.disclosures:
                 raise InspectionRefused("disclosure_denied")
             try:
-                parsed = NodeListArguments.model_validate(arguments)
+                parsed = ARGUMENT_MODELS[operation].model_validate(arguments)
             except ValidationError as exc:
                 raise InspectionRefused("invalid_arguments") from exc
             try:
@@ -84,7 +97,11 @@ class InspectionBridge:
                 raise InspectionRefused("busy") from exc
             # Cancellation cannot kill a Python worker thread. Keep its capacity
             # reserved until it actually exits, even after caller timeout/cancel.
-            task = asyncio.create_task(asyncio.to_thread(_node_page, parsed))
+            task = asyncio.create_task(
+                asyncio.to_thread(_node_page, parsed)
+                if operation == "list_node_types"
+                else read_project_facts(sessions, identity, operation, parsed)
+            )
 
             def finished(worker: asyncio.Task) -> None:
                 self._slots.release()
@@ -114,6 +131,8 @@ class InspectionBridge:
                 )
                 if "metadata" not in current.disclosures:
                     raise InspectionRefused("disclosure_denied")
+                if operation != "list_node_types":
+                    await authorize_reader(session, current, operation, parsed)
                 self._record(session, current, logged_operation, "success", len(encoded))
                 await session.commit()
             return result

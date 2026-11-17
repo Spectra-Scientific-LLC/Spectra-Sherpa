@@ -57,7 +57,9 @@ class Connection:
 async def inspect(connection: Connection, operation: str, arguments: dict[str, Any]) -> dict[str, Any]:
     # Transport-level selection is defense in depth; Workbench admission remains
     # authoritative and independently rejects unregistered or disallowed calls.
-    if operation != "list_node_types":
+    from spectra_sherpa.app.services.inspection_bridge import OPERATIONS
+
+    if operation not in OPERATIONS:
         raise BridgeUnavailable("Unsupported inspection operation")
     try:
         payload = json.dumps({"operation": operation, "arguments": arguments}, allow_nan=False).encode()

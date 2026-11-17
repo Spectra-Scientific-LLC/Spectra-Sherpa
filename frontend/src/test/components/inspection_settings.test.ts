@@ -21,7 +21,7 @@ beforeEach(() => {
 async function issue(wrapper: ReturnType<typeof mount>) {
   await flushPromises();
   await wrapper.get('input[maxlength]').setValue('Test client');
-  await wrapper.get('input[type=checkbox]').setValue(true);
+  await wrapper.get('input[name=confirm_external_provider]').setValue(true);
   await wrapper.get('form').trigger('submit');
 }
 
@@ -33,10 +33,22 @@ describe('project-scoped inspection credentials', () => {
     await issue(wrapper);
     await flushPromises();
     expect((wrapper.get('input[readonly]').element as HTMLInputElement).value).toBe(connection.credential);
-    expect(mocks.post.mock.calls[0][1]).toMatchObject({ confirm_external_provider: true, ttl_seconds: 86400 });
+    expect(mocks.post.mock.calls[0][1]).toMatchObject({ confirm_external_provider: true, ttl_seconds: 86400, project_summaries: false });
     mocks.project.currentProjectId = 2;
     await nextTick();
     expect(wrapper.find('input[readonly]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+  it('requires separate project summary opt-in and resets it after issuance', async () => {
+    const wrapper = mount(InspectionSettingsSection);
+    await flushPromises();
+    const checkbox = wrapper.get('input[name=project_summaries]');
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false);
+    await checkbox.setValue(true);
+    await issue(wrapper);
+    await flushPromises();
+    expect(mocks.post.mock.calls[0][1].project_summaries).toBe(true);
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false);
     wrapper.unmount();
   });
   it('does not display a late issued credential after A to B to A', async () => {

@@ -92,10 +92,17 @@ async def qualify(root: Path) -> dict:
             project.raise_for_status()
             project_id = project.json()["id"]
             path = f"/projects/{project_id}/inspection-clients"
+            workflow = await http.post("/workflows", json={"name": "Saved inspection facts", "project_id": project_id})
+            workflow.raise_for_status()
+            workflow_id = workflow.json()["id"]
             issued = await http.post(
                 path,
                 headers=headers,
-                json={"client_label": "MCP Python SDK qualification", "confirm_external_provider": True},
+                json={
+                    "client_label": "MCP Python SDK qualification",
+                    "confirm_external_provider": True,
+                    "project_summaries": True,
+                },
             )
             issued.raise_for_status()
             connection = issued.json()
@@ -121,15 +128,24 @@ async def qualify(root: Path) -> dict:
                     assert initialized.capabilities.prompts is None
                     assert initialized.capabilities.resources is None
                     catalog = await client.list_tools()
-                    assert [tool.name for tool in catalog.tools] == ["list_node_types"]
+                    assert {tool.name for tool in catalog.tools} == {
+                        "list_node_types",
+                        "describe_dataset",
+                        "inspect_workflow",
+                    }
                     assert catalog.tools[0].annotations.read_only_hint is True
                     first = await client.call_tool("list_node_types", {"limit": 1})
                     assert not first.is_error and len(first.structured_content["items"]) == 1
                     for operation in ("run_workflow", "save_workflow", "export_run", "apply_model"):
                         refused = await client.call_tool(operation, {})
                         assert refused.is_error
+                    privacy_refused = await client.call_tool("inspect_workflow", {"workflow_id": workflow_id})
+                    assert privacy_refused.is_error
                     stop(process)
+                    env["EGRESS_ENABLED"] = "true"
                     process = await start()
+                    workflow_summary = await client.call_tool("inspect_workflow", {"workflow_id": workflow_id})
+                    assert not workflow_summary.is_error and workflow_summary.structured_content["node_count"] == 0
                     resumed = await client.call_tool("list_node_types", {"limit": 1})
                     assert resumed.structured_content == first.structured_content
                     revoked = await http.delete(f"{path}/{connection['client_id']}", headers=headers)
@@ -155,6 +171,8 @@ async def qualify(root: Path) -> dict:
                     "stdio_handshake",
                     "closed_tool_catalog",
                     "bounded_node_read",
+                    "workflow_summary_read",
+                    "global_privacy_denial",
                     "no_prompts_or_resources",
                     "write_refusal",
                     "read_after_restart",

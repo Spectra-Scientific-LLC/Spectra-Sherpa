@@ -42,6 +42,7 @@ async def test_issue_once_read_revoke_and_call_history(endpoint):
     assert issued.status_code == 201, issued.text
     assert issued.headers["cache-control"] == "no-store"
     info = issued.json()
+    assert info["project_summaries"] is False
     secret = info["credential"]
     listed = await client.get(path, headers={"X-Spectra-Workbench": "inspection"})
     assert listed.status_code == 200
@@ -102,3 +103,15 @@ async def test_custom_port_same_origin_control_and_rebinding_denial(endpoint):
     assert (
         await client.post(f"{hostile}/projects/{project}/inspection-clients", headers=headers, json=CREATE)
     ).status_code == 403
+
+
+async def test_project_summary_consent_is_explicit_and_retained(endpoint):
+    client, project = endpoint
+    path = f"/projects/{project}/inspection-clients"
+    issued = await client.post(path, headers=CONTROL, json={**CREATE, "project_summaries": True})
+    assert issued.status_code == 201, issued.text
+    assert issued.json()["project_summaries"] is True
+    listed = await client.get(path, headers=CONTROL)
+    assert listed.json()[0]["project_summaries"] is True
+    invalid = await client.post(path, headers=CONTROL, json={**CREATE, "project_summaries": "true"})
+    assert invalid.status_code == 422

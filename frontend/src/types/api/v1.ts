@@ -5421,6 +5421,11 @@ export interface components {
              */
             confirm_external_provider: true;
             /**
+             * Project Summaries
+             * @default false
+             */
+            project_summaries?: boolean;
+            /**
              * Ttl Seconds
              * @default 86400
              */
@@ -5441,6 +5446,8 @@ export interface components {
             expires_at: string;
             /** Project Id */
             project_id: number;
+            /** Project Summaries */
+            project_summaries: boolean;
             /** Revoked At */
             revoked_at: string | null;
         };
@@ -6546,6 +6553,8 @@ export interface components {
             expires_at: string;
             /** Project Id */
             project_id: number;
+            /** Project Summaries */
+            project_summaries: boolean;
             /** Revoked At */
             revoked_at: string | null;
         };
