@@ -22,6 +22,12 @@ from spectra_sherpa.app.services.inspection_grants import issue_inspection_crede
 
 
 async def test_real_sdk_stdio_reads_and_revocation(test_session, test_engine, test_user, monkeypatch, tmp_path):
+    # The real Workbench imports its workflow catalog before serving requests.
+    # This router-only fixture must also finish scientific module registration
+    # before timing a bounded inspection request (not during its first read).
+    from spectra_sherpa.app.services.dag import node_registry
+
+    assert node_registry.list_catalog_nodes()
     project = Project(name="MCP interoperability", user_id=test_user.id)
     test_session.add(project)
     await test_session.flush()

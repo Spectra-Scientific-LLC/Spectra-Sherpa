@@ -15,9 +15,7 @@ from packaging.version import Version
 from spectra_sherpa.app.services import synthesis
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-QUALIFICATION_REPORT = (
-    PACKAGE_ROOT.parents[1] / "docs/evidence/public-install-profiles-mcp-20261117.json"
-)
+QUALIFICATION_REPORT = PACKAGE_ROOT.parents[1] / "docs/evidence/public-install-profiles-mcp-20261117.json"
 
 
 def _metadata() -> dict[str, Any]:
