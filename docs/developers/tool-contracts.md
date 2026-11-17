@@ -56,3 +56,26 @@ Existing `list_nodes` and `describe_nodes` registrations remain distinct from
 result fields. No automatic rename or bulk classification is applied. Other
 operations require interface review before selection, including their units,
 population roles, retention guarantees and refusal behavior where applicable.
+
+## Registered inspection credentials
+
+`inspection_grants.py` owns the credential lifecycle; `InspectionGrant` owns
+its persisted record. Issuance requires a trusted, authenticated Workbench
+actor with current project read access. A client label is display text only.
+The returned random bearer secret is shown once; storage retains only its
+SHA-256 digest. The generated client ID and project ID are bound to that secret.
+The caller owns the transaction and must commit issuance or revocation.
+
+Authentication refreshes the grant, active principal and existing project
+access authority. Revoked, expired and mismatched credentials receive the same
+refusal. The default lifetime is one day, capped at 30 days. The initial
+disclosure classes are metadata, statistics and metrics; values and identifiers
+cannot be granted through this interface.
+
+Authenticate each request in a fresh transaction. The returned identity is a
+per-request result, not a reusable authorization cache. A transport must also
+enforce the reviewed operation allowlist, disclosure policy, resource limits
+and call logging. Already admitted work is not cancelled by this lifecycle
+service. No issuance, revocation or approval operation belongs in the agent's
+tool catalog. Workbench connection UI and transport admission are separate
+integration steps.
