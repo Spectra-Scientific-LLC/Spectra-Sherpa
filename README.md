@@ -47,7 +47,7 @@ requires the original inputs and a compatible runtime.
 **Try the [Demo](https://demo.spectrascientific.ai)** to explore the workflow
 with reference data. See [Demo access and limits](https://docs.spectrascientific.ai/cloud/demo-access/).
 
-**Use local OSS for your own data.** With Python 3.11 or 3.12, install the latest
+**Use local OSS for your own data.** With Python 3.11.5+ or 3.12, install the latest
 published package and open the Workbench:
 
 ```bash
