@@ -55,6 +55,7 @@ def test_public_extras_are_closed_and_independent() -> None:
     dependencies = metadata["dependencies"]
     extras = metadata["extras"]
     assert extras == {
+        "mcp": ["mcp"],
         "scp": ["spectrochempy", "setuptools"],
         "hitran": ["hitran-api", "hitran-api2", "nbconvert"],
         "nist": ["beautifulsoup4"],
@@ -90,6 +91,7 @@ def test_retained_public_profile_qualification_is_commit_and_lock_bound() -> Non
     assert report["poetry_lock_sha256"] == lock_hash
     assert set(report["profiles"]) == {
         "default",
+        "mcp",
         "scp",
         "hitran",
         "nist",

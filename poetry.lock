@@ -1540,6 +1540,29 @@ socks = ["socksio (==1.*)"]
 trio = ["trio (>=0.22.0,<1.0)"]
 
 [[package]]
+name = "httpcore2"
+version = "2.16.2"
+description = "A minimal low-level HTTP client."
+optional = true
+python-versions = ">=3.11"
+groups = ["main"]
+markers = "extra == \"mcp\" and sys_platform != \"emscripten\""
+files = [
+    {file = "httpcore2-2.16.2-py3-none-any.whl", hash = "sha256:16051ae2a42f776007543f32de9349a317b23d2cbb4e1456b4bac0e88b87419a"},
+    {file = "httpcore2-2.16.2.tar.gz", hash = "sha256:6c519d0f7b44f7269fa9bbb4d2763db395a4a2370f046d8e8e0a4b38227815d2"},
+]
+
+[package.dependencies]
+h11 = ">=0.16"
+truststore = ">=0.10"
+
+[package.extras]
+asyncio = ["anyio (>=4.5.0,<5.0)"]
+http2 = ["h2 (>=3,<5)"]
+socks = ["socksio (==1.*)"]
+trio = ["trio (>=0.34.0,<1.0)"]
+
+[[package]]
 name = "httptools"
 version = "0.8.0"
 description = "A collection of framework independent HTTP protocol utils."
@@ -1623,6 +1646,48 @@ cli = ["click (==8.*)", "pygments (==2.*)", "rich (>=10,<14)"]
 http2 = ["h2 (>=3,<5)"]
 socks = ["socksio (==1.*)"]
 zstd = ["zstandard (>=0.18.0)"]
+
+[[package]]
+name = "httpx2"
+version = "2.16.2"
+description = "The next generation HTTP client."
+optional = true
+python-versions = ">=3.11"
+groups = ["main"]
+markers = "extra == \"mcp\""
+files = [
+    {file = "httpx2-2.16.2-py3-none-any.whl", hash = "sha256:f05c13aade4c45dbf1c9060647a1058f0acad62398fad96e741269edb33d46f5"},
+    {file = "httpx2-2.16.2.tar.gz", hash = "sha256:748b615678f07d8e3b183efe81ad13b655ca88bfc56ce4589219b2d442860574"},
+]
+
+[package.dependencies]
+anyio = {version = ">=4.10", markers = "sys_platform != \"emscripten\""}
+httpcore2 = {version = "2.16.2", markers = "sys_platform != \"emscripten\""}
+httpx2-jsfetch = {version = "*", markers = "sys_platform == \"emscripten\" and python_version >= \"3.12\""}
+idna = ">=3.18"
+truststore = {version = ">=0.10", markers = "sys_platform != \"emscripten\""}
+typing-extensions = {version = ">=4.5.0", markers = "python_version < \"3.13\""}
+
+[package.extras]
+brotli = ["brotli (>=1.2.0) ; platform_python_implementation == \"CPython\"", "brotlicffi (>=1.2.0.2) ; platform_python_implementation != \"CPython\""]
+cli = ["click (>=8.4.2)", "pygments (==2.*)", "rich (>=10,<16)"]
+http2 = ["h2 (>=3,<5)"]
+socks = ["socksio (==1.*)"]
+ws = ["wsproto (>=1.2)"]
+zstd = ["backports-zstd (>=1.0.0) ; python_version <= \"3.13\""]
+
+[[package]]
+name = "httpx2-jsfetch"
+version = "1.0"
+description = "httpx2 transports for Emscripten/Pyodide, backed by the JavaScript fetch API."
+optional = true
+python-versions = ">=3.12"
+groups = ["main"]
+markers = "sys_platform == \"emscripten\" and python_version == \"3.12\" and extra == \"mcp\""
+files = [
+    {file = "httpx2_jsfetch-1.0-py3-none-any.whl", hash = "sha256:cb916b707601e69a07721aabc8f3f6659be3a6893bc1ff5c6f9e02241df2da32"},
+    {file = "httpx2_jsfetch-1.0.tar.gz", hash = "sha256:70a0e3eabfef7cce5ad9c629f7d01ca05e418f586646f4ddf14782e4c1454c60"},
+]
 
 [[package]]
 name = "idna"
@@ -2723,6 +2788,56 @@ traitlets = "*"
 
 [package.extras]
 test = ["flake8", "nbdime", "nbval", "notebook", "pytest"]
+
+[[package]]
+name = "mcp"
+version = "2.3.0"
+description = "Model Context Protocol SDK"
+optional = true
+python-versions = ">=3.10"
+groups = ["main"]
+markers = "extra == \"mcp\""
+files = [
+    {file = "mcp-2.3.0-py3-none-any.whl", hash = "sha256:dd0c44c089d16453e8ae31a3877a0054d7a2314caaa81f5e0541b9b1734b2377"},
+    {file = "mcp-2.3.0.tar.gz", hash = "sha256:8b147a50441cf059dc88c684e0aeed3687f0aa0f39c6cde7b90330effd2b34d8"},
+]
+
+[package.dependencies]
+anyio = {version = ">=4.9", markers = "python_version < \"3.14\""}
+httpx2 = ">=2.10.0"
+jsonschema = ">=4.20.0"
+mcp-types = "2.3.0"
+opentelemetry-api = ">=1.28.0"
+pydantic = ">=2.12.0"
+pyjwt = {version = ">=2.10.1", extras = ["crypto"]}
+python-multipart = ">=0.0.9"
+pywin32 = {version = ">=311", markers = "sys_platform == \"win32\""}
+sse-starlette = ">=3.0.0"
+starlette = {version = ">=0.27", markers = "python_version < \"3.14\""}
+typing-extensions = ">=4.13.0"
+typing-inspection = ">=0.4.1"
+uvicorn = {version = ">=0.31.1", markers = "sys_platform != \"emscripten\""}
+
+[package.extras]
+cli = ["python-dotenv (>=1.0.0)", "typer (>=0.16.0)"]
+rich = ["rich (>=13.9.4)"]
+
+[[package]]
+name = "mcp-types"
+version = "2.3.0"
+description = "Model Context Protocol wire types"
+optional = true
+python-versions = ">=3.10"
+groups = ["main"]
+markers = "extra == \"mcp\""
+files = [
+    {file = "mcp_types-2.3.0-py3-none-any.whl", hash = "sha256:968efdbdaedfab06adae40d378a34395f1090c5921d4be3c9cde283aaf76d91d"},
+    {file = "mcp_types-2.3.0.tar.gz", hash = "sha256:d1e46549edb35ee19a94940fcee6d1addd7e589ab7ea92dda83f5d84781fc362"},
+]
+
+[package.dependencies]
+pydantic = ">=2.12.0"
+typing-extensions = ">=4.13.0"
 
 [[package]]
 name = "mistune"
@@ -3914,6 +4029,25 @@ markers = {main = "extra == \"scp\" or extra == \"hitran\""}
 windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
+name = "pyjwt"
+version = "2.15.1"
+description = "JSON Web Token implementation in Python"
+optional = true
+python-versions = ">=3.9"
+groups = ["main"]
+markers = "extra == \"mcp\""
+files = [
+    {file = "pyjwt-2.15.1-py3-none-any.whl", hash = "sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193"},
+    {file = "pyjwt-2.15.1.tar.gz", hash = "sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8"},
+]
+
+[package.dependencies]
+cryptography = {version = ">=3.4.0", optional = true, markers = "extra == \"crypto\""}
+
+[package.extras]
+crypto = ["cryptography (>=3.4.0)"]
+
+[[package]]
 name = "pyparsing"
 version = "3.3.1"
 description = "pyparsing - Classes and methods to define and execute parsing grammars"
@@ -4136,6 +4270,38 @@ groups = ["main"]
 files = [
     {file = "pytz-2025.2-py2.py3-none-any.whl", hash = "sha256:5ddf76296dd8c44c26eb8f4b6f35488f3ccbf6fbbd7adee0b7262d43f0ec2f00"},
     {file = "pytz-2025.2.tar.gz", hash = "sha256:360b9e3dbb49a209c21ad61809c7fb453643e048b38924c765813546746e81c3"},
+]
+
+[[package]]
+name = "pywin32"
+version = "312"
+description = "Python for Windows Extensions"
+optional = true
+python-versions = ">=3.9"
+groups = ["main"]
+markers = "extra == \"mcp\" and sys_platform == \"win32\""
+files = [
+    {file = "pywin32-312-cp310-cp310-win32.whl", hash = "sha256:772235332b5d1024c696f11cea1ae4be7930f0a8b894bb43db14e3f435f1ff7e"},
+    {file = "pywin32-312-cp310-cp310-win_amd64.whl", hash = "sha256:5dbc35d2b5320dc07f25fa31269cfb767471002b17de5eb067d03da68c7cb2db"},
+    {file = "pywin32-312-cp310-cp310-win_arm64.whl", hash = "sha256:3020656e34f1cf7faeb7bccd2b84653a607c6ff0c55ada85e6487d61716deabd"},
+    {file = "pywin32-312-cp311-cp311-win32.whl", hash = "sha256:17948aeadbdb091f0ced6ef0841620794e68327b94ee415571c1203594b7215c"},
+    {file = "pywin32-312-cp311-cp311-win_amd64.whl", hash = "sha256:d11417d84412f859b722fad0841b3614459ed0047f7542d8362e77884f6b6e8a"},
+    {file = "pywin32-312-cp311-cp311-win_arm64.whl", hash = "sha256:b2200a054ca6d6625c4842fc56a4976a4b47f96b73dbe5538c3f813a80359f47"},
+    {file = "pywin32-312-cp312-cp312-win32.whl", hash = "sha256:dab4f65ac9c4e48400a2a0530c46c3c579cd5905ecd11b80692373915269208b"},
+    {file = "pywin32-312-cp312-cp312-win_amd64.whl", hash = "sha256:b457f6d628a47e8a7346ce22acb7e1a46a4a78b52e1d17e1af56871bd19a93bc"},
+    {file = "pywin32-312-cp312-cp312-win_arm64.whl", hash = "sha256:6017c58e12f6809fbb0555b75df144c2922a9ffd18e4b9b5afa863b6c1a9d950"},
+    {file = "pywin32-312-cp313-cp313-win32.whl", hash = "sha256:7a27df850933d16a8eabfbaeb73d52b273e2da667f80d70b01a89d1f6828d02c"},
+    {file = "pywin32-312-cp313-cp313-win_amd64.whl", hash = "sha256:c53e878d15a1c44788082bfe712a905433473aa38f86375b7cf8b45e3acbaaf9"},
+    {file = "pywin32-312-cp313-cp313-win_arm64.whl", hash = "sha256:59aba5d5940842075343a5ddc6b11f1cdf0d1567fe745290359dfbcc7c2eb831"},
+    {file = "pywin32-312-cp314-cp314-win32.whl", hash = "sha256:a77a90fbb6881238d2ca9c6fd797b25817f3768fe78d214a90137ff055a75f5b"},
+    {file = "pywin32-312-cp314-cp314-win_amd64.whl", hash = "sha256:a4dd3a848290ef724347b19f301045831d8e802fa4464f491b98b1e0a081432e"},
+    {file = "pywin32-312-cp314-cp314-win_arm64.whl", hash = "sha256:9fce94568364e0155e6dfb781ac5d95903be8baf28670632beab1b523f300daa"},
+    {file = "pywin32-312-cp315-cp315-win32.whl", hash = "sha256:5c1fbe4a937a73ae9297384a3da38518cbc694c68ad8a809b2e19acd350f03ed"},
+    {file = "pywin32-312-cp315-cp315-win_amd64.whl", hash = "sha256:c2f03a0f73f804a13c2735b99392b0cd426bb4f2c4d0178e5ac966a0f21618d5"},
+    {file = "pywin32-312-cp315-cp315-win_arm64.whl", hash = "sha256:a8597d28f267b39074aef51fa593530082b39cbe5a074226096857b1fed2dfb9"},
+    {file = "pywin32-312-cp39-cp39-win32.whl", hash = "sha256:d620900033cc7531e50727c3c8333091df5dd3ffe6d68cdca38c03f5821408d5"},
+    {file = "pywin32-312-cp39-cp39-win_amd64.whl", hash = "sha256:dc90147579a905b8635e1b0ec6514967dcb07e6e0d9c42f1477feef14cac23bb"},
+    {file = "pywin32-312-cp39-cp39-win_arm64.whl", hash = "sha256:02ebca0f0242b75292e218065004310d6a477407c09fa449bfe4f6022bc0c0fc"},
 ]
 
 [[package]]
@@ -5168,6 +5334,30 @@ pymysql = ["pymysql"]
 sqlcipher = ["sqlcipher3_binary"]
 
 [[package]]
+name = "sse-starlette"
+version = "3.7.0"
+description = "SSE plugin for Starlette"
+optional = true
+python-versions = ">=3.11"
+groups = ["main"]
+markers = "extra == \"mcp\""
+files = [
+    {file = "sse_starlette-3.7.0-py3-none-any.whl", hash = "sha256:f1d3136caa12d129284fca3d2ded79bc9af943320b6472712955fea52a6d3eea"},
+    {file = "sse_starlette-3.7.0.tar.gz", hash = "sha256:326416da2ab52e9a41b3f409d3ff897eda45aa68c9f3b7b17d0913aab8d219c3"},
+]
+
+[package.dependencies]
+anyio = ">=4.7.0"
+starlette = ">=0.49.1"
+
+[package.extras]
+daphne = ["daphne (>=4.2.0)"]
+examples = ["fastapi (>=0.115.12)", "pydantic (>=2)", "uvicorn (>=0.34.0)"]
+examples-db = ["aiosqlite (>=0.21.0)", "sqlalchemy[asyncio] (>=2.0.41)"]
+granian = ["granian (>=2.3.1)"]
+uvicorn = ["uvicorn (>=0.34.0)"]
+
+[[package]]
 name = "stack-data"
 version = "0.6.3"
 description = "Extract data from python stack frames and tracebacks for informative displays"
@@ -5348,6 +5538,19 @@ files = [
 [package.extras]
 docs = ["myst-parser", "pydata-sphinx-theme", "sphinx"]
 test = ["argcomplete (>=3.0.3)", "mypy (>=1.7.0)", "pre-commit", "pytest (>=7.0,<8.2)", "pytest-mock", "pytest-mypy-testing"]
+
+[[package]]
+name = "truststore"
+version = "0.10.5"
+description = "Verify certificates using native system trust stores"
+optional = true
+python-versions = ">=3.10"
+groups = ["main"]
+markers = "extra == \"mcp\" and sys_platform != \"emscripten\""
+files = [
+    {file = "truststore-0.10.5-py3-none-any.whl", hash = "sha256:9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c"},
+    {file = "truststore-0.10.5.tar.gz", hash = "sha256:30d36967ccaded5cbb38d602c433f53600036c79d502f4533a49b60a03bbefcd"},
+]
 
 [[package]]
 name = "typing-extensions"
@@ -5838,6 +6041,7 @@ test = ["pytest", "pytest-cov"]
 
 [extras]
 hitran = ["hitran-api", "hitran-api2", "nbconvert"]
+mcp = ["mcp"]
 nist = ["beautifulsoup4"]
 postgres = ["asyncpg", "gunicorn"]
 scp = ["setuptools", "spectrochempy"]
@@ -5845,4 +6049,4 @@ scp = ["setuptools", "spectrochempy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11.5,<3.13"
-content-hash = "5320960a2a6741ade145d370a82fc4d1a911edb128d65602ab7113a18253243d"
+content-hash = "f8fe0122a086e3860fe6788cebec25cecc808c6a65d0bf84f0f7d0a820d1cd55"
