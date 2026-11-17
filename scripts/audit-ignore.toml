@@ -44,3 +44,18 @@ package = "minimatch"
 lockfile = "frontend/package-lock.json"
 severity = "moderate"
 versions = ["3.1.5", "5.1.9"]
+
+# Deployment-specific non-applicability; the dependency remains vulnerable.
+# All copies are development tooling fed repository-owned build/test patterns.
+# Production serves compiled assets and does not ship or execute node_modules.
+# Do not apply to exposed development servers or untrusted build configuration.
+# No patched release exists as of 2026-11-17; recheck upstream before expiry.
+[[npm-audit.ignore]]
+id = "GHSA-fc5q-39xc-vjpf"
+reason = "Picomatch is development-only build/test tooling with repository-owned glob patterns; compiled production assets do not run the vulnerable Node glob matcher. No patched release exists. Exposed development tooling and untrusted build configuration are outside this disposition."
+expires = "2026-12-01"
+package = "picomatch"
+lockfile = "frontend/package-lock.json"
+severity = "high"
+versions = ["4.0.4", "4.0.7"]
+dev_only = true

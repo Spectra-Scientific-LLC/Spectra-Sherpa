@@ -107,6 +107,10 @@ def _load_npm_audit_ignores(path: Path) -> dict[str, dict[str, object]]:
             ):
                 raise SystemExit(f"{path}: npm suppression {advisory_id} requires distinct exact versions")
             waivers[advisory_id]["versions"] = versions
+        if "dev_only" in entry:
+            if entry["dev_only"] is not True or versions is None:
+                raise SystemExit(f"{path}: dev_only suppression requires true and exact versions")
+            waivers[advisory_id]["dev_only"] = True
 
         print(f"Using npm-audit suppression {advisory_id}: {reason} expires={expires}", flush=True)
     return waivers
@@ -246,7 +250,7 @@ def audit_npm(directory: Path, *, scope: str, ignore_file: Path) -> None:
             allowed = (
                 isinstance(waiver, dict)
                 and lockfile is not None
-                and {key: value for key, value in waiver.items() if key != "versions"}
+                and {key: value for key, value in waiver.items() if key not in {"versions", "dev_only"}}
                 == {"package": package, "lockfile": lockfile, "severity": severity}
             )
             if allowed and "versions" in waiver:
@@ -264,6 +268,25 @@ def audit_npm(directory: Path, *, scope: str, ignore_file: Path) -> None:
                             for node in nodes
                         )
                     )
+                    if allowed and waiver.get("dev_only"):
+                        # Check every installed occurrence, not just the nodes
+                        # named in the advisory response. A runtime promotion
+                        # or unreviewed version invalidates this disposition.
+                        occurrences = {
+                            node: entry
+                            for node, entry in packages.items()
+                            if node.endswith("/" + package) or isinstance(entry, dict) and entry.get("name") == package
+                        }
+                        allowed = (
+                            bool(occurrences)
+                            and all(
+                                isinstance(entry, dict)
+                                and entry.get("dev") is True
+                                and entry.get("version") in waiver["versions"]
+                                for entry in occurrences.values()
+                            )
+                            and all(packages[node].get("dev") is True for node in nodes)
+                        )
                 except (OSError, ValueError, KeyError, TypeError):
                     allowed = False
             if not allowed:
