@@ -23,7 +23,7 @@ from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.experiment_specimen import ExperimentSpecimen
 from spectra_sherpa.app.models.folder_watch import FolderWatch
-from spectra_sherpa.app.models.inspection_grant import InspectionGrant
+from spectra_sherpa.app.models.inspection_grant import InspectionCall, InspectionGrant
 from spectra_sherpa.app.models.instrument_qc import InstrumentQCRecord
 from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.models.model_publication import ModelPublication
@@ -46,6 +46,7 @@ from spectra_sherpa.app.models.workflow_version import WorkflowVersion
 
 __all__ = [
     "InspectionGrant",
+    "InspectionCall",
     "ModelPublication",
     "APIKey",
     "AnalyticalQualificationRecord",

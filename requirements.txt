@@ -37,8 +37,8 @@ jsonschema>=4.20.0,<5.0.0
 greenlet>=3.0.0,<4.0.0
 
 # NOTE: PyJWT and bcrypt were removed from OSS in v0.4.1 Phase 2.
-# OSS no longer issues, validates, or hashes credentials — that's the
-# responsibility of managed-auth server extensions.
+# Managed-account credentials belong to managed-auth server extensions.
+# Local inspection credentials use standard-library secrets and SHA-256.
 
 # Optional: exact EFA, MCR-ALS, and SIMPLISMA matrix adapter via SpectroChemPy
 # (CeCILL-B license; this extra adds no file readers or dataset catalog)

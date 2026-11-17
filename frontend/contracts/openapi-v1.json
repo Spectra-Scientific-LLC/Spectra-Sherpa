@@ -2609,6 +2609,82 @@
         "title": "CompatibilityPreviewRequest",
         "type": "object"
       },
+      "CreateInspectionClient": {
+        "additionalProperties": false,
+        "properties": {
+          "client_label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Client Label",
+            "type": "string"
+          },
+          "confirm_external_provider": {
+            "const": true,
+            "title": "Confirm External Provider",
+            "type": "boolean"
+          },
+          "ttl_seconds": {
+            "default": 86400,
+            "maximum": 2592000.0,
+            "minimum": 1.0,
+            "title": "Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "client_label",
+          "confirm_external_provider"
+        ],
+        "title": "CreateInspectionClient",
+        "type": "object"
+      },
+      "CreatedInspectionClient": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_label": {
+            "title": "Client Label",
+            "type": "string"
+          },
+          "credential": {
+            "title": "Credential",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "client_id",
+          "project_id",
+          "client_label",
+          "expires_at",
+          "revoked_at",
+          "credential"
+        ],
+        "title": "CreatedInspectionClient",
+        "type": "object"
+      },
       "CurationApply": {
         "additionalProperties": false,
         "properties": {
@@ -5949,6 +6025,108 @@
           "workflow_id"
         ],
         "title": "ImportedApplicationIdentity",
+        "type": "object"
+      },
+      "InspectionCallInfo": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "response_bytes": {
+            "title": "Response Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "client_id",
+          "operation",
+          "outcome",
+          "response_bytes",
+          "created_at"
+        ],
+        "title": "InspectionCallInfo",
+        "type": "object"
+      },
+      "InspectionCallRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "title": "Arguments",
+            "type": "object"
+          },
+          "operation": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "InspectionCallRequest",
+        "type": "object"
+      },
+      "InspectionClientInfo": {
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_label": {
+            "title": "Client Label",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "integer"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "client_id",
+          "project_id",
+          "client_label",
+          "expires_at",
+          "revoked_at"
+        ],
+        "title": "InspectionClientInfo",
         "type": "object"
       },
       "InstantiateTemplateRequest": {
@@ -22684,6 +22862,74 @@
         ]
       }
     },
+    "/api/v1/inspection/{project_id}/{client_id}/call": {
+      "post": {
+        "operationId": "inspect_api_v1_inspection__project_id___client_id__call_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectionCallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Inspect Api V1 Inspection  Project Id   Client Id  Call Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Inspect",
+        "tags": [
+          "inspection"
+        ]
+      }
+    },
     "/api/v1/jobs": {
       "get": {
         "description": "List jobs for the authenticated user.",
@@ -25534,6 +25780,224 @@
         "summary": "Export Project Sherpa Object",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/inspection-calls": {
+      "get": {
+        "operationId": "call_history_api_v1_projects__project_id__inspection_calls_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InspectionCallInfo"
+                  },
+                  "title": "Response Call History Api V1 Projects  Project Id  Inspection Calls Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Call History",
+        "tags": [
+          "inspection"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/inspection-clients": {
+      "get": {
+        "operationId": "list_clients_api_v1_projects__project_id__inspection_clients_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InspectionClientInfo"
+                  },
+                  "title": "Response List Clients Api V1 Projects  Project Id  Inspection Clients Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "List Clients",
+        "tags": [
+          "inspection"
+        ]
+      },
+      "post": {
+        "operationId": "create_client_api_v1_projects__project_id__inspection_clients_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInspectionClient"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedInspectionClient"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Create Client",
+        "tags": [
+          "inspection"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/inspection-clients/{client_id}": {
+      "delete": {
+        "operationId": "revoke_client_api_v1_projects__project_id__inspection_clients__client_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Revoke Client",
+        "tags": [
+          "inspection"
         ]
       }
     },

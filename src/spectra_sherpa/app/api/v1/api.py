@@ -21,6 +21,7 @@ from spectra_sherpa.app.api.v1.routes import (
     experiment_specimens,
     experiments,
     health,
+    inspection,
     jobs,
     logs,
     models,
@@ -78,6 +79,7 @@ def build_api_router(
 
     # --- Always registered (functional routes) ---
     router.include_router(health.router, tags=["health"])
+    router.include_router(inspection.router, tags=["inspection"])
     router.include_router(acquisition_preferences.router, tags=["acquisition-preferences"])
     router.include_router(config.router, tags=["config"])
     router.include_router(logs.router, tags=["logs"])

@@ -79,3 +79,48 @@ and call logging. Already admitted work is not cancelled by this lifecycle
 service. No issuance, revocation or approval operation belongs in the agent's
 tool catalog. Workbench connection UI and transport admission are separate
 integration steps.
+
+## Local inspection connection control
+
+The initial local bridge admits only `list_node_types`, called directly through
+its existing implementation. It returns an object with `items` and `next_offset`;
+`offset` starts at zero and `limit` is 1–100 (default 25). This is installed public
+node metadata, not project data. It does not invoke the tool registry dispatcher.
+Dataset/workflow/result reads and their existing privacy policies require separate
+admission before they can be exposed. No skill content or execution is added.
+
+In the local browser Workbench, Settings → Integrations manages connections for
+the selected project. Creation requires acknowledgement that an external client
+may send results to its AI provider. Each connection receives only the metadata
+disclosure, a client ID and a one-time credential, expiring after the selected
+period. The UI keeps the secret in memory and discards it on project/account
+changes or unmount; it is never stored in browser storage. Lost credentials must
+be revoked and replaced. Connection and call-history lists show the latest 100
+records. The packaged desktop interface does not expose this control: its
+existing desktop-session protection remains required.
+
+Control requests use ordinary Workbench identity plus
+`X-Spectra-Workbench: inspection`, with a configured or same-origin loopback browser Origin when present.
+An inspection bearer cannot invoke connection control. This is browser CSRF
+protection, not isolation against another local operating-system process: local
+Workbench mode already grants implicit identity to loopback callers.
+
+`POST /api/v1/inspection/{project_id}/{client_id}/call` requires the inspection
+bearer independently of implicit Workbench identity. The service authenticates
+against fresh database state before reading and again before returning results,
+so revocation or loss of project access during a read prevents disclosure.
+It never accepts a project identity inside operation arguments. Nonlocal hosts
+and nonlocal product modes are refused.
+
+Requests are capped at 8 KiB with a five-second body deadline. Node metadata
+inspection has four per-process worker slots, a five-second admission/read
+budget, a 4,096-node catalog ceiling and a 64 KiB response ceiling. A timed-out
+worker retains its slot until it exits. The HTTP operation has an additional
+20-second deadline. These limits do not authorize costly statistics or workflow
+execution. Failed authenticated admissions and successful reads retain local
+project call outcomes without credentials, arguments or response contents;
+unauthenticated requests cannot claim a project log identity. This history is
+ordinary local storage, not tamper-evident commercial evidence. Cancellation,
+the outer HTTP deadline and database failures may leave no outcome record; it
+is not an exhaustive request audit. Deleting its
+project also deletes its connection and call history.
