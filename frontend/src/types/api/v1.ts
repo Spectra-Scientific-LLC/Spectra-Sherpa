@@ -1840,6 +1840,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/inspection/{project_id}/{client_id}/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Inspect */
+        post: operations["inspect_api_v1_inspection__project_id___client_id__call_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/jobs": {
         parameters: {
             query?: never;
@@ -2577,6 +2594,58 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/inspection-calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Call History */
+        get: operations["call_history_api_v1_projects__project_id__inspection_calls_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/inspection-clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Clients */
+        get: operations["list_clients_api_v1_projects__project_id__inspection_clients_get"];
+        put?: never;
+        /** Create Client */
+        post: operations["create_client_api_v1_projects__project_id__inspection_clients_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/inspection-clients/{client_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Client */
+        delete: operations["revoke_client_api_v1_projects__project_id__inspection_clients__client_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5342,6 +5411,39 @@ export interface components {
                 [key: string]: (string | number | null)[];
             } | null;
         };
+        /** CreateInspectionClient */
+        CreateInspectionClient: {
+            /** Client Label */
+            client_label: string;
+            /**
+             * Confirm External Provider
+             * @constant
+             */
+            confirm_external_provider: true;
+            /**
+             * Ttl Seconds
+             * @default 86400
+             */
+            ttl_seconds?: number;
+        };
+        /** CreatedInspectionClient */
+        CreatedInspectionClient: {
+            /** Client Id */
+            client_id: string;
+            /** Client Label */
+            client_label: string;
+            /** Credential */
+            credential: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Project Id */
+            project_id: number;
+            /** Revoked At */
+            revoked_at: string | null;
+        };
         /** CurationApply */
         CurationApply: {
             /** Expected Graph Digest */
@@ -6403,6 +6505,49 @@ export interface components {
             status?: string | null;
             /** Workflow Id */
             workflow_id: number;
+        };
+        /** InspectionCallInfo */
+        InspectionCallInfo: {
+            /** Client Id */
+            client_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Operation */
+            operation: string;
+            /** Outcome */
+            outcome: string;
+            /** Response Bytes */
+            response_bytes: number;
+        };
+        /** InspectionCallRequest */
+        InspectionCallRequest: {
+            /** Arguments */
+            arguments?: {
+                [key: string]: unknown;
+            };
+            /** Operation */
+            operation: string;
+        };
+        /** InspectionClientInfo */
+        InspectionClientInfo: {
+            /** Client Id */
+            client_id: string;
+            /** Client Label */
+            client_label: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Project Id */
+            project_id: number;
+            /** Revoked At */
+            revoked_at: string | null;
         };
         /**
          * InstantiateTemplateRequest
@@ -14225,6 +14370,44 @@ export interface operations {
             };
         };
     };
+    inspect_api_v1_inspection__project_id___client_id__call_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InspectionCallRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_jobs_api_v1_jobs_get: {
         parameters: {
             query?: {
@@ -15786,6 +15969,133 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    call_history_api_v1_projects__project_id__inspection_calls_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InspectionCallInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_clients_api_v1_projects__project_id__inspection_clients_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InspectionClientInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_client_api_v1_projects__project_id__inspection_clients_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInspectionClient"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedInspectionClient"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_client_api_v1_projects__project_id__inspection_clients__client_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

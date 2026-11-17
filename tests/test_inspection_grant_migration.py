@@ -67,3 +67,57 @@ def test_populated_downgrade_refuses_to_erase_revocation_history(tmp_path):
             assert conn.scalar(sa.text("SELECT COUNT(*) FROM inspection_grant WHERE revoked_at IS NOT NULL")) == 1
     finally:
         engine.dispose()
+
+
+def test_call_history_upgrade_and_populated_downgrade(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from spectra_sherpa.app.models.inspection_grant import InspectionCall
+
+    database = tmp_path / "calls.db"
+    url = f"sqlite+aiosqlite:///{database}"
+    _run_upgrade(url, "s8t0u2v4w216")
+    engine = sa.create_engine(f"sqlite:///{database}")
+    try:
+        _run_upgrade(url, "t9u1v3w5x327")
+        assert sa.inspect(engine).has_table("inspection_call")
+        _run_downgrade(url, "s8t0u2v4w216")
+        assert not sa.inspect(engine).has_table("inspection_call")
+        _run_upgrade(url, "t9u1v3w5x327")
+        with Session(engine) as session:
+            user = User(username="call-owner")
+            session.add(user)
+            session.flush()
+            project = Project(user_id=user.id, name="Call history")
+            session.add(project)
+            session.flush()
+            now = datetime.now(timezone.utc)
+            grant = InspectionGrant(
+                id="call-client",
+                user_id=user.id,
+                project_id=project.id,
+                client_label="Client",
+                token_digest="1" * 64,
+                disclosures=["metadata"],
+                created_at=now,
+                expires_at=now + timedelta(days=1),
+            )
+            session.add(grant)
+            session.flush()
+            session.add(
+                InspectionCall(
+                    client_id=grant.id,
+                    project_id=project.id,
+                    operation="list_node_types",
+                    outcome="success",
+                    response_bytes=20,
+                    created_at=now,
+                )
+            )
+            session.commit()
+        with pytest.raises(RuntimeError, match="reconciliation"):
+            _run_downgrade(url, "s8t0u2v4w216")
+        with engine.connect() as conn:
+            assert conn.scalar(sa.text("SELECT COUNT(*) FROM inspection_call")) == 1
+    finally:
+        engine.dispose()
