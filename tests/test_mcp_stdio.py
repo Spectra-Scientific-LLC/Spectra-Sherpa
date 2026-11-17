@@ -31,7 +31,25 @@ async def test_real_sdk_stdio_reads_and_revocation(test_session, test_engine, te
     project = Project(name="MCP interoperability", user_id=test_user.id)
     test_session.add(project)
     await test_session.flush()
-    credential = await issue_inspection_credential(test_session, test_user, project.id, "MCP SDK 2.3.0")
+    import numpy as np
+
+    from spectra_sherpa.app.core import security
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+    from spectra_sherpa.app.models.data_egress import UserEgressDefaults
+    from spectra_sherpa.app.models.workflow import Workflow
+    from spectra_sherpa.app.services.dataset_registry import dataset_registry
+
+    monkeypatch.setattr(security, "is_egress_enabled", lambda: True)
+    test_session.add(UserEgressDefaults(user_id=test_user.id, allow_llm_context=True, allow_llm_chat=True))
+    workflow = Workflow(name="Saved facts", user_id=test_user.id, project_id=project.id)
+    test_session.add(workflow)
+    await test_session.flush()
+    handle = dataset_registry.register(
+        SherpaDataset(X=np.zeros((3, 4))), owner_user_id=test_user.id, project_id=project.id
+    )
+    credential = await issue_inspection_credential(
+        test_session, test_user, project.id, "MCP SDK 2.3.0", project_summaries=True
+    )
     await test_session.commit()
     sessions = async_sessionmaker(test_engine, expire_on_commit=False)
     app = FastAPI()
@@ -85,10 +103,18 @@ async def test_real_sdk_stdio_reads_and_revocation(test_session, test_engine, te
                     assert initialized.capabilities.prompts is None
                     assert initialized.capabilities.resources is None
                     listing = await client.list_tools()
-                    assert [tool.name for tool in listing.tools] == ["list_node_types"]
+                    assert {tool.name for tool in listing.tools} == {
+                        "list_node_types",
+                        "describe_dataset",
+                        "inspect_workflow",
+                    }
                     assert listing.tools[0].annotations.read_only_hint is True
                     result = await client.call_tool("list_node_types", {"limit": 1})
                     assert not result.is_error and len(result.structured_content["items"]) == 1
+                    dataset = await client.call_tool("describe_dataset", {"dataset_id": handle})
+                    assert not dataset.is_error and dataset.structured_content["structured"]["shape"] == [3, 4]
+                    summary = await client.call_tool("inspect_workflow", {"workflow_id": workflow.id})
+                    assert not summary.is_error and summary.structured_content["node_count"] == 0
                     denied = await client.call_tool("run_workflow", {})
                     assert denied.is_error
                     async with sessions() as session:

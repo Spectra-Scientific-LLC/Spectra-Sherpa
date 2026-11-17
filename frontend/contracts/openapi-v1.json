@@ -2623,6 +2623,11 @@
             "title": "Confirm External Provider",
             "type": "boolean"
           },
+          "project_summaries": {
+            "default": false,
+            "title": "Project Summaries",
+            "type": "boolean"
+          },
           "ttl_seconds": {
             "default": 86400,
             "maximum": 2592000.0,
@@ -2661,6 +2666,10 @@
             "title": "Project Id",
             "type": "integer"
           },
+          "project_summaries": {
+            "title": "Project Summaries",
+            "type": "boolean"
+          },
           "revoked_at": {
             "anyOf": [
               {
@@ -2675,6 +2684,7 @@
           }
         },
         "required": [
+          "project_summaries",
           "client_id",
           "project_id",
           "client_label",
@@ -6106,6 +6116,10 @@
             "title": "Project Id",
             "type": "integer"
           },
+          "project_summaries": {
+            "title": "Project Summaries",
+            "type": "boolean"
+          },
           "revoked_at": {
             "anyOf": [
               {
@@ -6120,6 +6134,7 @@
           }
         },
         "required": [
+          "project_summaries",
           "client_id",
           "project_id",
           "client_label",

@@ -1,7 +1,7 @@
 <template>
   <section class="inspection-settings">
     <h3>External inspection connections</h3>
-    <p>Connect an external client to this project's read-only inspection service. This first version lists available analysis nodes; it cannot run or change workflows.</p>
+    <p>Connect an external client to this project's read-only inspection service. Clients can inspect available analysis nodes and existing dataset/workflow summaries when your privacy settings allow it. They cannot run or change workflows.</p>
     <p v-if="!project.currentProjectId">Select a project to manage its connections.</p>
     <template v-else>
       <p>Project: {{ project.currentProject?.name || project.currentProjectId }}</p>
@@ -14,7 +14,8 @@
             <option :value="604800">7 days</option>
           </select>
         </label>
-        <label class="consent"><input v-model="confirmed" type="checkbox" :disabled="busy" /> I understand the external client may send inspection results to its AI provider.</label>
+        <label><input v-model="projectSummaries" name="project_summaries" type="checkbox" :disabled="busy" /> Also allow existing dataset and workflow summaries for this project, subject to my privacy settings.</label>
+        <label class="consent"><input v-model="confirmed" name="confirm_external_provider" type="checkbox" :disabled="busy" /> I understand the external client may send inspection results to its AI provider.</label>
         <button type="submit" :disabled="busy || !confirmed || !label.trim()">Create connection</button>
       </form>
       <div v-if="issued" class="credential" role="status">
@@ -29,7 +30,7 @@
       <button type="button" :disabled="busy" @click="refresh">Refresh connections and history</button>
       <ul aria-label="Inspection connections">
         <li v-for="connection in connections" :key="connection.client_id">
-          {{ connection.client_label }} — {{ connection.revoked_at ? 'Revoked' : `Expires ${new Date(connection.expires_at).toLocaleString()}` }}
+          {{ connection.client_label }} — {{ connection.project_summaries ? 'Catalog and project summaries' : 'Catalog only' }} — {{ connection.revoked_at ? 'Revoked' : `Expires ${new Date(connection.expires_at).toLocaleString()}` }}
           <button v-if="!connection.revoked_at" type="button" :disabled="busy" @click="revoke(connection.client_id)">Revoke {{ connection.client_label }}</button>
         </li>
       </ul>
@@ -58,6 +59,7 @@ const issued = ref<components['schemas']['CreatedInspectionClient'] | null>(null
 const label = ref('');
 const ttl = ref(86400);
 const confirmed = ref(false);
+const projectSummaries = ref(false);
 const busy = ref(false);
 const error = ref('');
 const message = ref('');
@@ -65,7 +67,7 @@ const headers = { 'X-Spectra-Workbench': 'inspection' };
 const identity = () => [auth.user?.id, auth.sessionRevision, project.currentProjectId];
 const scope = useScopedRequest(identity, () => {
   connections.value = []; calls.value = []; issued.value = null;
-  confirmed.value = false; label.value = ''; busy.value = false; error.value = ''; message.value = '';
+  confirmed.value = false; projectSummaries.value = false; label.value = ''; busy.value = false; error.value = ''; message.value = '';
 }, { abortOnInvalidate: false });
 
 async function refresh() {
@@ -90,12 +92,12 @@ async function createConnection() {
   const projectId = project.currentProjectId;
   busy.value = true; issued.value = null; error.value = ''; message.value = '';
   const body: components['schemas']['CreateInspectionClient'] = {
-    client_label: label.value.trim(), ttl_seconds: ttl.value, confirm_external_provider: true,
+    client_label: label.value.trim(), ttl_seconds: ttl.value, confirm_external_provider: true, project_summaries: projectSummaries.value,
   };
   try {
     const { data } = await api.post<components['schemas']['CreatedInspectionClient']>(`/projects/${projectId}/inspection-clients`, body, { headers });
     if (ticket.isCurrent()) {
-      issued.value = data; confirmed.value = false;
+      issued.value = data; confirmed.value = false; projectSummaries.value = false;
       const { credential: _credential, ...info } = data;
       connections.value.unshift(info);
     }

@@ -425,9 +425,43 @@ async def validate_dag_spec_for_parent(
     return result
 
 
+def _workflow_summary(workflow_id: int, name: str, node_types: list[str], edge_count: int) -> dict[str, Any]:
+    return {
+        "workflow_id": workflow_id,
+        "name": name,
+        "node_count": len(node_types),
+        "edge_count": edge_count,
+        "node_types": sorted(set(node_types)),
+    }
+
+
 @register_tool(
     "inspect_workflow",
-    "Get a summary or full topology of a workflow.",
+    version="1.0",
+    mutation="read",
+    distribution="oss",
+    mcp_name="inspect_workflow",
+    disclosure=["metadata", "values", "identifiers"],
+    output_schema={
+        "type": "object",
+        "description": (
+            "Existing workflow facts at the selected detail level, filtered by context permissions. "
+            "Summary counts are saved nodes/edges, not executed observations or model quality. "
+            "An unavailable workflow returns an error field."
+        ),
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "name": {"type": "string"},
+            "node_count": {"type": "integer", "minimum": 0},
+            "edge_count": {"type": "integer", "minimum": 0},
+            "node_types": {"type": "array", "items": {"type": "string"}},
+            "nodes": {"type": "array", "items": {"type": "object"}},
+            "edges": {"type": "array", "items": {"type": "object"}},
+            "error": {"type": "string"},
+        },
+        "additionalProperties": False,
+    },
+    description="Get a summary or full topology of a workflow.",
     category=ToolCategory.workflow,
     parameters={
         "type": "object",
@@ -455,6 +489,10 @@ async def inspect_workflow(
     mode: str | None = None,
     session: Any = None,
     user: Any = None,
+    *,
+    project_id: int | None = None,
+    max_nodes: int | None = None,
+    max_edges: int | None = None,
 ) -> dict[str, Any]:
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
@@ -463,6 +501,55 @@ async def inspect_workflow(
 
     mode = mode or detail_level
     permissions = await _llm_context_permissions(session, user)
+    if max_nodes is not None or max_edges is not None:
+        if (
+            mode != "summary"
+            or project_id is None
+            or type(max_nodes) is not int
+            or max_nodes < 1
+            or type(max_edges) is not int
+            or max_edges < 1
+        ):
+            raise ValueError("Bounded inspection requires a project and positive summary limits")
+        from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
+        from spectra_sherpa.app.models.workflow_node import WorkflowNode
+
+        row = (
+            await session.execute(
+                select(Workflow.id, Workflow.name).where(
+                    Workflow.id == workflow_id,
+                    Workflow.user_id == user.id,
+                    Workflow.project_id == project_id,
+                )
+            )
+        ).one_or_none()
+        if row is None:
+            return {"error": "Workflow not found"}
+        node_types = list(
+            (
+                await session.scalars(
+                    select(WorkflowNode.node_type)
+                    .where(
+                        WorkflowNode.workflow_id == workflow_id,
+                    )
+                    .limit(max_nodes + 1)
+                )
+            ).all()
+        )
+        edge_ids = list(
+            (
+                await session.scalars(
+                    select(WorkflowEdge.id)
+                    .where(
+                        WorkflowEdge.workflow_id == workflow_id,
+                    )
+                    .limit(max_edges + 1)
+                )
+            ).all()
+        )
+        if len(node_types) > max_nodes or len(edge_ids) > max_edges:
+            raise ValueError("Workflow exceeds inspection limits")
+        return _apply_egress_filter(_workflow_summary(row.id, row.name, node_types, len(edge_ids)), permissions)
     result = await session.execute(
         select(Workflow)
         .options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
@@ -485,13 +572,7 @@ async def inspect_workflow(
 
     if mode == "summary":
         return _apply_egress_filter(
-            {
-                "workflow_id": wf.id,
-                "name": wf.name,
-                "node_count": len(nodes),
-                "edge_count": len(edges),
-                "node_types": sorted({node["type"] for node in nodes}),
-            },
+            _workflow_summary(wf.id, wf.name, [node["type"] for node in nodes], len(edges)),
             permissions,
         )
 
