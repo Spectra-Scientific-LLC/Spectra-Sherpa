@@ -22,6 +22,31 @@ from spectra_sherpa.app.services.tools.schemas import ToolCategory
     "list_node_types",
     "List available DAG node types, optionally filtered by category. Returns node type IDs, labels, and categories.",
     category=ToolCategory.spectral,
+    version="1.0",
+    mutation="read",
+    disclosure=["metadata"],
+    distribution="oss",
+    mcp_name="list_node_types",
+    output_schema={
+        "type": "array",
+        "description": (
+            "Installed catalog node types, sorted by node_type; an unmatched category returns an empty list."
+        ),
+        "items": {
+            "type": "object",
+            "properties": {
+                "node_type": {
+                    "type": "string",
+                    "description": "Canonical node type identifier, not a workflow node ID.",
+                },
+                "label": {"type": "string", "description": "Display label; not a stable identity."},
+                "category": {"type": "string", "description": "Registered node category."},
+                "description": {"type": "string", "maxLength": 120, "description": "Truncated registered description."},
+            },
+            "required": ["node_type", "label", "category", "description"],
+            "additionalProperties": False,
+        },
+    },
     parameters={
         "type": "object",
         "properties": {

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import Any, Callable, Iterator, Optional
+from typing import Any, Callable, Iterator, Literal, Optional
 
 from spectra_sherpa.app.services.tools.schemas import (
     ToolCategory,
@@ -164,6 +164,12 @@ def register_tool(
     requires_egress: bool = False,
     egress_permission: str | None = None,
     scope: ToolScope = ToolScope.public,
+    version: str | None = None,
+    output_schema: dict[str, Any] | None = None,
+    mutation: Literal["read", "write", "compute"] | None = None,
+    disclosure: list[Literal["metadata", "statistics", "metrics", "values", "identifiers"]] | None = None,
+    distribution: Literal["oss", "pro"] | None = None,
+    mcp_name: str | None = None,
 ) -> Callable[[ToolHandler], ToolHandler]:
     """
     Decorator that registers a function as an MCP tool.
@@ -201,6 +207,12 @@ def register_tool(
             egress_permission=egress_permission,
             scope=scope,
             origin=ToolOrigin.builtin,  # decorator is trusted code
+            version=version,
+            output_schema=output_schema,
+            mutation=mutation,
+            disclosure=disclosure,
+            distribution=distribution,
+            mcp_name=mcp_name,
         )
         tool_registry.register(defn, fn)
         return fn
