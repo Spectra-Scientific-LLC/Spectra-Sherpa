@@ -15,9 +15,7 @@ from packaging.version import Version
 from spectra_sherpa.app.services import synthesis
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-QUALIFICATION_REPORT = (
-    PACKAGE_ROOT.parents[1] / "docs/evidence/public-install-profiles-python3115-security-20261117.json"
-)
+QUALIFICATION_REPORT = PACKAGE_ROOT.parents[1] / "docs/evidence/public-install-profiles-mcp-20261117.json"
 
 
 def _metadata() -> dict[str, Any]:
@@ -55,6 +53,7 @@ def test_public_extras_are_closed_and_independent() -> None:
     dependencies = metadata["dependencies"]
     extras = metadata["extras"]
     assert extras == {
+        "mcp": ["mcp"],
         "scp": ["spectrochempy", "setuptools"],
         "hitran": ["hitran-api", "hitran-api2", "nbconvert"],
         "nist": ["beautifulsoup4"],
@@ -84,12 +83,13 @@ def test_retained_public_profile_qualification_is_commit_and_lock_bound() -> Non
     report = json.loads(QUALIFICATION_REPORT.read_text(encoding="utf-8"))
 
     assert report["schema_version"] == "spectra-public-install-qualification/1"
-    assert report["source_revision"] == "b2c8c4ca8d0e3bf3ad6c15b077813aaab248c661"
+    assert report["source_revision"] == "77700b7d849eaf3238e1e900738f87afa09af483"
     lock_bytes = (PACKAGE_ROOT / "poetry.lock").read_bytes()
     lock_hash = hashlib.sha256(lock_bytes).hexdigest()
     assert report["poetry_lock_sha256"] == lock_hash
     assert set(report["profiles"]) == {
         "default",
+        "mcp",
         "scp",
         "hitran",
         "nist",

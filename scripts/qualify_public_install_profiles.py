@@ -22,6 +22,7 @@ from pathlib import Path
 
 PROFILE_REQUIREMENTS = {
     "default": frozenset(),
+    "mcp": frozenset({"mcp", "mcp-types"}),
     "scp": frozenset({"spectrochempy"}),
     "hitran": frozenset({"hitran-api", "hitran-api2", "nbconvert"}),
     "nist": frozenset({"beautifulsoup4"}),

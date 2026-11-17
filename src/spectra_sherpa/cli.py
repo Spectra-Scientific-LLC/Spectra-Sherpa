@@ -478,6 +478,11 @@ def main(argv: list[str] | None = None, *, _server_runner: Callable[..., None] |
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    mcp_parser = subparsers.add_parser("mcp", help="Serve read-only inspection over stdio (requires the mcp extra)")
+    mcp_parser.add_argument("--workbench-url", default="http://127.0.0.1:8000")
+    mcp_parser.add_argument("--project-id", type=int, required=True)
+    mcp_parser.add_argument("--client-id", required=True)
+    mcp_parser.add_argument("--credential-env", default="SPECTRA_INSPECTION_CREDENTIAL")
     serve_parser = subparsers.add_parser("serve-model", help="Run a headless prediction server for a deployed workflow")
     serve_parser.add_argument("workflow_id", type=int, help="ID of the workflow to serve")
     serve_parser.add_argument(
@@ -576,6 +581,25 @@ def main(argv: list[str] | None = None, *, _server_runner: Callable[..., None] |
     prewarm_parser.add_argument("--pressure-atm", type=float, default=1.0, help="Pressure in atm")
 
     args = parser.parse_args(argv)
+
+    if args.command == "mcp":
+        # Protocol stdout must never contain ordinary startup or .env warnings.
+        from spectra_sherpa.mcp.bridge_client import Connection
+
+        try:
+            connection = Connection(
+                args.workbench_url, args.project_id, args.client_id, os.environ.get(args.credential_env, "")
+            )
+            from spectra_sherpa.mcp.server import serve
+
+            asyncio.run(serve(connection))
+        except ModuleNotFoundError as exc:
+            if exc.name and (exc.name == "mcp" or exc.name.startswith("mcp.")):
+                raise SystemExit("Install spectra-sherpa[mcp] to use inspection stdio") from None
+            raise
+        except ValueError:
+            raise SystemExit("Invalid inspection connection configuration") from None
+        return
 
     # Load .env before setting defaults, so .env values take precedence.
     from dotenv import dotenv_values

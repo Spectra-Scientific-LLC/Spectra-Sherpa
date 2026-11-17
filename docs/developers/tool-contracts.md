@@ -124,3 +124,42 @@ ordinary local storage, not tamper-evident commercial evidence. Cancellation,
 the outer HTTP deadline and database failures may leave no outcome record; it
 is not an exhaustive request audit. Deleting its
 project also deletes its connection and call history.
+
+## Optional MCP stdio adapter (v0.7.0 development)
+
+Install `spectra-sherpa[mcp]` in the same environment as Workbench. The base
+installation does not include the MCP SDK. Start the local browser Workbench,
+select a project, and create an inspection connection in Settings → Integrations.
+Configure a stdio client to run:
+
+```text
+spectra-sherpa mcp --workbench-url http://127.0.0.1:8000 --project-id PROJECT_ID --client-id CLIENT_ID
+```
+
+Provide the one-time credential in the child process environment as
+`SPECTRA_INSPECTION_CREDENTIAL`. Keep it out of command arguments and version
+control. A different environment variable name can be selected with
+`--credential-env`; the adapter does not load `.env` files. The URL must use an
+HTTP loopback IP (`127.0.0.1` or `::1`), with the actual Workbench port. Proxies,
+redirects, remote hosts, URL credentials and arbitrary API paths are refused.
+
+The adapter advertises only `list_node_types`. Its input and output meanings
+come from the reviewed tool contract and bounded bridge argument model. The
+response wraps the existing array as `items` plus `next_offset`. Input lines are
+limited to 16 KiB before JSON-RPC parsing; bridge requests and responses retain
+the limits above. Normal startup messages do not enter protocol stdout.
+
+A handshake's client name grants no authority. Tool listing checks the live
+Workbench credential; each call repeats admission in Workbench. Existing
+connections survive Workbench restart, while revocation remains effective after
+restart. The adapter advertises no prompts, resources, supplied skills or write
+tools. No workflow creation or execution instructions are supplied by this
+interface.
+
+Compatibility must be reported by executed client/version and artifact. The
+qualification harness `scripts/qualify_mcp_install.py` exercises the MCP Python
+SDK against an installed wheel and records startup, stdio reads, write refusal,
+and restart/revocation results. It does not establish compatibility with other
+AI applications or evaluate an AI model's scientific reasoning. Public CI runs
+this probe on Ubuntu for PRs and on Linux, Windows and macOS for manual, weekly
+and main-branch qualification. Desktop packaging remains outside this probe.
