@@ -34,7 +34,6 @@ from spectra_sherpa.app.schemas.execution_runs import (
     ComparisonResponse,
     ExecutionRunOut,
     RunKind,
-    RunListItem,
     RunPage,
 )
 from spectra_sherpa.app.schemas.run_evidence import OutputEvidence, RunEvidence
@@ -45,6 +44,15 @@ from spectra_sherpa.app.services.job_manager import job_manager
 from spectra_sherpa.app.services.model_application import apply_model_to_dataset, load_project_dataset
 from spectra_sherpa.app.services.run_artifact_roles import attempted_artifact_fields
 from spectra_sherpa.app.services.run_metrics import comparison_response
+from spectra_sherpa.app.services.run_navigation import (
+    navigation_columns as _navigation_columns,
+)
+from spectra_sherpa.app.services.run_navigation import (
+    run_navigation as _run_navigation,
+)
+from spectra_sherpa.app.services.run_navigation import (
+    workflow_name_query as _workflow_name_query,
+)
 from spectra_sherpa.app.services.run_params import build_effective_params_snapshot
 
 logger = logging.getLogger(__name__)
@@ -658,34 +666,6 @@ def _run_belongs_to_project_clause(user_id: int, project_id: int):
         ExecutionRun.user_id == user_id,
         ExecutionRun.project_id == project_id,
     )
-
-
-def _workflow_name_query():
-    # Never expose a workflow name across ownership or project boundaries.
-    return (
-        select(Workflow.name)
-        .where(
-            Workflow.id == ExecutionRun.workflow_id,
-            Workflow.user_id == ExecutionRun.user_id,
-            Workflow.project_id.is_not_distinct_from(ExecutionRun.project_id),
-        )
-        .scalar_subquery()
-    )
-
-
-def _run_navigation(run: ExecutionRun, workflow_name: str | None) -> RunListItem:
-    item = RunListItem.model_validate(run)
-    item.workflow_name = workflow_name
-    item.display_name = run.name
-    return item
-
-
-def _navigation_columns():
-    return [
-        getattr(ExecutionRun, name)
-        for name in RunListItem.model_fields
-        if name not in {"display_name", "workflow_name"}
-    ] + [ExecutionRun.source_type]
 
 
 @router.get("", response_model=RunPage)

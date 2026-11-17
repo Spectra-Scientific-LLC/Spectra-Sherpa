@@ -32,13 +32,10 @@ class WorkflowArguments(BaseModel):
     workflow_id: int = Field(gt=0)
 
 
-async def authorize_reader(
-    session: AsyncSession, identity: InspectionIdentity, operation: str, arguments: DatasetArguments | WorkflowArguments
-) -> User:
+async def authorize_policy(session: AsyncSession, identity: InspectionIdentity, data_types: list[str]) -> User:
+    """Use the existing current egress authority; no policy cache or consent override."""
     from spectra_sherpa.app.services.inspection_bridge import InspectionRefused
 
-    if not identity.project_summaries:
-        raise InspectionRefused("project_summary_consent_required")
     user = await session.scalar(
         select(User)
         .where(User.id == identity.actor_id)
@@ -47,9 +44,6 @@ async def authorize_reader(
     )
     if user is None or not user.is_active:
         raise InspectionRefused("access_denied")
-    data_types = [DataType.METADATA]
-    if operation == "inspect_workflow":
-        data_types.append(DataType.WORKFLOWS)
     for data_type in data_types:
         if not await check_egress_permission(
             user,
@@ -60,6 +54,20 @@ async def authorize_reader(
             fail_closed_on_policy_error=True,
         ):
             raise InspectionRefused("privacy_denied")
+    return user
+
+
+async def authorize_reader(
+    session: AsyncSession, identity: InspectionIdentity, operation: str, arguments: DatasetArguments | WorkflowArguments
+) -> User:
+    from spectra_sherpa.app.services.inspection_bridge import InspectionRefused
+
+    if not identity.project_summaries:
+        raise InspectionRefused("project_summary_consent_required")
+    data_types = [DataType.METADATA]
+    if operation == "inspect_workflow":
+        data_types.append(DataType.WORKFLOWS)
+    user = await authorize_policy(session, identity, data_types)
     if isinstance(arguments, DatasetArguments):
         from spectra_sherpa.app.services.dataset_registry import dataset_registry
 

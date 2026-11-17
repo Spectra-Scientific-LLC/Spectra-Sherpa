@@ -22,6 +22,8 @@ from spectra_sherpa.app.services.inspection_readers import (
     authorize_reader,
     read_project_facts,
 )
+from spectra_sherpa.app.services.inspection_runs import authorize_run_reader, read_run_facts
+from spectra_sherpa.app.services.tools.builtin.runs import RunArguments, RunListArguments
 
 MAX_RESPONSE_BYTES = 64 * 1024
 MAX_CATALOG_NODES = 4096
@@ -39,6 +41,8 @@ ARGUMENT_MODELS = {
     "list_node_types": NodeListArguments,
     "describe_dataset": DatasetArguments,
     "inspect_workflow": WorkflowArguments,
+    "list_runs": RunListArguments,
+    "get_run": RunArguments,
 }
 OPERATIONS = frozenset(ARGUMENT_MODELS)
 
@@ -100,7 +104,11 @@ class InspectionBridge:
             task = asyncio.create_task(
                 asyncio.to_thread(_node_page, parsed)
                 if operation == "list_node_types"
-                else read_project_facts(sessions, identity, operation, parsed)
+                else (
+                    read_run_facts(sessions, identity, parsed)
+                    if isinstance(parsed, (RunArguments, RunListArguments))
+                    else read_project_facts(sessions, identity, operation, parsed)
+                )
             )
 
             def finished(worker: asyncio.Task) -> None:
@@ -131,7 +139,9 @@ class InspectionBridge:
                 )
                 if "metadata" not in current.disclosures:
                     raise InspectionRefused("disclosure_denied")
-                if operation != "list_node_types":
+                if isinstance(parsed, (RunArguments, RunListArguments)):
+                    await authorize_run_reader(session, current, parsed, result)
+                elif operation != "list_node_types":
                     await authorize_reader(session, current, operation, parsed)
                 self._record(session, current, logged_operation, "success", len(encoded))
                 await session.commit()

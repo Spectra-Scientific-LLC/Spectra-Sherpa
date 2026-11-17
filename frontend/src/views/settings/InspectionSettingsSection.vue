@@ -15,6 +15,7 @@
           </select>
         </label>
         <label><input v-model="projectSummaries" name="project_summaries" type="checkbox" :disabled="busy" /> Also allow existing dataset and workflow summaries for this project, subject to my privacy settings.</label>
+        <label><input v-model="retainedResults" name="retained_results" type="checkbox" :disabled="busy" /> Also allow retained run facts, diagnostics and comparisons, excluding raw values and sample identities, subject to my privacy settings.</label>
         <label class="consent"><input v-model="confirmed" name="confirm_external_provider" type="checkbox" :disabled="busy" /> I understand the external client may send inspection results to its AI provider.</label>
         <button type="submit" :disabled="busy || !confirmed || !label.trim()">Create connection</button>
       </form>
@@ -30,7 +31,7 @@
       <button type="button" :disabled="busy" @click="refresh">Refresh connections and history</button>
       <ul aria-label="Inspection connections">
         <li v-for="connection in connections" :key="connection.client_id">
-          {{ connection.client_label }} — {{ connection.project_summaries ? 'Catalog and project summaries' : 'Catalog only' }} — {{ connection.revoked_at ? 'Revoked' : `Expires ${new Date(connection.expires_at).toLocaleString()}` }}
+          {{ connection.client_label }} — Catalog{{ connection.project_summaries ? ', project summaries' : '' }}{{ connection.retained_results ? ', retained results' : '' }} — {{ connection.revoked_at ? 'Revoked' : `Expires ${new Date(connection.expires_at).toLocaleString()}` }}
           <button v-if="!connection.revoked_at" type="button" :disabled="busy" @click="revoke(connection.client_id)">Revoke {{ connection.client_label }}</button>
         </li>
       </ul>
@@ -60,6 +61,7 @@ const label = ref('');
 const ttl = ref(86400);
 const confirmed = ref(false);
 const projectSummaries = ref(false);
+const retainedResults = ref(false);
 const busy = ref(false);
 const error = ref('');
 const message = ref('');
@@ -67,7 +69,7 @@ const headers = { 'X-Spectra-Workbench': 'inspection' };
 const identity = () => [auth.user?.id, auth.sessionRevision, project.currentProjectId];
 const scope = useScopedRequest(identity, () => {
   connections.value = []; calls.value = []; issued.value = null;
-  confirmed.value = false; projectSummaries.value = false; label.value = ''; busy.value = false; error.value = ''; message.value = '';
+  confirmed.value = false; projectSummaries.value = false; retainedResults.value = false; label.value = ''; busy.value = false; error.value = ''; message.value = '';
 }, { abortOnInvalidate: false });
 
 async function refresh() {
@@ -92,12 +94,12 @@ async function createConnection() {
   const projectId = project.currentProjectId;
   busy.value = true; issued.value = null; error.value = ''; message.value = '';
   const body: components['schemas']['CreateInspectionClient'] = {
-    client_label: label.value.trim(), ttl_seconds: ttl.value, confirm_external_provider: true, project_summaries: projectSummaries.value,
+    client_label: label.value.trim(), ttl_seconds: ttl.value, confirm_external_provider: true, project_summaries: projectSummaries.value, retained_results: retainedResults.value,
   };
   try {
     const { data } = await api.post<components['schemas']['CreatedInspectionClient']>(`/projects/${projectId}/inspection-clients`, body, { headers });
     if (ticket.isCurrent()) {
-      issued.value = data; confirmed.value = false; projectSummaries.value = false;
+      issued.value = data; confirmed.value = false; projectSummaries.value = false; retainedResults.value = false;
       const { credential: _credential, ...info } = data;
       connections.value.unshift(info);
     }

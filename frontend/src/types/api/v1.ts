@@ -5426,6 +5426,11 @@ export interface components {
              */
             project_summaries?: boolean;
             /**
+             * Retained Results
+             * @default false
+             */
+            retained_results?: boolean;
+            /**
              * Ttl Seconds
              * @default 86400
              */
@@ -5448,6 +5453,8 @@ export interface components {
             project_id: number;
             /** Project Summaries */
             project_summaries: boolean;
+            /** Retained Results */
+            retained_results: boolean;
             /** Revoked At */
             revoked_at: string | null;
         };
@@ -6555,6 +6562,8 @@ export interface components {
             project_id: number;
             /** Project Summaries */
             project_summaries: boolean;
+            /** Retained Results */
+            retained_results: boolean;
             /** Revoked At */
             revoked_at: string | null;
         };

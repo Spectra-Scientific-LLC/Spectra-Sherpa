@@ -123,12 +123,16 @@ def test_call_history_upgrade_and_populated_downgrade(tmp_path):
         engine.dispose()
 
 
-def test_summary_consent_upgrade_does_not_expand_existing_grants(tmp_path):
+@pytest.mark.parametrize(
+    "previous,current,field",
+    [("t9u1v3w5x327", "u0v2w4x6y438", "project_summaries"), ("u0v2w4x6y438", "v1w3x5y7z549", "retained_results")],
+)
+def test_summary_consent_upgrade_does_not_expand_existing_grants(tmp_path, previous, current, field):
     from datetime import datetime, timedelta, timezone
 
     database = tmp_path / "consent.db"
     url = f"sqlite+aiosqlite:///{database}"
-    _run_upgrade(url, "t9u1v3w5x327")
+    _run_upgrade(url, previous)
     engine = sa.create_engine(f"sqlite:///{database}")
     try:
         with Session(engine) as session:
@@ -154,18 +158,18 @@ def test_summary_consent_upgrade_does_not_expand_existing_grants(tmp_path):
                 )
             )
             session.commit()
-        _run_upgrade(url, "u0v2w4x6y438")
+        _run_upgrade(url, current)
         with engine.connect() as conn:
             row = conn.execute(
-                sa.text("SELECT project_summaries, token_digest, revoked_at FROM inspection_grant")
+                sa.text(f"SELECT {field} AS consent, token_digest, revoked_at FROM inspection_grant")
             ).one()
-            assert row.project_summaries == 0
+            assert row.consent == 0
             assert row.token_digest == "a" * 64 and row.revoked_at is not None
         with pytest.raises(RuntimeError, match="consent history"):
-            _run_downgrade(url, "t9u1v3w5x327")
+            _run_downgrade(url, previous)
         with engine.begin() as conn:
             conn.execute(sa.text("DELETE FROM inspection_grant"))
-        _run_downgrade(url, "t9u1v3w5x327")
-        assert "project_summaries" not in {c["name"] for c in sa.inspect(engine).get_columns("inspection_grant")}
+        _run_downgrade(url, previous)
+        assert field not in {c["name"] for c in sa.inspect(engine).get_columns("inspection_grant")}
     finally:
         engine.dispose()

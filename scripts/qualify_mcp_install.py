@@ -102,6 +102,7 @@ async def qualify(root: Path) -> dict:
                     "client_label": "MCP Python SDK qualification",
                     "confirm_external_provider": True,
                     "project_summaries": True,
+                    "retained_results": True,
                 },
             )
             issued.raise_for_status()
@@ -132,6 +133,8 @@ async def qualify(root: Path) -> dict:
                         "list_node_types",
                         "describe_dataset",
                         "inspect_workflow",
+                        "list_runs",
+                        "get_run",
                     }
                     assert catalog.tools[0].annotations.read_only_hint is True
                     first = await client.call_tool("list_node_types", {"limit": 1})
@@ -146,6 +149,8 @@ async def qualify(root: Path) -> dict:
                     process = await start()
                     workflow_summary = await client.call_tool("inspect_workflow", {"workflow_id": workflow_id})
                     assert not workflow_summary.is_error and workflow_summary.structured_content["node_count"] == 0
+                    run_page = await client.call_tool("list_runs", {})
+                    assert not run_page.is_error and run_page.structured_content == {"runs": [], "next_offset": None}
                     resumed = await client.call_tool("list_node_types", {"limit": 1})
                     assert resumed.structured_content == first.structured_content
                     revoked = await http.delete(f"{path}/{connection['client_id']}", headers=headers)
@@ -172,6 +177,7 @@ async def qualify(root: Path) -> dict:
                     "closed_tool_catalog",
                     "bounded_node_read",
                     "workflow_summary_read",
+                    "empty_run_navigation_read",
                     "global_privacy_denial",
                     "no_prompts_or_resources",
                     "write_refusal",

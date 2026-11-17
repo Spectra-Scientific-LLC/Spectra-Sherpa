@@ -18,6 +18,7 @@ class InspectionGrant(Base):
     token_digest: Mapped[str] = mapped_column(String(64), unique=True)
     disclosures: Mapped[list[str]] = mapped_column(JSON)
     project_summaries: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    retained_results: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -160,6 +160,36 @@ lists the supported interfaces, not a guarantee that the current privacy policy
 allows each call. Clients cannot request a higher tier or full graph, supply a
 project override, or dispatch arbitrary tool names.
 
+## Retained-run navigation
+
+Retained-run access has its own unchecked consent option when issuing a new
+connection. Project-summary consent does not grant it. Existing credentials
+remain unchanged on upgrade. The option covers reviewed run facts, retained
+diagnostics and factual comparisons, excluding raw values and sample identities;
+only operations in the tested closed catalog are callable. Currently the run
+operations are navigation reads:
+
+- `list_runs`: newest-first navigation, with an ID tie-breaker, `limit` 1–25
+  (default 10), and `offset` 0–4,096. The response has `runs` and `next_offset`.
+- `get_run`: one `run_id` returns the same canonical navigation object as the
+  Workbench Runs list. It does not return result values or diagnostics.
+
+Run IDs, artifact lifecycle UIDs, saved names, status, kind, timestamps and labels
+retain their existing Workbench meaning. A completed status is not scientific
+validity or proof of complete evidence. Workflow names are resolved only within
+the run's existing owner/project boundary. Unbound historical runs are refused;
+current workflow membership cannot invent their original project identity.
+
+Both reads require metadata disclosure and current metadata, workflow and model
+permissions to LLM context, in addition to the global egress switch and explicit
+retained-result consent. A page's returned object identities are rechecked before
+disclosure, so moving a run out of scope during the read refuses the response.
+Queries select navigation columns only; scientific JSON, parameter snapshots,
+diagnostics and retained files are not loaded. Each text/JSON field is bounded
+to 2,048 characters in the database query before decoding, with oversize refusal
+rather than silently truncated facts. The existing 64 KiB response and concurrency
+limits also apply. Pages are live navigation, not immutable revision snapshots.
+
 ## Optional MCP stdio adapter (v0.7.0 development)
 
 Install `spectra-sherpa[mcp]` in the same environment as Workbench. The base
@@ -179,7 +209,7 @@ HTTP loopback IP (`127.0.0.1` or `::1`), with the actual Workbench port. Proxies
 redirects, remote hosts, URL credentials and arbitrary API paths are refused.
 
 The adapter advertises `list_node_types`, `describe_dataset` and
-`inspect_workflow`. Input and output meanings come from reviewed tool contracts
+`inspect_workflow`, `list_runs` and `get_run`. Input and output meanings come from reviewed tool contracts
 and bounded bridge argument models. The node catalog response wraps the
 existing array as `items` plus `next_offset`; project readers return their
 existing summary objects. Input lines are
