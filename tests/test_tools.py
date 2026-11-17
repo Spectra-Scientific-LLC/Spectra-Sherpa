@@ -80,6 +80,41 @@ class TestToolDefinition:
             defn = ToolDefinition(name="t", description="d", category=cat)
             assert defn.category == cat
 
+    def test_operation_metadata_does_not_change_provider_payloads(self):
+        legacy = ToolDefinition(name="inspect", description="Inspect retained facts")
+        described = ToolDefinition(
+            name=legacy.name,
+            description=legacy.description,
+            version="1.0",
+            output_schema={"type": "object"},
+            mutation="read",
+            disclosure=["metadata", "metrics"],
+            distribution="oss",
+            mcp_name="inspect",
+        )
+        assert legacy.mutation is None
+        assert legacy.disclosure is None
+        assert legacy.distribution is None
+        assert described.to_openai_tool() == legacy.to_openai_tool()
+        assert described.to_anthropic_tool() == legacy.to_anthropic_tool()
+
+    @pytest.mark.parametrize(
+        "metadata",
+        [
+            {"version": "1"},
+            {"version": "01.0"},
+            {"mutation": "execute"},
+            {"disclosure": ["everything"]},
+            {"distribution": "unknown"},
+            {"mcp_name": "Invalid Name"},
+        ],
+    )
+    def test_operation_metadata_rejects_unknown_values(self, metadata):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ToolDefinition(name="inspect", description="Inspect", **metadata)
+
 
 class TestToolResult:
     """Verify ToolResult format helpers."""
@@ -200,16 +235,33 @@ class TestToolRegistry:
         assert len(tools) == 1
         assert "input_schema" in tools[0]
 
-    def test_re_registration_warns(self):
-        """Re-registering a tool overwrites the previous handler."""
+    def test_re_registration_preserves_original(self):
+        """A collision cannot replace the admitted handler or its definition."""
         reg = ToolRegistry()
         defn = ToolDefinition(name="dup", description="First")
         reg.register(defn, lambda: "first")
 
         defn2 = ToolDefinition(name="dup", description="Second")
-        reg.register(defn2, lambda: "second")
+        with pytest.raises(ValueError, match="already registered"):
+            reg.register(defn2, lambda: "second")
 
-        assert reg.get("dup")[0].description == "Second"
+        assert reg.get("dup")[0].description == "First"
+        assert reg.get("dup")[1]() == "first"
+        assert len(reg) == 1
+
+    def test_plugin_collision_preserves_builtin_and_resets_context(self):
+        from spectra_sherpa.app.services.tools.schemas import ToolOrigin
+
+        reg = ToolRegistry()
+        original = ToolDefinition(name="reserved", description="Builtin", scope=ToolScope.internal)
+        reg.register(original, lambda: "builtin")
+        with pytest.raises(ValueError, match="already registered"):
+            with reg.plugin_context():
+                reg.register(ToolDefinition(name="reserved", description="Plugin"), lambda: "plugin")
+        assert reg.get("reserved")[0] is original
+        assert reg.get("reserved")[1]() == "builtin"
+        reg.register(ToolDefinition(name="after", description="After failed load"), lambda: None)
+        assert reg.get("after")[0].origin == ToolOrigin.builtin
 
 
 class TestRegisterDecorator:
