@@ -262,3 +262,66 @@ def test_nonapplicability_versions_must_be_distinct_exact_releases(audit, tmp_pa
     )
     with pytest.raises(SystemExit, match="distinct exact versions"):
         audit._load_npm_audit_ignores(path)
+
+
+@pytest.mark.parametrize("case", ["dev", "runtime", "absent-dev", "unreported-runtime", "other-version"])
+def test_development_only_disposition_checks_every_installed_copy(audit, npm_tree, monkeypatch, case):
+    identity = "GHSA-fc5q-39xc-vjpf"
+    directory = npm_tree / "frontend"
+    node = "node_modules/picomatch"
+    packages = {node: {"version": "4.0.7", "dev": True}}
+    if case == "runtime":
+        packages[node]["dev"] = False
+    elif case == "absent-dev":
+        packages[node].pop("dev")
+    elif case == "unreported-runtime":
+        packages["node_modules/other/node_modules/picomatch"] = {"version": "4.0.7"}
+    elif case == "other-version":
+        packages[node]["version"] = "4.0.6"
+    (directory / "package-lock.json").write_text(json.dumps({"packages": packages}))
+    monkeypatch.setattr(audit, "_require_tool", lambda name: None)
+    monkeypatch.setattr(
+        audit,
+        "_load_npm_audit_ignores",
+        lambda path: {
+            identity: {
+                "package": "picomatch",
+                "lockfile": "frontend/package-lock.json",
+                "severity": "high",
+                "versions": ["4.0.4", "4.0.7"],
+                "dev_only": True,
+            }
+        },
+    )
+    report = {
+        "auditReportVersion": 2,
+        "vulnerabilities": {
+            "picomatch": {
+                "severity": "high",
+                "nodes": [node],
+                "via": [{"url": f"https://github.com/advisories/{identity}", "severity": "high"}],
+            }
+        },
+    }
+    monkeypatch.setattr(
+        audit.subprocess, "run", lambda args, **kwargs: subprocess.CompletedProcess(args, 1, json.dumps(report), "")
+    )
+    if case == "dev":
+        audit.audit_npm(directory, scope="full", ignore_file=npm_tree / "scripts/audit-ignore.toml")
+    else:
+        with pytest.raises(SystemExit, match="without a reviewed suppression"):
+            audit.audit_npm(directory, scope="full", ignore_file=npm_tree / "scripts/audit-ignore.toml")
+
+
+@pytest.mark.parametrize("flag,versions", [("false", '["4.0.7"]'), ('"true"', '["4.0.7"]'), ("true", None)])
+def test_development_only_requires_true_and_exact_versions(audit, tmp_path, flag, versions):
+    path = tmp_path / "ignore.toml"
+    value = (
+        '[[npm-audit.ignore]]\nid="GHSA-fc5q-39xc-vjpf"\nreason="fixture"\nexpires="2099-01-01"\n'
+        'package="picomatch"\nlockfile="frontend/package-lock.json"\nseverity="high"\ndev_only=' + flag
+    )
+    if versions is not None:
+        value += "\nversions=" + versions
+    path.write_text(value)
+    with pytest.raises(SystemExit, match="dev_only suppression"):
+        audit._load_npm_audit_ignores(path)
