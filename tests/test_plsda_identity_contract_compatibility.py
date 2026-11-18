@@ -92,9 +92,9 @@ def test_pairs_are_directional_exact_and_serializer_scoped(entry):
 
 def test_current_contract_and_state_custody_are_exact_with_reviewed_later_consumers():
     current = node_registry.get_metadata("classification.plsda").resolved_execution_contract()
-    assert current.digest == CURRENT
+    assert current.digest == "8409cc148280932c5dfbde40f68477b834aceb92f268acc682b23162b9d6a9e2"
     assert current.payload["fitted_state_serializer"] == SERIALIZER
-    for digest in (OLD, DIAGNOSTIC_CONSUMER, CURRENT):
+    for digest in (OLD, DIAGNOSTIC_CONSUMER, CURRENT, current.digest):
         assert fitted_state_custody_capability(SERIALIZER, digest).custody_class == DATA_FREE_APPLICATION_STATE
     for serializer, digest in ((SERIALIZER, "f" * 64), ("spectrasherpa.sherpa-plsda-state/4", DIAGNOSTIC_CONSUMER)):
         with pytest.raises(FittedStateCustodyError):

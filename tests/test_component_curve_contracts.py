@@ -6,7 +6,10 @@ import pytest
 
 import spectra_sherpa.app.services.dag.nodes  # noqa: F401
 from spectra_sherpa.app.services.dag.node_base import node_registry
-from spectra_sherpa.core.contract_compatibility import saved_state_predecessor_is_compatible
+from spectra_sherpa.core.contract_compatibility import (
+    _PACK_RETENTION_APPLICATION_PREDECESSORS,
+    saved_state_predecessor_is_compatible,
+)
 from spectra_sherpa.sdk.fitted_state_custody import (
     DATA_FREE_APPLICATION_STATE,
     fitted_state_custody_capability,
@@ -117,6 +120,7 @@ def test_exact_application_predecessor_only(operation: str, serializer: str, pre
         "model.fitted_pcr": "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
         "model.fitted_svr": "6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",
     }
+    workflow_consumers.update({e.operation_id: e.consumer_digest for e in _PACK_RETENTION_APPLICATION_PREDECESSORS})
     consumer = workflow_consumers.get(operation, current)
     assert node_registry.get_metadata(operation).resolved_execution_contract().digest == consumer
     assert saved_state_predecessor_is_compatible(previous, consumer, operation_id=operation, serializer=serializer)

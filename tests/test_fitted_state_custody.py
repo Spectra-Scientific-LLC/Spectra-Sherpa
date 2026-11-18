@@ -80,6 +80,19 @@ def test_custody_capabilities_bind_the_current_registered_execution_contracts() 
             "spectra.scale-reference-json.v2": "5bcce28bb446d20a2a5f1a44b43d10dc5d98c69e1b981d831151885b069b41e8",
         }
     )
+    # Exact pack-retention consumers; older custody assertions remain below.
+    expected.update(
+        {
+            "spectrasherpa.model-artifact.knn/2": "afa3c39e6b993820de1d95d74275e38cedc5fcec25f3eac319ceb963124443a3",
+            "spectrasherpa.sherpa-plsda-state/5": "8409cc148280932c5dfbde40f68477b834aceb92f268acc682b23162b9d6a9e2",
+            "spectrasherpa.model-artifact.simca/2": "ab489af8b627c076387254ee39e9a6c1d5657522712452b0f60ada486eccf6dd",
+            "spectrasherpa.model.fitted_linear_regression/1": (
+                "a4a5fd5ff397ef611f71068c585590acb82c59d9a2d4a13c68d332d49594f717"
+            ),
+            "spectrasherpa.model.fitted_pcr/1": "512f25478a1fd7e5623b26e9aeba7d248a15d4edbd20d776e8ba7d1de7efe545",
+            "spectrasherpa.model.fitted_svr/1": "6cd8e43f86977cbaa50bb9004ae2cb2ba795e7c95f4159071e263acdcf895c55",
+        }
+    )
     assert observed == expected
     for serializer in expected:
         fitted_state_custody_capability(serializer, expected[serializer])

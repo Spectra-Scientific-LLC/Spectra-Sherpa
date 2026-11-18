@@ -63,6 +63,7 @@ def test_source_only_registrations_preserve_all_previously_supported_producers()
             "_PREPROCESSING_APPLICATION_PREDECESSORS",
             "_PLSDA_DIAGNOSTIC_IDENTITY_PREDECESSORS",
             "_BASELINE_CV_APPLICATION_PREDECESSORS",
+            "_PACK_RETENTION_APPLICATION_PREDECESSORS",
         }:
             previous.extend(entries)
     for operation, (old, current) in _REVIEWED.items():
@@ -73,7 +74,7 @@ def test_source_only_registrations_preserve_all_previously_supported_producers()
             # Truth-grid admission changed; no application-compatibility alias
             # is inferred from that change. The current contract also binds axis
             # semantics explicitly; historical registrations stay exact.
-            assert contract.digest == "d1ed762e88caf1095a9ecb777fac02701994d2846223807b3266e7af305e8eea"
+            assert contract.digest == "94cc691ab58ed8ceff82b57938ef025609a73e8f90aad89f5e0d59b810462939"
             assert not authority.saved_state_predecessor_is_compatible(
                 current,
                 contract.digest,
