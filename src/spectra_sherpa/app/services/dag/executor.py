@@ -166,6 +166,11 @@ class DAGExecutor:
                 if source is None and positional_inputs:
                     source = positional_inputs[0]
                 retain_pls_training_specimens(artifact, source)
+            from spectra_sherpa.core.model_artifact import experiment_training_dataset_id
+
+            # Scientific source provenance belongs to each produced model;
+            # the workflow's optional primary sheet source is navigation only.
+            training_dataset_id = experiment_training_dataset_id(metadata)
             integrity_hash = store.save(artifact_uid, metadata, arrays)
             if inspect.isawaitable(integrity_hash):
                 integrity_hash = await integrity_hash
@@ -194,6 +199,7 @@ class DAGExecutor:
                     ),  # noqa: E501
                     "training_data_hash": metadata.get("training_data_hash"),
                     "training_scientific_digest": metadata.get("training_scientific_digest"),
+                    "training_dataset_id": training_dataset_id,
                     "artifact_origin": metadata.get("artifact_origin"),
                     "canonical_lineage_digest": (metadata.get("canonical_training_lineage") or {}).get(
                         "lineage_digest"

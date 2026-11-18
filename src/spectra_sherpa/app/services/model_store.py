@@ -638,7 +638,10 @@ async def persist_model_artifact_records(
     workflow_id, workflow_version_id, project_id:
         Optional context to associate with the artifacts.
     source_run_id, training_dataset_id:
-        Optional lineage links. ``source_run_id`` may be attached later by
+        Optional lineage links. The training link is a fallback for older
+        projections only; current executors supply each model's canonical
+        source, including explicit None for a model without an experiment.
+        ``source_run_id`` may be attached later by
         ``_auto_persist_run`` because workflow execution saves artifacts before
         the run row exists.
     run_name:
@@ -697,6 +700,22 @@ async def persist_model_artifact_records(
     ):
         raise ValueError("Model publication ownership is missing; run the workflow again")
 
+    # Admit all explicit model-source projections before durability side
+    # effects. Do not replace scientific provenance with the workflow's
+    # primary navigation source, including when provenance explicitly is None.
+    from spectra_sherpa.app.services.dataset_access import require_experiment_access
+
+    training_sources = {}
+    for art in saved_artifacts:
+        if art["artifact_uid"] in existing_uids:
+            continue
+        linked_source = art.get("training_dataset_id", training_dataset_id)
+        if "training_dataset_id" in art and linked_source is not None:
+            if type(linked_source) is not int or linked_source < 1:
+                raise ValueError("Invalid model training source identity")
+            await require_experiment_access(session, linked_source, user_id, project_id)
+        training_sources[art["artifact_uid"]] = linked_source
+
     rows = []
     for art in saved_artifacts:
         model_type = art.get("model_type", "unknown")
@@ -724,7 +743,7 @@ async def persist_model_artifact_records(
             workflow_id=workflow_id,
             workflow_version_id=workflow_version_id,
             source_run_id=source_run_id,
-            training_dataset_id=training_dataset_id,
+            training_dataset_id=training_sources[artifact_uid],
             node_id=art.get("node_id", ""),
             model_type=model_type,
             name=default_name,
@@ -772,7 +791,7 @@ async def persist_model_artifact_records(
                 "workflow_version_id": workflow_version_id,
                 "project_id": project_id,
                 "source_run_id": source_run_id,
-                "training_dataset_id": training_dataset_id,
+                "training_dataset_id": training_sources[artifact_uid],
                 "user_id": user_id,
                 "node_id": art.get("node_id"),
                 "display_name": display_name,
