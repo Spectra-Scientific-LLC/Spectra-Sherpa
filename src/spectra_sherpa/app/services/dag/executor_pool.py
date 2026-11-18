@@ -13,11 +13,13 @@ import threading
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from time import perf_counter
 from typing import Optional
+
+import anyio
 
 from spectra_sherpa.core.execution_runtime import ExecutionRuntime
 
@@ -25,6 +27,12 @@ from .node_base import NodeResult, node_registry, resolved_runtime_worker_capabi
 from .transport import reject_spectrochempy_transport
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _ProcessCustody:
+    lock: threading.RLock = field(default_factory=threading.RLock)
+    closed: bool = False
 
 
 def _watch_parent() -> None:
@@ -91,8 +99,9 @@ def _workflow_call(directory: str, control) -> None:
 class _WorkflowWorker:
     """Lazy, single-execution lease; no reuse after failure or scope exit."""
 
-    def __init__(self, pool):
+    def __init__(self, pool, *, lifetime="workflow"):
         self._pool = pool
+        self._lifetime = lifetime
         self._process = None
         self._control = None
         self._directory = None
@@ -109,8 +118,7 @@ class _WorkflowWorker:
         self._control, child_control = self._pool._context.Pipe()
         self._process = self._pool._context.Process(target=_workflow_call, args=(self._directory.name, child_control))
         try:
-            self._process.start()
-            self._pool._active.add(self._process)
+            await self._pool._start_process(self._process)
         finally:
             child_control.close()
 
@@ -150,7 +158,7 @@ class _WorkflowWorker:
                     raise result
                 if isinstance(result, NodeResult) and "worker_execution" in result.diagnostics:
                     result.diagnostics["worker_execution"].update(
-                        lifetime="workflow", dispatch_seconds=perf_counter() - started
+                        lifetime=self._lifetime, dispatch_seconds=perf_counter() - started
                     )
                 return result
         except BaseException:
@@ -168,12 +176,7 @@ class _WorkflowWorker:
     def release_idle_worker(self):
         """Release resources; a still-open outer scope may lazily start again."""
         if self._process is not None:
-            if self._process.pid is not None:
-                if self._process.is_alive():
-                    self._process.kill()
-                self._process.join()
-            self._pool._active.discard(self._process)
-            self._process.close()
+            self._pool._close_process(self._process)
             self._process = None
         if self._control is not None:
             self._control.close()
@@ -210,6 +213,8 @@ class IsolatedWorkerPool:
             multiprocessing.set_forkserver_preload(["spectra_sherpa.worker_preload"])
         self._context = multiprocessing.get_context(method)
         self._active = set()
+        self._owned = {}
+        self._process_lock = threading.RLock()
         self._closed = False
         self._workflow: ContextVar[_WorkflowWorker | None] = ContextVar("scientific_workflow_worker", default=None)
 
@@ -249,45 +254,93 @@ class IsolatedWorkerPool:
         workflow = self._workflow.get()
         if workflow is not None:
             return await workflow.run(function, *args, timeout=timeout)
-        # Queue time counts against the same budget as computation.
-        async with asyncio.timeout(timeout):
-            async with self._slots:
-                if self._closed:
-                    raise RuntimeError("Worker pool is shut down")
-                with tempfile.TemporaryDirectory(prefix="sherpa-worker-") as directory:
-                    output = Path(directory) / "result"
-                    process = self._context.Process(target=_isolated_call, args=(str(output), function, args))
+        # A fresh lease per standalone call preserves process isolation. Its
+        # control handshake prevents computation before startup has completed
+        # within the caller's deadline, including cancellation during startup.
+        worker = _WorkflowWorker(self, lifetime="isolated")
+        try:
+            return await worker.run(function, *args, timeout=timeout)
+        finally:
+            worker.close()
+
+    async def _start_process(self, process):
+        """Keep cold bootstrap off the loop without abandoning child custody."""
+        cancelled = threading.Event()
+        custody = _ProcessCustody()
+        with self._process_lock:
+            if self._closed:
+                raise RuntimeError("Worker pool is shut down")
+            self._owned[process] = custody
+
+        def start():
+            with custody.lock:
+                if self._closed or cancelled.is_set():
+                    raise RuntimeError("Worker startup was withdrawn")
+                try:
+                    process.start()
+                finally:
+                    # A partially successful start still owns its child.
+                    if process.pid is not None:
+                        with self._process_lock:
+                            self._active.add(process)
+
+        task = asyncio.create_task(asyncio.to_thread(start))
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled.set()
+            # The owning lease must not close pipes/process handles, erase its
+            # directory or release capacity while the startup thread uses them.
+            with anyio.CancelScope(shield=True):
+                while not task.done():
                     try:
-                        process.start()
-                        self._active.add(process)
-                        while process.is_alive():
-                            await asyncio.sleep(0.02)
-                        process.join()
-                        if process.exitcode != 0 or not output.exists():
-                            raise RuntimeError("Scientific worker exited without a result")
-                        # Only this process's private child can produce this file.
-                        with output.open("rb") as stream:
-                            success, result = pickle.load(stream)  # nosec B301: own spawned child, private 0700 tempdir
-                        if not success:
-                            raise result
-                        return result
-                    finally:
-                        # No await here: cancellation cannot interrupt reaping.
-                        # kill() avoids waiting for arbitrary native cleanup or
-                        # a signal handler in a timed-out scientific library.
-                        if process.pid is not None:
-                            if process.is_alive():
-                                process.kill()
-                            process.join()
-                        self._active.discard(process)
-                        process.close()
+                        await asyncio.shield(task)
+                    except asyncio.CancelledError:
+                        continue
+                    except Exception:
+                        break
+            if not task.cancelled():
+                task.exception()
+            raise
+        with self._process_lock:
+            if self._closed:
+                raise RuntimeError("Worker pool is shut down")
+
+    def _close_process(self, process):
+        with self._process_lock:
+            custody = self._owned.get(process)
+        if custody is None:
+            # Admission can refuse before this unstarted process is registered.
+            process.close()
+            return
+        with custody.lock:
+            if custody.closed:
+                return
+            if process.pid is not None:
+                if process.is_alive():
+                    process.kill()
+                process.join()
+            process.close()
+            custody.closed = True
+            with self._process_lock:
+                self._active.discard(process)
+                self._owned.pop(process, None)
 
     def shutdown(self, wait=True, *, cancel_futures=False):
-        self._closed = True
-        for process in tuple(self._active):
-            if process.is_alive():
-                process.kill()
-            process.join()
+        # Registry locking is brief: normal start/cleanup must never wait on
+        # another process's slow bootstrap. Only synchronous shutdown waits on
+        # each lifecycle lock; completion needs no event-loop callback.
+        with self._process_lock:
+            self._closed = True
+            owned = tuple(self._owned.items())
+        for process, custody in owned:
+            with custody.lock:
+                if custody.closed:
+                    continue
+                if process.pid is not None:
+                    if process.is_alive():
+                        process.kill()
+                    process.join()
 
 
 _default_process_pool: Optional[ProcessPoolExecutor | IsolatedWorkerPool] = None
