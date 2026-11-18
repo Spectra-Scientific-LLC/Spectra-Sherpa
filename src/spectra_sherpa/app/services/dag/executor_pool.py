@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from time import perf_counter
-from typing import Optional
+from typing import Callable, Optional
 
 from spectra_sherpa.core.execution_runtime import ExecutionRuntime
 
@@ -59,7 +59,20 @@ def _isolated_call(output_path: str, function, args: tuple) -> None:
         pickle.dump(payload, stream, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def _workflow_call(directory: str, control) -> None:
+def _initialize_worker(initializer, expected_packs, expected_digest=None) -> None:
+    # Only trusted host startup supplies this callable. Request/workflow data
+    # cannot choose imports, initialization functions or installed composition.
+    from .bootstrap import installed_composition_digest, installed_pack_manifests
+
+    if initializer is not None:
+        initializer()
+    if installed_pack_manifests() != expected_packs:
+        raise RuntimeError("Scientific worker installed pack composition differs from its host")
+    if expected_digest is not None and installed_composition_digest() != expected_digest:
+        raise RuntimeError("Scientific worker node/tool bindings differ from its host")
+
+
+def _workflow_call(directory: str, control, initializer=None, expected_packs=(), expected_digest=None) -> None:
     """Serve sequential nodes for exactly one execution, then be discarded.
 
     Control carries only readiness notifications. Pickles are private files
@@ -69,6 +82,7 @@ def _workflow_call(directory: str, control) -> None:
     _watch_parent()
     transport_directory = Path(directory)
     try:
+        _initialize_worker(initializer, expected_packs, expected_digest)
         while control.recv():
             with (transport_directory / "request").open("rb") as stream:
                 function, args = pickle.load(stream)  # nosec B301: own parent, private 0700 directory
@@ -114,7 +128,16 @@ class _WorkflowWorker:
             raise RuntimeError("Workflow worker is shut down")
         self._directory = tempfile.TemporaryDirectory(prefix="sherpa-workflow-")
         self._control, child_control = self._pool._context.Pipe()
-        self._process = self._pool._context.Process(target=_workflow_call, args=(self._directory.name, child_control))
+        self._process = self._pool._context.Process(
+            target=_workflow_call,
+            args=(
+                self._directory.name,
+                child_control,
+                self._pool._initializer,
+                self._pool._expected_packs,
+                self._pool._expected_digest,
+            ),
+        )
         try:
             await self._pool._start_process(self._process)
         finally:
@@ -199,12 +222,19 @@ class IsolatedWorkerPool:
     executes a user task or inherits the API process's sessions/data.
     """
 
-    def __init__(self, max_workers: int):
+    def __init__(self, max_workers: int, *, initializer: Callable[[], None] | None = None):
         if max_workers < 1:
             raise ValueError("max_workers must be positive")
+        from .bootstrap import installed_composition_digest, installed_pack_manifests
+
+        self._expected_packs = installed_pack_manifests()
+        self._expected_digest = installed_composition_digest()
+        if self._expected_packs and initializer is None:
+            raise ValueError("Installed packs require an explicit trusted worker initializer")
+        self._initializer = initializer
         self._slots = asyncio.Semaphore(max_workers)
         method = "spawn"
-        if sys.platform == "linux" and not getattr(sys, "frozen", False):
+        if initializer is None and sys.platform == "linux" and not getattr(sys, "frozen", False):
             # Fork only the dedicated clean loader, never the threaded API.
             # Keep native desktop's existing spawn bootstrap unchanged.
             method = "forkserver"

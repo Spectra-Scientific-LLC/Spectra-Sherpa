@@ -63,7 +63,7 @@ class PackManifest(PackReference):
         return self
 
     @property
-    def reference(self):
+    def reference(self) -> PackReference:
         return PackReference(pack_id=self.pack_id, version=self.version, build_sha256=self.build_sha256)
 
 
