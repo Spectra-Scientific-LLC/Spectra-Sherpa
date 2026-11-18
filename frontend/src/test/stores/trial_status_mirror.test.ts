@@ -43,6 +43,7 @@ describe("trial-sheet executionStatus mirroring", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    apiMock.get.mockResolvedValue({ data: { retained_inspection: null } });
     vi.useFakeTimers();
   });
 
@@ -77,7 +78,7 @@ describe("trial-sheet executionStatus mirroring", () => {
     );
 
     const promise = workflow.executeStoredWorkflow(7);
-    // The synchronous "running" assignment fires before the await resolves.
+    // Wait for the workflow check, then observe the pending execution.
     await Promise.resolve();
     expect(workbook.sheets[0].executionStatus).toBe("running");
     expect(workbook.sheets[1].executionStatus).toBe("running"); // mirrored

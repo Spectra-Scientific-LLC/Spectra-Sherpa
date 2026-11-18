@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from spectra_sherpa.app.api.deps import get_current_user
 from spectra_sherpa.app.api.v1.routes import projects
 from spectra_sherpa.app.services.retained_archive_inspection import archive_inspection_slot
-from tests.test_retained_archive_results import archived  # noqa: F401
+from tests.test_retained_archive_results import archived as archived
 
 
 @pytest.fixture
