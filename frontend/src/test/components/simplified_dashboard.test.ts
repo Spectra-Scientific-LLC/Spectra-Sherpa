@@ -175,7 +175,7 @@ describe("SimplifiedDashboard analysis starters", () => {
       await flushPromises();
       const tabs = wrapper.findAll('[role="tab"]');
       expect(tabs.map((tab) => tab.text())).toEqual(["Starter", "Your Project", "Archive"]);
-      expect(wrapper.findAll('.workspace-header .responsive-header-actions__full button').map(button => button.text())).toEqual(["New Analysis", "Import Project", "Project"]);
+      expect(wrapper.findAll('.workspace-header .responsive-header-actions__full button').map(button => button.text())).toEqual(["New Analysis", "Import Project", "Inspect archive", "Project"]);
       const archiveChooser = wrapper.get('input[accept=".sherpa,.spectrapy,.zip"]');
       const openArchiveChooser = vi.spyOn(archiveChooser.element as HTMLInputElement, "click").mockImplementation(() => {});
       await wrapper.findAll('.workspace-header .responsive-header-actions__full button')[1].trigger("click");
