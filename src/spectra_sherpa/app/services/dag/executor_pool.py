@@ -11,15 +11,13 @@ import sys
 import tempfile
 import threading
 from concurrent.futures import ProcessPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from time import perf_counter
 from typing import Optional
-
-import anyio
 
 from spectra_sherpa.core.execution_runtime import ExecutionRuntime
 
@@ -291,7 +289,17 @@ class IsolatedWorkerPool:
             cancelled.set()
             # The owning lease must not close pipes/process handles, erase its
             # directory or release capacity while the startup thread uses them.
-            with anyio.CancelScope(shield=True):
+            # AnyIO is present in the application profile, but is not a core
+            # dependency. Pure asyncio needs only the repeated-cancel drain.
+            try:
+                from anyio import CancelScope
+            except ModuleNotFoundError as exc:
+                if exc.name != "anyio":
+                    raise
+                shield = nullcontext()
+            else:
+                shield = CancelScope(shield=True)
+            with shield:
                 while not task.done():
                     try:
                         await asyncio.shield(task)
