@@ -13,6 +13,7 @@ from typing import Any, Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.services.frozen_workflow_sources import FrozenWorkflowSources
+from spectra_sherpa.core.captured_model_artifacts import CapturedModelArtifacts
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,7 @@ class SavedExecutionAdmission(Protocol):
 
     async def lock_authority(self, session: AsyncSession, *, actor_id: int, workflow_id: int) -> None: ...
 
-    async def admit(self, session: AsyncSession, snapshot: SavedExecutionSnapshot) -> None:
+    async def admit(self, session: AsyncSession, snapshot: SavedExecutionSnapshot) -> CapturedModelArtifacts | None:
         """Canonically materialize and verify source science before consumption.
 
         ``snapshot.sources`` freezes bytes and interpretation metadata, not a
@@ -45,6 +46,12 @@ class SavedExecutionAdmission(Protocol):
         authorities using this resolver and compare their actual scientific
         identities before writing admission records. Raw hashes alone do not
         establish target, selection or scientific equivalence.
+
+        A caller binding saved models may return concrete immutable captured
+        model bytes. The executor requires exact admitted-ID equality before
+        reserving a run and supplies those bytes to parent and worker readers.
+        None preserves existing live-reader behavior. Model capture, ownership
+        and comparison with the caller's approved identity belong to admission.
         """
         ...
 

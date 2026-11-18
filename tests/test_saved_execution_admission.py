@@ -170,3 +170,146 @@ async def test_engine(request):
             async with admin.begin() as connection:
                 await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
             await admin.dispose()
+
+
+@pytest.mark.parametrize("invalid", ["custom_reader", "extra_model"])
+async def test_invalid_captured_models_refused_before_reservation(test_session, test_user, saved, invalid):
+    from spectra_sherpa.core.captured_model_artifacts import CapturedModelArtifacts
+    from tests.test_captured_model_artifacts import envelope
+
+    workflow_id, path = saved
+
+    class CapturingAdmission(Admission):
+        async def admit(self, session, snapshot):
+            await super().admit(session, snapshot)
+            return object() if invalid == "custom_reader" else CapturedModelArtifacts((envelope(),))
+
+    admission = CapturingAdmission(path)
+    async with async_sessionmaker(test_session.bind, expire_on_commit=False)() as session:
+        with pytest.raises(ValueError, match="captured model|Captured models"):
+            await execute_saved_workflow(
+                workflow_id, WorkflowExecuteRequest(), session, test_user, "captured_invalid", admission=admission
+            )
+    assert admission.run_id is None
+    async with async_sessionmaker(test_session.bind, expire_on_commit=False)() as check:
+        assert not (await check.scalars(select(ExecutionRun))).all()
+        assert not (await check.scalars(select(Workflow).where(Workflow.name == "admission-owned marker"))).all()
+
+
+async def test_captured_model_survives_live_deletion_in_saved_execution(
+    test_session, test_user, saved, tmp_path, monkeypatch
+):
+    import shutil
+    from pathlib import Path
+
+    import numpy as np
+
+    from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+    from spectra_sherpa.app.models.workflow_edge import WorkflowEdge as StoredEdge
+    from spectra_sherpa.app.services import model_store
+    from spectra_sherpa.app.services.dag.executor import DAGExecutor
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool, get_default_pool, set_default_pool
+    from spectra_sherpa.app.services.dag.executor_types import WorkflowEdge as Edge
+    from spectra_sherpa.app.services.dag.executor_types import WorkflowNode as Node
+    from spectra_sherpa.app.services.execution_runtime import build_application_execution_runtime
+    from spectra_sherpa.app.services.frozen_workflow_sources import freeze_workflow_sources
+    from spectra_sherpa.app.services.model_store import ModelStore, persist_model_artifact_records
+    from spectra_sherpa.core.captured_model_artifacts import CapturedModelArtifact, CapturedModelArtifacts
+    from spectra_sherpa.core.execution_runtime import ExecutionRuntime
+
+    workflow_id, _ = saved
+    source_node = await test_session.scalar(select(WorkflowNode).where(WorkflowNode.workflow_id == workflow_id))
+    store = ModelStore(tmp_path)
+    monkeypatch.setattr(model_store, "_store", store)
+    old_pool = get_default_pool()
+    set_default_pool(None)
+    pool = IsolatedWorkerPool(1)
+    try:
+        async with freeze_workflow_sources(
+            test_session, nodes=[source_node], actor_id=test_user.id, project_id=None
+        ) as sources:
+            source_executor = DAGExecutor(runtime=build_application_execution_runtime(dataset_source_resolver=sources))
+            source_executor.add_node(Node("source", source_node.node_type, source_node.parameters))
+            dataset = (await source_executor.execute())["source"]["default"]
+        dataset.target = np.array([1.0, 2.0])
+        dataset.target_context = TargetContext(target_type="continuous", target_names=["response"])
+        trainer = DAGExecutor(runtime=ExecutionRuntime(model_artifact_writer=store))
+        trainer.add_node(Node("training", "deploy.input", {"stream_name": "training"}))
+        trainer.add_node(Node("fit", "model.fitted_pls", {"n_components": 1}))
+        trainer.add_edge(Edge("training", "fit", "default", "default"))
+        trainer.inject_deployment_input("training", dataset, stream_name="training")
+        await trainer.execute()
+        await persist_model_artifact_records(test_session, trainer.saved_artifacts, test_user.id)
+        uid = trainer.saved_artifacts[0]["artifact_uid"]
+        directory = Path(store.artifact_directory(uid))
+        captured = CapturedModelArtifacts(
+            (
+                CapturedModelArtifact(
+                    uid, (directory / "manifest.json").read_bytes(), (directory / "arrays.npz").read_bytes()
+                ),
+            )
+        )
+        test_session.add(
+            WorkflowNode(
+                workflow_id=workflow_id,
+                node_id="apply",
+                node_type="model.load_apply",
+                parameters={"model_id": uid},
+                position_x=1,
+                position_y=0,
+            )
+        )
+        test_session.add(
+            StoredEdge(
+                workflow_id=workflow_id,
+                from_node_id="source",
+                to_node_id="apply",
+                from_output="default",
+                to_input="X_new",
+            )
+        )
+        await test_session.commit()
+
+        class CapturingAdmission:
+            async def lock_authority(self, session, **kwargs):
+                pass
+
+            async def admit(self, session, snapshot):
+                assert snapshot.actor_id == test_user.id
+                assert snapshot.definition["nodes"][1]["parameters"]["model_id"] == uid
+                return captured
+
+            async def bind_run(self, session, *, run_id):
+                self.run_id = run_id
+
+            async def verify_current(self, session):
+                pass  # This test's trusted caller authorizes the captured bytes.
+
+        original = DAGExecutor.execute
+
+        async def remove_live_before_compute(executor, *args, **kwargs):
+            if "apply" in executor.nodes and directory.exists():
+                shutil.rmtree(directory)
+            return await original(executor, *args, **kwargs)
+
+        monkeypatch.setattr(DAGExecutor, "execute", remove_live_before_compute)
+        set_default_pool(pool)
+        admission = CapturingAdmission()
+        async with async_sessionmaker(test_session.bind, expire_on_commit=False)() as session:
+            response = await execute_saved_workflow(
+                workflow_id,
+                WorkflowExecuteRequest(),
+                session,
+                test_user,
+                "captured_saved_positive",
+                admission=admission,
+            )
+        assert response.status == "completed" and response.run_id == admission.run_id
+        assert not directory.exists()
+        async with async_sessionmaker(test_session.bind, expire_on_commit=False)() as check:
+            run = await check.get(ExecutionRun, admission.run_id)
+            assert run.status == "completed" and run.results_summary["apply"]["model_id"] == uid
+            assert run.results_summary["apply"]["result"]
+    finally:
+        pool.shutdown()
+        set_default_pool(old_pool)
