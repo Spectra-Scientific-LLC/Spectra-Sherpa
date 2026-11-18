@@ -63,6 +63,15 @@ assert not any(name.startswith(("spectra_sherpa.app.services.dag", "spectrasherp
         b" " * (2 * 1024 * 1024 + 1),
         b"[" * 2000 + b"]" * 2000,
     ],
+    ids=[
+        "duplicate-json-key",
+        "nan",
+        "nonfinite-number",
+        "unresolved-edge",
+        "duplicate-node-id",
+        "oversized-json",
+        "excessive-json-depth",
+    ],
 )
 def test_malformed_or_oversized_evidence_is_refused(wire):
     with pytest.raises(RetainedGraphError):
