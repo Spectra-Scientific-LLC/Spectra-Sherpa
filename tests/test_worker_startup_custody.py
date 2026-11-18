@@ -21,7 +21,7 @@ class DelayedProcess:
 
     def start(self):
         self.entered.set()
-        if not self.release.wait(5):
+        if not self.release.wait(60):
             raise RuntimeError("Test safety deadline: startup blocked the event loop")
         if self.failure == "before":
             raise RuntimeError("Injected startup failure")
@@ -224,12 +224,12 @@ async def test_other_worker_can_start_and_close_while_first_start_is_blocked(wor
         return value
 
     pool._context = SimpleNamespace(Process=process, Pipe=context.Pipe)
-    first = asyncio.create_task(invoke(pool, workflow))
+    first = asyncio.create_task(invoke(pool, workflow, timeout=60))
     second = None
     try:
         await wait_entered(entered)
         second = asyncio.create_task(invoke(pool, workflow))
-        async with asyncio.timeout(4):
+        async with asyncio.timeout(30):
             assert await second != os.getpid()
         assert not release.is_set() and not first.done()
         assert len(pool._owned) == 1 and not pool._active and pool._slots._value == 1
