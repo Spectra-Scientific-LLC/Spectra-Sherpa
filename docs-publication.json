@@ -8,6 +8,7 @@
     "docs/architecture/index.md",
     "docs/architecture/model-artifacts.md",
     "docs/architecture/module-map.md",
+    "docs/architecture/pack-identity.md",
     "docs/architecture/sherpa-dataset.md",
     "docs/architecture/workflows.md",
     "docs/attributions/brukeropus.md",
