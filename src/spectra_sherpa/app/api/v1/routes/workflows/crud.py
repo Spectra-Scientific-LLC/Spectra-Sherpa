@@ -1033,7 +1033,13 @@ async def get_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found")
     await require_scientific_access(session, user_id, workflow.project_id, "read", resource_owner_id=workflow.user_id)
 
-    return WorkflowDetail.model_validate(workflow)
+    from spectra_sherpa.app.services.retained_workflow_inspection import inspect_saved_workflow
+
+    inspection = inspect_saved_workflow(workflow)
+    detail = WorkflowDetail.model_validate(workflow)
+    if inspection is not None:
+        detail.retained_inspection = inspection
+    return detail
 
 
 @router.put("/{workflow_id}", response_model=WorkflowDetail)

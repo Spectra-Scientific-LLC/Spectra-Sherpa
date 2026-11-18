@@ -796,6 +796,91 @@
         "title": "AdvisorChannelUpdate",
         "type": "object"
       },
+      "ArchivedResults": {
+        "additionalProperties": false,
+        "properties": {
+          "inspection_only": {
+            "const": true,
+            "default": true,
+            "title": "Inspection Only",
+            "type": "boolean"
+          },
+          "prior_unrecorded_history": {
+            "const": "unknown",
+            "default": "unknown",
+            "title": "Prior Unrecorded History",
+            "type": "string"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/ArchivedRun"
+            },
+            "maxItems": 256,
+            "title": "Runs",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "spectra-retained-results/1",
+            "default": "spectra-retained-results/1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runs"
+        ],
+        "title": "ArchivedResults",
+        "type": "object"
+      },
+      "ArchivedRun": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/RunEvidence"
+          },
+          "record_json": {
+            "maxLength": 4194304,
+            "title": "Record Json",
+            "type": "string"
+          },
+          "source_project_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Project Id"
+          },
+          "source_run_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Source Run Id",
+            "type": "integer"
+          },
+          "source_workflow_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Workflow Id"
+          }
+        },
+        "required": [
+          "source_run_id",
+          "record_json",
+          "evidence"
+        ],
+        "title": "ArchivedRun",
+        "type": "object"
+      },
       "ArtifactBatchRunItemResult": {
         "properties": {
           "artifact_uid": {
@@ -1623,6 +1708,34 @@
           "file"
         ],
         "title": "Body_import_registered_reference_endpoint_api_v1_experiments__experiment_id__import_registered_reference_post",
+        "type": "object"
+      },
+      "Body_inspect_archived_result_output_api_v1_projects_objects_inspect_output_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_inspect_archived_result_output_api_v1_projects_objects_inspect_output_post",
+        "type": "object"
+      },
+      "Body_inspect_archived_results_api_v1_projects_objects_inspect_results_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_inspect_archived_results_api_v1_projects_objects_inspect_results_post",
         "type": "object"
       },
       "Body_inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post": {
@@ -10764,6 +10877,37 @@
         "title": "RetainedNode",
         "type": "object"
       },
+      "RetainedWorkflowInspection": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_unavailable": {
+            "default": false,
+            "title": "Binding Unavailable",
+            "type": "boolean"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/RetainedGraph"
+          },
+          "read_only": {
+            "readOnly": true,
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "unavailable_node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unavailable Node Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "graph",
+          "read_only"
+        ],
+        "title": "RetainedWorkflowInspection",
+        "type": "object"
+      },
       "RunDatasetRef": {
         "properties": {
           "asset_id": {
@@ -14871,6 +15015,16 @@
             ],
             "title": "Purpose",
             "type": "string"
+          },
+          "retained_inspection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetainedWorkflowInspection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sample_type": {
             "anyOf": [
@@ -24918,6 +25072,138 @@
         ]
       }
     },
+    "/api/v1/projects/objects/inspect-output": {
+      "post": {
+        "description": "Return the checksum-verified original JSON envelope for one selected port.",
+        "operationId": "inspect_archived_result_output_api_v1_projects_objects_inspect_output_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "port",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Port",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_inspect_archived_result_output_api_v1_projects_objects_inspect_output_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Inspect Archived Result Output",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/objects/inspect-results": {
+      "post": {
+        "description": "Inspect uploaded run evidence without importing or executing its graph.",
+        "operationId": "inspect_archived_results_api_v1_projects_objects_inspect_results_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_inspect_archived_results_api_v1_projects_objects_inspect_results_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchivedResults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Inspect Archived Results",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/objects/inspect-workflow": {
       "post": {
         "description": "Read unknown-node graph evidence without imports, execution or persistence.",
@@ -26126,6 +26412,26 @@
                 }
               ],
               "title": "Version Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "retained_run_ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "maxItems": 256,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Retained Run Ids"
             }
           }
         ],

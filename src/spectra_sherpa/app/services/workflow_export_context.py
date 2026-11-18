@@ -89,6 +89,10 @@ async def build_workflow_export_context(
     if workflow.user_id != actor_user_id:
         raise ValueError("Workflow export source is not available")
 
+    from spectra_sherpa.app.services.pack_requirements import require_saved_workflow_pack_binding
+
+    require_saved_workflow_pack_binding(workflow)
+
     specs: dict[str, SourceExportSpec] = {}
 
     for node in workflow.nodes:

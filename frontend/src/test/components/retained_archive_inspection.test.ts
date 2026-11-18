@@ -21,6 +21,7 @@ beforeEach(() => {
   useAuthStore().user = { id: 7, username: "reader", is_active: true };
   vi.mocked(api.post).mockResolvedValue({ data: report });
   wrapper = mount(RetainedArchiveInspector, { global: { stubs: {
+    RetainedArchiveResults: true,
     Dialog: { props: ["visible"], template: '<section v-if="visible"><slot /><slot name="footer" /></section>' },
     Button: { props: ["label", "disabled"], template: '<button :disabled="disabled">{{ label }}</button>' },
   } } });

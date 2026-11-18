@@ -93,6 +93,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const workflowId = ref<number | null>(null);
   const workflowDescription = ref("");
   const workflowHash = ref<string | null>(null);
+  const retainedInspection = ref<components["schemas"]["RetainedWorkflowInspection"] | null>(null);
   const isLoading = ref(false);
   const lastExecutionResults = ref<UnknownRecord | null>(null);
   const restoredRunId = ref<number | null>(null);
@@ -499,6 +500,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
   // Actions
   function loadTemplate(templateId: number) {
+    requireEditableWorkflow();
     const template = templates.value.find((item) => item.id === templateId);
     if (!template) {
       console.warn(`Template not found: ${templateId}`);
@@ -535,6 +537,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     workflowId.value = null;
     workflowDescription.value = "";
     workflowHash.value = null;
+    retainedInspection.value = null;
     hasUnsavedChanges.value = false;
     lastExecutionResults.value = null;
     restoredRunId.value = null;
@@ -588,6 +591,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   async function refreshPersistedPreflight(): Promise<WorkflowPreflightResponse | null> {
+    if (retainedInspection.value?.read_only) {
+      workflowPreflight.value = null;
+      return null;
+    }
     const id = workflowId.value;
     if (id === null) return null;
     const request = preflightScope.begin();
@@ -624,6 +631,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   async function performSaveWorkflow(
     options: { createVersion?: boolean; projectId?: number | null } = {},
   ): Promise<number> {
+    requireEditableWorkflow();
     let request = saveScope.begin();
     isLoading.value = true;
     try {
@@ -745,6 +753,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       workflowName.value = data.name;
       workflowDescription.value = data.description || "";
       workflowHash.value = data.integrity_hash || null;
+      retainedInspection.value = data.retained_inspection ?? null;
       workflowWarnings.value = Array.isArray(data.warnings)
         ? data.warnings.filter((w: unknown): w is string => typeof w === "string")
         : [];
@@ -1060,10 +1069,16 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   const preparingExecution = ref(false);
+  function requireEditableWorkflow(): void {
+    if (retainedInspection.value?.read_only) {
+      throw new Error("This retained workflow is read-only because its recorded operations are unavailable. Saved results remain readable in Runs.");
+    }
+  }
   const pendingExecutions = ref(new Map<string, symbol>());
   const executionKey = () => JSON.stringify([...workspaceIdentity(), workflowId.value]);
   const isExecuting = computed(() => preparingExecution.value || pendingExecutions.value.has(executionKey()));
   async function withExecutionOwnership(action: (begin: () => void, signal: AbortSignal) => Promise<WorkflowExecuteResponse>) {
+    requireEditableWorkflow();
     if (isExecuting.value) throw new Error("An execution is already in progress. Wait for it to finish.");
     const request = executionScope.begin();
     preparingExecution.value = true;
@@ -1100,9 +1115,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
   }
   async function executeWorkflow(initialData?: ParamsMap): Promise<WorkflowExecuteResponse> {
+    requireEditableWorkflow();
     return withExecutionOwnership((begin, signal) => executeWorkflowSnapshot(initialData, begin, signal));
   }
   async function executeNode(nodeId: string, initialData?: ParamsMap): Promise<WorkflowExecuteResponse> {
+    requireEditableWorkflow();
     return withExecutionOwnership((begin, signal) => executeNodeSnapshot(nodeId, initialData, begin, signal));
   }
 
@@ -1323,12 +1340,19 @@ export const useWorkflowStore = defineStore("workflow", () => {
     targetWorkflowId: number,
     initialData?: ParamsMap,
   ): Promise<WorkflowExecuteResponse> {
+    if (targetWorkflowId === workflowId.value) requireEditableWorkflow();
     const workbookStore = useWorkbookStore();
     const sheet = workbookStore.sheets.find((s) => s.workflowId === targetWorkflowId);
     if (sheet?.purpose === "managed_candidate_authority") {
       throw new Error(
         "Campaign candidate workflows can only be run by their Optimize campaign",
       );
+    }
+    const ownership = workflowOwnership.capture();
+    const retained = await api.get<components["schemas"]["WorkflowDetail"]>(`/workflows/${targetWorkflowId}`);
+    if (!ownership.isCurrent()) throw new Error("Active workspace changed before running the saved workflow.");
+    if (retained.data.retained_inspection?.read_only) {
+      throw new Error("This retained workflow is read-only because its recorded operations are unavailable.");
     }
     // Trial tabs mirror the source workflow's run state — see executeWorkflow.
     const trialMirrors = workbookStore.sheets.filter(
@@ -1558,6 +1582,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   async function prepareExport(): Promise<number> {
+    requireEditableWorkflow();
     const ownership = workflowOwnership.capture();
     while (pendingSave) await pendingSave;
     if (!ownership.isCurrent()) {
@@ -1952,6 +1977,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   function addNode(node: WorkflowNode) {
+    requireEditableWorkflow();
     if (!node.label || node.label === node.type) node.label = getNodeMetadata(node.type)?.label;
     // Initialize execution state
     node.executionState = { status: "pending" };
@@ -1961,6 +1987,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   function removeNode(nodeId: string) {
+    requireEditableWorkflow();
     nodes.value = nodes.value.filter((n) => n.id !== nodeId);
     edges.value = edges.value.filter((e) => e.from !== nodeId && e.to !== nodeId);
     hasUnsavedChanges.value = true;
@@ -2019,6 +2046,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     });
 
   function updateNode(nodeId: string, updates: Partial<WorkflowNode>) {
+    requireEditableWorkflow();
     const node = nodes.value.find((n) => n.id === nodeId);
     if (node) {
       if (updates.type !== undefined && updates.type !== node.type) {
@@ -2144,6 +2172,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     },
   };
   function restoreWorkflowObservations() {
+    requireEditableWorkflow();
     if (isExecuting.value) return;
     for (const node of nodes.value) if ("workflow_exclusions" in node.params) {
       const params = { ...node.params };
@@ -2337,6 +2366,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   function addEdge(edge: WorkflowEdge) {
+    requireEditableWorkflow();
     // Prevent duplicates - same from/to/fromPort/toPort
     const exists = edges.value.some(
       (e) =>
@@ -2378,6 +2408,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   function removeEdge(from: string, to: string) {
+    requireEditableWorkflow();
     edges.value = edges.value.filter((e) => !(e.from === from && e.to === to));
     hasUnsavedChanges.value = true;
     markWorkflowStale();
@@ -2431,6 +2462,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     workflowId,
     workflowDescription,
     workflowHash,
+    retainedInspection,
     isLoading,
     lastExecutionResults,
     restoredRunId,
