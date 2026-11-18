@@ -230,6 +230,8 @@ def inspect_archive_bytes(
     archive_bytes: bytes,
     *,
     max_uncompressed_bytes: int | None = DEFAULT_MAX_UNCOMPRESSED_BYTES,
+    max_project_bytes: int | None = None,
+    max_manifest_bytes: int | None = None,
 ) -> SherpaObjectInspection:
     """Inspect a portable object or legacy project archive without importing it."""
 
@@ -248,6 +250,8 @@ def inspect_archive_bytes(
             manifest: dict[str, Any] = {}
             errors: list[str] = []
             if has_manifest:
+                if max_manifest_bytes is not None and zf.getinfo(SHERPA_OBJECT_MANIFEST).file_size > max_manifest_bytes:
+                    raise SherpaObjectError("Archive manifest exceeds the inspection limit")
                 try:
                     manifest = json.loads(zf.read(SHERPA_OBJECT_MANIFEST))
                 except json.JSONDecodeError:
@@ -256,6 +260,8 @@ def inspect_archive_bytes(
             project_name = None
             if has_project:
                 try:
+                    if max_project_bytes is not None and zf.getinfo(PROJECT_PAYLOAD).file_size > max_project_bytes:
+                        raise SherpaObjectError("Project metadata exceeds the inspection limit")
                     project = read_project_payload(zf)
                     project_name = str(project.get("name") or "")
                 except SherpaObjectError as exc:

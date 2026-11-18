@@ -364,6 +364,9 @@ def preflight_model_application(
     if model_type in _DIAGNOSTIC_TYPES or model_type in COHORT_ONLY_TYPES:
         raise ValueError("This artifact describes its fitted cohort; it cannot infer a new dataset.")
     ApplicationModelArtifactSemanticValidator().validate(manifest, arrays)
+    from spectra_sherpa.core.pack_model_integrity import scientific_model_arrays
+
+    arrays = scientific_model_arrays(manifest, arrays)
     target, warnings, metadata = _target_for_artifact(dataset, manifest)
     kind = _OUTPUT_TYPE_MAP.get(model_type)
     metadata["accuracy_available"] = target is not None and kind in {"regression", "classification"}
@@ -426,6 +429,9 @@ async def apply_model_to_dataset(
         except ModelArtifactIntegrityError as exc:
             raise ValueError(f"Model artifact is corrupt: {exc}") from exc
 
+    from spectra_sherpa.core.pack_model_integrity import require_pack_model_integrity
+
+    require_pack_model_integrity(manifest, arrays)
     model_type = str(manifest.get("model_type", ""))
     y, target_warnings, target_metadata = _target_for_artifact(dataset, manifest)
     if scope != "all":
@@ -844,6 +850,11 @@ def _prepare_artifact_input(
     scope: str,
     source_dataset: Any | None = None,
 ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, list[str], SherpaDataset | None]:
+    from spectra_sherpa.app.services.dag.pack_requirements import require_matching_pack_binding
+    from spectra_sherpa.core.pack_requirements import PackGraphBinding, read_pack_preprocessing_binding
+
+    pack_binding = read_pack_preprocessing_binding(manifest)
+    pack_steps = {step.step_index: step.producer for step in pack_binding.steps} if pack_binding else {}
     warnings: list[str] = []
     chain = manifest.get("preprocessing_chain") or []
     indices = _scope_indices_for_artifact(X.shape[0], manifest, scope=scope)
@@ -866,7 +877,7 @@ def _prepare_artifact_input(
         "data.filter_samples",
         WORKFLOW_POPULATION_OPERATION,
     }
-    for step in chain:
+    for step_index, step in enumerate(chain):
         if not isinstance(step, Mapping) or set(step) != {"op_id", "parameters"}:
             raise ValueError("model artifact preprocessing provenance is malformed")
         op_id = step.get("op_id")
@@ -883,6 +894,12 @@ def _prepare_artifact_input(
         if op_id == "spectrasherpa.experiment_dataset_read/2":
             validate_experiment_source_provenance(params)
             continue
+        producer = pack_steps.get(step_index)
+        if producer is not None:
+            require_matching_pack_binding(
+                [{"node_id": producer.node_id, "node_type": producer.node_type}],
+                PackGraphBinding(nodes=(producer,)),
+            )
         if op_id == "selection.variable_select":
             validate_variable_selection_provenance(
                 params,

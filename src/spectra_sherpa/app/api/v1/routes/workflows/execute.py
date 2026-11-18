@@ -389,7 +389,14 @@ async def execute_trial(
             model_owner_user_id=current_user.id,
         )
         trial_writer = runtime.model_artifact_writer
-        executor = DAGExecutor(runtime=runtime)
+        from spectra_sherpa.app.services.dag.pack_requirements import capture_pack_graph_binding
+
+        executor = DAGExecutor(
+            runtime=runtime,
+            pack_binding=capture_pack_graph_binding(
+                [{"node_id": node.node_id, "node_type": node.node_type} for node in effective_nodes]
+            ),
+        )
 
         logger.debug(
             "[Trial Execution] Target node: %s (type: %s)", payload.target_node_id, type(payload.target_node_id)
@@ -797,6 +804,12 @@ async def _execute_saved_workflow(
     wf_integrity_hash = workflow.integrity_hash
     wf_project_id = getattr(workflow, "project_id", None)
     wf_name = workflow.name
+    from spectra_sherpa.app.services.pack_requirements import require_stored_pack_binding
+
+    require_stored_pack_binding(
+        [{"node_id": node.node_id, "node_type": node.node_type} for node in workflow.nodes],
+        workflow.pack_binding,
+    )
     wf_params_snapshot = build_effective_params_snapshot(workflow.nodes)
     wf_definition_snapshot = build_saved_definition_snapshot(workflow)
     if batch_binding is not None:
@@ -805,6 +818,7 @@ async def _execute_saved_workflow(
         if wf_definition_snapshot != batch_binding.original_definition:
             raise HTTPException(409, "Workflow changed after Batch preflight")
         await batch_binding.verify_current()
+        require_stored_pack_binding(batch_binding.definition["nodes"], batch_binding.definition.get("pack_binding"))
         wf_definition_snapshot = batch_binding.definition
         wf_integrity_hash = wf_definition_snapshot["integrity_hash"]
         wf_params_snapshot = build_effective_params_snapshot(batch_binding.nodes)
@@ -1286,8 +1300,10 @@ async def _execute_saved_workflow(
     try:
         # Build DAG executor
         from spectra_sherpa.app.services.execution_runtime import build_application_execution_runtime
+        from spectra_sherpa.app.services.pack_requirements import read_stored_pack_binding
 
         executor = DAGExecutor(
+            pack_binding=read_stored_pack_binding(wf_definition_snapshot.get("pack_binding")),
             runtime=build_application_execution_runtime(
                 canonical_artifact_read_grant=canonical_artifact_read_grant,
                 preloaded_datasets=preloaded_datasets,
@@ -1297,7 +1313,7 @@ async def _execute_saved_workflow(
                 pin_preloaded_members=batch_binding is not None,
                 model_owner_session=session,
                 model_owner_user_id=user_id,
-            )
+            ),
         )
 
         if wf_definition_snapshot.get("fold_validation_plan") is not None:

@@ -212,6 +212,9 @@ class ModelStore:
         return self.models_dir.parent / ".model-publication-locks" / f"{identity}.fenced"
 
     def _save_locked(self, artifact_uid, manifest, arrays, *, replace_existing):
+        from spectra_sherpa.core.pack_model_integrity import bind_pack_model_integrity
+
+        arrays = bind_pack_model_integrity(manifest, arrays)
         artifact_dir = self._artifact_dir(artifact_uid)
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
@@ -432,6 +435,9 @@ class ModelStore:
             self._assert_integrity(artifact_uid, manifest)
         _require_artifact_identity(manifest, expected_uid=artifact_uid)
         arrays = self.load_arrays(artifact_uid)
+        from spectra_sherpa.core.pack_model_integrity import require_pack_model_integrity
+
+        require_pack_model_integrity(manifest, arrays)
         from spectra_sherpa.app.services.dag.nodes.classification.plsda_state import (
             canonical_model_validation_required,
         )
@@ -466,9 +472,13 @@ class ModelStore:
             )
 
     def verify_integrity(self, artifact_uid: str) -> bool:
-        """Check that arrays.npz matches the stored hash (boolean form)."""
+        """Check NPZ bytes and pack custody (boolean form)."""
         try:
-            self._assert_integrity(artifact_uid, self.load_manifest(artifact_uid))
+            from spectra_sherpa.core.pack_model_integrity import require_pack_model_integrity
+
+            manifest = self.load_manifest(artifact_uid)
+            self._assert_integrity(artifact_uid, manifest)
+            require_pack_model_integrity(manifest, self.load_arrays(artifact_uid))
         except (ModelArtifactIntegrityError, FileNotFoundError):
             return False
         return True

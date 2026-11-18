@@ -642,23 +642,33 @@ class Node(ABC):
                         f"{self.metadata.label} requires SpectroChemPy. Install with: pip install spectra-sherpa[scp]"
                     )
             self.validate_parameters()
-            if kwargs:
-                # Single "default" port → pass as first positional arg
-                if list(kwargs.keys()) == ["default"]:
-                    raw = await self.execute(kwargs["default"])
-                elif "default" in kwargs and len(kwargs) > 1:
-                    # Multi-port call with a "default" port: the "default" port
-                    # maps to the first positional parameter of execute() (e.g.
-                    # ``input_data``), while the remaining ports match by name.
-                    default_val = kwargs.pop("default")
-                    raw = await self.execute(default_val, **kwargs)
+            from spectra_sherpa.core.pack_execution_context import recording_pack_producer
+
+            binding = None
+            if self.metadata and self.metadata.distribution == "pro":
+                from .pack_requirements import capture_pack_graph_binding
+
+                binding = capture_pack_graph_binding(
+                    [{"node_id": self.node_id, "node_type": self.metadata.node_type}]
+                ).nodes[0]
+            with recording_pack_producer(binding):
+                if kwargs:
+                    # Single "default" port → pass as first positional arg
+                    if list(kwargs.keys()) == ["default"]:
+                        raw = await self.execute(kwargs["default"])
+                    elif "default" in kwargs and len(kwargs) > 1:
+                        # Multi-port call with a "default" port: the "default" port
+                        # maps to the first positional parameter of execute() (e.g.
+                        # ``input_data``), while the remaining ports match by name.
+                        default_val = kwargs.pop("default")
+                        raw = await self.execute(default_val, **kwargs)
+                    else:
+                        raw = await self.execute(**kwargs)
+                elif inputs:
+                    raw = await self.execute(*inputs)
                 else:
-                    raw = await self.execute(**kwargs)
-            elif inputs:
-                raw = await self.execute(*inputs)
-            else:
-                # Source nodes (no inputs)
-                raw = await self.execute()
+                    # Source nodes (no inputs)
+                    raw = await self.execute()
             self.result = NodeResult.wrap(raw)
             reject_spectrochempy_transport(self.result, boundary=f"node {self.node_id!r} output")
             self.status = NodeStatus.COMPLETED

@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from spectra_sherpa.app.lib.data_roles import is_spectrum_only_node, require_data_role
 from spectra_sherpa.core.execution_runtime import ExecutionRuntime
+from spectra_sherpa.core.pack_requirements import PackGraphBinding
 
 from .executor_pool import (
     IsolatedWorkerPool,
@@ -71,7 +72,13 @@ class DAGExecutor:
     Supports caching to avoid re-executing unchanged nodes.
     """
 
-    def __init__(self, process_pool=None, runtime: ExecutionRuntime | None = None):
+    def __init__(
+        self,
+        process_pool=None,
+        runtime: ExecutionRuntime | None = None,
+        *,
+        pack_binding: PackGraphBinding | None = None,
+    ):
         """Initialize executor.
 
         Args:
@@ -82,6 +89,7 @@ class DAGExecutor:
                 by the SDK, workbench, or managed caller. An omitted runtime
                 has no storage authority and uses the public local timeout.
         """
+        self.pack_binding = pack_binding
         self.nodes: Dict[str, Node] = {}
         self.edges: List[WorkflowEdge] = []
         self.results: Dict[str, Any] = {}
@@ -98,6 +106,19 @@ class DAGExecutor:
         # A sheet opened from a campaign candidate keeps the campaign's folds:
         # its terminal evaluator is scored out of fold, never on fitted rows.
         self.fold_validation_plan: Any = None
+
+    def _admit_pack_bindings(self, selected: set[str] | None = None) -> None:
+        from .pack_requirements import require_matching_pack_binding
+
+        nodes = [
+            {"node_id": node_id, "node_type": node.metadata.node_type}
+            for node_id, node in self.nodes.items()
+            if selected is None or node_id in selected
+        ]
+        retained = self.pack_binding
+        if retained is not None and selected is not None:
+            retained = retained.for_nodes(frozenset(selected))
+        require_matching_pack_binding(nodes, retained)
 
     def __getstate__(self) -> Dict[str, Any]:
         """Exclude unpicklable ProcessPoolExecutor from serialization.
@@ -171,6 +192,21 @@ class DAGExecutor:
             # Scientific source provenance belongs to each produced model;
             # the workflow's optional primary sheet source is navigation only.
             training_dataset_id = experiment_training_dataset_id(metadata)
+            producing_payload = None
+            if self.pack_binding is not None:
+                from .execution_scope import upstream_node_ids
+
+                producing = self.pack_binding.for_nodes(frozenset(upstream_node_ids(self.nodes, self.edges, node_id)))
+                if producing.nodes:
+                    producing_payload = producing.model_dump(mode="json")
+            declared_binding = metadata.get("pack_production_binding")
+            if declared_binding is not None and declared_binding != producing_payload:
+                raise ValueError("Model artifact contradicts its executing pack provenance")
+            if producing_payload is not None:
+                metadata["pack_production_binding"] = producing_payload
+            from spectra_sherpa.core.pack_model_integrity import bind_pack_model_integrity
+
+            arrays = bind_pack_model_integrity(metadata, arrays)
             integrity_hash = store.save(artifact_uid, metadata, arrays)
             if inspect.isawaitable(integrity_hash):
                 integrity_hash = await integrity_hash
@@ -1329,6 +1365,7 @@ class DAGExecutor:
                     pass  # Never let broadcast failure affect execution
 
         try:
+            self._admit_pack_bindings()
             self.status = WorkflowStatus.RUNNING
             self.saved_artifacts = []  # Reset for this execution
 
@@ -1475,6 +1512,7 @@ class DAGExecutor:
         from .population_authority import analyze_populations
 
         selected = upstream_node_ids(self.nodes, self.edges, node_id)
+        self._admit_pack_bindings(set(selected))
         population_issues, _ = analyze_populations(
             {key: node for key, node in self.nodes.items() if key in selected},
             [edge for edge in self.edges if edge.to_node in selected],

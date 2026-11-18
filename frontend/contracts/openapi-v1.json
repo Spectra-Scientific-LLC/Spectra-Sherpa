@@ -1625,6 +1625,20 @@
         "title": "Body_import_registered_reference_endpoint_api_v1_experiments__experiment_id__import_registered_reference_post",
         "type": "object"
       },
+      "Body_inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post",
+        "type": "object"
+      },
       "Body_inspect_sherpa_object_api_v1_projects_objects_inspect_post": {
         "properties": {
           "file": {
@@ -6361,6 +6375,7 @@
         "title": "JobInfo",
         "type": "object"
       },
+      "JsonValue": {},
       "LibraryComponentSpec": {
         "properties": {
           "component_id": {
@@ -8431,6 +8446,94 @@
         "title": "OutputEvidence",
         "type": "object"
       },
+      "PackGraphBinding": {
+        "additionalProperties": false,
+        "properties": {
+          "nodes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PackNodeBinding"
+            },
+            "maxItems": 1024,
+            "title": "Nodes",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "spectra-pack-graph/1",
+            "default": "spectra-pack-graph/1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "title": "PackGraphBinding",
+        "type": "object"
+      },
+      "PackNodeBinding": {
+        "additionalProperties": false,
+        "properties": {
+          "execution_contract_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Execution Contract Sha256",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "node_type": {
+            "pattern": "^pro\\.[a-z][a-z0-9-]{0,47}\\.[a-z][a-z0-9_.-]{0,79}$",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "required": {
+            "items": {
+              "$ref": "#/components/schemas/PackReference"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Required",
+            "type": "array"
+          }
+        },
+        "required": [
+          "node_id",
+          "node_type",
+          "execution_contract_sha256",
+          "required"
+        ],
+        "title": "PackNodeBinding",
+        "type": "object"
+      },
+      "PackReference": {
+        "additionalProperties": false,
+        "properties": {
+          "build_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Build Sha256",
+            "type": "string"
+          },
+          "pack_id": {
+            "pattern": "^[a-z][a-z0-9-]{0,47}$",
+            "title": "Pack Id",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 32,
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pack_id",
+          "version",
+          "build_sha256"
+        ],
+        "title": "PackReference",
+        "type": "object"
+      },
       "PairedEvaluationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -10486,6 +10589,179 @@
           "units"
         ],
         "title": "ResponseIdentity",
+        "type": "object"
+      },
+      "RetainedArchiveWorkflow": {
+        "additionalProperties": false,
+        "properties": {
+          "graph": {
+            "$ref": "#/components/schemas/RetainedGraph"
+          },
+          "project_name": {
+            "maxLength": 1024,
+            "title": "Project Name",
+            "type": "string"
+          },
+          "workflow_count": {
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Workflow Count",
+            "type": "integer"
+          },
+          "workflow_index": {
+            "minimum": 0.0,
+            "title": "Workflow Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_name",
+          "workflow_index",
+          "workflow_count",
+          "graph"
+        ],
+        "title": "RetainedArchiveWorkflow",
+        "type": "object"
+      },
+      "RetainedEdge": {
+        "additionalProperties": false,
+        "properties": {
+          "from_node_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "From Node Id",
+            "type": "string"
+          },
+          "from_output": {
+            "default": "default",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "From Output",
+            "type": "string"
+          },
+          "to_input": {
+            "default": "default",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "To Input",
+            "type": "string"
+          },
+          "to_node_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "To Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_node_id",
+          "to_node_id"
+        ],
+        "title": "RetainedEdge",
+        "type": "object"
+      },
+      "RetainedGraph": {
+        "additionalProperties": false,
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/RetainedEdge"
+            },
+            "maxItems": 16384,
+            "title": "Edges",
+            "type": "array"
+          },
+          "inspection_only": {
+            "const": true,
+            "default": true,
+            "title": "Inspection Only",
+            "type": "boolean"
+          },
+          "name": {
+            "default": "Retained workflow",
+            "maxLength": 1024,
+            "title": "Name",
+            "type": "string"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/RetainedNode"
+            },
+            "maxItems": 1024,
+            "title": "Nodes",
+            "type": "array"
+          },
+          "pack_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PackGraphBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_version": {
+            "const": "spectra-retained-graph/1",
+            "default": "spectra-retained-graph/1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "RetainedGraph",
+        "type": "object"
+      },
+      "RetainedNode": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "node_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "node_type": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Node Type",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Parameters",
+            "type": "object"
+          },
+          "parameters_json": {
+            "description": "Exact integer/text display without browser numeric coercion.",
+            "readOnly": true,
+            "title": "Parameters Json",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "node_type",
+          "parameters_json"
+        ],
+        "title": "RetainedNode",
         "type": "object"
       },
       "RunDatasetRef": {
@@ -14527,6 +14803,16 @@
             ],
             "description": "Markdown notes/documentation for workflow",
             "title": "Notes"
+          },
+          "pack_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PackGraphBinding"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "primary_data_source_id": {
             "anyOf": [
@@ -24627,6 +24913,70 @@
           }
         ],
         "summary": "Inspect Sherpa Object",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/objects/inspect-workflow": {
+      "post": {
+        "description": "Read unknown-node graph evidence without imports, execution or persistence.",
+        "operationId": "inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "workflow_index",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1023,
+              "minimum": 0,
+              "title": "Workflow Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetainedArchiveWorkflow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Inspect Archived Workflow",
         "tags": [
           "projects"
         ]

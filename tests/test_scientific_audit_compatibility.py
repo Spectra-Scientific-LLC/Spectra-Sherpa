@@ -1,5 +1,7 @@
 """Exact saved-state continuity after the OSS scientific audit; no fit aliases."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from spectra_sherpa.app.services.dag import historical_contracts, node_registry
@@ -42,16 +44,24 @@ _REVIEWED = {
 _READ_ONLY_CONSUMERS = {
     "diagnostics.regression_evaluator": "769f2b7129ae580721435b91c2df1fd11ee6e2400e8489d266643da74ae96684",
     **{operation: current for operation, (_, current) in _REVIEWED.items() if operation != "model.pca"},
-    "model.apply_fitted_linear_regression": "520728c0451ffd8f5904ea5c3227c40698d601647365a6e38bebf69144d78e2c",
-    "model.apply_fitted_pcr": "f09403b8c0f41c32ea591a1761e9e8dfa57149746634c5748be9b27d876f228c",
-    "model.apply_fitted_svr": "265de5fa6c87e0629cffcaa742da2c84a1fc3ed848ac1c8750fbd7f83d640a58",
-    "classification.plsda": "a87402af5087cf79b58c421a3e936e7eb4521e91df0ff3318fc13eef893615fd",
+    "model.apply_fitted_linear_regression": "68c62ab73f3c5becfe36744a7ff5a538c5d0a82c6dcd9ce4a805cb498c5f3f56",
+    "model.apply_fitted_pcr": "dee5dd3ffcf96da7cf0c380017142de516490732c9c44e666a32b4cbfed7918f",
+    "model.apply_fitted_svr": "ad9502a76af85fff45d28e0377350c56e0fb694edddb4d6feceaabf3144f837d",
+    "classification.plsda": "8409cc148280932c5dfbde40f68477b834aceb92f268acc682b23162b9d6a9e2",
     "model.fitted_pls": "404bb89c9299a89b972ca02379148ef4ed3f92b437510cc4ca1fa4d6cad43b7f",
-    "model.fitted_linear_regression": "2126706c399de312076750bc4d54f33fb1736e88b3eb70df26b36ab38d25dba6",
-    "model.fitted_pcr": "a5c5f2391a6d4fe5edb50253b6ddbc28759d4484ab95969e06174c4ed8b25f71",
-    "model.fitted_svr": "6fd3f58b2f4a69418498edb4979f9dc45c0685b4f84510f779b281dca5afd8b6",
+    "model.fitted_linear_regression": "a4a5fd5ff397ef611f71068c585590acb82c59d9a2d4a13c68d332d49594f717",
+    "model.fitted_pcr": "512f25478a1fd7e5623b26e9aeba7d248a15d4edbd20d776e8ba7d1de7efe545",
+    "model.fitted_svr": "6cd8e43f86977cbaa50bb9004ae2cb2ba795e7c95f4159071e263acdcf895c55",
 }
 _PROFILE_DIGESTS = (None, "9f37d08a914c3e276859c0ba10b5d2187d5d5ba4ff85f6d00b35cba23e7369f4")
+_READ_ONLY_CONSUMERS.update(
+    {
+        "classification.plsda": "8409cc148280932c5dfbde40f68477b834aceb92f268acc682b23162b9d6a9e2",
+        "model.fitted_linear_regression": "a4a5fd5ff397ef611f71068c585590acb82c59d9a2d4a13c68d332d49594f717",
+        "model.fitted_pcr": "512f25478a1fd7e5623b26e9aeba7d248a15d4edbd20d776e8ba7d1de7efe545",
+        "model.fitted_svr": "6cd8e43f86977cbaa50bb9004ae2cb2ba795e7c95f4159071e263acdcf895c55",
+    }
+)
 
 
 @pytest.mark.parametrize("profile_digest", _PROFILE_DIGESTS)
@@ -78,8 +88,10 @@ def test_exact_historical_inspection_consumers_preserve_both_packaged_profiles(o
     assert restored.digest == archived["digest"] != current.digest
     assert context.profile().digest == catalog["profile"]["profile_digest"]
     # A future consumer cannot inherit this review just by matching declarations.
-    before, _ = historical_contracts._INSPECTION_CONSUMERS[operation]
-    monkeypatch.setitem(historical_contracts._INSPECTION_CONSUMERS, operation, (before, "f" * 64))
+    metadata = node_registry.get_metadata(operation)
+    monkeypatch.setattr(
+        metadata, "resolved_execution_contract", lambda: SimpleNamespace(digest="f" * 64, payload=current.payload)
+    )
     with pytest.raises(ValidationGraphError, match="not qualified"):
         context.contract(operation, archived["digest"])
 
@@ -135,6 +147,9 @@ def test_scientific_audit_preserves_exact_prior_application_not_execution(operat
     )
     latest.update(
         {entry.operation_id: entry.consumer_digest for entry in authority._BASELINE_CV_APPLICATION_PREDECESSORS}
+    )
+    latest.update(
+        {entry.operation_id: entry.consumer_digest for entry in authority._PACK_RETENTION_APPLICATION_PREDECESSORS}
     )
     assert contract.digest == latest.get(operation, current)
     serializer = contract.payload["fitted_state_serializer"]

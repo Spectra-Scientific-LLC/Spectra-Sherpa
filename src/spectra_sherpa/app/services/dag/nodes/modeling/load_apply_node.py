@@ -45,6 +45,7 @@ from spectra_sherpa.app.services.dag.nodes.preprocessing import (
 from spectra_sherpa.app.services.dag.nodes.selection import variable_select_node
 from spectra_sherpa.core import execution_runtime as execution_runtime_contract
 from spectra_sherpa.core import model_artifact as model_artifact_contract
+from spectra_sherpa.core import pack_model_integrity
 from spectra_sherpa.core.model_artifact import ModelArtifactIntegrityError
 from spectra_sherpa.execution_contract_vocabulary import (
     DatasetRankPolicy,
@@ -132,6 +133,9 @@ def _apply_model_artifact(
 ) -> dict[str, Any]:
     """Apply one verified saved artifact through the sole model-type adapter registry."""
 
+    from spectra_sherpa.core.pack_model_integrity import scientific_model_arrays
+
+    arrays = scientific_model_arrays(manifest, arrays)
     artifact_uid = manifest.get("artifact_uid")
     if not isinstance(artifact_uid, str) or not artifact_uid or artifact_uid != artifact_uid.strip():
         raise ValueError("model artifact manifest has no valid artifact_uid")
@@ -489,6 +493,7 @@ bind_stable_execution_contract(
         plsda_state_authority,
         execution_runtime_contract,
         model_artifact_contract,
+        pack_model_integrity,
         preprocessing_shared,
         derivative_node,
         emsc_node,

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .canonical_capsule import CanonicalWorkflowCapsule
 
 WORKFLOW_SCHEMA_VERSION = "spectra-sherpa-workflow/1"
+PACK_WORKFLOW_SCHEMA_VERSION = "spectra-sherpa-workflow/2"
 
 
 class WorkflowSchemaError(ValueError):
@@ -62,7 +63,8 @@ def workflow_spec(*, nodes: Sequence[Mapping[str, Any]], edges: Sequence[Mapping
             "schema_version": WORKFLOW_SCHEMA_VERSION,
             "nodes": [deepcopy(dict(node)) for node in nodes],
             "edges": [deepcopy(dict(edge)) for edge in edges],
-        }
+        },
+        creating=True,
     )
     return WorkflowSpec(payload=payload, workflow_digest=_digest(payload))
 
@@ -78,12 +80,14 @@ def verify_workflow(manifest: WorkflowSpec | Mapping[str, Any]) -> bool:
     return True
 
 
-def _validate_and_normalize(payload: Mapping[str, Any]) -> dict[str, Any]:
+def _validate_and_normalize(payload: Mapping[str, Any], *, creating: bool = False) -> dict[str, Any]:
     required = {"schema_version", "nodes", "edges"}
+    if payload.get("schema_version") == PACK_WORKFLOW_SCHEMA_VERSION:
+        required.add("pack_binding")
     missing, extra = sorted(required - set(payload)), sorted(set(payload) - required)
     if missing or extra:
         raise WorkflowSchemaError(f"invalid workflow fields: missing={missing}, extra={extra}")
-    if payload["schema_version"] != WORKFLOW_SCHEMA_VERSION:
+    if payload["schema_version"] not in (WORKFLOW_SCHEMA_VERSION, PACK_WORKFLOW_SCHEMA_VERSION):
         raise WorkflowSchemaError(f"unsupported workflow schema version: {payload['schema_version']!r}")
 
     normalized_nodes: list[dict[str, Any]] = []
@@ -136,7 +140,31 @@ def _validate_and_normalize(payload: Mapping[str, Any]) -> dict[str, Any]:
         _canonical_json(normalized)
     except (TypeError, ValueError) as exc:
         raise WorkflowSchemaError(f"workflow is not canonical-JSON serializable: {exc}") from exc
-    _admit_current_registry(normalized["nodes"], normalized["edges"])
+    from spectra_sherpa.app.services.dag.pack_requirements import (
+        capture_pack_graph_binding,
+        require_matching_pack_binding,
+    )
+    from spectra_sherpa.core.pack_requirements import parse_pack_graph_binding
+
+    try:
+        if creating:
+            _admit_current_registry(normalized["nodes"], normalized["edges"])
+            binding = capture_pack_graph_binding(normalized["nodes"])
+        else:
+            binding = (
+                parse_pack_graph_binding(_canonical_json(payload["pack_binding"]))
+                if "pack_binding" in payload
+                else None
+            )
+            require_matching_pack_binding(normalized["nodes"], binding)
+            _admit_current_registry(normalized["nodes"], normalized["edges"])
+        if binding is not None and binding.nodes:
+            normalized["schema_version"] = PACK_WORKFLOW_SCHEMA_VERSION
+            normalized["pack_binding"] = binding.model_dump(mode="json")
+        elif payload["schema_version"] == PACK_WORKFLOW_SCHEMA_VERSION:
+            raise WorkflowSchemaError("pack workflow requires nonempty retained pack bindings")
+    except (TypeError, ValueError) as exc:
+        raise WorkflowSchemaError(f"workflow pack binding is not admitted: {exc}") from exc
     return normalized
 
 

@@ -1173,6 +1173,9 @@ class TestTrackedLegacyAuthSplit:
 
         sync_engine = sa.create_engine(sync_url)
         with sync_engine.begin() as conn:
+            # The authentication-only fixture still needs the unrelated table
+            # required by the additive workflow binding migration at head.
+            conn.execute(text("CREATE TABLE workflow (id INTEGER PRIMARY KEY, user_id INTEGER, project_id INTEGER)"))
             conn.execute(text("""
                 CREATE TABLE "user" (
                     id INTEGER PRIMARY KEY,

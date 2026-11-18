@@ -60,7 +60,7 @@ def test_new_history_retains_current_pls_controls_and_has_no_classifier_output_e
     assert not context.predates_preprocessing_expansion
     archived = context.contract("classification.plsda", OLD)
     current = node_registry.get_metadata("classification.plsda").resolved_execution_contract()
-    assert current.digest == NEW
+    assert current.digest == "8409cc148280932c5dfbde40f68477b834aceb92f268acc682b23162b9d6a9e2"
     assert {k for k in archived.payload if archived.payload[k] != current.payload[k]} == {
         "implementation_components",
         "implementation_digest",
@@ -119,7 +119,9 @@ def test_new_history_checks_declarations_even_for_exact_consumer(field, monkeypa
     current = metadata.resolved_execution_contract()
     payload = dict(current.payload)
     payload[field] = () if field in {"semantic_outputs", "runtime_requirements"} else "altered"
-    monkeypatch.setattr(metadata, "resolved_execution_contract", lambda: SimpleNamespace(digest=NEW, payload=payload))
+    monkeypatch.setattr(
+        metadata, "resolved_execution_contract", lambda: SimpleNamespace(digest=current.digest, payload=payload)
+    )
     with pytest.raises(ValidationGraphError, match="scientific declarations changed"):
         context.contract("classification.plsda", OLD)
 

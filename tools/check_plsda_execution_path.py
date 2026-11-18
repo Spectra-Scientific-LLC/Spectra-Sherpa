@@ -252,12 +252,12 @@ _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
         ("SherpaPLSDAArtifact.from_fitted_state", 91, 19),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/model_application.py": (
-        ("extract_cls.from_artifact", 396, 18),
+        ("extract_cls.from_artifact", 399, 18),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/saved_model_diagnostics.py": (
         ("SherpaPLSDAArtifact.from_fitted_state", 46, 15),
-        ("SherpaPLSDAArtifact.from_artifact", 143, 13),
-        ("stored.to_fitted_state", 144, 7),
+        ("SherpaPLSDAArtifact.from_artifact", 146, 13),
+        ("stored.to_fitted_state", 147, 7),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/canonical_model_bridge.py": (
         ("native.to_artifact", 286, 37),
@@ -280,8 +280,8 @@ _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
         ("SherpaPLSDAArtifact.from_fitted_state", 490, 11),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/load_apply_node.py": (
-        ("extract_cls.from_artifact", 213, 14),
-        ("extract.to_fitted_state", 457, 8),
+        ("extract_cls.from_artifact", 217, 14),
+        ("extract.to_fitted_state", 461, 8),
     ),
 }
 

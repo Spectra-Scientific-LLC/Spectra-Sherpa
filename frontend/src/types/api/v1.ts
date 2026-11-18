@@ -2294,6 +2294,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/objects/inspect-workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect Archived Workflow
+         * @description Read unknown-node graph evidence without imports, execution or persistence.
+         */
+        post: operations["inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/objects/validate": {
         parameters: {
             query?: never;
@@ -5019,6 +5039,11 @@ export interface components {
             /** Projection Id */
             projection_id?: string | null;
         };
+        /** Body_inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post */
+        Body_inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post: {
+            /** File */
+            file: string;
+        };
         /** Body_inspect_sherpa_object_api_v1_projects_objects_inspect_post */
         Body_inspect_sherpa_object_api_v1_projects_objects_inspect_post: {
             /** File */
@@ -6649,6 +6674,7 @@ export interface components {
             /** Status */
             status: string;
         };
+        JsonValue: unknown;
         /** LibraryComponentSpec */
         LibraryComponentSpec: {
             /** Component Id */
@@ -7368,6 +7394,40 @@ export interface components {
             /** Storage */
             storage?: "file" | null;
         };
+        /** PackGraphBinding */
+        PackGraphBinding: {
+            /**
+             * Nodes
+             * @default []
+             */
+            nodes?: components["schemas"]["PackNodeBinding"][];
+            /**
+             * Schema Version
+             * @default spectra-pack-graph/1
+             * @constant
+             */
+            schema_version?: "spectra-pack-graph/1";
+        };
+        /** PackNodeBinding */
+        PackNodeBinding: {
+            /** Execution Contract Sha256 */
+            execution_contract_sha256: string;
+            /** Node Id */
+            node_id: string;
+            /** Node Type */
+            node_type: string;
+            /** Required */
+            required: components["schemas"]["PackReference"][];
+        };
+        /** PackReference */
+        PackReference: {
+            /** Build Sha256 */
+            build_sha256: string;
+            /** Pack Id */
+            pack_id: string;
+            /** Version */
+            version: string;
+        };
         /** PairedEvaluationRequest */
         PairedEvaluationRequest: {
             /**
@@ -8071,6 +8131,76 @@ export interface components {
             names: string[] | null;
             /** Units */
             units: (string | null)[];
+        };
+        /** RetainedArchiveWorkflow */
+        RetainedArchiveWorkflow: {
+            graph: components["schemas"]["RetainedGraph"];
+            /** Project Name */
+            project_name: string;
+            /** Workflow Count */
+            workflow_count: number;
+            /** Workflow Index */
+            workflow_index: number;
+        };
+        /** RetainedEdge */
+        RetainedEdge: {
+            /** From Node Id */
+            from_node_id: string;
+            /**
+             * From Output
+             * @default default
+             */
+            from_output?: string;
+            /**
+             * To Input
+             * @default default
+             */
+            to_input?: string;
+            /** To Node Id */
+            to_node_id: string;
+        };
+        /** RetainedGraph */
+        RetainedGraph: {
+            /** Edges */
+            edges: components["schemas"]["RetainedEdge"][];
+            /**
+             * Inspection Only
+             * @default true
+             * @constant
+             */
+            inspection_only?: true;
+            /**
+             * Name
+             * @default Retained workflow
+             */
+            name?: string;
+            /** Nodes */
+            nodes: components["schemas"]["RetainedNode"][];
+            pack_binding?: components["schemas"]["PackGraphBinding"] | null;
+            /**
+             * Schema Version
+             * @default spectra-retained-graph/1
+             * @constant
+             */
+            schema_version?: "spectra-retained-graph/1";
+        };
+        /** RetainedNode */
+        RetainedNode: {
+            /** Label */
+            label?: string | null;
+            /** Node Id */
+            node_id: string;
+            /** Node Type */
+            node_type: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Parameters Json
+             * @description Exact integer/text display without browser numeric coercion.
+             */
+            readonly parameters_json: string;
         };
         /** RunDatasetRef */
         RunDatasetRef: {
@@ -9655,6 +9785,7 @@ export interface components {
              * @description Markdown notes/documentation for workflow
              */
             notes?: string | null;
+            pack_binding?: components["schemas"]["PackGraphBinding"] | null;
             /**
              * Primary Data Source Id
              * @description Primary project data source
@@ -15320,6 +15451,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post: {
+        parameters: {
+            query?: {
+                workflow_index?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetainedArchiveWorkflow"];
                 };
             };
             /** @description Validation Error */

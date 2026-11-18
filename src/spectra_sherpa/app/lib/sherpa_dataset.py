@@ -48,6 +48,7 @@ from spectra_sherpa.app.lib.data_roles import DataRole, data_role_to_modality, n
 from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
 from spectra_sherpa.app.lib.scientific_values import lossless_json_scalar, lossless_json_value
 from spectra_sherpa.core.dimension_roles import DimensionRole, canonical_dimension_roles
+from spectra_sherpa.core.pack_requirements import PackNodeBinding
 from spectra_sherpa.core.target_authority import TargetAuthority
 
 # ---------------------------------------------------------------------------
@@ -431,6 +432,7 @@ class ProvenanceEntry(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    pack_binding: PackNodeBinding | None = None
     op_id: str
     op_version: str = "1.0"
     parameters: Mapping[str, Any] = Field(default_factory=dict)
@@ -440,6 +442,21 @@ class ProvenanceEntry(BaseModel):
     input_shape: tuple[int, ...] | None = None
     output_shape: tuple[int, ...] | None = None
     state_effects: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _match_pack_producer(self):
+        if self.pack_binding is not None and self.pack_binding.node_id != self.node_id:
+            raise ValueError("Pack provenance must identify the recorded processing node")
+        return self
+
+    @field_validator("pack_binding", mode="before")
+    @classmethod
+    def _parse_pack_binding(cls, value):
+        if value is None or isinstance(value, PackNodeBinding):
+            return value
+        import json
+
+        return PackNodeBinding.model_validate_json(json.dumps(value, allow_nan=False))
 
     @field_validator("parameters", mode="after")
     @classmethod
@@ -533,14 +550,18 @@ class Provenance:
         output_shape: tuple[int, ...] | None = None,
         state_effects: list[str] | None = None,
     ) -> None:
+        from spectra_sherpa.core.pack_execution_context import current_pack_producer
+
+        binding = current_pack_producer(node_id)
         self._entries.append(
             ProvenanceEntry(
+                pack_binding=binding,
                 op_id=op_id,
                 op_version=op_version,
                 parameters=parameters or {},
                 impact=impact,
                 timestamp=datetime.now(timezone.utc).isoformat(),
-                node_id=node_id,
+                node_id=binding.node_id if binding is not None else node_id,
                 input_shape=input_shape,
                 output_shape=output_shape,
                 state_effects=state_effects or [],
@@ -585,6 +606,8 @@ class Provenance:
             dumped["parameters"] = _json_safe(dict(entry.parameters))
             if entry.impact is not None:
                 dumped["impact"] = _json_safe(dict(entry.impact))
+            if entry.pack_binding is not None:
+                dumped["pack_binding"] = entry.pack_binding.model_dump(mode="json")
             dumped["state_effects"] = list(entry.state_effects)
             entries.append(dumped)
         return entries

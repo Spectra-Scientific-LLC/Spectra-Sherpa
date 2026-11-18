@@ -12,7 +12,6 @@ import spectra_sherpa.app.services.dag.nodes  # noqa: F401
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
 from spectra_sherpa.app.services.dag.executor_types import WorkflowNode
 from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
-from spectra_sherpa.app.services.dag.managed_optimization_profile import managed_optimization_profile
 from spectra_sherpa.app.services.dag.node_base import node_registry
 from spectra_sherpa.app.services.dag.validation_graph import (
     ValidationGraphError,
@@ -40,13 +39,12 @@ def _types():
         type_registry.load(ROOT / "src/spectra_sherpa/app/types")
 
 
-def test_only_four_exact_contracts_and_managed_profile_change():
+def test_historical_baseline_cv_changed_only_four_exact_contracts_and_managed_profile():
     before = captured()
-    live = {
-        m.node_type: m.resolved_execution_contract()
-        for m in node_registry.list_nodes()
-        if m.resolved_execution_contract() is not None
-    }
+    from spectra_sherpa.execution_contract_vocabulary import NodeExecutionContract
+
+    endpoint = inspection_predecessor_catalog("a66a3b73b19b1e864df07a5e1622b8f8c9fa75b65a36b83ee2b7c3b84da680cf")
+    live = {op: NodeExecutionContract.from_dict(record["payload"]) for op, record in endpoint["contracts"].items()}
     assert set(live) == set(before["contracts"])
     assert {op for op, c in live.items() if c.digest != before["contracts"][op]} == CHANGED
     archived = inspection_predecessor_catalog(PROFILE)
@@ -62,7 +60,7 @@ def test_only_four_exact_contracts_and_managed_profile_change():
         assert {key for key in old_components if old_components[key] != new_components[key]} == {
             "spectra_sherpa.app.services.dag.nodes.modeling.component_validation"
         }
-    profile = managed_optimization_profile()
+    profile = HistoricalReconstructionContext(endpoint["profile"]["profile_digest"]).profile()
     assert profile.profile_version == "10" and before["profile"]["profile_version"] == "9"
     assert profile.digest != PROFILE
     assert set(profile.operation_ids) == set(before["profile"]["operations"])

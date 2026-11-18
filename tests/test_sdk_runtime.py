@@ -294,7 +294,7 @@ def test_sdk_and_workbench_execute_the_same_native_pca_graph_with_explicit_artif
 
 
 def test_sdk_scientific_conveniences_have_no_direct_node_or_estimator_authority() -> None:
-    sdk_dir = Path(__file__).parents[1] / "src" / "spectra_sherpa" / "sdk"
+    sdk_dir = Path(ss.__file__).resolve().parent
     for filename in ("preprocess.py", "regression.py", "explore.py", "validate.py"):
         source = (sdk_dir / filename).read_text(encoding="utf-8")
         tree = ast.parse(source, filename=filename)

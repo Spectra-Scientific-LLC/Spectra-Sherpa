@@ -92,6 +92,19 @@ class CapturedModelArtifact:
         if manifest.get("integrity_hash") != hashlib.sha256(self.arrays_bytes).hexdigest():
             raise ModelArtifactIntegrityError("Captured model array integrity mismatch")
         object.__setattr__(self, "decoded_bytes", _check_arrays(self.arrays_bytes))
+        from spectra_sherpa.core.pack_model_integrity import require_pack_model_integrity
+
+        with np.load(io.BytesIO(self.arrays_bytes), allow_pickle=False) as archive:
+            # Only the reserved small marker is required for custody validation;
+            # full scientific arrays stay lazily decoded until load().
+            from spectra_sherpa.core.pack_model_integrity import PACK_MODEL_BINDING_ARRAY
+
+            markers = (
+                {PACK_MODEL_BINDING_ARRAY: archive[PACK_MODEL_BINDING_ARRAY]}
+                if PACK_MODEL_BINDING_ARRAY in archive
+                else {}
+            )
+            require_pack_model_integrity(manifest, markers)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,5 +139,8 @@ class CapturedModelArtifacts:
                 manifest = parse_model_manifest_json(item.manifest_bytes)
                 with np.load(io.BytesIO(item.arrays_bytes), allow_pickle=False) as archive:
                     arrays = {name: np.array(value, copy=True) for name, value in archive.items()}
+                from spectra_sherpa.core.pack_model_integrity import require_pack_model_integrity
+
+                require_pack_model_integrity(manifest, arrays)
                 return manifest, arrays
         raise FileNotFoundError("Model is outside the admitted captured inventory")

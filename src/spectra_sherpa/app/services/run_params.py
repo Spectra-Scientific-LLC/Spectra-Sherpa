@@ -17,6 +17,7 @@ def build_saved_definition_snapshot(workflow: Any) -> dict[str, Any]:
         {
             "schema_version": 1,
             "classifier_validation_semantics": CURRENT_CLASSIFIER_VALIDATION_SEMANTICS,
+            **({"pack_binding": workflow.pack_binding} if getattr(workflow, "pack_binding", None) is not None else {}),
             "fold_validation_plan": getattr(workflow, "fold_validation_plan", None),
             "name": workflow.name,
             "integrity_hash": workflow.integrity_hash,
@@ -86,6 +87,7 @@ def build_workflow_version_snapshot(workflow: Any) -> dict[str, Any]:
     return deepcopy(
         {
             "classifier_validation_semantics": CURRENT_CLASSIFIER_VALIDATION_SEMANTICS,
+            **({"pack_binding": workflow.pack_binding} if getattr(workflow, "pack_binding", None) is not None else {}),
             "fold_validation_plan": getattr(workflow, "fold_validation_plan", None),
             "name": workflow.name,
             "description": workflow.description,

@@ -37,6 +37,70 @@ class FittedStateCustodyCapability:
 
 _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingProxyType(
     {
+        # Pack-retention producers; all previous classifications remain intact.
+        (
+            "spectrasherpa.model.fitted_pcr/1",
+            "512f25478a1fd7e5623b26e9aeba7d248a15d4edbd20d776e8ba7d1de7efe545",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_pcr/1",
+            contract_digest="512f25478a1fd7e5623b26e9aeba7d248a15d4edbd20d776e8ba7d1de7efe545",
+            custody_class="data_free_application_state",
+            rationale="Retained pack provenance preserves the closed fitted-state arrays and row custody.",
+        ),
+        (
+            "spectrasherpa.model.fitted_svr/1",
+            "6cd8e43f86977cbaa50bb9004ae2cb2ba795e7c95f4159071e263acdcf895c55",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_svr/1",
+            contract_digest="6cd8e43f86977cbaa50bb9004ae2cb2ba795e7c95f4159071e263acdcf895c55",
+            custody_class="retains_training_rows",
+            rationale="Retained pack provenance preserves the closed fitted-state arrays and row custody.",
+        ),
+        (
+            "spectrasherpa.model.fitted_linear_regression/1",
+            "a4a5fd5ff397ef611f71068c585590acb82c59d9a2d4a13c68d332d49594f717",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_linear_regression/1",
+            contract_digest="a4a5fd5ff397ef611f71068c585590acb82c59d9a2d4a13c68d332d49594f717",
+            custody_class="data_free_application_state",
+            rationale="Retained pack provenance preserves the closed fitted-state arrays and row custody.",
+        ),
+        (
+            "spectrasherpa.model-artifact.knn/2",
+            "afa3c39e6b993820de1d95d74275e38cedc5fcec25f3eac319ceb963124443a3",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.knn/2",
+            contract_digest="afa3c39e6b993820de1d95d74275e38cedc5fcec25f3eac319ceb963124443a3",
+            custody_class="retains_training_rows",
+            rationale="Retained pack provenance preserves the closed fitted-state arrays and row custody.",
+        ),
+        (
+            "spectrasherpa.model-artifact.simca/2",
+            "ab489af8b627c076387254ee39e9a6c1d5657522712452b0f60ada486eccf6dd",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.simca/2",
+            contract_digest="ab489af8b627c076387254ee39e9a6c1d5657522712452b0f60ada486eccf6dd",
+            custody_class="data_free_application_state",
+            rationale="Retained pack provenance preserves the closed fitted-state arrays and row custody.",
+        ),
+        (
+            "spectrasherpa.model-artifact.pca/3",
+            "ff32cbbbd0802510c30246d8c8561bb6e83e23143a9dd7d6311061ea3a8ce786",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.pca/3",
+            contract_digest="ff32cbbbd0802510c30246d8c8561bb6e83e23143a9dd7d6311061ea3a8ce786",
+            custody_class="data_free_application_state",
+            rationale="Retained pack provenance preserves the closed fitted-state arrays and row custody.",
+        ),
+        (
+            "spectrasherpa.sherpa-plsda-state/5",
+            "8409cc148280932c5dfbde40f68477b834aceb92f268acc682b23162b9d6a9e2",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="8409cc148280932c5dfbde40f68477b834aceb92f268acc682b23162b9d6a9e2",
+            custody_class="data_free_application_state",
+            rationale="Retained pack provenance preserves the closed fitted-state arrays and row custody.",
+        ),
         # Typed diagnostic IDs affect retained review output only, not fitted state.
         (
             "spectrasherpa.sherpa-plsda-state/5",

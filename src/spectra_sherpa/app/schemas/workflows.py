@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 
 from spectra_sherpa.app.lib.workflow_purpose import ANALYSIS_WORKFLOW, WorkflowPurpose
 from spectra_sherpa.core.node_identity import canonical_node_type, canonicalize_serialized_workflow
+from spectra_sherpa.core.pack_requirements import PackGraphBinding
 
 
 # Node schemas
@@ -259,6 +260,21 @@ class WorkflowSummary(WorkflowBase):
 
 class WorkflowDetail(WorkflowSummary):
     """Schema for detailed workflow response."""
+
+    pack_binding: PackGraphBinding | None = None
+
+    @field_validator("pack_binding", mode="before")
+    @classmethod
+    def parse_retained_pack_binding(cls, value):
+        if value is None or isinstance(value, PackGraphBinding):
+            return value
+        import json
+
+        from spectra_sherpa.core.pack_requirements import parse_pack_graph_binding
+
+        return parse_pack_graph_binding(
+            json.dumps(value, allow_nan=False, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        )
 
     proposal_receipt: dict[str, Any] | None = None
 

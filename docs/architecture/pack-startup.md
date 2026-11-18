@@ -1,8 +1,9 @@
 # Explicit trusted pack startup
 
 Trusted application startup can compose explicitly installed node and tool packs
-before work begins. This foundation does not yet propagate pack dependencies
-through retained workflows or artifacts, or provide commercial entitlement admission.
+before work begins. [Retained pack evidence](retained-pack-evidence.md) carries
+dependencies through saved workflows and ordinary model provenance. Startup
+does not provide commercial entitlement admission.
 
 Contract imports do not freeze the global DAG catalog. The application service
 `app.services.pack_bootstrap` supplies `bootstrap(extensions=...)` for trusted
