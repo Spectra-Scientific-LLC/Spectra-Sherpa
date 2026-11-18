@@ -89,9 +89,12 @@ async def build_workflow_export_context(
     if workflow.user_id != actor_user_id:
         raise ValueError("Workflow export source is not available")
 
+    from spectra_sherpa.app.contracts.pack_access import authorize_project_packs
     from spectra_sherpa.app.services.pack_requirements import require_saved_workflow_pack_binding
 
-    require_saved_workflow_pack_binding(workflow)
+    binding = require_saved_workflow_pack_binding(workflow)
+    if binding.required:
+        await authorize_project_packs(session, actor_user_id, workflow.project_id, binding.required)
 
     specs: dict[str, SourceExportSpec] = {}
 
@@ -152,6 +155,8 @@ async def build_workflow_export_context(
             collection_definition=definition,
         )
 
+    if binding.required:
+        await authorize_project_packs(session, actor_user_id, workflow.project_id, binding.required)
     return WorkflowExportContext(source_specs=specs)
 
 

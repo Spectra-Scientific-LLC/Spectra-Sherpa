@@ -7,7 +7,7 @@ import copy
 import logging
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal, Sequence
 
 import numpy as np
@@ -33,7 +33,6 @@ from spectra_sherpa.app.lib.registered_reference_collection_identity import (
     registered_reference_collection_identity,
 )
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.lib.workflow_population import WORKFLOW_POPULATION_OPERATION
 from spectra_sherpa.app.services.artifact_preprocessing_authority import (
     validate_experiment_source_provenance,
     validate_registered_matlab_source_provenance,
@@ -45,6 +44,12 @@ from spectra_sherpa.app.services.dag.io_contracts import extract_target_like
 from spectra_sherpa.app.services.dag.nodes.classification_evaluator_node import evaluate_classification_v2
 from spectra_sherpa.app.services.dag.nodes.data.loaders import ExperimentDatasetReader
 from spectra_sherpa.app.services.dag.nodes.regression_evaluator_node import evaluate_regression_v2
+from spectra_sherpa.app.services.dag.pack_execution_access import (
+    PackExecutionAuthorizer,
+    combine_pack_requirements,
+    model_replay_requirements,
+    require_pack_execution,
+)
 from spectra_sherpa.app.services.dag.transport import reject_spectrochempy_transport
 from spectra_sherpa.app.services.execution_runtime import build_application_execution_runtime
 from spectra_sherpa.app.services.model_store import ModelArtifactIntegrityError, get_model_store
@@ -54,6 +59,7 @@ from spectra_sherpa.app.services.prepared_data import (
     load_prepared_data_overrides_strict,
 )
 from spectra_sherpa.core.axis_semantics import axis_semantics, canonical_axis_unit
+from spectra_sherpa.core.pack_manifest import PackReference
 from spectra_sherpa.core.scientific_refusal import ScientificInputRefusal
 from spectra_sherpa.sdk.deployment import DEPLOYMENT_INPUT_SCHEMA
 
@@ -78,11 +84,16 @@ class _PinnedArtifactReader:
     manifest: dict[str, Any]
     arrays: dict[str, np.ndarray]
 
-    def load(self, artifact_uid: str, *, verify: bool = True) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
-        del verify  # The snapshot was integrity-verified by ModelStore.load().
+    def load_manifest(self, artifact_uid: str) -> dict[str, Any]:
         if artifact_uid != self.artifact_uid:
             raise FileNotFoundError(f"Model artifact not found: {artifact_uid}")
-        return dict(self.manifest), {name: np.array(values, copy=True) for name, values in self.arrays.items()}
+        return dict(self.manifest)
+
+    def load(self, artifact_uid: str, *, verify: bool = True) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+        del verify  # The snapshot was integrity-verified by ModelStore.load().
+        return self.load_manifest(artifact_uid), {
+            name: np.array(values, copy=True) for name, values in self.arrays.items()
+        }
 
 
 @dataclass(frozen=True)
@@ -414,6 +425,7 @@ async def apply_model_to_dataset(
     execution_evidence: dict[str, Any] | None = None,
     verified_snapshot: VerifiedModelSnapshot | None = None,
     acknowledge_legacy_input_uncertainty: bool = False,
+    pack_authorizer: PackExecutionAuthorizer | None = None,
 ) -> dict[str, Any]:
     """Apply one artifact through the canonical DAG node and evaluator authorities."""
     if verified_snapshot is not None:
@@ -456,14 +468,11 @@ async def apply_model_to_dataset(
     input_node_id = "application-model-input"
     model_node_id = "application-model-artifact"
     input_stream = "application-model-dataset"
+    reader = _PinnedArtifactReader(artifact_uid, manifest, arrays)
+    runtime = build_application_execution_runtime(model_artifact_reader=reader)
     executor = DAGExecutor(
-        runtime=build_application_execution_runtime(
-            model_artifact_reader=_PinnedArtifactReader(
-                artifact_uid=artifact_uid,
-                manifest=manifest,
-                arrays=arrays,
-            )
-        )
+        runtime=replace(runtime, worker_model_artifact_reader=reader),
+        pack_authorizer=pack_authorizer,
     )
     executor.add_node(
         WorkflowNode(
@@ -511,6 +520,7 @@ async def apply_model_to_dataset(
             }
             execution_evidence.update(
                 outputs=dict(executor.results),
+                pack_replay_requirements=model_replay_requirements(manifest),
                 node_statuses={key: node.status.value for key, node in executor.nodes.items()},
                 diagnostics={
                     **executor.diagnostics,
@@ -793,12 +803,20 @@ async def compare_models_on_dataset(
     dataset: SherpaDataset,
     *,
     scope: str = "all",
+    pack_authorizer: PackExecutionAuthorizer | None = None,
 ) -> dict[str, Any]:
     from spectra_sherpa.app.services.dag.presentation_limits import require_bounded_presentation
 
     results = []
+    required: tuple[PackReference, ...] = ()
+
+    async def authorize_application(packs: tuple[PackReference, ...]) -> None:
+        nonlocal required
+        await require_pack_execution(packs, pack_authorizer)
+        required = combine_pack_requirements(required, packs)
+
     for uid in artifact_uids:
-        result = await apply_model_to_dataset(uid, dataset, scope=scope)
+        result = await apply_model_to_dataset(uid, dataset, scope=scope, pack_authorizer=authorize_application)
         require_bounded_presentation([*results, result], surface="Model comparison")
         results.append(result)
     comparison: dict[str, Any] = {
@@ -825,6 +843,7 @@ async def compare_models_on_dataset(
                 }
             )
     require_bounded_presentation(comparison, surface="Model comparison")
+    await require_pack_execution(required, pack_authorizer)
     return comparison
 
 
@@ -850,10 +869,15 @@ def _prepare_artifact_input(
     scope: str,
     source_dataset: Any | None = None,
 ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, list[str], SherpaDataset | None]:
+    from spectra_sherpa.app.services.dag.pack_execution_access import (
+        MODEL_PROVENANCE_ONLY_STEPS,
+        MODEL_SOURCE_IMPORTS,
+        require_admitted_pack_replay,
+    )
     from spectra_sherpa.app.services.dag.pack_requirements import require_matching_pack_binding
-    from spectra_sherpa.core.pack_requirements import PackGraphBinding, read_pack_preprocessing_binding
+    from spectra_sherpa.core.pack_requirements import PackGraphBinding
 
-    pack_binding = read_pack_preprocessing_binding(manifest)
+    pack_binding = require_admitted_pack_replay(manifest)
     pack_steps = {step.step_index: step.producer for step in pack_binding.steps} if pack_binding else {}
     warnings: list[str] = []
     chain = manifest.get("preprocessing_chain") or []
@@ -863,20 +887,9 @@ def _prepare_artifact_input(
     replay_source = copy.copy(source_dataset) if isinstance(source_dataset, SherpaDataset) else None
     y_work = y[indices] if y is not None else None
 
-    source_imports = {"import.matlab_dso", "import.registered_reference"}
-    if any(isinstance(step, Mapping) and step.get("op_id") in source_imports for step in chain):
+    if any(isinstance(step, Mapping) and step.get("op_id") in MODEL_SOURCE_IMPORTS for step in chain):
         validate_registered_matlab_source_provenance(chain)
 
-    non_transforming_provenance = {
-        "data.file_load",
-        "data.attach_target",
-        "data.train_test_split",
-        # This chooses the *training* cohort. Applying its saved row indices
-        # to a new population would discard observations or select the wrong
-        # people/spectra; only feature transformations are replayed.
-        "data.filter_samples",
-        WORKFLOW_POPULATION_OPERATION,
-    }
     for step_index, step in enumerate(chain):
         if not isinstance(step, Mapping) or set(step) != {"op_id", "parameters"}:
             raise ValueError("model artifact preprocessing provenance is malformed")
@@ -885,14 +898,9 @@ def _prepare_artifact_input(
         if not isinstance(op_id, str) or not op_id or not isinstance(params, Mapping):
             raise ValueError("model artifact preprocessing provenance is malformed")
         params = dict(params)
-        if op_id in source_imports:
-            # The closed reader/reference pair was admitted above. These
-            # describe the already-decoded source, not numerical preprocessing.
-            continue
-        if op_id in non_transforming_provenance:
-            continue
-        if op_id == "spectrasherpa.experiment_dataset_read/2":
-            validate_experiment_source_provenance(params)
+        if op_id in MODEL_PROVENANCE_ONLY_STEPS:
+            if op_id == "spectrasherpa.experiment_dataset_read/2":
+                validate_experiment_source_provenance(params)
             continue
         producer = pack_steps.get(step_index)
         if producer is not None:

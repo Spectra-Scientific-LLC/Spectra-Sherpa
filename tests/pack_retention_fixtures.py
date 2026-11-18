@@ -29,3 +29,7 @@ def make_retained_registry(monkeypatch, *, base_node=ClipFloorNode):
     monkeypatch.setattr(node_base, "node_registry", registry)
     monkeypatch.setattr(saved_graph_admission, "node_registry", registry)
     return registry
+
+
+async def authorize_retained_fixture(required):
+    assert required == (pack().reference,)

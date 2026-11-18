@@ -7,7 +7,6 @@ falls back to live storage after capture.
 
 from __future__ import annotations
 
-import asyncio
 import copy
 import hashlib
 from contextlib import asynccontextmanager
@@ -15,7 +14,6 @@ from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import anyio
 from sqlalchemy import select
 
 from spectra_sherpa.app.lib.registered_reference_storage import read_registered_reference_sidecar
@@ -25,6 +23,7 @@ from spectra_sherpa.app.services.collection_definitions import read_collection_d
 from spectra_sherpa.app.services.dataset_access import require_experiment_access
 from spectra_sherpa.app.services.dataset_source_resolver import ApplicationDatasetSourceResolver, _experiment_path
 from spectra_sherpa.app.services.prepared_data import load_prepared_data_overrides_strict
+from spectra_sherpa.core.drained_thread import drained_read as _drained_read
 from spectra_sherpa.core.execution_runtime import ResolvedExperimentCollection, ResolvedExperimentFile
 
 _MAX_BYTES = 64 * 1024 * 1024
@@ -94,26 +93,6 @@ def _capture_file(record, root, remaining):
         sha256=digest.hexdigest(),
         prepared_overrides=copy.deepcopy(prepared),
     )
-
-
-async def _drained_read(function, *args):
-    # Cancellation cannot delete the temporary directory while its writer is
-    # still alive. This task performs only request-owned filesystem work.
-    task = asyncio.create_task(asyncio.to_thread(function, *args))
-    try:
-        return await asyncio.shield(task)
-    except asyncio.CancelledError:
-        with anyio.CancelScope(shield=True):
-            while not task.done():
-                try:
-                    await asyncio.shield(task)
-                except asyncio.CancelledError:
-                    continue
-                except Exception:
-                    break
-        if task.done() and not task.cancelled():
-            task.exception()
-        raise
 
 
 @asynccontextmanager

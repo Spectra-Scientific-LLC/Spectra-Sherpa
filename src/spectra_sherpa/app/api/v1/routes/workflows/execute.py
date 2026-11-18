@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.contracts.pack_access import authorize_project_packs
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
 from spectra_sherpa.app.contracts.scientific_access import ScientificAccessDenied, require_scientific_access
 from spectra_sherpa.app.core.config import settings
@@ -52,6 +53,7 @@ from spectra_sherpa.app.services.canonical_project_dependencies import canonical
 from spectra_sherpa.app.services.dag import DAGExecutor
 from spectra_sherpa.app.services.dag import WorkflowEdge as DAGEdge
 from spectra_sherpa.app.services.dag import WorkflowNode as DAGNode
+from spectra_sherpa.app.services.dag.pack_execution_access import PackExecutionDenied, require_pack_execution
 from spectra_sherpa.app.services.dag.presentation_contract import describe_executed_presentations
 from spectra_sherpa.app.services.dag.scientific_values import describe_node_outputs
 from spectra_sherpa.app.services.dag.workflow_preflight import WorkflowPreflight, preflight_workflow
@@ -370,15 +372,30 @@ async def execute_trial(
     """
     _enforce_demo_trial_execution_policy(payload, current_user.id)
     effective_nodes = _effective_trial_nodes(payload)
+    from spectra_sherpa.app.services.dag.pack_requirements import capture_pack_graph_binding
+
     trial_writer = None
-    preloaded_datasets = await validate_workflow_execution_access(
-        effective_nodes,
-        payload.initial_data,
-        current_user.id,
-        payload.project_id,
-        session,
-    )
     try:
+        pack_binding = capture_pack_graph_binding(
+            [{"node_id": node.node_id, "node_type": node.node_type} for node in effective_nodes]
+        )
+        pack_authorizer = await authorize_project_packs(
+            session, current_user.id, payload.project_id, pack_binding.required
+        )
+        pack_access = (
+            {"qualified_pack_nodes": frozenset(node.node_type for node in pack_binding.nodes)}
+            if pack_binding.nodes
+            else {}
+        )
+        preloaded_datasets = await validate_workflow_execution_access(
+            effective_nodes,
+            payload.initial_data,
+            current_user.id,
+            payload.project_id,
+            session,
+            **pack_access,
+        )
+
         # Build a fresh DAG executor for this trial (no caching)
         from spectra_sherpa.app.services.execution_runtime import build_application_execution_runtime
 
@@ -389,14 +406,7 @@ async def execute_trial(
             model_owner_user_id=current_user.id,
         )
         trial_writer = runtime.model_artifact_writer
-        from spectra_sherpa.app.services.dag.pack_requirements import capture_pack_graph_binding
-
-        executor = DAGExecutor(
-            runtime=runtime,
-            pack_binding=capture_pack_graph_binding(
-                [{"node_id": node.node_id, "node_type": node.node_type} for node in effective_nodes]
-            ),
-        )
+        executor = DAGExecutor(runtime=runtime, pack_binding=pack_binding, pack_authorizer=pack_authorizer)
 
         logger.debug(
             "[Trial Execution] Target node: %s (type: %s)", payload.target_node_id, type(payload.target_node_id)
@@ -475,6 +485,10 @@ async def execute_trial(
             error=None,
         )
 
+    except HTTPException:
+        raise
+    except PackExecutionDenied as exc:
+        raise ScientificAccessDenied(403, str(exc)) from exc
     except Exception as e:
         return TrialExecuteResponse(
             target_node_id=payload.target_node_id,
@@ -526,13 +540,21 @@ async def validate_workflow_endpoint(
         session, user_id, workflow.project_id, "execute", resource_owner_id=workflow.user_id
     )
 
+    from spectra_sherpa.app.services.pack_requirements import require_stored_pack_binding
+
+    binding = require_stored_pack_binding(
+        [{"node_id": node.node_id, "node_type": node.node_type} for node in workflow.nodes],
+        workflow.pack_binding,
+    )
+    await authorize_project_packs(session, user_id, workflow.project_id, binding.required)
     preflight = _workflow_preflight(workflow)
 
     all_issues = _preflight_issues(preflight)
     if uses_managed_project_access():
         from spectra_sherpa.app.contracts.scientific_access import QUALIFIED_SCIENTIFIC_NODES
 
-        if any(node.node_type not in QUALIFIED_SCIENTIFIC_NODES for node in workflow.nodes):
+        qualified = QUALIFIED_SCIENTIFIC_NODES.union(node.node_type for node in binding.nodes)
+        if any(node.node_type not in qualified for node in workflow.nodes):
             all_issues.append(
                 WorkflowValidationIssue(
                     level="error",
@@ -811,7 +833,7 @@ async def _execute_saved_workflow(
     wf_name = workflow.name
     from spectra_sherpa.app.services.pack_requirements import require_stored_pack_binding
 
-    require_stored_pack_binding(
+    pack_binding = require_stored_pack_binding(
         [{"node_id": node.node_id, "node_type": node.node_type} for node in workflow.nodes],
         workflow.pack_binding,
     )
@@ -823,10 +845,17 @@ async def _execute_saved_workflow(
         if wf_definition_snapshot != batch_binding.original_definition:
             raise HTTPException(409, "Workflow changed after Batch preflight")
         await batch_binding.verify_current()
-        require_stored_pack_binding(batch_binding.definition["nodes"], batch_binding.definition.get("pack_binding"))
+        pack_binding = require_stored_pack_binding(
+            batch_binding.definition["nodes"], batch_binding.definition.get("pack_binding")
+        )
         wf_definition_snapshot = batch_binding.definition
         wf_integrity_hash = wf_definition_snapshot["integrity_hash"]
         wf_params_snapshot = build_effective_params_snapshot(batch_binding.nodes)
+    pack_authorizer = await authorize_project_packs(session, user_id, wf_project_id, pack_binding.required)
+    pack_access = (
+        {"qualified_pack_nodes": frozenset(node.node_type for node in pack_binding.nodes)} if pack_binding.nodes else {}
+    )
+
     from spectra_sherpa.app.services.sample_review_custody import (
         require_review_filters_preserved,
         snapshot_review_provenance,
@@ -894,7 +923,9 @@ async def _execute_saved_workflow(
         from spectra_sherpa.app.services.frozen_workflow_sources import freeze_workflow_sources
         from spectra_sherpa.app.services.saved_execution_admission import SavedExecutionSnapshot
 
-        await validate_workflow_execution_access(list(workflow.nodes), None, user_id, wf_project_id, session)
+        await validate_workflow_execution_access(
+            list(workflow.nodes), None, user_id, wf_project_id, session, **pack_access
+        )
         if not _workflow_preflight(workflow).is_valid:
             raise HTTPException(422, "Workflow is not admissible for execution")
         frozen_sources = await sources_stack.enter_async_context(
@@ -1139,6 +1170,7 @@ async def _execute_saved_workflow(
             user_id,
             wf_project_id,
             session,
+            **pack_access,
         )
         if batch_binding is not None:
             from types import SimpleNamespace
@@ -1273,6 +1305,12 @@ async def _execute_saved_workflow(
 
     executor = None
 
+    async def check_pack_publication() -> None:
+        await require_pack_execution(pack_binding.required, pack_authorizer)
+        current = getattr(executor, "require_current_pack_permission", None)
+        if current is not None:
+            await current()
+
     async def discard_withdrawn_output():
         await session.rollback()
         # Retain the failed attempt without converting revoked output into a
@@ -1311,6 +1349,7 @@ async def _execute_saved_workflow(
 
         executor = DAGExecutor(
             pack_binding=read_stored_pack_binding(wf_definition_snapshot.get("pack_binding")),
+            pack_authorizer=pack_authorizer,
             runtime=build_application_execution_runtime(
                 canonical_artifact_read_grant=canonical_artifact_read_grant,
                 preloaded_datasets=preloaded_datasets,
@@ -1455,6 +1494,8 @@ async def _execute_saved_workflow(
                     "type": result_type,
                 }
 
+        await check_pack_publication()
+
         # Persist model artifacts to DB (if any training nodes ran)
         if executor and getattr(executor, "saved_artifacts", None):
             from spectra_sherpa.app.services.model_store import persist_model_artifact_records
@@ -1553,6 +1594,7 @@ async def _execute_saved_workflow(
         # fully completed run when durable evidence is incomplete.
         serialization_finished = perf_counter()
         retention_feedback: dict[str, Any] = {}
+        await check_pack_publication()
         run_id = await persist_execution_run(
             session,
             workflow_id=workflow_id,
@@ -1616,6 +1658,10 @@ async def _execute_saved_workflow(
             integrity_hash=wf_integrity_hash,
         )
 
+    except PackExecutionDenied as exc:
+        await discard_withdrawn_output()
+        raise ScientificAccessDenied(403, str(exc)) from exc
+
     except (ScientificAccessDenied, BatchAuthorityChanged):
         await discard_withdrawn_output()
         raise
@@ -1669,6 +1715,11 @@ async def _execute_saved_workflow(
 
     except Exception as e:
         # A node failure must not turn revoked output into a partial response.
+        try:
+            await check_pack_publication()
+        except PackExecutionDenied as exc:
+            await discard_withdrawn_output()
+            raise ScientificAccessDenied(403, str(exc)) from exc
         if batch_binding is not None:
             try:
                 await batch_binding.verify_current()

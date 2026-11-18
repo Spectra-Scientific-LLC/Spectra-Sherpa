@@ -124,6 +124,79 @@ def test_removing_marker_changes_retained_array_checksum(tmp_path):
         store.load("retained")
 
 
+def test_model_replay_permission_excludes_training_population_provenance():
+    from spectra_sherpa.app.services.dag.pack_execution_access import (
+        model_replay_requirements,
+        require_admitted_pack_replay,
+    )
+
+    manifest = manifest_with_replay()
+    chain = [{"op_id": "data.filter_samples", "parameters": {"indices": [0]}}] * 2
+    manifest["preprocessing_chain"] = chain
+    manifest["pack_preprocessing_binding"]["chain_sha256"] = preprocessing_chain_digest(chain)
+    assert model_replay_requirements(manifest) == ()
+    assert require_admitted_pack_replay(manifest) is not None
+
+
+@pytest.mark.parametrize("cancel_with", ["asyncio", "anyio"])
+async def test_cancelled_model_permission_read_drains_before_return(cancel_with):
+    import asyncio
+    import threading
+
+    import anyio
+
+    from spectra_sherpa.app.services.dag.executor import DAGExecutor
+    from spectra_sherpa.app.services.dag.executor_types import WorkflowNode
+    from spectra_sherpa.core.execution_runtime import ExecutionRuntime
+
+    started, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+    class Reader:
+        def load_manifest(self, model_id):
+            started.set()
+            release.wait(5)
+            finished.set()
+            return {}
+
+        def load(self, model_id):
+            pytest.fail("The manifest admission should not decode model arrays")
+
+    runtime = ExecutionRuntime(model_artifact_reader=Reader())
+    executor = DAGExecutor(runtime=runtime)
+    executor.add_node(WorkflowNode("application", "model.load_apply", {"model_id": "retained"}))
+
+    async def acquire():
+        await executor._admit_model_replay(executor.nodes["application"], runtime, [], {})
+
+    if cancel_with == "asyncio":
+        task = asyncio.create_task(acquire())
+        try:
+            assert await asyncio.to_thread(started.wait, 5)
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not task.done()
+        finally:
+            release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    else:
+
+        async def cancel_when_running(scope):
+            try:
+                assert await asyncio.to_thread(started.wait, 5)
+                scope.cancel()
+                await asyncio.sleep(0)
+                assert not finished.is_set()
+            finally:
+                release.set()
+
+        with anyio.CancelScope() as scope:
+            cancel = asyncio.create_task(cancel_when_running(scope))
+            await acquire()
+        await cancel
+    assert finished.is_set()
+
+
 async def test_pack_processed_model_save_copy_reload_and_actual_application(tmp_path, monkeypatch):
     import shutil
 
@@ -132,16 +205,18 @@ async def test_pack_processed_model_save_copy_reload_and_actual_application(tmp_
     from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_identity
     from spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder import _enrich_with_preprocessing
     from spectra_sherpa.app.services.dag.nodes.preprocessing.normalize_node import NormalizeNode
+    from spectra_sherpa.app.services.dag.pack_execution_access import use_pack_execution_authorizer
     from spectra_sherpa.app.services.dag.pack_requirements import PackBindingAdmissionError
     from spectra_sherpa.sdk import data, runtime
-    from tests.pack_retention_fixtures import make_retained_registry
+    from tests.pack_retention_fixtures import authorize_retained_fixture, make_retained_registry
 
     registry = make_retained_registry(monkeypatch, base_node=NormalizeNode)
     source = data.from_array(np.random.default_rng(936).normal(size=(8, 4)), x=np.arange(4.0), units="nm")
     spec, inputs, _ = runtime.operation_workflow(
         "pro.reference.record", parameters={"method": "snv"}, inputs={"default": source}
     )
-    processed = (await runtime.execute_workflow_async(spec, deployment_inputs=inputs)).output()
+    with use_pack_execution_authorizer(authorize_retained_fixture):
+        processed = (await runtime.execute_workflow_async(spec, deployment_inputs=inputs)).output()
     fitted = fit_pca(processed.X, n_components=2, standardized=False, scaled=False)
     manifest, arrays = fitted.to_artifact()
     manifest["input_identity"] = fitted_input_identity(processed, features=4)
@@ -155,11 +230,53 @@ async def test_pack_processed_model_save_copy_reload_and_actual_application(tmp_
     assert PACK_MODEL_BINDING_ARRAY in loaded_arrays
     copied_store = ModelStore(destination)
     monkeypatch.setattr(model_application, "get_model_store", lambda: copied_store)
-    result = await model_application.apply_model_to_dataset("retained", source)
+    from spectra_sherpa.app.services.dag.pack_execution_access import PackExecutionDenied
+
+    with pytest.raises(PackExecutionDenied, match="Permission"):
+        await model_application.apply_model_to_dataset("retained", source)
+    with use_pack_execution_authorizer(authorize_retained_fixture):
+        result = await model_application.apply_model_to_dataset("retained", source)
     np.testing.assert_allclose(result["transformed"], fitted.transform(processed.X), rtol=1e-12, atol=1e-12)
+    from spectra_sherpa.app.services.dag.executor import DAGExecutor
+    from spectra_sherpa.app.services.dag.executor_types import WorkflowEdge, WorkflowNode
+    from spectra_sherpa.app.services.execution_runtime import build_application_execution_runtime
+    from spectra_sherpa.sdk.deployment import DEPLOYMENT_INPUT_SCHEMA
+
+    permitted = True
+
+    async def authorize(required):
+        if not permitted:
+            raise PackExecutionDenied("Permission withdrawn")
+        await authorize_retained_fixture(required)
+
+    executor = DAGExecutor(
+        runtime=build_application_execution_runtime(model_artifact_reader=copied_store),
+        pack_authorizer=authorize,
+    )
+    executor.add_node(
+        WorkflowNode(
+            "data",
+            "deploy.input",
+            {
+                "stream_name": "model-source",
+                "schema_version": DEPLOYMENT_INPUT_SCHEMA,
+            },
+        )
+    )
+    executor.add_node(WorkflowNode("application", "model.load_apply", {"model_id": "retained"}))
+    executor.add_edge(WorkflowEdge("data", "application", "default", "X_new"))
+    executor.inject_deployment_input("data", source, stream_name="model-source")
+    await executor.execute()
+    assert executor._is_node_cached("application")
+    permitted = False
+    with pytest.raises(PackExecutionDenied, match="withdrawn"):
+        await executor.execute()
+    assert not executor.results
+
     registry._pack_manifests = (pack(build_sha256="b" * 64),)
     # Inert verified reading remains available; replay requires the retained build.
     assert copied_store.load("retained")[0] == loaded_manifest
-    with pytest.raises(ValueError, match="Retained pack bindings") as denied:
-        await model_application.apply_model_to_dataset("retained", source)
+    with use_pack_execution_authorizer(authorize_retained_fixture):
+        with pytest.raises(ValueError, match="Retained pack bindings") as denied:
+            await model_application.apply_model_to_dataset("retained", source)
     assert isinstance(denied.value.__cause__, PackBindingAdmissionError)

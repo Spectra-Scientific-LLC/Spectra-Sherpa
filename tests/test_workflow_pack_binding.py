@@ -10,8 +10,9 @@ from sqlalchemy.orm import selectinload
 from spectra_sherpa.app.api.v1.routes.workflows import crud, versions
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.schemas.workflows import WorkflowCreate, WorkflowUpdate
+from spectra_sherpa.app.services.dag.pack_execution_access import use_pack_execution_authorizer
 from spectra_sherpa.app.services.run_params import build_saved_definition_snapshot, build_workflow_version_snapshot
-from tests.pack_retention_fixtures import make_retained_registry
+from tests.pack_retention_fixtures import authorize_retained_fixture, make_retained_registry
 from tests.test_pack_manifest import pack
 
 
@@ -23,11 +24,12 @@ def retained_registry(monkeypatch):
 async def test_saved_binding_survives_reload_and_snapshots_then_refuses_changed_build(
     test_session, test_user, retained_registry
 ):
-    detail = await crud.persist_workflow(
-        WorkflowCreate(name="Pack provenance", nodes=[{"node_id": "pack", "node_type": "pro.reference.record"}]),
-        session=test_session,
-        current_user=test_user,
-    )
+    with use_pack_execution_authorizer(authorize_retained_fixture):
+        detail = await crud.persist_workflow(
+            WorkflowCreate(name="Pack provenance", nodes=[{"node_id": "pack", "node_type": "pro.reference.record"}]),
+            session=test_session,
+            current_user=test_user,
+        )
     await test_session.commit()
     workflow = await test_session.scalar(
         select(Workflow)
@@ -62,11 +64,14 @@ async def test_saved_binding_survives_reload_and_snapshots_then_refuses_changed_
 
 
 async def test_stripped_pack_snapshot_is_not_recreated_from_installed_code(test_session, test_user, retained_registry):
-    detail = await crud.persist_workflow(
-        WorkflowCreate(name="No inferred history", nodes=[{"node_id": "pack", "node_type": "pro.reference.record"}]),
-        session=test_session,
-        current_user=test_user,
-    )
+    with use_pack_execution_authorizer(authorize_retained_fixture):
+        detail = await crud.persist_workflow(
+            WorkflowCreate(
+                name="No inferred history", nodes=[{"node_id": "pack", "node_type": "pro.reference.record"}]
+            ),
+            session=test_session,
+            current_user=test_user,
+        )
     workflow = await test_session.scalar(
         select(Workflow)
         .where(Workflow.id == detail.id)
@@ -96,3 +101,21 @@ async def test_stripped_pack_snapshot_is_not_recreated_from_installed_code(test_
         )
         is None
     )
+
+
+async def test_installed_pack_without_permission_leaves_no_saved_workflow(
+    test_session, test_user, retained_registry, monkeypatch
+):
+    def forbidden(*args, **kwargs):
+        pytest.fail("Authorization must precede node construction")
+
+    monkeypatch.setattr(retained_registry, "create_node", forbidden)
+    name = "Unlicensed pack workflow"
+    with pytest.raises(HTTPException) as error:
+        await crud.persist_workflow(
+            WorkflowCreate(name=name, nodes=[{"node_id": "pack", "node_type": "pro.reference.record"}]),
+            session=test_session,
+            current_user=test_user,
+        )
+    assert error.value.status_code == 403
+    assert await test_session.scalar(select(Workflow.id).where(Workflow.name == name)) is None

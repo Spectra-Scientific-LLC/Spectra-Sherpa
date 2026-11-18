@@ -40,6 +40,7 @@ from spectra_sherpa.app.api.deps import (
     reserve_demo_upload_quota_or_429,
 )
 from spectra_sherpa.app.api.v1.routes._http_utils import attachment_headers, safe_download_stem
+from spectra_sherpa.app.contracts.pack_access import authorize_project_packs
 from spectra_sherpa.app.contracts.project_access import accessible_project_ids, uses_managed_project_access
 from spectra_sherpa.app.contracts.retained_archive_export import retained_archive_export_admission
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
@@ -133,7 +134,7 @@ from spectra_sherpa.app.services.model_store import (
     ModelManifestJSONError,
     parse_model_manifest_json,
 )
-from spectra_sherpa.app.services.pack_requirements import require_stored_pack_binding
+from spectra_sherpa.app.services.pack_requirements import read_stored_pack_binding, require_stored_pack_binding
 from spectra_sherpa.app.services.prepared_data import (
     PREPARED_DATA_SIDECAR_MAX_BYTES,
     PreparedDataOverrides,
@@ -172,6 +173,7 @@ from spectra_sherpa.app.services.sherpa_object import (
     write_archive_to_path,
 )
 from spectra_sherpa.core.node_identity import canonical_node_type
+from spectra_sherpa.core.pack_manifest import PackReference
 from spectra_sherpa.core.target_authority import admit_target_authority
 
 logger = logging.getLogger(__name__)
@@ -180,6 +182,19 @@ router = APIRouter(prefix="/projects")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
+
+def _archive_pack_dependencies(project_json: dict[str, Any]) -> tuple[PackReference, ...]:
+    from spectra_sherpa.app.services.dag.pack_execution_access import combine_pack_requirements
+
+    required: tuple[PackReference, ...] = ()
+    for workflow in project_json.get("workflows") or []:
+        if isinstance(workflow, dict) and (binding := read_stored_pack_binding(workflow.get("pack_binding"))):
+            required = combine_pack_requirements(required, binding.required)
+    for child in project_json.get("children") or []:
+        if isinstance(child, dict):
+            required = combine_pack_requirements(required, _archive_pack_dependencies(child))
+    return required
 
 
 def _admit_project_snapshot_graphs(project_json: dict[str, Any]) -> None:
@@ -5394,7 +5409,9 @@ async def import_project(
                 project_json,
                 is_sherpa_object=is_sherpa_object,
             )
-            _admit_project_snapshot_graphs(project_json)
+            required_packs = _archive_pack_dependencies(project_json)
+            if not required_packs:
+                _admit_project_snapshot_graphs(project_json)
             # Never restore commercial authority from archive metadata. Allocate
             # a new canonical binding in this transaction before any extraction.
             from spectra_sherpa.app.contracts.scientific_access import create_managed_project
@@ -5413,6 +5430,11 @@ async def import_project(
                     **imported_goal_fields(project_json),
                 ),
             )
+            if required_packs:
+                await authorize_project_packs(
+                    session, user_id, project.id if project is not None else None, required_packs, pending_project=True
+                )
+                _admit_project_snapshot_graphs(project_json)
             reference_requirements = _project_external_reference_requirements(project_json)
             reference_artifacts = await _stage_project_reference_artifacts(
                 reference_uploads,

@@ -252,6 +252,7 @@ def _normalize_router_mounts(extra_routers: list[RouterMount] | None) -> list[tu
 def _make_lifespan(
     extra_startup: list[Callable[[], Awaitable[None]]] | None = None,
     extra_shutdown: list[Callable[[], Awaitable[None]]] | None = None,
+    worker_initializer: Callable[[], None] | None = None,
 ):
     """Return an ASGI lifespan context manager.
 
@@ -371,7 +372,7 @@ def _make_lifespan(
             from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool, set_default_pool
 
             pool_size = settings.dag_worker_pool_size
-            _dag_pool = IsolatedWorkerPool(max_workers=pool_size)
+            _dag_pool = IsolatedWorkerPool(max_workers=pool_size, initializer=worker_initializer)
             set_default_pool(_dag_pool)
             logger.info("DAG worker capacity: %d isolated spawned processes", pool_size)
 
@@ -768,6 +769,7 @@ def create_app(
     extra_middleware: list[Callable[[FastAPI], None]] | None = None,
     extra_ws_action_registrars: list[WebSocketRegistryHook] | None = None,
     websocket_admission_provider: WebSocketAdmissionProvider | None = None,
+    worker_initializer: Callable[[], None] | None = None,
     include_server_routers: bool = True,
     include_actor_compat_route: bool = True,
     include_websocket: bool = True,
@@ -795,12 +797,14 @@ def create_app(
     # Hosted applications must not publish their admin-route inventory.
     publish_api_docs = include_api_docs and (is_local() or allows_implicit_loopback_identity())
 
+    lifespan_options = {"worker_initializer": worker_initializer} if worker_initializer is not None else {}
+    core_lifespan = _make_lifespan(extra_startup, extra_shutdown, **lifespan_options)
     _app = FastAPI(
         title=settings.app_name,
         openapi_url="/api/openapi.json" if publish_api_docs else None,
         docs_url="/api/docs" if publish_api_docs else None,
         redoc_url="/api/redoc" if publish_api_docs else None,
-        lifespan=compose_lifespan(_make_lifespan(extra_startup, extra_shutdown), extra_lifespans or ()),
+        lifespan=compose_lifespan(core_lifespan, extra_lifespans or ()),
     )
     from spectra_sherpa.app.services.ws_action_registry import build_default_ws_action_registry
 

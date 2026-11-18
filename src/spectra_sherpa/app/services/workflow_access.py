@@ -294,6 +294,8 @@ async def validate_workflow_execution_access(
     user_id: int,
     workflow_project_id: int | None,
     session: AsyncSession,
+    *,
+    qualified_pack_nodes: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Fail closed before workflow execution dereferences DB/file artifacts."""
     from spectra_sherpa.app.contracts.demo_policy import require_trial_dataset_access
@@ -305,7 +307,7 @@ async def validate_workflow_execution_access(
         if uses_managed_project_access():
             # Admit only reviewed scientific journeys. Local-path and plugin
             # nodes never inherit admission from a numerical node family.
-            if node_type not in QUALIFIED_SCIENTIFIC_NODES:
+            if node_type not in QUALIFIED_SCIENTIFIC_NODES and node_type not in qualified_pack_nodes:
                 raise HTTPException(403, detail={"code": "scientific_node_not_qualified", "node_type": node_type})
             from spectra_sherpa.app.services.dag.node_base import node_registry
 

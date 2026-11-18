@@ -229,6 +229,10 @@ async def execute_workflow_async(
         if "pack_binding" in workflow.payload
         else None
     )
+    if pack_binding is not None:
+        from spectra_sherpa.app.services.dag.pack_execution_access import require_pack_execution
+
+        await require_pack_execution(pack_binding.required)
     executor = DAGExecutor(
         runtime=runtime or ExecutionRuntime(model_artifact_writer=_MemoryModelArtifactWriter()),
         pack_binding=pack_binding,
@@ -272,7 +276,7 @@ async def execute_workflow_async(
         missing = sorted(set(declared) - set(deployment_inputs))
         unexpected = sorted(set(deployment_inputs) - set(declared))
         raise ValueError(
-            "SDK deployment input set does not match workflow " f"(missing={missing}, unexpected={unexpected})"
+            f"SDK deployment input set does not match workflow (missing={missing}, unexpected={unexpected})"
         )
 
     content_digests: dict[str, str] = {}

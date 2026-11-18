@@ -11,9 +11,10 @@ from spectra_sherpa.app.api.v1.routes.workflows import crud
 from spectra_sherpa.app.api.v1.routes.workflows.export import router
 from spectra_sherpa.app.schemas.workflows import WorkflowCreate
 from spectra_sherpa.app.services.dag.nodes.preprocessing.normalize_node import NormalizeNode
+from spectra_sherpa.app.services.dag.pack_execution_access import use_pack_execution_authorizer
 from spectra_sherpa.app.services.dag.pack_requirements import capture_pack_graph_binding
 from spectra_sherpa.app.services.python_export import build_canonical_executable_export
-from tests.pack_retention_fixtures import make_retained_registry
+from tests.pack_retention_fixtures import authorize_retained_fixture, make_retained_registry
 from tests.test_export_robustness import _deployment_workflow
 from tests.test_pack_manifest import pack
 
@@ -45,11 +46,12 @@ async def test_http_export_refuses_changed_or_stripped_saved_binding(
     test_session, test_user, monkeypatch, format_name, change
 ):
     registry = make_retained_registry(monkeypatch)
-    detail = await crud.persist_workflow(
-        WorkflowCreate(name="Retained export", nodes=[{"node_id": "pack", "node_type": "pro.reference.record"}]),
-        session=test_session,
-        current_user=test_user,
-    )
+    with use_pack_execution_authorizer(authorize_retained_fixture):
+        detail = await crud.persist_workflow(
+            WorkflowCreate(name="Retained export", nodes=[{"node_id": "pack", "node_type": "pro.reference.record"}]),
+            session=test_session,
+            current_user=test_user,
+        )
     if change == "changed_build":
         registry._pack_manifests = (pack(build_sha256="b" * 64),)
     else:
