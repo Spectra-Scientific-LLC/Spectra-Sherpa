@@ -2,9 +2,8 @@
   <Button label="Inspect archive" icon="pi pi-eye" class="p-button-text p-button-sm" @click="fileInput?.click()" />
   <input ref="fileInput" type="file" accept=".sherpa,.spectrapy,.zip" hidden aria-label="Inspect project archive" @change="selectFile" />
   <Dialog
-    :visible="visible" @update:visible="value => { if (!value) close(); }" modal header="Retained workflow"
+    :visible="visible" @update:visible="value => { if (!value) close(); }" modal header="Archive preview"
     :style="{ width: 'min(64rem, 95vw)' }" :draggable="false">
-    <p>Read-only evidence. Inspecting this archive does not import a project or run its nodes.</p>
     <p v-if="loading" role="status">Reading archived workflow…</p>
     <p v-if="error" role="alert">{{ error }}</p>
     <template v-if="inspection">
@@ -16,6 +15,7 @@
       </div>
       <RetainedGraphView :graph="inspection.graph" />
     </template>
+    <RetainedArchiveResults v-if="visible && file" :file="file" />
     <template #footer><Button label="Close" text @click="close" /></template>
   </Dialog>
 </template>
@@ -24,6 +24,7 @@
 import { ref, watch } from "vue";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
+import RetainedArchiveResults from "@/components/RetainedArchiveResults.vue";
 import RetainedGraphView from "@/components/RetainedGraphView.vue";
 import { api } from "@/api";
 import { useAppConfig } from "@/composables/useAppConfig";

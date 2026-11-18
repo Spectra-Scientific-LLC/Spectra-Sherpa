@@ -104,17 +104,19 @@ def archive_inspection_slot():
 
 
 async def inspect_archive_workflow_owned(payload: bytes, *, workflow_index: int, max_uncompressed_bytes: int):
-    """Drain owned parsing on cancellation before the caller releases its slot."""
-    task = asyncio.create_task(
-        asyncio.to_thread(
-            partial(
-                inspect_archive_workflow,
-                payload,
-                workflow_index=workflow_index,
-                max_uncompressed_bytes=max_uncompressed_bytes,
-            )
-        )
+    return await run_archive_inspection_owned(
+        inspect_archive_workflow, payload, workflow_index=workflow_index, max_uncompressed_bytes=max_uncompressed_bytes
     )
+
+
+async def run_archive_inspection_owned(function, /, *args, **kwargs):
+    """Drain trusted parsing on cancellation before the caller releases its slot."""
+    return await run_archive_operation_owned(asyncio.to_thread(partial(function, *args, **kwargs)))
+
+
+async def run_archive_operation_owned(operation):
+    """Drain composite preparation, including its nested reads, before custody exits."""
+    task = asyncio.create_task(operation)
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError:

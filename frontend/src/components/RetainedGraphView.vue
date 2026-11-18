@@ -1,15 +1,16 @@
 <template>
-      <h4>Recorded pack builds</h4>
+      <details v-if="packs.length">
+      <summary>Analysis extension versions</summary>
       <ul v-if="packs.length">
         <li v-for="pack in packs" :key="pack.pack_id">
           {{ pack.pack_id }} {{ pack.version }} <code>{{ pack.build_sha256 }}</code>
         </li>
       </ul>
-      <p v-else>No pack build identity was recorded in this graph.</p>
+      </details>
       <h4>Nodes and parameters</h4>
       <div class="retained-archive__table">
         <table>
-          <thead><tr><th>Node</th><th>Operation</th><th>Retained parameters</th></tr></thead>
+          <thead><tr><th>Node</th><th>Operation</th><th>Saved settings</th></tr></thead>
           <tbody><tr v-for="node in graph.nodes" :key="node.node_id">
             <td>{{ node.label || node.node_id }}<small v-if="node.label">{{ node.node_id }}</small></td>
             <td><code>{{ node.node_type }}</code></td>

@@ -318,7 +318,7 @@
           }"
         >
           <section v-if="retainedReadOnly && workflowStore.retainedInspection" class="retained-workspace" aria-label="Read-only retained workflow">
-            <p role="status">This workflow is read-only because its recorded operations are unavailable. Parameters and connections remain visible; saved results are available in Runs.</p>
+            <p role="status">Some analysis steps are unavailable. You can still review the saved settings and results.</p>
             <Button label="Open saved runs" icon="pi pi-history" @click="router.push({ path: '/runs', query: { project: projectStore.currentProjectId, tab: 'run_history' } })" />
             <RetainedGraphView :graph="workflowStore.retainedInspection.graph" />
           </section>

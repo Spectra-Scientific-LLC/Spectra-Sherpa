@@ -1,6 +1,8 @@
 """Offline result portability preserves original envelopes and exact port identity."""
 
+import io
 import json
+import zipfile
 from dataclasses import replace
 
 import pytest
@@ -138,3 +140,50 @@ def test_capture_uses_original_custody_and_never_marks_missing_outputs_exact(arc
     )
     with pytest.raises(ValueError, match="byte limit"):
         capture_archived_runs((run,), max_bytes=1)
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        "[]",
+        '{"id":43}',
+        '{"value":NaN}',
+        '{"value":1e999}',
+        '{"name":"one","name":"two"}',
+        '{"value":' + "[" * 40 + "0" + "]" * 40 + "}",
+    ],
+)
+def test_unbounded_or_ambiguous_record_is_refused(archived, record):
+    archive, _, original = archived
+    payload = original.model_dump(mode="json")
+    payload["runs"][0]["record_json"] = record
+    with pytest.raises(ValueError):
+        read_archived_results(archive(inventory=json.dumps(payload).encode()), max_uncompressed_bytes=1024 * 1024)
+
+
+def test_pathological_json_depth_has_a_bounded_refusal(archived):
+    archive, _, _ = archived
+    with pytest.raises(ValueError):
+        read_archived_results(archive(inventory=b"[" * 5000 + b"0" + b"]" * 5000), max_uncompressed_bytes=1024 * 1024)
+
+
+def test_missing_inventory_has_a_classified_refusal():
+    payload = build_archive(project_payload={"name": "No retained runs"}, members=[])
+    with pytest.raises(ValueError, match="member is unavailable"):
+        read_archived_results(payload, max_uncompressed_bytes=1024 * 1024)
+
+
+def test_changed_index_cannot_reuse_original_archive_manifest(archived):
+    archive, _, _ = archived
+    original = archive()
+    rewritten = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(original)) as source, zipfile.ZipFile(rewritten, "w") as target:
+        for name in source.namelist():
+            data = source.read(name)
+            if name == RESULT_INDEX:
+                changed = data.replace(b'"role":"record"', b'"role":"training"')
+                assert changed != data
+                data = changed
+            target.writestr(name, data)
+    with pytest.raises(ValueError, match="manifest integrity"):
+        read_archived_results(rewritten.getvalue(), max_uncompressed_bytes=1024 * 1024)

@@ -16,6 +16,7 @@ import stat
 import tempfile
 import uuid
 import zipfile
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -40,6 +41,7 @@ from spectra_sherpa.app.api.deps import (
 )
 from spectra_sherpa.app.api.v1.routes._http_utils import attachment_headers, safe_download_stem
 from spectra_sherpa.app.contracts.project_access import accessible_project_ids, uses_managed_project_access
+from spectra_sherpa.app.contracts.retained_archive_export import retained_archive_export_admission
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.security import check_export_allowed
@@ -143,11 +145,20 @@ from spectra_sherpa.app.services.project_data_sources import (
     effective_workflow_tab_color,
     ensure_project_advisor_channel,
 )
+from spectra_sherpa.app.services.retained_archive_export import selected_archive_runs
 from spectra_sherpa.app.services.retained_archive_inspection import (
     ArchiveInspectionBusy,
     RetainedArchiveWorkflow,
     archive_inspection_slot,
     inspect_archive_workflow_owned,
+    run_archive_inspection_owned,
+    run_archive_operation_owned,
+)
+from spectra_sherpa.app.services.retained_archive_results import (
+    ArchivedResults,
+    capture_archived_runs,
+    read_archived_output,
+    read_archived_results,
 )
 from spectra_sherpa.app.services.sherpa_object import (
     PROJECT_PAYLOAD,
@@ -4096,20 +4107,20 @@ async def _collect_project_archive_members(
     *,
     allowed_experiment_ids: set[int],
 ) -> tuple[list[ArchiveMember], list[ArchiveMember]]:
-    _, data_bytes = await asyncio.to_thread(
+    _, data_bytes = await run_archive_inspection_owned(
         _preflight_project_data_members,
         snapshot,
         allowed_experiment_ids=allowed_experiment_ids,
     )
-    model_bytes = await asyncio.to_thread(_preflight_model_member_bytes, snapshot)
+    model_bytes = await run_archive_inspection_owned(_preflight_model_member_bytes, snapshot)
     if data_bytes + model_bytes > PROJECT_ARCHIVE_RETAINED_BYTES_MAX:
         raise ProjectSnapshotStateError("Project archive exceeds the retained-byte limit")
-    data_members = await asyncio.to_thread(
+    data_members = await run_archive_inspection_owned(
         _collect_project_data_members,
         snapshot,
         allowed_experiment_ids=allowed_experiment_ids,
     )
-    model_members = await asyncio.to_thread(
+    model_members = await run_archive_inspection_owned(
         _model_members_for_snapshot,
         snapshot,
         max_total_bytes=PROJECT_ARCHIVE_RETAINED_BYTES_MAX - data_bytes,
@@ -4245,6 +4256,7 @@ def _public_archive_report(report: dict[str, Any]) -> dict[str, Any]:
 async def export_project_sherpa_object(
     project_id: int,
     version_id: int | None = None,
+    retained_run_ids: Annotated[list[int] | None, Query(max_length=256)] = None,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> FileResponse:
@@ -4260,75 +4272,107 @@ async def export_project_sherpa_object(
     else:
         project = await require_project(project_id, current_user.id, session)
 
-    if version_id:
-        query = select(ProjectVersion).where(ProjectVersion.id == version_id, ProjectVersion.project_id == project_id)
-        result = await session.execute(query)
-        version = result.scalar_one_or_none()
-        if version is None:
-            raise HTTPException(status_code=404, detail="Version not found")
-        snapshot = version.snapshot
-    else:
-        try:
-            snapshot = await _build_snapshot(project, session, actor_id=current_user.id)
-        except ProjectSnapshotStateError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-    snapshot = _prepare_project_export_snapshot(snapshot)
-    allowed_ids = await _project_experiment_ids(project.id, current_user.id, session)
+    if retained_run_ids and version_id is not None:
+        raise HTTPException(409, "Select retained runs from the current project export")
+    archive_path = None
     try:
-        await asyncio.to_thread(
-            _preflight_project_data_members,
-            snapshot,
-            allowed_experiment_ids=allowed_ids,
-        )
-        await _verify_saved_scientific_collections(
-            snapshot,
-            allowed_experiment_ids=allowed_ids,
-            user_id=current_user.id,
-            session=session,
-        )
-        data_members, model_members = await _collect_project_archive_members(
-            snapshot,
-            allowed_experiment_ids=allowed_ids,
-        )
-    except ProjectSnapshotStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    filename = f"{safe_download_stem(project.name, fallback='project')}.sherpa"
-    archive_path = _temporary_archive_path(".sherpa")
-    try:
-        await asyncio.to_thread(
-            write_archive_to_path,
-            archive_path,
-            project_payload=snapshot,
-            members=[*model_members, *data_members],
-            package_mode="full",
-        )
-    except SherpaObjectError as exc:
-        _cleanup_temporary_archive(archive_path)
-        logger.warning("Could not build .sherpa export for project %s: %s", project.id, exc)
-        raise HTTPException(status_code=500, detail="Project export archive could not be built") from exc
-    if uses_managed_project_access():
-        try:
-            await require_scientific_access(session, current_user.id, project_id, "read")
-            from spectra_sherpa.app.models.data_egress import UserEgressDefaults
+        with archive_inspection_slot() if retained_run_ids else nullcontext():
+            retained_runs = await selected_archive_runs(session, current_user.id, project_id, retained_run_ids)
+            async with retained_archive_export_admission(session, current_user.id, project_id, retained_runs):
+                if version_id:
+                    query = select(ProjectVersion).where(
+                        ProjectVersion.id == version_id, ProjectVersion.project_id == project_id
+                    )
+                    result = await session.execute(query)
+                    version = result.scalar_one_or_none()
+                    if version is None:
+                        raise HTTPException(status_code=404, detail="Version not found")
+                    snapshot = version.snapshot
+                else:
+                    try:
+                        snapshot = await run_archive_operation_owned(
+                            _build_snapshot(project, session, actor_id=current_user.id)
+                        )
+                    except ProjectSnapshotStateError as exc:
+                        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-            privacy = await session.scalar(
-                select(UserEgressDefaults)
-                .where(UserEgressDefaults.user_id == current_user.id)
-                .execution_options(populate_existing=True)
-            )
-            if privacy is not None and not privacy.allow_export:
-                raise HTTPException(403, "Export permission was withdrawn")
-        except BaseException:
+                retained_members = []
+                snapshot = _prepare_project_export_snapshot(snapshot)
+                allowed_ids = await _project_experiment_ids(project.id, current_user.id, session)
+                try:
+                    await run_archive_inspection_owned(
+                        _preflight_project_data_members,
+                        snapshot,
+                        allowed_experiment_ids=allowed_ids,
+                    )
+                    await run_archive_operation_owned(
+                        _verify_saved_scientific_collections(
+                            snapshot,
+                            allowed_experiment_ids=allowed_ids,
+                            user_id=current_user.id,
+                            session=session,
+                        )
+                    )
+                    data_members, model_members = await _collect_project_archive_members(
+                        snapshot,
+                        allowed_experiment_ids=allowed_ids,
+                    )
+                except ProjectSnapshotStateError as exc:
+                    raise HTTPException(status_code=409, detail=str(exc)) from exc
+                if retained_runs:
+                    remaining = settings.max_file_size_mb * 1024 * 1024 - sum(
+                        len(member.data) for member in [*data_members, *model_members]
+                    )
+                    try:
+                        _, retained_members = await run_archive_inspection_owned(
+                            capture_archived_runs, retained_runs, max_bytes=remaining
+                        )
+                    except (ValueError, OSError) as exc:
+                        raise HTTPException(
+                            409, "Selected retained evidence cannot be exported within the archive limits"
+                        ) from exc
+                filename = f"{safe_download_stem(project.name, fallback='project')}.sherpa"
+                archive_path = _temporary_archive_path(".sherpa")
+                try:
+                    await run_archive_inspection_owned(
+                        write_archive_to_path,
+                        archive_path,
+                        project_payload=snapshot,
+                        members=[*model_members, *data_members, *retained_members],
+                        package_mode="full",
+                    )
+                except SherpaObjectError as exc:
+                    _cleanup_temporary_archive(archive_path)
+                    logger.warning("Could not build .sherpa export for project %s: %s", project.id, exc)
+                    raise HTTPException(status_code=500, detail="Project export archive could not be built") from exc
+                if uses_managed_project_access():
+                    try:
+                        await require_scientific_access(session, current_user.id, project_id, "read")
+                        from spectra_sherpa.app.models.data_egress import UserEgressDefaults
+
+                        privacy = await session.scalar(
+                            select(UserEgressDefaults)
+                            .where(UserEgressDefaults.user_id == current_user.id)
+                            .execution_options(populate_existing=True)
+                        )
+                        if privacy is not None and not privacy.allow_export:
+                            raise HTTPException(403, "Export permission was withdrawn")
+                    except BaseException:
+                        _cleanup_temporary_archive(archive_path)
+                        raise
+                return FileResponse(
+                    archive_path,
+                    media_type="application/vnd.spectrasherpa.object+zip",
+                    filename=filename,
+                    headers=_project_archive_response_headers(filename, snapshot),
+                    background=BackgroundTask(_cleanup_temporary_archive, archive_path),
+                )
+    except ArchiveInspectionBusy as exc:
+        raise HTTPException(503, "Archive export is busy; retry shortly", headers={"Retry-After": "1"}) from exc
+    except BaseException:
+        if archive_path is not None:
             _cleanup_temporary_archive(archive_path)
-            raise
-    return FileResponse(
-        archive_path,
-        media_type="application/vnd.spectrasherpa.object+zip",
-        filename=filename,
-        headers=_project_archive_response_headers(filename, snapshot),
-        background=BackgroundTask(_cleanup_temporary_archive, archive_path),
-    )
+        raise
 
 
 @router.post("/objects/inspect", dependencies=[Depends(demo_guard("project_import"))])
@@ -4375,6 +4419,50 @@ async def inspect_archived_workflow(
         raise HTTPException(503, "Archive inspection is busy; retry shortly", headers={"Retry-After": "1"}) from exc
     except RetainedGraphError as exc:
         raise HTTPException(400, "Archive has no bounded inspectable workflow at this index") from exc
+
+
+async def _inspect_uploaded_results(file: UploadFile, *, selection: dict | None = None):
+    max_bytes = settings.max_file_size_mb * 1024 * 1024
+    try:
+        with archive_inspection_slot():
+            payload = await _read_upload_with_limit(file, max_bytes=max_bytes)
+            parser = read_archived_output if selection is not None else read_archived_results
+            return await run_archive_inspection_owned(
+                parser, payload, max_uncompressed_bytes=max_bytes, **(selection or {})
+            )
+    except ArchiveInspectionBusy as exc:
+        raise HTTPException(503, "Archive inspection is busy; retry shortly", headers={"Retry-After": "1"}) from exc
+    except (ValueError, RecursionError, zipfile.BadZipFile, RuntimeError) as exc:
+        raise HTTPException(400, "Archive has no readable retained evidence for this selection") from exc
+
+
+@router.post(
+    "/objects/inspect-results",
+    response_model=ArchivedResults,
+    dependencies=[Depends(demo_guard("project_import"))],
+)
+async def inspect_archived_results(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+) -> ArchivedResults:
+    """Inspect uploaded run evidence without importing or executing its graph."""
+    return await _inspect_uploaded_results(file)
+
+
+@router.post(
+    "/objects/inspect-output",
+    dependencies=[Depends(demo_guard("project_import"))],
+)
+async def inspect_archived_result_output(
+    file: UploadFile = File(...),
+    run_id: int = Query(..., gt=0),
+    node_id: str = Query(..., min_length=1, max_length=255),
+    port: str = Query(..., min_length=1, max_length=255),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Return the checksum-verified original JSON envelope for one selected port."""
+    encoded = await _inspect_uploaded_results(file, selection={"run_id": run_id, "node_id": node_id, "port": port})
+    return Response(content=encoded, media_type="application/json", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/objects/validate", dependencies=[Depends(demo_guard("project_import"))])

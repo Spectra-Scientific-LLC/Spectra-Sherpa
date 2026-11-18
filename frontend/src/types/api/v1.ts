@@ -2294,6 +2294,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/objects/inspect-output": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect Archived Result Output
+         * @description Return the checksum-verified original JSON envelope for one selected port.
+         */
+        post: operations["inspect_archived_result_output_api_v1_projects_objects_inspect_output_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/objects/inspect-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect Archived Results
+         * @description Inspect uploaded run evidence without importing or executing its graph.
+         */
+        post: operations["inspect_archived_results_api_v1_projects_objects_inspect_results_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/objects/inspect-workflow": {
         parameters: {
             query?: never;
@@ -4704,6 +4744,41 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** ArchivedResults */
+        ArchivedResults: {
+            /**
+             * Inspection Only
+             * @default true
+             * @constant
+             */
+            inspection_only?: true;
+            /**
+             * Prior Unrecorded History
+             * @default unknown
+             * @constant
+             */
+            prior_unrecorded_history?: "unknown";
+            /** Runs */
+            runs: components["schemas"]["ArchivedRun"][];
+            /**
+             * Schema Version
+             * @default spectra-retained-results/1
+             * @constant
+             */
+            schema_version?: "spectra-retained-results/1";
+        };
+        /** ArchivedRun */
+        ArchivedRun: {
+            evidence: components["schemas"]["RunEvidence"];
+            /** Record Json */
+            record_json: string;
+            /** Source Project Id */
+            source_project_id?: number | null;
+            /** Source Run Id */
+            source_run_id: number;
+            /** Source Workflow Id */
+            source_workflow_id?: number | null;
+        };
         /** ArtifactBatchRunItemResult */
         ArtifactBatchRunItemResult: {
             /** Artifact Uid */
@@ -5038,6 +5113,16 @@ export interface components {
             package_id?: string | null;
             /** Projection Id */
             projection_id?: string | null;
+        };
+        /** Body_inspect_archived_result_output_api_v1_projects_objects_inspect_output_post */
+        Body_inspect_archived_result_output_api_v1_projects_objects_inspect_output_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_inspect_archived_results_api_v1_projects_objects_inspect_results_post */
+        Body_inspect_archived_results_api_v1_projects_objects_inspect_results_post: {
+            /** File */
+            file: string;
         };
         /** Body_inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post */
         Body_inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post: {
@@ -15478,6 +15563,76 @@ export interface operations {
             };
         };
     };
+    inspect_archived_result_output_api_v1_projects_objects_inspect_output_post: {
+        parameters: {
+            query: {
+                run_id: number;
+                node_id: string;
+                port: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_inspect_archived_result_output_api_v1_projects_objects_inspect_output_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_archived_results_api_v1_projects_objects_inspect_results_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_inspect_archived_results_api_v1_projects_objects_inspect_results_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchivedResults"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     inspect_archived_workflow_api_v1_projects_objects_inspect_workflow_post: {
         parameters: {
             query?: {
@@ -16150,6 +16305,7 @@ export interface operations {
         parameters: {
             query?: {
                 version_id?: number | null;
+                retained_run_ids?: number[] | null;
             };
             header?: never;
             path: {

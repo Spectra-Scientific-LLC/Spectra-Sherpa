@@ -10,10 +10,11 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 import zipfile
 from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from spectra_sherpa.app.schemas.execution_runs import ExecutionRunOut
 from spectra_sherpa.app.schemas.run_evidence import RunEvidence
@@ -23,7 +24,7 @@ from spectra_sherpa.app.services.run_output_retention import (
     read_output_bytes,
     retained_read_budget,
 )
-from spectra_sherpa.app.services.sherpa_object import ArchiveMember, inspect_archive_bytes
+from spectra_sherpa.app.services.sherpa_object import ArchiveMember, inspect_archive_bytes, validate_archive_bytes
 from spectra_sherpa.core.pack_manifest import Frozen
 
 RESULT_INDEX = "retained-results.json"
@@ -38,10 +39,26 @@ class ArchivedRun(Frozen):
     record_json: str = Field(max_length=MAX_INDEX_BYTES)
     evidence: RunEvidence
 
+    @field_validator("record_json")
+    @classmethod
+    def bounded_record(cls, value: str) -> str:
+        record = _read_json(value.encode("utf-8"), max_bytes=MAX_INDEX_BYTES)
+        if not isinstance(record, dict):
+            raise ValueError("Archived run record must be an object")
+        return value
+
     @model_validator(mode="after")
     def bound_inventory(self):
         if len(self.evidence.outputs) > 1024 or sum(len(ports) for ports in self.evidence.outputs.values()) > 1024:
             raise ValueError("Archived run has too many outputs")
+        record = _read_json(self.record_json.encode("utf-8"), max_bytes=MAX_INDEX_BYTES)
+        for field, expected in (
+            ("id", self.source_run_id),
+            ("workflow_id", self.source_workflow_id),
+            ("project_id", self.source_project_id),
+        ):
+            if field in record and record[field] != expected:
+                raise ValueError("Archived run record disagrees with its source identity")
         return self
 
 
@@ -126,8 +143,38 @@ def _unique_object(pairs):
     return result
 
 
+def _read_json(encoded: bytes, *, max_bytes: int):
+    if len(encoded) > max_bytes:
+        raise ValueError("Retained JSON exceeds its byte limit")
+
+    def reject_constant(value):
+        raise ValueError("Retained JSON contains a non-finite number")
+
+    try:
+        value = json.loads(encoded, object_pairs_hook=_unique_object, parse_constant=reject_constant)
+    except (RecursionError, UnicodeError) as exc:
+        raise ValueError("Retained JSON is malformed or too deeply nested") from exc
+    pending = [(value, 0)]
+    count = 0
+    while pending:
+        item, depth = pending.pop()
+        count += 1
+        if depth > 24 or count > 200_000:
+            raise ValueError("Retained JSON exceeds its structure limit")
+        if isinstance(item, float) and not math.isfinite(item):
+            raise ValueError("Retained JSON contains a non-finite number")
+        if isinstance(item, dict):
+            pending.extend((nested, depth + 1) for nested in item.values())
+        elif isinstance(item, list):
+            pending.extend((nested, depth + 1) for nested in item)
+    return value
+
+
 def _read_member(archive, name, limit):
-    info = archive.getinfo(name)
+    try:
+        info = archive.getinfo(name)
+    except KeyError as exc:
+        raise ValueError("Retained archive member is unavailable") from exc
     if info.file_size > limit:
         raise ValueError("Retained archive member exceeds its read limit")
     with archive.open(info) as stream:
@@ -150,8 +197,12 @@ def read_archived_results(payload: bytes, *, max_uncompressed_bytes: int) -> Arc
         encoded = _read_member(archive, RESULT_INDEX, MAX_INDEX_BYTES)
     # Duplicate-field rejection precedes Pydantic's strict JSON-mode parser,
     # which correctly admits JSON arrays for immutable tuple fields.
-    json.loads(encoded, object_pairs_hook=_unique_object)
-    return ArchivedResults.model_validate_json(encoded)
+    _read_json(encoded, max_bytes=MAX_INDEX_BYTES)
+    index = ArchivedResults.model_validate_json(encoded)
+    validation = validate_archive_bytes(payload, max_uncompressed_bytes=max_uncompressed_bytes)
+    if not validation["valid"]:
+        raise ValueError("Retained archive manifest integrity mismatch")
+    return index
 
 
 def read_archived_output(payload: bytes, *, run_id: int, node_id: str, port: str, max_uncompressed_bytes: int) -> bytes:
@@ -169,7 +220,7 @@ def read_archived_output(payload: bytes, *, run_id: int, node_id: str, port: str
         encoded = _read_member(archive, retained_output_member(evidence.sha256), evidence.byte_count)
     if len(encoded) != evidence.byte_count or hashlib.sha256(encoded).hexdigest() != evidence.sha256:
         raise ValueError("Archived output checksum mismatch")
-    value = json.loads(encoded, object_pairs_hook=_unique_object)
+    value = _read_json(encoded, max_bytes=FORMAT_OUTPUT_BYTES_LIMIT)
     if not isinstance(value, dict) or value.get("format_version") != evidence.format_version or "value" not in value:
         raise ValueError("Archived output envelope is invalid")
     admit_retained_value(value["value"])
