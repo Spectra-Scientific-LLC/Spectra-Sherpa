@@ -230,3 +230,29 @@ a read-only inspection authority, not a saved-model application alias or
 permission to replay an older fit with current code.
 `contract_predecessors_baseline_warning.json` does the same for the profile
 captured before penalized-baseline non-convergence became a recorded warning.
+
+## Captured bytes in trusted saved execution
+
+A trusted Python `SavedExecutionAdmission` may return a concrete
+`CapturedModelArtifacts` inventory from `admit`. The saved executor checks its
+exact model-ID set against already admitted workflow references before reserving
+a run. The same immutable manifest/NPZ bytes then supply both the parent and
+isolated-worker model readers, without falling back to live files. Each load
+returns fresh decoded objects; the canonical application node still owns model
+semantics, preprocessing replay and applicability. Existing admission hooks
+returning `None` retain their behavior.
+
+The caller owns model authorization, safe byte capture, comparison with its
+approved identity and any later authority withdrawal. The inventory is a trusted
+Python capability, not an HTTP field or MCP operation. Its constructor verifies
+manifest authority, artifact UID, array integrity, closed NPZ members and bounded
+NPY allocation before dispatch. Limits apply to each envelope and to aggregate
+captured and decoded bytes; object arrays and duplicate members are refused.
+No fitting, scientific substitution or rewriting of model bytes occurs.
+
+`tests/test_captured_model_artifacts.py` and
+`tests/test_saved_execution_admission.py` cover exact inventory refusal before
+reservation, immutable copies, malformed/oversized arrays, actual spawned
+application and saved-run retention after live model files are removed. Those
+checks establish this execution mechanism; a caller's approval, publication or
+scientific qualification remains a separate responsibility.

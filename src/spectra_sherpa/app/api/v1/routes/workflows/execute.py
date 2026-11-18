@@ -868,6 +868,7 @@ async def _execute_saved_workflow(
     wf_review_provenance = await snapshot_review_provenance(session, workflow_id)
     admitted_run_id = None
     frozen_sources = None
+    captured_models = None
     if admission is not None:
         import copy
 
@@ -885,7 +886,7 @@ async def _execute_saved_workflow(
                 project_id=wf_project_id,
             )
         )
-        await admission.admit(
+        captured_models = await admission.admit(
             session,
             SavedExecutionSnapshot(
                 workflow_id=workflow_id,
@@ -898,6 +899,14 @@ async def _execute_saved_workflow(
                 sources=frozen_sources,
             ),
         )
+        if captured_models is not None:
+            from spectra_sherpa.core.captured_model_artifacts import CapturedModelArtifacts
+
+            if type(captured_models) is not CapturedModelArtifacts:
+                raise ValueError("Admission returned an unsupported captured model inventory")
+            captured_models.require_exact_ids(
+                admitted_model_artifact_ids(list(workflow.nodes), None, force_explicit_scope=True)
+            )
         reserved = await _reserve_run(
             session,
             workflow_id=workflow_id,
@@ -1145,7 +1154,9 @@ async def _execute_saved_workflow(
         from spectra_sherpa.app.api.deps import enforce_demo_execution_quota
 
         enforce_demo_execution_quota(user_id)
-        allowed_model_artifact_uids = admitted_model_artifact_ids(execution_nodes, payload.initial_data)
+        allowed_model_artifact_uids = admitted_model_artifact_ids(
+            execution_nodes, payload.initial_data, force_explicit_scope=captured_models is not None
+        )
         if batch_binding is not None:
             preloaded_datasets = {batch_binding.source_id: batch_binding.loaded}
         if workflow_requires_canonical_artifact_grant(workflow.nodes):
@@ -1281,6 +1292,7 @@ async def _execute_saved_workflow(
                 canonical_artifact_read_grant=canonical_artifact_read_grant,
                 preloaded_datasets=preloaded_datasets,
                 dataset_source_resolver=frozen_sources,
+                captured_model_artifacts=captured_models,
                 allowed_model_artifact_uids=allowed_model_artifact_uids,
                 pin_preloaded_members=batch_binding is not None,
                 model_owner_session=session,

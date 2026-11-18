@@ -13,6 +13,7 @@ from spectra_sherpa.app.services.dag.nodes.classification.plsda_state import (
 from spectra_sherpa.app.services.dataset_source_resolver import ApplicationDatasetSourceResolver
 from spectra_sherpa.app.services.model_store import get_model_store
 from spectra_sherpa.core.canonical_artifact import ReadOnlyCanonicalArtifactReader
+from spectra_sherpa.core.captured_model_artifacts import CapturedModelArtifacts
 from spectra_sherpa.core.execution_runtime import ExecutionRuntime
 from spectra_sherpa.core.model_artifact import ReadOnlyModelArtifactReader
 
@@ -100,6 +101,7 @@ def build_application_execution_runtime(
     *,
     canonical_artifact_read_grant: Any = None,
     model_artifact_reader: Any = None,
+    captured_model_artifacts: CapturedModelArtifacts | None = None,
     preloaded_datasets: dict[str, Any] | None = None,
     allowed_model_artifact_uids: tuple[str, ...] | None = None,
     pin_preloaded_members: bool = False,
@@ -127,6 +129,11 @@ def build_application_execution_runtime(
         if model_artifact_reader is not None:
             raise ValueError("A scoped execution cannot override its admitted model reader")
         reader = worker_reader
+    if captured_model_artifacts is not None:
+        if type(captured_model_artifacts) is not CapturedModelArtifacts or model_artifact_reader is not None:
+            raise ValueError("Captured execution requires the concrete immutable model reader")
+        captured_model_artifacts.require_exact_ids(allowed_model_artifact_uids)
+        reader = worker_reader = captured_model_artifacts
     canonical_reader = None
     if canonical_artifact_read_grant is not None:
         canonical_reader = ReadOnlyCanonicalArtifactReader(

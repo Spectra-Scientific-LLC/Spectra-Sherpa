@@ -394,13 +394,14 @@ async def validate_workflow_execution_access(
     return admitted_datasets
 
 
-def admitted_model_artifact_ids(nodes, initial_data) -> tuple[str, ...] | None:
+def admitted_model_artifact_ids(nodes, initial_data, *, force_explicit_scope=False) -> tuple[str, ...] | None:
     """Project already-validated model references into runtime read authority.
 
     Must be called immediately after validate_workflow_execution_access.
     A connected model_ref cannot grant ambient access to a different artifact.
+    Trusted captured execution requests an explicit scope even in local mode.
     """
-    if not uses_managed_project_access():
+    if not force_explicit_scope and not uses_managed_project_access():
         return None
     return tuple(
         sorted(
