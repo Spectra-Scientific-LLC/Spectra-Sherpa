@@ -39,6 +39,17 @@ scope cannot start a previously queued request. The operating-system parent
 sentinel also ends the worker if the backend exits abruptly. Standalone calls
 outside a workflow retain one process per call.
 
+Cold process startup runs in an owned thread so it cannot starve the event
+loop's authority checks. Cancellation drains that startup before reaping the
+child and releasing capacity. Both workflow and standalone dispatch wait for
+startup admission before sending work over the private control channel.
+Per-process lifecycle locks keep concurrent starts and cleanup independent;
+synchronous shutdown waits for pending startup and reaps all owned children.
+This shutdown wait is deliberate and is not a claim of nonblocking shutdown.
+`tests/test_worker_startup_custody.py` covers delayed/concurrent startup,
+deadline expiry, repeated and AnyIO cancellation, shutdown races and partial
+startup failure.
+
 Nested execution after a completed node discards the idle outer worker before
 acquiring capacity; the outer workflow starts a fresh worker if it resumes.
 Nesting during an active dispatch is refused instead of cancelling that node
