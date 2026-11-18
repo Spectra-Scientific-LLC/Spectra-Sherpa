@@ -48,7 +48,10 @@ priced offer or a license expansion for existing subscribers.
 Installed node and tool bindings are composed atomically. Tool identities keep
 the qualified pack namespace separate from their exposed transport names. Both
 identities, complete interface metadata, handlers and manifest enter exact
-composition checks. Duplicate identities/aliases fail. Bound interfaces are
+composition checks. Trusted bootstrap explicitly initializes the fixed builtin
+tool set, then refuses collisions with installed names and aliases regardless of
+import order. Private adapters must also refuse collisions with their complete
+commercial catalog before exposure. Bound interfaces are
 detached and immutable; existing WS/Advisor/global tool registries and the OSS
 MCP allowlist receive no pack handlers. Private adapters must check current
 complete dependency entitlements and operation authority before dispatch. No

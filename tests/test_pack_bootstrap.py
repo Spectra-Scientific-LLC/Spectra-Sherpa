@@ -227,6 +227,12 @@ def test_unclassified_or_unowned_pack_tool_is_refused(registry, extension, chang
         startup.installed_pack_tools()
 
 
+@pytest.mark.parametrize("field", ["name", "mcp_name"])
+def test_pack_tool_cannot_shadow_builtin_identity_or_alias(registry, extension, field):
+    with pytest.raises(ValueError, match="collides with an installed tool"):
+        startup.bootstrap(extensions=(with_tool(extension, **{field: "list_node_types"}),))
+
+
 def test_duplicate_tool_aliases_and_missing_handlers_are_refused(registry, extension):
     extension = with_tool(extension)
     extra = replace(
@@ -278,6 +284,23 @@ assert node_registry.list_nodes()
 assert node_registry.is_frozen
 from spectra_sherpa.app.services.pack_bootstrap import bootstrap
 assert bootstrap() == ()
+"""
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=45)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("tools_first", [False, True])
+def test_host_bootstrap_initializes_fixed_tools_without_premature_catalog_read(tools_first):
+    script = f"""
+from spectra_sherpa.app.services.dag.node_base import node_registry
+if {tools_first!r}:
+    import spectra_sherpa.app.services.tools.builtin
+assert not node_registry.is_frozen
+from spectra_sherpa.app.services.pack_bootstrap import bootstrap
+assert bootstrap() == ()
+assert node_registry.is_frozen
+from spectra_sherpa.app.services.tools.registry import tool_registry
+assert tool_registry.get("list_node_types") is not None
 """
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=45)
     assert result.returncode == 0, result.stderr

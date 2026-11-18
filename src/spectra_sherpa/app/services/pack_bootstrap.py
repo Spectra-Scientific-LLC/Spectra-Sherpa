@@ -15,7 +15,7 @@ from pathlib import Path
 
 from spectra_sherpa import __version__
 from spectra_sherpa.app.services.tools.catalog import project_tool_catalog
-from spectra_sherpa.app.services.tools.registry import ToolRegistry
+from spectra_sherpa.app.services.tools.registry import ToolRegistry, tool_registry
 from spectra_sherpa.app.services.tools.schemas import ToolDefinition, ToolHandler
 from spectra_sherpa.core.pack_build import PackFile, verify_installed_build
 from spectra_sherpa.core.pack_manifest import PackManifest, validate_pack_set
@@ -82,6 +82,16 @@ def bootstrap(*, extensions: tuple[InstalledPack, ...] = ()) -> tuple[PackManife
         builtin_nodes = dict(registry._nodes)
         previous = registry._composition
     try:
+        # Initialize the fixed builtin set outside the catalog lock. Checking
+        # only previously imported tools would make admission import-dependent.
+        from spectra_sherpa.app.services.tools import builtin  # noqa: F401
+
+        reserved_names = {
+            name
+            for definition in tool_registry.list_definitions()
+            for name in (definition.name, definition.mcp_name)
+            if name is not None
+        }
         manifests = validate_pack_set(
             tuple(pack.manifest for pack in extensions),
             core_version=__version__,
@@ -137,6 +147,8 @@ def bootstrap(*, extensions: tuple[InstalledPack, ...] = ()) -> tuple[PackManife
                 definition = ToolDefinition.model_validate(tool.definition.model_dump())
                 if definition.distribution != "pro" or not definition.requires_user:
                     raise ValueError("Pack tool requires explicit pro distribution and user identity")
+                if {definition.name, definition.mcp_name} & reserved_names:
+                    raise ValueError("Pack tool name or alias collides with an installed tool")
                 staged_tools.register(definition, tool.handler)
                 entry = staged_tools.get(definition.name)
                 assert entry is not None
