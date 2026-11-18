@@ -45,6 +45,7 @@ from spectra_sherpa.app.services.dag.nodes.preprocessing import (
 from spectra_sherpa.app.services.dag.nodes.selection import variable_select_node
 from spectra_sherpa.core import execution_runtime as execution_runtime_contract
 from spectra_sherpa.core import model_artifact as model_artifact_contract
+from spectra_sherpa.core import pack_model_integrity
 from spectra_sherpa.core.model_artifact import ModelArtifactIntegrityError
 from spectra_sherpa.execution_contract_vocabulary import (
     DatasetRankPolicy,
@@ -492,6 +493,7 @@ bind_stable_execution_contract(
         plsda_state_authority,
         execution_runtime_contract,
         model_artifact_contract,
+        pack_model_integrity,
         preprocessing_shared,
         derivative_node,
         emsc_node,

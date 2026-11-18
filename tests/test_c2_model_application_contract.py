@@ -83,6 +83,7 @@ def test_saved_model_application_has_one_exact_local_contract() -> None:
         "spectra_sherpa.app.services.dag.nodes.selection.variable_select_node",
         "spectra_sherpa.core.execution_runtime",
         "spectra_sherpa.core.model_artifact",
+        "spectra_sherpa.core.pack_model_integrity",
     }
     assert [(port.name, port.type_ref) for port in metadata.output_ports or ()] == [
         ("result", "spectrasherpa://types/Array2D/1.0"),
@@ -372,3 +373,17 @@ def test_application_contract_binds_exact_legacy_admission_source():
     }
     components = {component["component_id"]: component for component in contract.payload["implementation_components"]}
     assert components[expected["component_id"]] == expected
+
+
+def test_application_contract_binds_exact_pack_array_admission_source():
+    import hashlib
+    import inspect
+
+    from spectra_sherpa.core import pack_model_integrity
+
+    contract = node_registry.get_metadata("model.load_apply").resolved_execution_contract()
+    components = {component["component_id"]: component for component in contract.payload["implementation_components"]}
+    assert components[pack_model_integrity.__name__] == {
+        "component_id": pack_model_integrity.__name__,
+        "digest": hashlib.sha256(inspect.getsource(pack_model_integrity).encode("utf-8")).hexdigest(),
+    }

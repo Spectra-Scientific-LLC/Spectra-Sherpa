@@ -1,7 +1,8 @@
 <template>
   <Button label="Inspect archive" icon="pi pi-eye" class="p-button-text p-button-sm" @click="fileInput?.click()" />
   <input ref="fileInput" type="file" accept=".sherpa,.spectrapy,.zip" hidden aria-label="Inspect project archive" @change="selectFile" />
-  <Dialog :visible="visible" @update:visible="value => { if (!value) close(); }" modal header="Retained workflow"
+  <Dialog
+    :visible="visible" @update:visible="value => { if (!value) close(); }" modal header="Retained workflow"
     :style="{ width: 'min(64rem, 95vw)' }" :draggable="false">
     <p>Read-only evidence. Inspecting this archive does not import a project or run its nodes.</p>
     <p v-if="loading" role="status">Reading archived workflow…</p>
