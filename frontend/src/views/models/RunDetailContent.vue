@@ -204,7 +204,14 @@
                 :title="`${detail?.run.name || 'run'}-${selectedNode || 'validation'}`"
               />
               <p v-if="ledgerUnavailableReason" role="status">{{ ledgerUnavailableReason }}</p>
-              <SavedValue v-if="!validationRows.length && nodeOutput && selectedPresentation && !selectedPresentation.presentation.modes.includes('plot') && selectedPresentation.presentation.kind !== 'numeric_matrix'" :value="nodeOutput.presentation_value" scientific />
+              <section v-if="showRetainedValueFallback" aria-label="Retained values">
+                <p>The saved view is unavailable. These values are shown as recorded.</p>
+                <section v-for="(value, port) in values" :key="port">
+                  <h3>{{ port }}</h3>
+                  <SavedValue :value="value" />
+                </section>
+              </section>
+              <SavedValue v-else-if="!validationRows.length && nodeOutput && selectedPresentation && !selectedPresentation.presentation.modes.includes('plot') && selectedPresentation.presentation.kind !== 'numeric_matrix'" :value="nodeOutput.presentation_value" scientific />
               <QuickPlotModal v-else-if="nodeOutput && selectedDefinition && (!validationRows.length || selectedPresentation?.presentation.modes.includes('plot'))" :key="selectedNode" embedded :model-value="true"
                 :table-only="!!selectedPresentation && !selectedPresentation.presentation.modes.includes('plot')"
                 :node-output="nodeOutput" :node-type="selectedDefinition.node_type" :node-label="selectedDefinition.label || selectedNode"
@@ -267,7 +274,7 @@ import { useAdvisorStore } from '@/stores/advisor';
 import { useAppConfig } from '@/composables/useAppConfig';
 import { requestAdvisorPrompt } from '@/lib/advisorPromptActions';
 import { buildNodeOutput } from '@/utils/nodeOutput';
-import { availableScientificPresentations, resolveScientificPresentation, projectScientificPresentation, presentationResolutionError } from '@/utils/scientificPresentation';
+import { availableScientificPresentations, resolveScientificPresentation, projectScientificPresentation, presentationResolutionError, scientificPlotOptions } from '@/utils/scientificPresentation';
 import QuickPlotModal from '@/views/workflow-builder/modals/QuickPlotModal.vue';
 import SavedValue from './SavedValue.vue';
 import { downloadCsv, downloadJson } from '@/utils/download';
@@ -526,6 +533,15 @@ const presentationAvailabilityNotice = computed(() => {
 const selectedPresentation = computed(() => resolveScientificPresentation(undefined, rawNodeOutput.value, selectedPresentationId.value));
 const presentationError = computed(() => rawNodeOutput.value?.presentation_contract ? presentationResolutionError(undefined, rawNodeOutput.value, selectedPresentationId.value) : null);
 const nodeOutput = computed(() => rawNodeOutput.value?.presentation_contract ? projectScientificPresentation(rawNodeOutput.value, selectedPresentation.value) : rawNodeOutput.value);
+const showRetainedValueFallback = computed(() => {
+  if (!rawNodeOutput.value?.presentation_contract) return false;
+  // Missing selected evidence keeps its existing explicit refusal. A generic
+  // view substitutes only for a renderer, never for a missing scientific port.
+  if (!selectedPresentation.value) return false;
+  if (!selectedPresentation.value.presentation.modes.includes('plot')) return false;
+  try { scientificPlotOptions(nodeOutput.value); return false; }
+  catch { return true; }
+});
 const validationRows = computed<ValidationLedgerRow[]>(() =>
   extractValidationLedgerRows(nodeOutput.value?.presentation_value),
 );

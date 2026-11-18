@@ -57,6 +57,8 @@ class Workflow(Base):
     )
     last_executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     integrity_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    # Exact saved pack identity; null historical rows never acquire a current build implicitly.
+    pack_binding: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     proposal_receipt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Campaign cross-validation scope retained by a sheet opened from a
     # candidate; its evaluator is then scored with those exact folds.

@@ -216,7 +216,23 @@ async def execute_workflow_async(
     if not isinstance(deployment_inputs, Mapping):
         raise TypeError("deployment_inputs must be a mapping keyed by stream name")
 
-    executor = DAGExecutor(runtime=runtime or ExecutionRuntime(model_artifact_writer=_MemoryModelArtifactWriter()))
+    from spectra_sherpa.core.pack_requirements import parse_pack_graph_binding
+
+    # Re-verify mutable payload bytes before building any executable node.
+    workflow = WorkflowSpec.from_dict(workflow.as_dict())
+    pack_binding = (
+        parse_pack_graph_binding(
+            json.dumps(
+                workflow.payload["pack_binding"], ensure_ascii=False, separators=(",", ":"), allow_nan=False
+            ).encode("utf-8")
+        )
+        if "pack_binding" in workflow.payload
+        else None
+    )
+    executor = DAGExecutor(
+        runtime=runtime or ExecutionRuntime(model_artifact_writer=_MemoryModelArtifactWriter()),
+        pack_binding=pack_binding,
+    )
     for node in workflow.payload["nodes"]:
         executor.add_node(
             WorkflowNode(

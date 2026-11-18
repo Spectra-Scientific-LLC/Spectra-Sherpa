@@ -187,6 +187,9 @@ class ReadOnlyModelArtifactReader:
         require_artifact_identity(manifest, expected_uid=artifact_uid)
         with np.load(str(arrays_path), allow_pickle=False) as archive:
             arrays = {name: np.array(values, copy=True) for name, values in archive.items()}
+        from spectra_sherpa.core.pack_model_integrity import require_pack_model_integrity
+
+        require_pack_model_integrity(manifest, arrays)
         return manifest, arrays
 
 
@@ -229,6 +232,9 @@ def load_verified_artifact_directory(artifact_dir: Path) -> tuple[dict[str, Any]
         )
     with np.load(str(arrays_path), allow_pickle=False) as archive:
         arrays = {name: np.array(values, copy=True) for name, values in archive.items()}
+    from spectra_sherpa.core.pack_model_integrity import require_pack_model_integrity
+
+    require_pack_model_integrity(manifest, arrays)
     return manifest, arrays
 
 

@@ -132,6 +132,9 @@ def _apply_model_artifact(
 ) -> dict[str, Any]:
     """Apply one verified saved artifact through the sole model-type adapter registry."""
 
+    from spectra_sherpa.core.pack_model_integrity import scientific_model_arrays
+
+    arrays = scientific_model_arrays(manifest, arrays)
     artifact_uid = manifest.get("artifact_uid")
     if not isinstance(artifact_uid, str) or not artifact_uid or artifact_uid != artifact_uid.strip():
         raise ValueError("model artifact manifest has no valid artifact_uid")

@@ -10,6 +10,7 @@
     "docs/architecture/module-map.md",
     "docs/architecture/pack-identity.md",
     "docs/architecture/pack-startup.md",
+    "docs/architecture/retained-pack-evidence.md",
     "docs/architecture/sherpa-dataset.md",
     "docs/architecture/workflows.md",
     "docs/attributions/brukeropus.md",

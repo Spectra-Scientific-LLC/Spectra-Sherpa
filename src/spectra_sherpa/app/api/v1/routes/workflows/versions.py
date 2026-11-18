@@ -37,6 +37,7 @@ from spectra_sherpa.app.services.dag.saved_graph_admission import (
     SavedGraphAdmissionError,
     admit_saved_workflow_graph,
 )
+from spectra_sherpa.app.services.pack_requirements import require_stored_pack_binding
 from spectra_sherpa.app.services.project_data_sources import (
     ensure_sheet_advisor_channel,
     sync_workflow_data_sources,
@@ -67,6 +68,7 @@ def _admit_snapshot_graph(snapshot: dict) -> None:
             ).as_dict()
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+    require_stored_pack_binding(snapshot.get("nodes") or [], snapshot.get("pack_binding"))
     try:
         admission = admit_saved_workflow_graph(
             snapshot.get("nodes") or [],
@@ -245,6 +247,8 @@ async def restore_workflow_version(
         workflow.technique = snapshot["technique"]
     if "sample_type" in snapshot:
         workflow.sample_type = snapshot["sample_type"]
+
+    workflow.pack_binding = snapshot.get("pack_binding")
 
     # Clear existing nodes and edges via ORM (delete-orphan cascade handles DB deletion)
     workflow.nodes.clear()

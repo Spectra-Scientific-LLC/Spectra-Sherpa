@@ -10,6 +10,7 @@
 
   <input ref="fileInput" type="file" accept=".sherpa,.spectrapy,.zip" class="hidden-file-input" @change="onFileSelected" />
   <input ref="referenceFileInput" type="file" multiple class="hidden-file-input" @change="onReferenceFilesSelected" />
+  <RetainedArchiveInspector />
 
   <Dialog
     v-model:visible="referenceRebindVisible"
@@ -66,6 +67,7 @@ import { useRouter } from "vue-router";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import { useToast } from "primevue/usetoast";
+import RetainedArchiveInspector from "@/components/RetainedArchiveInspector.vue";
 import ProjectImportDestinationDialog from "@/components/ProjectImportDestinationDialog.vue";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";

@@ -131,6 +131,7 @@ from spectra_sherpa.app.services.model_store import (
     ModelManifestJSONError,
     parse_model_manifest_json,
 )
+from spectra_sherpa.app.services.pack_requirements import require_stored_pack_binding
 from spectra_sherpa.app.services.prepared_data import (
     PREPARED_DATA_SIDECAR_MAX_BYTES,
     PreparedDataOverrides,
@@ -141,6 +142,12 @@ from spectra_sherpa.app.services.prepared_data import (
 from spectra_sherpa.app.services.project_data_sources import (
     effective_workflow_tab_color,
     ensure_project_advisor_channel,
+)
+from spectra_sherpa.app.services.retained_archive_inspection import (
+    ArchiveInspectionBusy,
+    RetainedArchiveWorkflow,
+    archive_inspection_slot,
+    inspect_archive_workflow_owned,
 )
 from spectra_sherpa.app.services.sherpa_object import (
     PROJECT_PAYLOAD,
@@ -177,6 +184,7 @@ def _admit_project_snapshot_graphs(project_json: dict[str, Any]) -> None:
                 status_code=400,
                 detail=f"Archived workflow {workflow_index} purpose is not current: {exc}",
             ) from exc
+        require_stored_pack_binding(workflow.get("nodes") or [], workflow.get("pack_binding"))
         try:
             admission = admit_saved_workflow_graph(
                 workflow.get("nodes") or [],
@@ -3564,6 +3572,7 @@ async def _build_snapshot(
                 "description": wf.description,
                 "status": wf.status,
                 "purpose": wf.purpose,
+                **({"pack_binding": wf.pack_binding} if wf.pack_binding is not None else {}),
                 "fold_validation_plan": wf.fold_validation_plan,
                 "integrity_hash": wf.integrity_hash,
                 "technique": wf.technique,
@@ -4340,6 +4349,34 @@ async def inspect_sherpa_object(
     return _public_archive_report(report)
 
 
+@router.post(
+    "/objects/inspect-workflow",
+    response_model=RetainedArchiveWorkflow,
+    dependencies=[Depends(demo_guard("project_import"))],
+)
+async def inspect_archived_workflow(
+    file: UploadFile = File(...),
+    workflow_index: int = Query(0, ge=0, le=1023),
+    current_user: User = Depends(get_current_user),
+) -> RetainedArchiveWorkflow:
+    """Read unknown-node graph evidence without imports, execution or persistence."""
+    from spectra_sherpa.core.retained_graph import RetainedGraphError
+
+    max_bytes = settings.max_file_size_mb * 1024 * 1024
+    try:
+        with archive_inspection_slot():
+            payload = await _read_upload_with_limit(file, max_bytes=max_bytes)
+            return await inspect_archive_workflow_owned(
+                payload,
+                workflow_index=workflow_index,
+                max_uncompressed_bytes=max_bytes,
+            )
+    except ArchiveInspectionBusy as exc:
+        raise HTTPException(503, "Archive inspection is busy; retry shortly", headers={"Retry-After": "1"}) from exc
+    except RetainedGraphError as exc:
+        raise HTTPException(400, "Archive has no bounded inspectable workflow at this index") from exc
+
+
 @router.post("/objects/validate", dependencies=[Depends(demo_guard("project_import"))])
 async def validate_sherpa_object(
     file: UploadFile = File(...),
@@ -4725,6 +4762,7 @@ async def _restore_workflows_from_snapshot(
             status=wf_data.get("status") or "draft",
             purpose=require_workflow_purpose(wf_data.get("purpose")),
             fold_validation_plan=fold_plan,
+            pack_binding=copy.deepcopy(wf_data.get("pack_binding")),
             canvas_state=wf_data.get("canvas_state"),
             notes=wf_data.get("notes"),
             integrity_hash=wf_data.get("integrity_hash"),

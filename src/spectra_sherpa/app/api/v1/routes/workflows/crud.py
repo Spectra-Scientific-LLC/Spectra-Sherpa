@@ -4,6 +4,7 @@ CRUD endpoints: list / create / get / update / delete workflows.
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections import defaultdict, deque
 from datetime import datetime
@@ -47,6 +48,7 @@ from spectra_sherpa.app.services.dag.saved_graph_admission import (
     SavedGraphAdmissionError,
     admit_saved_workflow_graph,
 )
+from spectra_sherpa.app.services.pack_requirements import capture_saved_pack_binding, require_stored_pack_binding
 from spectra_sherpa.app.services.project_data_sources import (
     effective_workflow_tab_color,
     ensure_sheet_advisor_channel,
@@ -638,9 +640,11 @@ async def persist_workflow(
 
     admission = _admit_current_workflow_graph(list(payload.nodes), list(payload.edges))
 
+    captured_binding = capture_saved_pack_binding(admission.nodes)
     # Create workflow
     workflow = Workflow(
         user_id=user_id,
+        pack_binding=captured_binding,
         name=payload.name,
         description=payload.description,
         status=payload.status,
@@ -831,6 +835,7 @@ async def duplicate_workflow(
         }
         for edge in source.edges
     ]
+    require_stored_pack_binding(node_dicts, source.pack_binding)
     try:
         admission = admit_saved_workflow_graph(node_dicts, edge_dicts, current_graph=True)
     except SavedGraphAdmissionError as exc:
@@ -846,6 +851,7 @@ async def duplicate_workflow(
     copy_name = await _unique_copy_name(source.name, source.project_id, user_id, session)
 
     duplicate = Workflow(
+        pack_binding=copy.deepcopy(source.pack_binding),
         user_id=user_id,
         project_id=source.project_id,
         name=copy_name,
@@ -1061,12 +1067,17 @@ async def update_workflow(
     await require_scientific_access(session, user_id, workflow.project_id, "write", resource_owner_id=workflow.user_id)
     _require_mutable_analysis_workflow(workflow)
 
+    require_stored_pack_binding(
+        [{"node_id": node.node_id, "node_type": node.node_type} for node in workflow.nodes],
+        workflow.pack_binding,
+    )
     prospective_nodes: list[object] = list(payload.nodes) if payload.nodes is not None else list(workflow.nodes)
     prospective_edges: list[object] = list(payload.edges) if payload.edges is not None else list(workflow.edges)
     from spectra_sherpa.app.services.sample_review_custody import require_review_filters_preserved
 
     await require_review_filters_preserved(session, workflow.id, prospective_nodes, prospective_edges)
     admission = _admit_current_workflow_graph(prospective_nodes, prospective_edges)
+    captured_binding = capture_saved_pack_binding(admission.nodes)
 
     # Capture before-state for audit. Pre-mutation snapshot of fields
     # the route is allowed to change. Picked to support reproducibility
@@ -1196,6 +1207,7 @@ async def update_workflow(
             )
         )
         workflow.integrity_hash = compute_workflow_hash(hash_nodes, hash_edges)
+        workflow.pack_binding = captured_binding
 
     if (
         payload.nodes is not None

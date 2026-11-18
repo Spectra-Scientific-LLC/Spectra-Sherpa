@@ -854,6 +854,38 @@ describe("Persistent run inspection", () => {
     wrapper.unmount();
   });
 
+  it('shows inert records with units and roles when a retained renderer is unavailable', async () => {
+    const fallback = get.getMockImplementation()!;
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) {
+        const data = structuredClone(fixture);
+        Object.assign(data.evidence.outputs, { __diagnostics__: { _scientific_presentations: { state: 'exact', storage: 'file' } } });
+        return { data };
+      }
+      if (url.endsWith('/__workflow__/definition')) return { data: { value: {
+        nodes: [{ node_id: 'pca', node_type: 'pro.absent.measure', label: 'Retained measurement', parameters: {} }], edges: [],
+      } } };
+      if (url.endsWith('/pca/scores')) return { data: { value: [
+        { sample_id: 'sample-1', value: 1.23456789, units: 'mg/L', population_role: 'held_out', label: '<img src=x onerror=alert(1)>' },
+      ] } };
+      if (url.endsWith('/_scientific_presentations')) return { data: { value: { pca: {
+        contract_digest: 'a'.repeat(64), contract: {
+          schema_version: 'spectrasherpa-node-presentation/1', default_presentation: 'custom',
+          presentations: [{ presentation_id: 'custom', label: 'Unavailable domain view', kind: 'absent_domain_view', source_ports: ['scores'], modes: ['plot'], renderer: 'alert(1)' }],
+        },
+      } } } };
+      return fallback(url);
+    });
+    const { wrapper } = await open();
+    const retained = wrapper.get('[aria-label="Retained values"]');
+    expect(retained.find('table').exists()).toBe(true);
+    for (const value of ['sample-1', '1.23456789', 'mg/L', 'held_out', '<img src=x onerror=alert(1)>']) {
+      expect(retained.text()).toContain(value);
+    }
+    expect(retained.find('img').exists()).toBe(false);
+    expect(wrapper.findComponent({ name: 'QuickPlotModal' }).exists()).toBe(false);
+  });
+
   it.each([true, false])('honors saved scientific result plot support: %s', async (supportsPlot) => {
     const fallback = get.getMockImplementation()!;
     get.mockImplementation(async (url: string) => {

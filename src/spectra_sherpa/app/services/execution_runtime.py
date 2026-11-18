@@ -88,6 +88,9 @@ class ApplicationModelArtifactSemanticValidator:
     """Delegate canonical lineage admission without coupling the DAG to storage."""
 
     def validate(self, manifest: dict[str, Any], arrays: dict[str, Any]) -> None:
+        from spectra_sherpa.core.pack_model_integrity import require_pack_model_integrity
+
+        require_pack_model_integrity(manifest, arrays)
         if not canonical_model_validation_required(manifest):
             return
         from spectra_sherpa.app.services.canonical_model_bridge import (

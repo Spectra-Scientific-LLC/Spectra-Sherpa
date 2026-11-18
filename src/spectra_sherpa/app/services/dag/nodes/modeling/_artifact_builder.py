@@ -8,6 +8,7 @@ benefits from selection-aware artifact persistence.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -169,11 +170,21 @@ def _enrich_with_preprocessing(metadata: dict, dataset: Any) -> None:
     from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
     chain: list[dict] = []
+    pack_steps = []
 
     if isinstance(dataset, SherpaDataset):
         try:
             history = dataset.provenance.to_list()
-            for step in history:
+            for index, step in enumerate(history):
+                if step.get("pack_binding") is not None:
+                    from spectra_sherpa.core.pack_requirements import PackNodeBinding, PackPreprocessingStep
+
+                    pack_steps.append(
+                        PackPreprocessingStep(
+                            step_index=index,
+                            producer=PackNodeBinding.model_validate_json(json.dumps(step["pack_binding"])),
+                        )
+                    )
                 chain.append(
                     {
                         "op_id": step.get("op_id", "unknown"),
@@ -181,6 +192,8 @@ def _enrich_with_preprocessing(metadata: dict, dataset: Any) -> None:
                     }
                 )
         except Exception:
+            if any(entry.pack_binding is not None for entry in dataset.provenance):
+                raise
             pass
     elif hasattr(dataset, "meta") and isinstance(getattr(dataset, "meta", None), dict):
         meta = dataset.meta
@@ -190,6 +203,12 @@ def _enrich_with_preprocessing(metadata: dict, dataset: Any) -> None:
 
     if chain:
         metadata["preprocessing_chain"] = chain
+    if pack_steps:
+        from spectra_sherpa.core.pack_requirements import PackPreprocessingBinding, preprocessing_chain_digest
+
+        metadata["pack_preprocessing_binding"] = PackPreprocessingBinding(
+            chain_sha256=preprocessing_chain_digest(chain), steps=tuple(pack_steps)
+        ).model_dump(mode="json")
 
 
 def _enrich_with_training_data_hash(metadata: dict, dataset: Any) -> None:

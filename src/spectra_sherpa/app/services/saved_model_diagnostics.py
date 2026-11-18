@@ -140,6 +140,9 @@ async def saved_plsda_sample_diagnostics(run: Any, model: Any) -> dict[str, Any]
 
     receipt, state, digest = await _read_plsda_run_evidence(run, model.node_id)
     manifest, arrays = await to_thread(get_model_store().load, model.artifact_uid, verify=True)
+    from spectra_sherpa.core.pack_model_integrity import scientific_model_arrays
+
+    arrays = scientific_model_arrays(manifest, arrays)
     stored = SherpaPLSDAArtifact.from_artifact(manifest, arrays)
     if stored.to_fitted_state() != state:
         raise ValueError("PLS-DA run fitted state differs from the verified saved artifact")
