@@ -23,8 +23,13 @@ from spectra_sherpa.app.api.deps import (
     require_project,
 )
 from spectra_sherpa.app.contracts.demo_capabilities import MODEL_MANAGE, MODEL_USE
+from spectra_sherpa.app.contracts.pack_access import authorize_project_packs
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
-from spectra_sherpa.app.contracts.scientific_access import require_scientific_access, scientific_project_ids
+from spectra_sherpa.app.contracts.scientific_access import (
+    ScientificAccessDenied,
+    require_scientific_access,
+    scientific_project_ids,
+)
 from spectra_sherpa.app.models.application_release import ApplicationRelease
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.folder_watch import FolderWatch
@@ -890,6 +895,7 @@ async def compare_models(
     models = await _require_models(artifact_uids, current_user.id, session)
     for model in models:
         await require_scientific_access(session, current_user.id, model.project_id, "execute")
+    from spectra_sherpa.app.services.dag.pack_execution_access import PackExecutionDenied
     from spectra_sherpa.app.services.model_application import compare_models_on_dataset, load_project_dataset
 
     try:
@@ -915,7 +921,12 @@ async def compare_models(
         )
         _require_dataset_model_project_match(models, loaded)
         enforce_demo_execution_quota(current_user.id)
-        result = await compare_models_on_dataset(artifact_uids, loaded.dataset, scope=payload.scope)
+        authorizer = await authorize_project_packs(session, current_user.id, loaded.project_id, ())
+        result = await compare_models_on_dataset(
+            artifact_uids, loaded.dataset, scope=payload.scope, pack_authorizer=authorizer
+        )
+    except PackExecutionDenied as exc:
+        raise ScientificAccessDenied(403, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

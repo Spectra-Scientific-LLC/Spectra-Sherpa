@@ -136,6 +136,8 @@ async def export_workflow_to_python(
             status_code=422,
             detail="Workflow export could not be generated for this workflow.",
         ) from None
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Unexpected error exporting workflow %s", workflow_id)
         raise HTTPException(status_code=500, detail="Failed to export workflow. Check server logs.")
@@ -194,6 +196,8 @@ async def export_workflow_to_notebook(
             status_code=422,
             detail="Workflow notebook export could not be generated for this workflow.",
         ) from None
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Unexpected error exporting notebook for workflow %s", workflow_id)
         raise HTTPException(status_code=500, detail="Failed to export notebook. Check server logs.")

@@ -67,14 +67,19 @@ def test_unavailable_pack_preserves_original_binding(changed):
 async def test_saved_workflow_route_returns_inert_inspection_after_pack_removal(test_session, test_user, monkeypatch):
     from spectra_sherpa.app.api.v1.routes.workflows import crud
     from spectra_sherpa.app.schemas.workflows import WorkflowCreate
-    from tests.pack_retention_fixtures import make_retained_registry
+    from spectra_sherpa.app.services.dag.pack_execution_access import use_pack_execution_authorizer
+    from tests.pack_retention_fixtures import authorize_retained_fixture, make_retained_registry
 
     registry = make_retained_registry(monkeypatch)
-    detail = await crud.persist_workflow(
-        WorkflowCreate(name="Removed pack", nodes=[{"node_id": "pack", "node_type": "pro.reference.record"}]),
-        session=test_session,
-        current_user=test_user,
-    )
+    with use_pack_execution_authorizer(authorize_retained_fixture):
+        detail = await crud.persist_workflow(
+            WorkflowCreate(name="Removed pack", nodes=[{"node_id": "pack", "node_type": "pro.reference.record"}]),
+            session=test_session,
+            current_user=test_user,
+        )
+    denied = await crud.get_workflow(detail.id, session=test_session, current_user=test_user)
+    assert denied.retained_inspection.read_only
+    assert denied.retained_inspection.graph.pack_binding == detail.pack_binding
     registry._nodes.pop("pro.reference.record")
     registry._pack_manifests = ()
     result = await crud.get_workflow(detail.id, session=test_session, current_user=test_user)

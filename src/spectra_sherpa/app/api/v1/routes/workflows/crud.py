@@ -16,8 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session, require_project
+from spectra_sherpa.app.contracts.pack_access import authorize_project_packs
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
-from spectra_sherpa.app.contracts.scientific_access import require_scientific_access, scientific_project_ids
+from spectra_sherpa.app.contracts.scientific_access import (
+    ScientificAccessDenied,
+    require_scientific_access,
+    scientific_project_ids,
+)
 from spectra_sherpa.app.lib.workflow_purpose import ANALYSIS_WORKFLOW, MANAGED_CANDIDATE_AUTHORITY
 from spectra_sherpa.app.models.advisor_channel import AdvisorChannel
 from spectra_sherpa.app.models.project import live_project_filter
@@ -48,7 +53,11 @@ from spectra_sherpa.app.services.dag.saved_graph_admission import (
     SavedGraphAdmissionError,
     admit_saved_workflow_graph,
 )
-from spectra_sherpa.app.services.pack_requirements import capture_saved_pack_binding, require_stored_pack_binding
+from spectra_sherpa.app.services.pack_requirements import (
+    capture_saved_pack_binding,
+    read_stored_pack_binding,
+    require_stored_pack_binding,
+)
 from spectra_sherpa.app.services.project_data_sources import (
     effective_workflow_tab_color,
     ensure_sheet_advisor_channel,
@@ -96,6 +105,8 @@ def _dag_spec_positions_are_usable(nodes: list[WorkflowDagSpecNode]) -> bool:
 def _workflow_node_graph_payload(node: object) -> dict[str, object]:
     """Project an API or ORM node into the one graph-admission shape."""
 
+    if isinstance(node, dict):
+        return node
     if hasattr(node, "model_dump"):
         return node.model_dump()
     return {
@@ -133,6 +144,23 @@ def _admit_current_workflow_graph(nodes: list[object], edges: list[object]) -> S
         )
     except SavedGraphAdmissionError as exc:
         raise HTTPException(status_code=400, detail=f"Workflow graph is not current: {exc}") from exc
+
+
+async def _authorize_prospective_pack_binding(
+    nodes: list[object], session: AsyncSession, user_id: int, project_id: int | None
+) -> dict | None:
+    from spectra_sherpa.app.services.dag.pack_requirements import PackBindingAdmissionError
+
+    payload = [_workflow_node_graph_payload(node) for node in nodes]
+    if not any(isinstance(item["node_type"], str) and item["node_type"].startswith("pro.") for item in payload):
+        return None
+    try:
+        retained = capture_saved_pack_binding(payload)
+    except PackBindingAdmissionError as exc:
+        raise HTTPException(status_code=400, detail="Workflow graph uses an unavailable node type") from exc
+    if binding := read_stored_pack_binding(retained):
+        await authorize_project_packs(session, user_id, project_id, binding.required)
+    return retained
 
 
 def _layout_dag_spec_nodes(
@@ -638,9 +666,10 @@ async def persist_workflow(
     max_order = await session.scalar(max_order_query)
     sheet_order = (max_order if max_order is not None else -1) + 1
 
+    captured_binding = await _authorize_prospective_pack_binding(
+        list(payload.nodes), session, user_id, payload.project_id
+    )
     admission = _admit_current_workflow_graph(list(payload.nodes), list(payload.edges))
-
-    captured_binding = capture_saved_pack_binding(admission.nodes)
     # Create workflow
     workflow = Workflow(
         user_id=user_id,
@@ -835,7 +864,8 @@ async def duplicate_workflow(
         }
         for edge in source.edges
     ]
-    require_stored_pack_binding(node_dicts, source.pack_binding)
+    binding = require_stored_pack_binding(node_dicts, source.pack_binding)
+    await authorize_project_packs(session, user_id, source.project_id, binding.required)
     try:
         admission = admit_saved_workflow_graph(node_dicts, edge_dicts, current_graph=True)
     except SavedGraphAdmissionError as exc:
@@ -1036,6 +1066,11 @@ async def get_workflow(
     from spectra_sherpa.app.services.retained_workflow_inspection import inspect_saved_workflow
 
     inspection = inspect_saved_workflow(workflow)
+    if inspection is None and (binding := read_stored_pack_binding(workflow.pack_binding)) is not None:
+        try:
+            await authorize_project_packs(session, user_id, workflow.project_id, binding.required)
+        except ScientificAccessDenied:
+            inspection = inspect_saved_workflow(workflow, has_pack_permission=False)
     detail = WorkflowDetail.model_validate(workflow)
     if inspection is not None:
         detail.retained_inspection = inspection
@@ -1073,17 +1108,20 @@ async def update_workflow(
     await require_scientific_access(session, user_id, workflow.project_id, "write", resource_owner_id=workflow.user_id)
     _require_mutable_analysis_workflow(workflow)
 
-    require_stored_pack_binding(
+    binding = require_stored_pack_binding(
         [{"node_id": node.node_id, "node_type": node.node_type} for node in workflow.nodes],
         workflow.pack_binding,
     )
+    await authorize_project_packs(session, user_id, workflow.project_id, binding.required)
     prospective_nodes: list[object] = list(payload.nodes) if payload.nodes is not None else list(workflow.nodes)
     prospective_edges: list[object] = list(payload.edges) if payload.edges is not None else list(workflow.edges)
     from spectra_sherpa.app.services.sample_review_custody import require_review_filters_preserved
 
     await require_review_filters_preserved(session, workflow.id, prospective_nodes, prospective_edges)
+    captured_binding = await _authorize_prospective_pack_binding(
+        prospective_nodes, session, user_id, workflow.project_id
+    )
     admission = _admit_current_workflow_graph(prospective_nodes, prospective_edges)
-    captured_binding = capture_saved_pack_binding(admission.nodes)
 
     # Capture before-state for audit. Pre-mutation snapshot of fields
     # the route is allowed to change. Picked to support reproducibility
@@ -1452,6 +1490,11 @@ async def persist_ai_fork(
         saved_definition,
     )
 
+    parent_packs = require_stored_pack_binding(
+        [{"node_id": node.node_id, "node_type": node.node_type} for node in parent_wf.nodes],
+        parent_wf.pack_binding,
+    )
+    await authorize_project_packs(session, user_id, parent_wf.project_id, parent_packs.required)
     parent_definition = saved_definition(parent_wf.nodes, parent_wf.edges)
     parent_digest = definition_digest(parent_definition)
     if payload.expected_parent_definition_hash is not None and parent_digest != payload.expected_parent_definition_hash:
@@ -1494,6 +1537,13 @@ async def persist_ai_fork(
             retained.admitted_definitions[0]
         ):
             raise HTTPException(status_code=409, detail="Proposed workflow changed after admission")
+        child_packs = require_stored_pack_binding(
+            [{"node_id": node.node_id, "node_type": node.node_type} for node in child.nodes],
+            child.pack_binding,
+        )
+        if child.pack_binding != retained.admitted_definitions[0].get("pack_binding"):
+            raise HTTPException(status_code=409, detail="Proposed workflow changed after admission")
+        await authorize_project_packs(session, user_id, child.project_id, child_packs.required)
         return AIForkResponse(new_workflow_id=child.id, new_channel_id=existing_channel.id)
 
     if not parent_wf.project_id:
@@ -1543,6 +1593,11 @@ async def persist_ai_fork(
             for e in payload.dag_spec.edges
         ],
     }
+    captured_binding = await _authorize_prospective_pack_binding(
+        definition["nodes"], session, user_id, parent_wf.project_id
+    )
+    if captured_binding is not None:
+        definition["pack_binding"] = captured_binding
     try:
         definition, populations, contracts = admit_ordinary_definition(definition)
     except ValueError as exc:
@@ -1611,6 +1666,7 @@ async def persist_ai_fork(
     new_wf = Workflow(
         user_id=user_id,
         project_id=parent_wf.project_id,
+        pack_binding=captured_binding,
         name=sheet_name,
         status="draft",
         purpose=ANALYSIS_WORKFLOW,

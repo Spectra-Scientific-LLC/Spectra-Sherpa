@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session, require_project
+from spectra_sherpa.app.contracts.pack_access import authorize_project_packs
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
 from spectra_sherpa.app.lib.workflow_purpose import (
@@ -44,13 +45,14 @@ from spectra_sherpa.app.services.project_data_sources import (
 )
 from spectra_sherpa.app.services.run_params import build_workflow_version_snapshot
 from spectra_sherpa.app.services.workflow_data_selections import record_restored_selection_revisions
+from spectra_sherpa.core.pack_requirements import PackGraphBinding
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workflows")
 
 
-def _admit_snapshot_graph(snapshot: dict) -> None:
+def _admit_snapshot_graph(snapshot: dict) -> PackGraphBinding:
     """Reject stale durable graph identities before any workflow mutation."""
 
     if snapshot.get("replay_authority") == "external_evidence_only":
@@ -68,7 +70,7 @@ def _admit_snapshot_graph(snapshot: dict) -> None:
             ).as_dict()
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-    require_stored_pack_binding(snapshot.get("nodes") or [], snapshot.get("pack_binding"))
+    binding = require_stored_pack_binding(snapshot.get("nodes") or [], snapshot.get("pack_binding"))
     try:
         admission = admit_saved_workflow_graph(
             snapshot.get("nodes") or [],
@@ -80,6 +82,7 @@ def _admit_snapshot_graph(snapshot: dict) -> None:
     snapshot["nodes"] = list(admission.nodes)
     snapshot["edges"] = list(admission.edges)
     snapshot["classifier_validation_semantics"] = CURRENT_CLASSIFIER_VALIDATION_SEMANTICS
+    return binding
 
 
 def _snapshot_purpose(snapshot: dict) -> WorkflowPurpose:
@@ -222,7 +225,8 @@ async def restore_workflow_version(
     from spectra_sherpa.app.services.sample_review_custody import require_review_filters_preserved
 
     await require_review_filters_preserved(session, workflow.id, snapshot.get("nodes", []), snapshot.get("edges", []))
-    _admit_snapshot_graph(snapshot)
+    binding = _admit_snapshot_graph(snapshot)
+    await authorize_project_packs(session, user_id, workflow.project_id, binding.required)
     snapshot_purpose = _snapshot_purpose(snapshot)
     if snapshot_purpose != workflow.purpose:
         raise HTTPException(
@@ -410,7 +414,8 @@ async def open_version_as_new_sheet(
     await require_project(source.project_id, user_id, session, operation="write")
 
     snapshot = version.snapshot or {}
-    _admit_snapshot_graph(snapshot)
+    binding = _admit_snapshot_graph(snapshot)
+    await authorize_project_packs(session, user_id, source.project_id, binding.required)
     snapshot_purpose = _snapshot_purpose(snapshot)
 
     # Place the new sheet at the end of the workbook.

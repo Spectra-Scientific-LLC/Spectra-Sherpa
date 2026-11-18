@@ -959,9 +959,9 @@ async def test_legacy_assertion_failure_stops_only_owned_running_workers(tmp_pat
                     original_poll = worker._popen.poll
 
                     def manager_only_poll(*args, _poll=original_poll, **kwargs):
-                        assert (
-                            threading.current_thread() is manager or not manager.is_alive()
-                        ), "Only the executor manager may reap a worker before shutdown completes"
+                        assert threading.current_thread() is manager or not manager.is_alive(), (
+                            "Only the executor manager may reap a worker before shutdown completes"
+                        )
                         return _poll(*args, **kwargs)
 
                     monkeypatch.setattr(worker._popen, "poll", manager_only_poll)
@@ -978,3 +978,47 @@ async def test_legacy_assertion_failure_stops_only_owned_running_workers(tmp_pat
             _shutdown_legacy_test_pool(pool)
         finally:
             _shutdown_legacy_test_pool(independent)
+
+
+async def test_queued_dispatch_rechecks_authority_before_sending_work(tmp_path):
+    from pathlib import Path
+
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    started = tmp_path / "running"
+    finished = tmp_path / "finished"
+    own_output = tmp_path / "dispatched"
+    revoked = False
+    checks = []
+
+    async def authorize():
+        checks.append(revoked)
+        if revoked:
+            raise PermissionError("Pack permission expired in the queue")
+
+    pool = IsolatedWorkerPool(1)
+    task = None
+    waiting = None
+    try:
+        task = asyncio.create_task(pool.run(_slow_worker, str(started), str(finished), timeout=30))
+        async with asyncio.timeout(15):
+            while not started.exists():
+                await asyncio.sleep(0.01)
+        waiting = asyncio.create_task(pool.run(Path.touch, own_output, timeout=30, before_dispatch=authorize))
+        await asyncio.sleep(0)
+        assert not checks
+        revoked = True
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        with pytest.raises(PermissionError, match="expired in the queue"):
+            await waiting
+        assert checks == [True]
+        assert not own_output.exists()
+    finally:
+        if task is not None and not task.done():
+            task.cancel()
+        if waiting is not None and not waiting.done():
+            waiting.cancel()
+        await asyncio.gather(*(item for item in (task, waiting) if item is not None), return_exceptions=True)
+        pool.shutdown(wait=True)

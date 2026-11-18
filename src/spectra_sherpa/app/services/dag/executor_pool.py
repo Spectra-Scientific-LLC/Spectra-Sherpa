@@ -20,6 +20,7 @@ from time import perf_counter
 from typing import Callable, Optional
 
 from spectra_sherpa.core.execution_runtime import ExecutionRuntime
+from spectra_sherpa.core.pack_manifest import PackReference
 
 from .node_base import NodeResult, node_registry, resolved_runtime_worker_capabilities
 from .transport import reject_spectrochempy_transport
@@ -141,7 +142,7 @@ class _WorkflowWorker:
         finally:
             child_control.close()
 
-    async def run(self, function, *args, timeout: float):
+    async def run(self, function, *args, timeout: float, before_dispatch=None):
         if self._closed or self._pool._closed:
             raise RuntimeError("Workflow worker is shut down")
         if self._busy:
@@ -153,6 +154,8 @@ class _WorkflowWorker:
             async with asyncio.timeout(timeout):
                 if self._process is None:
                     await self._start()
+                if before_dispatch is not None:
+                    await before_dispatch()
                 transport_directory = Path(self._directory.name)
                 with (transport_directory / "request").open("wb") as stream:
                     pickle.dump((function, args), stream, protocol=pickle.HIGHEST_PROTOCOL)
@@ -275,16 +278,16 @@ class IsolatedWorkerPool:
         if worker is not None and worker._closed and not self._closed:
             self._workflow.set(_WorkflowWorker(self))
 
-    async def run(self, function, *args, timeout: float):
+    async def run(self, function, *args, timeout: float, before_dispatch=None):
         workflow = self._workflow.get()
         if workflow is not None:
-            return await workflow.run(function, *args, timeout=timeout)
+            return await workflow.run(function, *args, timeout=timeout, before_dispatch=before_dispatch)
         # A fresh lease per standalone call preserves process isolation. Its
         # control handshake prevents computation before startup has completed
         # within the caller's deadline, including cancellation during startup.
         worker = _WorkflowWorker(self, lifetime="isolated")
         try:
-            return await worker.run(function, *args, timeout=timeout)
+            return await worker.run(function, *args, timeout=timeout, before_dispatch=before_dispatch)
         finally:
             worker.close()
 
@@ -397,6 +400,7 @@ class WorkerExecutionContext:
     # to a spawned worker. It is evidence only, never an authorization input.
     origin_pid: int = 0
     request_id: str | None = None
+    admitted_model_replay: tuple[PackReference, ...] = ()
 
 
 def set_default_pool(pool: Optional[ProcessPoolExecutor | IsolatedWorkerPool]) -> None:
@@ -511,18 +515,21 @@ def _run_node_in_worker(
     a throwaway event loop (the node's execute() is async-declared but
     does only CPU-bound work — no real I/O awaits).
     """
+    from .pack_execution_access import use_admitted_pack_replay
+
     registry_started = perf_counter()
     reject_spectrochempy_transport(args, boundary="worker input")
     reject_spectrochempy_transport(kwargs, boundary="worker input")
     node = _worker_node(node_type, node_id, parameters, worker_context)
     execution_started = perf_counter()
-    if kwargs:
-        if list(kwargs.keys()) == ["default"]:
-            result = asyncio.run(node.run(kwargs["default"]))
+    with use_admitted_pack_replay(worker_context.admitted_model_replay if worker_context is not None else ()):
+        if kwargs:
+            if list(kwargs.keys()) == ["default"]:
+                result = asyncio.run(node.run(kwargs["default"]))
+            else:
+                result = asyncio.run(node.run(**kwargs))
         else:
-            result = asyncio.run(node.run(**kwargs))
-    else:
-        result = asyncio.run(node.run(*args))
+            result = asyncio.run(node.run(*args))
     # This reserved diagnostic is produced only inside the child process.
     # It lets the M3 cross-machine procedure distinguish a real spawned
     # execution from the executor's deliberate in-process fallback.

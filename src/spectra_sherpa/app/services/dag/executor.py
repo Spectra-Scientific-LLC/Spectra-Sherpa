@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from spectra_sherpa.app.lib.data_roles import is_spectrum_only_node, require_data_role
 from spectra_sherpa.core.execution_runtime import ExecutionRuntime
+from spectra_sherpa.core.pack_manifest import PackReference
 from spectra_sherpa.core.pack_requirements import PackGraphBinding
 
 from .executor_pool import (
@@ -45,6 +46,14 @@ from .executor_validation import (  # noqa: F401 — tests import/monkeypatch th
 from .graph_utils import Edge as _Edge
 from .graph_utils import build_dependency_map, topological_sort
 from .node_base import Node, NodeResult, NodeStatus, node_registry, resolved_runtime_worker_capabilities
+from .pack_execution_access import (
+    PackExecutionAuthorizer,
+    PackExecutionDenied,
+    combine_pack_requirements,
+    read_model_replay_requirements,
+    require_pack_execution,
+    use_admitted_pack_replay,
+)
 from .population_display import computational_outputs, retain_population_display
 from .transport import reject_spectrochempy_transport
 
@@ -78,6 +87,7 @@ class DAGExecutor:
         runtime: ExecutionRuntime | None = None,
         *,
         pack_binding: PackGraphBinding | None = None,
+        pack_authorizer: PackExecutionAuthorizer | None = None,
     ):
         """Initialize executor.
 
@@ -90,6 +100,9 @@ class DAGExecutor:
                 has no storage authority and uses the public local timeout.
         """
         self.pack_binding = pack_binding
+        self._execution_packs: tuple[PackReference, ...] = ()
+        self._cached_model_packs: dict[str, tuple[PackReference, ...]] = {}
+        self._pack_authorizer = pack_authorizer
         self.nodes: Dict[str, Node] = {}
         self.edges: List[WorkflowEdge] = []
         self.results: Dict[str, Any] = {}
@@ -107,7 +120,7 @@ class DAGExecutor:
         # its terminal evaluator is scored out of fold, never on fitted rows.
         self.fold_validation_plan: Any = None
 
-    def _admit_pack_bindings(self, selected: set[str] | None = None) -> None:
+    def _admit_pack_bindings(self, selected: set[str] | None = None) -> PackGraphBinding:
         from .pack_requirements import require_matching_pack_binding
 
         nodes = [
@@ -118,7 +131,37 @@ class DAGExecutor:
         retained = self.pack_binding
         if retained is not None and selected is not None:
             retained = retained.for_nodes(frozenset(selected))
-        require_matching_pack_binding(nodes, retained)
+        return require_matching_pack_binding(nodes, retained)
+
+    async def require_current_pack_permission(self) -> None:
+        """Recheck all extensions used by this execution before publication."""
+        try:
+            await require_pack_execution(self._execution_packs, self._pack_authorizer)
+        except PackExecutionDenied:
+            self.results.clear()
+            self.diagnostics.clear()
+            self._param_hashes.clear()
+            self._cached_model_packs.clear()
+            raise
+
+    async def _prepare_pack_execution(self, binding: PackGraphBinding) -> None:
+        self._execution_packs = ()
+        await self._include_pack_requirements(binding.required)
+
+    async def _include_pack_requirements(self, required: tuple[PackReference, ...]) -> None:
+        if not required:
+            return
+        self._execution_packs = combine_pack_requirements(self._execution_packs, required)
+        if self._process_pool is not None and not isinstance(self._process_pool, IsolatedWorkerPool):
+            raise PackExecutionDenied("Analysis extensions require a worker with dispatch permission checks")
+        await self.require_current_pack_permission()
+
+    async def _run_owned_worker(self, function, *args, timeout):
+        if self._execution_packs:
+            return await self._process_pool.run(
+                function, *args, timeout=timeout, before_dispatch=self.require_current_pack_permission
+            )
+        return await self._process_pool.run(function, *args, timeout=timeout)
 
     def __getstate__(self) -> Dict[str, Any]:
         """Exclude unpicklable ProcessPoolExecutor from serialization.
@@ -968,17 +1011,23 @@ class DAGExecutor:
             return False
         return True
 
-    def _worker_context(self, node: Node) -> WorkerExecutionContext:
+    def _worker_context(
+        self,
+        node: Node,
+        runtime: ExecutionRuntime | None = None,
+        admitted_model_replay: tuple[PackReference, ...] = (),
+    ) -> WorkerExecutionContext:
         """Create trusted worker authority; never derive it from workflow data."""
         from spectra_sherpa.core.diagnostic_context import get_request_id
 
         capabilities = resolved_runtime_worker_capabilities(node)
         return WorkerExecutionContext(
             execution_id=str(uuid.uuid4()),
-            runtime=self.runtime.for_worker(capabilities),
+            runtime=runtime if runtime is not None else self.runtime.for_worker(capabilities),
             capabilities=capabilities,
             origin_pid=os.getpid(),
             request_id=get_request_id(),
+            admitted_model_replay=admitted_model_replay,
         )
 
     @staticmethod
@@ -1016,7 +1065,7 @@ class DAGExecutor:
         plan = self.fold_validation_plan
         graph_wire, capability_wire, split = prepare_sheet_fold_validation(plan, chain_nodes, chain_edges, dataset)
         if isinstance(self._process_pool, IsolatedWorkerPool):
-            execution = await self._process_pool.run(
+            execution = await self._run_owned_worker(
                 run_sheet_fold_validation, graph_wire, capability_wire, split, timeout=timeout
             )
         elif self._process_pool is not None:
@@ -1030,6 +1079,36 @@ class DAGExecutor:
             )
         return sheet_fold_validation_result(plan, execution, split=split)
 
+    async def _admit_model_replay(
+        self, node: Node, runtime: ExecutionRuntime, positional_inputs: List[Any], named_inputs: Dict[str, Any]
+    ) -> tuple[PackReference, ...]:
+        reader = runtime.require_model_artifact_reader()
+        self._cached_model_packs.pop(node.node_id, None)
+        if node.metadata.node_type != "model.load_apply":
+            return ()
+        from spectra_sherpa.app.services.frozen_workflow_sources import _drained_read
+
+        from .nodes.modeling.load_apply_node import LoadApplyModelNode
+
+        if not isinstance(node, LoadApplyModelNode):
+            return ()
+        reference = (
+            named_inputs.get("model_ref")
+            if named_inputs
+            else (positional_inputs[1] if len(positional_inputs) > 1 else None)
+        )
+        model_id = node._resolve_model_id(reference)
+        try:
+            required = await _drained_read(read_model_replay_requirements, reader, model_id)
+        except FileNotFoundError:
+            # Preserve the consumer's existing missing-artifact result.
+            return ()
+        if not required:
+            return ()
+        await self._include_pack_requirements(required)
+        self._cached_model_packs[node.node_id] = required
+        return required
+
     async def _run_one_node(
         self,
         node: Node,
@@ -1041,6 +1120,7 @@ class DAGExecutor:
         from .execution_scope import upstream_node_ids
         from .population_authority import analyze_populations, qualify_evaluation_result
 
+        await self.require_current_pack_permission()
         selected = upstream_node_ids(self.nodes, self.edges, node.node_id)
         population_issues, receipts = analyze_populations(
             {key: value for key, value in self.nodes.items() if key in selected},
@@ -1075,13 +1155,17 @@ class DAGExecutor:
             fold_result = await self._run_fold_validated_evaluator(node, timeout)
             if fold_result is not None:
                 return fold_result
-        capabilities = frozenset(resolved_runtime_worker_capabilities(node))
+        capabilities = resolved_runtime_worker_capabilities(node)
+        offload = self._should_offload(node)
+        runtime = self.runtime.for_worker(capabilities) if offload else self.runtime
+        admitted_model_replay: tuple[PackReference, ...] = ()
         if "read_model_artifact" in capabilities:
             self.runtime.require_model_artifact_reader()
             self.runtime.require_model_artifact_replay()
+            admitted_model_replay = await self._admit_model_replay(node, runtime, positional_inputs, named_inputs)
         if "read_canonical_fitted_artifact" in capabilities:
             self.runtime.require_canonical_artifact_reader()
-        if self._should_offload(node):
+        if offload:
             safe_pos = tuple(self._sanitize_for_pool(v) for v in positional_inputs) if not named_inputs else ()
             safe_named = {k: self._sanitize_for_pool(v) for k, v in named_inputs.items()} if named_inputs else {}
             assert node.metadata is not None
@@ -1091,10 +1175,10 @@ class DAGExecutor:
                 dict(node.parameters),
                 safe_pos,
                 safe_named,
-                self._worker_context(node),
+                self._worker_context(node, runtime, admitted_model_replay),
             )
             if isinstance(self._process_pool, IsolatedWorkerPool):
-                result = await self._process_pool.run(_run_node_in_worker, *args, timeout=timeout)
+                result = await self._run_owned_worker(_run_node_in_worker, *args, timeout=timeout)
             else:
                 # Compatibility for SDK callers supplying their own executor.
                 # They own its cancellation policy; never retry locally.
@@ -1103,17 +1187,13 @@ class DAGExecutor:
             return qualify_evaluation_result(result, receipt, source_results=self.results)
 
         # In-process nodes use the same Node.run transport guard as workers.
-        node.bind_execution_runtime(self.runtime)
-        if named_inputs:
-            return qualify_evaluation_result(
-                await asyncio.wait_for(node.run(**named_inputs), timeout=timeout), receipt, source_results=self.results
-            )
-        else:
-            return qualify_evaluation_result(
-                await asyncio.wait_for(node.run(*positional_inputs), timeout=timeout),
-                receipt,
-                source_results=self.results,
-            )
+        node.bind_execution_runtime(runtime)
+        with use_admitted_pack_replay(admitted_model_replay):
+            if named_inputs:
+                result = await asyncio.wait_for(node.run(**named_inputs), timeout=timeout)
+            else:
+                result = await asyncio.wait_for(node.run(*positional_inputs), timeout=timeout)
+        return qualify_evaluation_result(result, receipt, source_results=self.results)
 
     async def _run_population_projection(self, node: Node, outputs: dict, inputs: dict) -> dict:
         """Display work uses the existing scientific worker and cancellation policy."""
@@ -1132,7 +1212,7 @@ class DAGExecutor:
         timeout = 60.0  # display-only work has its own bounded budget, not a scientist parameter
         if isinstance(self._process_pool, IsolatedWorkerPool):
             try:
-                projected = await self._process_pool.run(_run_population_in_worker, *args, timeout=timeout)
+                projected = await self._run_owned_worker(_run_population_in_worker, *args, timeout=timeout)
             except Exception:
                 self._process_pool.recover_optional_projection_failure()
                 raise
@@ -1365,7 +1445,7 @@ class DAGExecutor:
                     pass  # Never let broadcast failure affect execution
 
         try:
-            self._admit_pack_bindings()
+            await self._prepare_pack_execution(self._admit_pack_bindings())
             self.status = WorkflowStatus.RUNNING
             self.saved_artifacts = []  # Reset for this execution
 
@@ -1397,6 +1477,7 @@ class DAGExecutor:
 
                 # Check if we can use cached result
                 if self._is_node_cached(node_id):
+                    await self._include_pack_requirements(self._cached_model_packs.get(node_id, ()))
                     logger.debug(
                         "Using cached result: %s (%s)", node_id, node.metadata.label if node.metadata else node_id
                     )
@@ -1447,6 +1528,7 @@ class DAGExecutor:
 
                 await retain_population_display(self, node_id)
 
+                await self.require_current_pack_permission()
                 # Persist model artifact if present
                 await self._process_model_artifact(node_id, positional_inputs, named_inputs)
 
@@ -1458,9 +1540,13 @@ class DAGExecutor:
                 logger.debug("Completed: %s (status: %s)", node_id, node.status.value)
                 await _emit(node_id, "completed")
 
+            await self.require_current_pack_permission()
             self.status = WorkflowStatus.COMPLETED
             return self.results
 
+        except PackExecutionDenied:
+            self.status = WorkflowStatus.ERROR
+            raise
         except ImportError as e:
             self.status = WorkflowStatus.ERROR
             raise ValueError(str(e)) from e
@@ -1512,7 +1598,7 @@ class DAGExecutor:
         from .population_authority import analyze_populations
 
         selected = upstream_node_ids(self.nodes, self.edges, node_id)
-        self._admit_pack_bindings(set(selected))
+        await self._prepare_pack_execution(self._admit_pack_bindings(set(selected)))
         population_issues, _ = analyze_populations(
             {key: node for key, node in self.nodes.items() if key in selected},
             [edge for edge in self.edges if edge.to_node in selected],
@@ -1541,6 +1627,7 @@ class DAGExecutor:
 
             # Check if we can use cached result
             if self._is_node_cached(dep_node_id):
+                await self._include_pack_requirements(self._cached_model_packs.get(dep_node_id, ()))
                 logger.debug(
                     "Using cached result: %s (%s)", dep_node_id, node.metadata.label if node.metadata else dep_node_id
                 )
@@ -1590,6 +1677,7 @@ class DAGExecutor:
 
             await retain_population_display(self, dep_node_id)
 
+            await self.require_current_pack_permission()
             # Persist model artifact if present
             await self._process_model_artifact(dep_node_id, positional_inputs, named_inputs)
 
@@ -1601,6 +1689,7 @@ class DAGExecutor:
             logger.debug("Completed: %s (status: %s)", dep_node_id, node.status.value)
             await _emit(dep_node_id, "completed")
 
+        await self.require_current_pack_permission()
         # Return all results from this execution (target + dependencies)
         return {nid: self.results[nid] for nid in executed_in_this_run}
 

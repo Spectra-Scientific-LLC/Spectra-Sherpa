@@ -19,8 +19,9 @@ from sqlalchemy.orm import load_only
 
 from spectra_sherpa.app.api.deps import demo_guard, enforce_demo_execution_quota, get_current_user, get_session
 from spectra_sherpa.app.contracts.demo_capabilities import MODEL_USE
+from spectra_sherpa.app.contracts.pack_access import authorize_project_packs
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
-from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
+from spectra_sherpa.app.contracts.scientific_access import ScientificAccessDenied, require_scientific_access
 from spectra_sherpa.app.models.background_job import BackgroundJob
 from spectra_sherpa.app.models.dataset_view import DatasetView
 from spectra_sherpa.app.models.execution_run import ExecutionRun
@@ -38,6 +39,7 @@ from spectra_sherpa.app.schemas.execution_runs import (
 )
 from spectra_sherpa.app.schemas.run_evidence import OutputEvidence, RunEvidence
 from spectra_sherpa.app.schemas.scientific_comparison import CompareEvidenceRequest, EvidenceComparisonResponse
+from spectra_sherpa.app.services.dag.pack_execution_access import PackExecutionDenied, combine_pack_requirements
 from spectra_sherpa.app.services.dataset_views import materialize_selection_receipt, receipt_sha256
 from spectra_sherpa.app.services.deployment_binding import resolve_deployment_binding
 from spectra_sherpa.app.services.job_manager import job_manager
@@ -1246,6 +1248,8 @@ async def execute_artifact_batch(
         applied_results: list[dict[str, Any]] = []
         item_results: list[ArtifactBatchRunItemResult] = []
         executions: dict[str, dict[str, Any]] = {}
+        authorizer = await authorize_project_packs(session, current_user.id, loaded.project_id, ())
+        pack_access = {"pack_authorizer": authorizer} if authorizer is not None else {}
         for artifact in artifacts:
             # Authorization failures are request failures, never partial science.
             await require_scientific_access(session, current_user.id, loaded.project_id, "execute")
@@ -1258,6 +1262,7 @@ async def execute_artifact_batch(
                     scope=payload.scope,
                     execution_evidence=capture,
                     acknowledge_legacy_input_uncertainty=payload.acknowledge_legacy_input_uncertainty,
+                    **pack_access,
                 )
                 require_bounded_presentation([*applied_results, applied], surface="Batch application")
                 applied_results.append(applied)
@@ -1269,6 +1274,8 @@ async def execute_artifact_batch(
                         n_samples=applied.get("n_samples"),
                     )
                 )
+            except PackExecutionDenied as exc:
+                raise ScientificAccessDenied(403, str(exc)) from exc
             except HTTPException:
                 raise
             except Exception as exc:
@@ -1329,6 +1336,10 @@ async def execute_artifact_batch(
 
     if verification_check is not None:
         await verification_check(loaded, current_artifacts)
+    required = combine_pack_requirements(
+        *(capture.get("pack_replay_requirements", ()) for capture in executions.values())
+    )
+    await authorize_project_packs(session, current_user.id, loaded.project_id, required)
     successful_uids = [result["artifact_uid"] for result in applied_results]
     failed_items = [item for item in item_results if item.status == "failed"]
     outcome: Literal["failed", "partial", "completed"] = (

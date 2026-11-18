@@ -9,6 +9,7 @@ import pytest
 
 from spectra_sherpa.app.services.dag.executor import DAGExecutor
 from spectra_sherpa.app.services.dag.executor_types import WorkflowEdge, WorkflowNode
+from spectra_sherpa.app.services.dag.pack_execution_access import PackExecutionDenied, use_pack_execution_authorizer
 from spectra_sherpa.app.services.dag.pack_requirements import PackBindingAdmissionError, capture_pack_graph_binding
 from spectra_sherpa.core.execution_runtime import ExecutionRuntime
 from spectra_sherpa.core.pack_requirements import parse_pack_graph_binding
@@ -21,6 +22,10 @@ from tests.test_pack_manifest import pack
 @pytest.fixture
 def retained_registry(monkeypatch):
     return make_retained_registry(monkeypatch)
+
+
+async def allow_reference_pack(required):
+    assert required == (pack().reference,)
 
 
 def test_sdk_pack_spec_preserves_build_identity_and_legacy_oss_wire(retained_registry):
@@ -43,7 +48,10 @@ async def test_actual_sdk_pack_operation_and_stripped_identity_refusal(retained_
     spec, inputs, _ = runtime.operation_workflow(
         "pro.reference.record", parameters={"floor": 0.0}, inputs={"default": dataset}
     )
-    execution = await runtime.execute_workflow_async(spec, deployment_inputs=inputs)
+    with pytest.raises(PackExecutionDenied, match="reference"):
+        await runtime.execute_workflow_async(spec, deployment_inputs=inputs)
+    with use_pack_execution_authorizer(allow_reference_pack):
+        execution = await runtime.execute_workflow_async(spec, deployment_inputs=inputs)
     np.testing.assert_array_equal(execution.output().data, [[0.0, 2.0, 0.0], [4.0, 0.0, 6.0]])
     copied = pickle.loads(pickle.dumps(execution.output().copy()))
     recorded = [entry.pack_binding for entry in copied.provenance if entry.pack_binding is not None]
@@ -77,7 +85,8 @@ async def test_retained_pack_values_remain_readable_without_pack_code(retained_r
     spec, inputs, _ = runtime.operation_workflow(
         "pro.reference.record", parameters={"floor": 0.0}, inputs={"default": dataset}
     )
-    execution = await runtime.execute_workflow_async(spec, deployment_inputs=inputs)
+    with use_pack_execution_authorizer(allow_reference_pack):
+        execution = await runtime.execute_workflow_async(spec, deployment_inputs=inputs)
     output = execution.output()
     expected = json.loads(json.dumps(serialize_result(output, owner_user_id=1, retain_full=True)))
     evidence = RunEvidence.model_validate(retention.retain_run_outputs(1, {"pack": {"default": output}}, {}))
@@ -214,6 +223,7 @@ async def test_actual_pack_run_cannot_silently_drop_producer_identity(retained_r
 async def test_model_replay_keeps_processing_pack_identity_when_dataset_moves(monkeypatch):
     from spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder import _enrich_with_preprocessing
     from spectra_sherpa.app.services.dag.nodes.preprocessing.normalize_node import NormalizeNode
+    from spectra_sherpa.app.services.dag.pack_execution_access import use_admitted_pack_replay
     from spectra_sherpa.app.services.model_application import _prepare_artifact_input
     from spectra_sherpa.core.pack_requirements import read_pack_preprocessing_binding
 
@@ -222,18 +232,20 @@ async def test_model_replay_keeps_processing_pack_identity_when_dataset_moves(mo
     spec, inputs, _ = runtime.operation_workflow(
         "pro.reference.record", parameters={"method": "snv"}, inputs={"default": original}
     )
-    execution = await runtime.execute_workflow_async(spec, deployment_inputs=inputs)
+    with use_pack_execution_authorizer(allow_reference_pack):
+        execution = await runtime.execute_workflow_async(spec, deployment_inputs=inputs)
     moved = pickle.loads(pickle.dumps(execution.output().copy()))
     manifest = {}
     _enrich_with_preprocessing(manifest, moved)
     recorded = read_pack_preprocessing_binding(manifest)
     assert recorded is not None and recorded.steps[0].producer.required == (pack().reference,)
     assert all(set(step) == {"op_id", "parameters"} for step in manifest["preprocessing_chain"])
-    replayed = _prepare_artifact_input(original.X, None, manifest, scope="all", source_dataset=original)[0]
+    with use_admitted_pack_replay((pack().reference,)):
+        replayed = _prepare_artifact_input(original.X, None, manifest, scope="all", source_dataset=original)[0]
     np.testing.assert_allclose(replayed, moved.X)
     retained_registry._pack_manifests = (pack(build_sha256="b" * 64),)
     assert read_pack_preprocessing_binding(manifest) == recorded  # Inert reading remains available.
-    with pytest.raises(PackBindingAdmissionError):
+    with use_admitted_pack_replay((pack().reference,)), pytest.raises(PackBindingAdmissionError):
         _prepare_artifact_input(original.X, None, manifest, scope="all", source_dataset=original)
     changed = deepcopy(manifest)
     changed["preprocessing_chain"][0]["parameters"]["method"] = "scale"
@@ -274,5 +286,6 @@ async def test_sdk_uses_compact_utf8_at_binding_size_boundary(retained_registry)
     assert WorkflowSpec.from_dict(spec.as_dict()) == spec
     # Binding parsing succeeds; this deliberately incomplete graph then reaches
     # the established SDK rule requiring explicit deployment-input sources.
-    with pytest.raises(ValueError, match="deploy.input"):
-        await runtime.execute_workflow_async(spec, deployment_inputs={})
+    with use_pack_execution_authorizer(allow_reference_pack):
+        with pytest.raises(ValueError, match="deploy.input"):
+            await runtime.execute_workflow_async(spec, deployment_inputs={})

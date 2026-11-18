@@ -283,6 +283,8 @@ def validate_workflow(
     nodes: list[dict[str, Any]],
     edges: list[dict[str, Any]],
     parent_loader_fingerprints: set[str] | None = None,
+    *,
+    qualified_pack_nodes: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Run structural validation on a workflow graph.
 
@@ -318,6 +320,20 @@ def validate_workflow(
         }
         for edge in edges
     ]
+
+    if any(
+        isinstance(node["node_type"], str)
+        and node["node_type"].startswith("pro.")
+        and node["node_type"] not in qualified_pack_nodes
+        for node in normalized_nodes
+    ):
+        return {
+            "valid": False,
+            "issue_count": 1,
+            "issues": [
+                _issue("error", "An analysis extension is unavailable for this project.", code="extension_unavailable")
+            ],
+        }
 
     preflight = preflight_workflow(
         [
@@ -405,6 +421,37 @@ async def validate_dag_spec_for_parent(
             "issues": [_issue("error", "Parent workflow not found.", code="parent_workflow_missing")],
         }
 
+    from fastapi import HTTPException
+
+    from spectra_sherpa.app.contracts.pack_access import authorize_project_packs
+    from spectra_sherpa.app.services.dag.pack_requirements import capture_pack_graph_binding
+    from spectra_sherpa.app.services.pack_requirements import require_stored_pack_binding
+
+    nodes, _ = _normalize_dag_spec(dag_spec)
+    qualified_pack_nodes: frozenset[str] = frozenset()
+    if getattr(parent, "pack_binding", None) is not None or any(
+        isinstance(node["node_type"], str) and node["node_type"].startswith("pro.") for node in nodes
+    ):
+        try:
+            current = require_stored_pack_binding(
+                [{"node_id": node.node_id, "node_type": node.node_type} for node in parent.nodes],
+                parent.pack_binding,
+            )
+            proposed = capture_pack_graph_binding(nodes)
+            await authorize_project_packs(session, user.id, parent.project_id, current.required)
+            await authorize_project_packs(session, user.id, parent.project_id, proposed.required)
+            qualified_pack_nodes = frozenset(node.node_type for node in proposed.nodes)
+        except (HTTPException, TypeError, ValueError):
+            return {
+                "valid": False,
+                "issue_count": 1,
+                "issues": [
+                    _issue(
+                        "error", "An analysis extension is unavailable for this project.", code="extension_unavailable"
+                    )
+                ],
+            }
+
     try:
         if expected_source_bindings is not None and source_binding_snapshot(parent.nodes) != expected_source_bindings:
             raise ValueError("Parent source bindings changed during generation; request a fresh proposal")
@@ -420,7 +467,7 @@ async def validate_dag_spec_for_parent(
     parent_fingerprints = {
         candidate.fingerprint for node in parent.nodes if (candidate := describe_node_data_source(node)) is not None
     }
-    result = validate_workflow(nodes, edges, parent_fingerprints)
+    result = validate_workflow(nodes, edges, parent_fingerprints, qualified_pack_nodes=qualified_pack_nodes)
     result["source_bindings"] = source_bindings
     return result
 

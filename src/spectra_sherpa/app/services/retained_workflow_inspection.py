@@ -14,7 +14,9 @@ from spectra_sherpa.app.services.pack_requirements import read_stored_pack_bindi
 from spectra_sherpa.core.retained_graph import inspect_retained_graph
 
 
-def inspect_saved_workflow(workflow: Any, *, registry=None) -> RetainedWorkflowInspection | None:
+def inspect_saved_workflow(
+    workflow: Any, *, registry=None, has_pack_permission: bool = True
+) -> RetainedWorkflowInspection | None:
     """Compare installed identity only; parameter and entitlement admission are separate."""
     if registry is None:
         from spectra_sherpa.app.services.dag.node_base import node_registry
@@ -49,7 +51,7 @@ def inspect_saved_workflow(workflow: Any, *, registry=None) -> RetainedWorkflowI
         except KeyError:
             # Include legacy unknown identities, not only the reserved pack prefix.
             unavailable.append(node.node_id)
-    binding_unavailable = False
+    binding_unavailable = not has_pack_permission
     try:
         require_matching_pack_binding(
             payload["nodes"], read_stored_pack_binding(workflow.pack_binding), registry=registry
