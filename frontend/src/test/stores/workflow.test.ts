@@ -481,6 +481,34 @@ describe("Workflow Store template source bindings", () => {
  * caused the LLM to hallucinate dimensions and say "workflow hasn't been run".
  */
 describe("Workflow Store execution state restoration on loadWorkflow", () => {
+  it("opens unavailable operations without preflight and refuses mutation until another sheet loads", async () => {
+    const inspection = {
+      read_only: true, binding_unavailable: false, unavailable_node_ids: ["old"],
+      graph: { schema_version: "spectra-retained-graph/1", inspection_only: true, name: "Retained", pack_binding: null,
+        nodes: [{ node_id: "old", node_type: "legacy.absent", label: "Old", parameters: {}, parameters_json: '{"id":9007199254740993}' }], edges: [] },
+    };
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url === "/workflows/nodes/library") return { data: nodeLibraryResponse };
+      if (url === "/workflows/types/registry") return { data: typeRegistry };
+      if (url.endsWith("/runs/latest")) return { data: null };
+      return { data: { id: url.endsWith("42") ? 42 : 43, name: "Test", nodes: [], edges: [],
+        retained_inspection: url.endsWith("42") ? inspection : null } };
+    });
+    const store = useWorkflowStore();
+    await store.loadWorkflow(42);
+    expect(store.retainedInspection?.graph.nodes[0].parameters_json).toContain("9007199254740993");
+    expect(vi.mocked(api.post).mock.calls.some(([url]) => url.endsWith("/preflight"))).toBe(false);
+    await expect(store.saveWorkflow()).rejects.toThrow("read-only");
+    await expect(store.executeWorkflow()).rejects.toThrow("read-only");
+    await expect(store.executeNode("old")).rejects.toThrow("read-only");
+    await expect(store.exportToPython()).rejects.toThrow("read-only");
+    expect(api.put).not.toHaveBeenCalled();
+    await store.loadWorkflow(43);
+    expect(store.retainedInspection).toBeNull();
+    expect(vi.mocked(api.post).mock.calls.some(([url]) => url.endsWith("/preflight"))).toBe(true);
+    store.clearWorkflow();
+    expect(store.retainedInspection).toBeNull();
+  });
   it('discloses reduced retained evidence and clears that notice when changing to an unexecuted sheet', async () => {
     setActivePinia(createPinia());
     vi.mocked(api.post).mockResolvedValue({ data: { is_valid: true, issues: [], semantic_edges: [] } });

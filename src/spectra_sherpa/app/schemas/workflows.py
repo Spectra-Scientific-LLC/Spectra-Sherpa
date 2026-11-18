@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from spectra_sherpa.app.lib.workflow_purpose import ANALYSIS_WORKFLOW, WorkflowPurpose
+from spectra_sherpa.app.schemas.retained_workflow import RetainedWorkflowInspection
 from spectra_sherpa.core.node_identity import canonical_node_type, canonicalize_serialized_workflow
 from spectra_sherpa.core.pack_requirements import PackGraphBinding
 
@@ -262,6 +263,7 @@ class WorkflowDetail(WorkflowSummary):
     """Schema for detailed workflow response."""
 
     pack_binding: PackGraphBinding | None = None
+    retained_inspection: RetainedWorkflowInspection | None = None
 
     @field_validator("pack_binding", mode="before")
     @classmethod

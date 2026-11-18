@@ -10764,6 +10764,37 @@
         "title": "RetainedNode",
         "type": "object"
       },
+      "RetainedWorkflowInspection": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_unavailable": {
+            "default": false,
+            "title": "Binding Unavailable",
+            "type": "boolean"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/RetainedGraph"
+          },
+          "read_only": {
+            "readOnly": true,
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "unavailable_node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unavailable Node Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "graph",
+          "read_only"
+        ],
+        "title": "RetainedWorkflowInspection",
+        "type": "object"
+      },
       "RunDatasetRef": {
         "properties": {
           "asset_id": {
@@ -14871,6 +14902,16 @@
             ],
             "title": "Purpose",
             "type": "string"
+          },
+          "retained_inspection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetainedWorkflowInspection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sample_type": {
             "anyOf": [

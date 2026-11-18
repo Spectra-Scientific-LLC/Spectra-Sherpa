@@ -17,7 +17,7 @@
       </template>
         <div class="toolbar-action-group">
           <Button v-if="workflowStore.workflowExcludedCount" label="Restore all" icon="pi pi-undo"
-            class="p-button-outlined p-button-sm" :disabled="isExecuting"
+            class="p-button-outlined p-button-sm" :disabled="isExecuting || retainedReadOnly"
             data-action="restore_workflow_observations" @click="workflowStore.restoreWorkflowObservations()" />
           <Button
             label="Analysis Starter"
@@ -46,6 +46,7 @@
               workflowContextLoading ||
               isTrialTabActive ||
               isManagedCandidateAuthority ||
+              retainedReadOnly ||
               pendingDataSelection ||
               nodes.length === 0 ||
               workflowParameterErrors.length > 0 ||
@@ -60,7 +61,7 @@
             icon="pi pi-save"
             class="p-button-outlined p-button-sm"
             :loading="autosaveStatus === 'saving'"
-            :disabled="isTrialTabActive || isManagedCandidateAuthority || !hasChanges || workflowParameterErrors.length > 0"
+            :disabled="isTrialTabActive || isManagedCandidateAuthority || retainedReadOnly || !hasChanges || workflowParameterErrors.length > 0"
             @click="triggerAutosave()"
           />
           <Button label="Compare runs" icon="pi pi-chart-bar" class="p-button-outlined p-button-sm"
@@ -70,7 +71,7 @@
             label="Export"
             icon="pi pi-download"
             class="p-button-outlined p-button-sm"
-            :disabled="isTrialTabActive"
+            :disabled="isTrialTabActive || retainedReadOnly"
             @click="toggleExportMenu"
             :title="workflowStore.hasFoldValidationPlan ? 'Project packages retain the cross-validation plan and available fitted models. Standalone code export is unavailable for this plan.' : 'Project packages include available fitted models; code exports reproduce the recipe.'"
           />
@@ -273,7 +274,7 @@
       }"
     >
       <WorkflowToolbar
-        v-show="!isTrialTabActive"
+        v-show="!isTrialTabActive && !retainedReadOnly"
         :class="{ 'trial-hidden': isTrialTabActive }"
         @add-node="onAddNode"
         @toggle-collapsed="onToolbarCollapsedChange"
@@ -316,8 +317,13 @@
             'trial-container': isTrialTabActive,
           }"
         >
+          <section v-if="retainedReadOnly && workflowStore.retainedInspection" class="retained-workspace" aria-label="Read-only retained workflow">
+            <p role="status">This workflow is read-only because its recorded operations are unavailable. Parameters and connections remain visible; saved results are available in Runs.</p>
+            <Button label="Open saved runs" icon="pi pi-history" @click="router.push({ path: '/runs', query: { project: projectStore.currentProjectId, tab: 'run_history' } })" />
+            <RetainedGraphView :graph="workflowStore.retainedInspection.graph" />
+          </section>
           <NodeDetailView
-            v-if="workbookStore.activeTrialSheet"
+            v-else-if="workbookStore.activeTrialSheet"
             :key="workbookStore.activeTrialSheet.trialId"
             embedded
             :initial-node-data="workbookStore.activeTrialSheet.trialData"
@@ -352,7 +358,7 @@
            v-show (not v-if) keeps it pre-mounted so there is no mount delay on the first click;
            display:none from v-show removes it from grid flow when hidden, preventing the phantom
            third-row that appeared with the old v-show="!isTrialTabActive" approach. -->
-      <ResizableInspectorPanel v-show="inspectorOpen && !isTrialTabActive" v-model="inspectorScale">
+      <ResizableInspectorPanel v-if="!retainedReadOnly" v-show="inspectorOpen && !isTrialTabActive" v-model="inspectorScale">
       <WorkflowInspector
         ref="inspectorRef"
         v-show="inspectorOpen && !isTrialTabActive"
@@ -402,6 +408,7 @@ import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
 import ProjectUnavailable from "@/views/ProjectUnavailable.vue";
+import RetainedGraphView from "@/components/RetainedGraphView.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import PromotionFitContext from "@/components/PromotionFitContext.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
@@ -453,6 +460,7 @@ const canOptimize = computed(() =>
 const route = useRoute();
 const router = useRouter();
 const workflowStore = useWorkflowStore();
+const retainedReadOnly = computed(() => workflowStore.retainedInspection?.read_only === true);
 provide(WORKFLOW_POPULATION_ACTIONS, workflowStore.workflowPopulationActions);
 const experimentStore = useExperimentStore();
 const projectStore = useProjectStore();
@@ -1362,6 +1370,7 @@ watch(
 
 const scheduleAutosave = () => {
   clearPendingAutosave();
+  if (retainedReadOnly.value) return;
   if (!workflowStore.hasUnsavedChanges || workflowStore.workflowId === null) return;
 
   autosaveStatus.value = "idle";
@@ -1543,6 +1552,7 @@ const canvasSummaryLabel = computed(() => {
 });
 
 const runButtonTitle = computed(() => {
+  if (retainedReadOnly.value) return "Read-only retained workflow: recorded operations are unavailable";
   if (pendingDataSelection.value) {
     return "Choose an Analysis Starter to bind the incoming My Dataset selection before running";
   }
@@ -1726,6 +1736,7 @@ const triggerAutosave = async (
   expectedSheetIndex?: number,
 ): Promise<boolean> => {
   autosaveTimer.value = null;
+  if (retainedReadOnly.value) return false;
   if (autosaveInFlight) return autosaveInFlight;
   if (
     expectedWorkflowId != null &&
@@ -2778,6 +2789,8 @@ const onDeleteNode = (nodeId: string) => {
 </script>
 
 <style scoped>
+.retained-workspace { overflow: auto; padding: 1rem; width: 100%; }
+
 .workflow-context-details { margin-bottom: .5rem; }
 .workflow-context-details > summary { cursor: pointer; font-size: .875rem; overflow-wrap: anywhere; }
 .workflow-context-summary { color: var(--text-color-secondary); }

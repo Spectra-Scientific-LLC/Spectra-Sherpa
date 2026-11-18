@@ -14,40 +14,17 @@
         <Button label="Previous" text :disabled="loading || inspection.workflow_index === 0" @click="load(inspection.workflow_index - 1)" />
         <Button label="Next" text :disabled="loading || inspection.workflow_index + 1 >= inspection.workflow_count" @click="load(inspection.workflow_index + 1)" />
       </div>
-      <h4>Recorded pack builds</h4>
-      <ul v-if="packs.length">
-        <li v-for="pack in packs" :key="pack.pack_id">
-          {{ pack.pack_id }} {{ pack.version }} <code>{{ pack.build_sha256 }}</code>
-        </li>
-      </ul>
-      <p v-else>No pack build identity was recorded in this graph.</p>
-      <h4>Nodes and parameters</h4>
-      <div class="retained-archive__table">
-        <table>
-          <thead><tr><th>Node</th><th>Operation</th><th>Retained parameters</th></tr></thead>
-          <tbody><tr v-for="node in inspection.graph.nodes" :key="node.node_id">
-            <td>{{ node.label || node.node_id }}<small v-if="node.label">{{ node.node_id }}</small></td>
-            <td><code>{{ node.node_type }}</code></td>
-            <td><pre>{{ node.parameters_json }}</pre></td>
-          </tr></tbody>
-        </table>
-      </div>
-      <h4>Connections</h4>
-      <ul v-if="inspection.graph.edges.length">
-        <li v-for="(edge, index) in inspection.graph.edges" :key="index">
-          {{ edge.from_node_id }} / {{ edge.from_output }} → {{ edge.to_node_id }} / {{ edge.to_input }}
-        </li>
-      </ul>
-      <p v-else>No connections were recorded.</p>
+      <RetainedGraphView :graph="inspection.graph" />
     </template>
     <template #footer><Button label="Close" text @click="close" /></template>
   </Dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
+import RetainedGraphView from "@/components/RetainedGraphView.vue";
 import { api } from "@/api";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useScopedRequest } from "@/composables/useScopedRequest";
@@ -69,13 +46,7 @@ const inspection = ref<Inspection | null>(null);
 const identity = () => [auth.user?.id, auth.sessionRevision, project.currentProjectId];
 const requests = useScopedRequest(() => [...identity(), visible.value, fileRevision.value]);
 watch(identity, close);
-const packs = computed(() => {
-  const found = new Map<string, components["schemas"]["PackReference"]>();
-  for (const node of inspection.value?.graph.pack_binding?.nodes ?? []) {
-    for (const pack of node.required) found.set(pack.pack_id, pack);
-  }
-  return [...found.values()];
-});
+
 
 function close(): void {
   requests.invalidate();
@@ -125,10 +96,4 @@ async function load(index: number): Promise<void> {
 
 <style scoped>
 .retained-archive__navigation { display: flex; gap: 0.5rem; }
-.retained-archive__table { overflow: auto; max-height: 24rem; }
-table { border-collapse: collapse; width: 100%; }
-th, td { text-align: left; vertical-align: top; padding: 0.6rem; border-bottom: 1px solid var(--surface-border); }
-small { display: block; }
-pre, code { white-space: pre-wrap; overflow-wrap: anywhere; }
-pre { margin: 0; max-width: 30rem; }
 </style>

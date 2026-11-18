@@ -8202,6 +8202,19 @@ export interface components {
              */
             readonly parameters_json: string;
         };
+        /** RetainedWorkflowInspection */
+        RetainedWorkflowInspection: {
+            /**
+             * Binding Unavailable
+             * @default false
+             */
+            binding_unavailable?: boolean;
+            graph: components["schemas"]["RetainedGraph"];
+            /** Read Only */
+            readonly read_only: boolean;
+            /** Unavailable Node Ids */
+            unavailable_node_ids?: string[];
+        };
         /** RunDatasetRef */
         RunDatasetRef: {
             /**
@@ -9812,6 +9825,7 @@ export interface components {
              * @enum {string}
              */
             purpose?: "analysis" | "managed_candidate_authority";
+            retained_inspection?: components["schemas"]["RetainedWorkflowInspection"] | null;
             /**
              * Sample Type
              * @description Sample type (e.g. polymer blend, pharmaceutical tablet, wine)
