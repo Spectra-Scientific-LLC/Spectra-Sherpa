@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import sys
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -90,9 +91,11 @@ async def test_slow_start_keeps_loop_responsive_and_capacity_owned(delayed_pool,
 
 
 @pytest.mark.parametrize("workflow", [False, True])
-@pytest.mark.parametrize("cancellation", ["asyncio", "anyio"])
-async def test_cancel_during_start_drains_then_reaps(delayed_pool, workflow, cancellation, tmp_path):
+@pytest.mark.parametrize("cancellation", ["asyncio", "anyio", "core_asyncio"])
+async def test_cancel_during_start_drains_then_reaps(delayed_pool, workflow, cancellation, tmp_path, monkeypatch):
     pool, entered, release, created, _ = delayed_pool
+    if cancellation == "core_asyncio":
+        monkeypatch.setitem(sys.modules, "anyio", None)
     scopes = []
     marker = tmp_path / "must-not-run"
 
@@ -104,7 +107,7 @@ async def test_cancel_during_start_drains_then_reaps(delayed_pool, workflow, can
     task = asyncio.create_task(run())
     try:
         await wait_entered(entered)
-        if cancellation == "asyncio":
+        if cancellation in {"asyncio", "core_asyncio"}:
             task.cancel()
             await asyncio.sleep(0.01)
             task.cancel()
@@ -113,7 +116,7 @@ async def test_cancel_during_start_drains_then_reaps(delayed_pool, workflow, can
         await asyncio.sleep(0.02)
         assert not task.done() and len(pool._owned) == 1 and pool._slots._value == 0
         release.set()
-        if cancellation == "asyncio":
+        if cancellation in {"asyncio", "core_asyncio"}:
             with pytest.raises(asyncio.CancelledError):
                 await task
         else:
