@@ -8,13 +8,13 @@ The context exits before archive bytes are released to the browser.
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
 from spectra_sherpa.app.schemas.execution_runs import ExecutionRunOut
 
-Provider = Callable[[AsyncSession, int, int, tuple[ExecutionRunOut, ...]], AbstractAsyncContextManager[None]]
+Provider = Callable[[AsyncSession, int, int, tuple[ExecutionRunOut, ...], Request], AbstractAsyncContextManager[None]]
 _provider: Provider | None = None
 
 
@@ -25,12 +25,12 @@ def set_retained_archive_export_provider(provider: Provider | None = None) -> No
 
 @asynccontextmanager
 async def retained_archive_export_admission(
-    session: AsyncSession, user_id: int, project_id: int, runs: tuple[ExecutionRunOut, ...]
+    session: AsyncSession, user_id: int, project_id: int, runs: tuple[ExecutionRunOut, ...], request: Request
 ) -> AsyncIterator[None]:
     if not runs or not uses_managed_project_access():
         yield
         return
     if _provider is None:
         raise HTTPException(409, "Retained-result archive export is not available for this managed project")
-    async with _provider(session, user_id, project_id, runs):
+    async with _provider(session, user_id, project_id, runs, request):
         yield

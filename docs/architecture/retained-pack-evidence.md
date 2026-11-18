@@ -47,8 +47,15 @@ or record shows the values as recorded, including units and population fields.
 Missing selected output ports retain their explicit refusal; another port is
 not silently substituted. Imported renderer fields are inert text.
 
-These contracts do not grant execution entitlement, install packages, add MCP
-write operations or change the existing scientific presentation authorities.
-Archive graph inspection does not claim that every run output is packaged in
-existing project archives. End-to-end archive result portability and commercial
-admission require their separate consumer and qualification coverage.
+In Runs, select completed runs and choose **Download project with runs** to
+include the selected records and their saved outputs in a project package.
+Open the downloaded package with **Inspect archive** to choose a run and view
+its saved results or download the original result JSON. Packages without saved
+results still support workflow inspection.
+
+When a saved workflow uses unavailable nodes or pack builds, its settings and
+connections remain visible in a read-only view. Open Runs to review its results.
+
+The archive manifest and output checksums establish consistency within the
+package. Publisher identity, execution permission and scientific qualification
+remain governed by their respective authorities.

@@ -74,6 +74,13 @@ describe("Project Store", () => {
     expect(store.lastExportOmittedModels).toBe(2);
   });
 
+  it("sends each selected run as a separate project export parameter", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: new Blob(["archive"]), headers: {} });
+    await useProjectStore().exportProject(1, [41, 42]);
+    const [, config] = vi.mocked(api.get).mock.lastCall!;
+    expect(config?.params.getAll("retained_run_ids")).toEqual(["41", "42"]);
+  });
+
   it.each(["campaign-review.sherpa", "managed-result.sherpa", "arbitrarily-renamed.sherpa"])(
     "uses the content-authoritative backend importer for %s",
     async (filename) => {

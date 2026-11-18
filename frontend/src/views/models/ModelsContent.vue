@@ -81,6 +81,14 @@
                 :loading="runsStore.comparisonLoading"
                 @click="handleCompareRuns"
               />
+              <Button
+                v-if="runsStore.selectedCount"
+                label="Download project with runs"
+                icon="pi pi-download"
+                class="p-button-text p-button-sm"
+                :loading="projectStore.exportingProjectIds.includes(projectStore.currentProjectId)"
+                @click="downloadProjectWithRuns"
+              />
             </div>
 
             <DataTable
@@ -1378,6 +1386,15 @@ function collectModelIds(value: unknown, ids: Set<string>): void {
   }
   for (const child of Object.values(record)) {
     if (child && typeof child === "object") collectModelIds(child, ids);
+  }
+}
+
+async function downloadProjectWithRuns(): Promise<void> {
+  const projectId = projectStore.currentProjectId;
+  if (projectId == null || !runsStore.selectedCount) return;
+  await projectStore.exportProject(projectId, [...runsStore.selectedRunIds]);
+  if (projectStore.currentProjectId === projectId && projectStore.error) {
+    toast.add({ severity: "error", summary: "Could not download the selected runs", detail: projectStore.error, life: 4000 });
   }
 }
 

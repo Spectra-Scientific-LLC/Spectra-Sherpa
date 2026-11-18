@@ -671,14 +671,17 @@ export const useProjectStore = defineStore("project", () => {
 
   // ── Export / Import ───────────────────────────────────────────
 
-  async function exportProject(id: number): Promise<void> {
+  async function exportProject(id: number, retainedRunIds: readonly number[] = []): Promise<void> {
     if (exportingProjectIds.value.includes(id)) return;
     const request = captureMutationScope();
     error.value = null;
     lastExportOmittedModels.value = 0;
     exportingProjectIds.value = [...exportingProjectIds.value, id];
     try {
+      const params = new URLSearchParams();
+      for (const runId of retainedRunIds) params.append("retained_run_ids", String(runId));
       const response = await api.get(`/projects/${id}/export/sherpa`, {
+        params,
         responseType: "blob",
         signal: request.signal,
       });

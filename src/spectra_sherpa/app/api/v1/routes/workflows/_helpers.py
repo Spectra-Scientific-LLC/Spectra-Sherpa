@@ -24,6 +24,7 @@ from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.services.audit import audit_emitter, build_reproducibility_record
 from spectra_sherpa.app.services.run_artifact_roles import attempted_artifact_fields
 from spectra_sherpa.app.services.run_environment import build_run_environment_snapshot
+from spectra_sherpa.app.services.saved_execution_admission import RetainCompletedRun
 
 logger = logging.getLogger(__name__)
 
@@ -747,6 +748,7 @@ async def _auto_persist_run(
     review_unavailable_reason: str | None = None,
     review_provenance_snapshot: dict[str, Any] | None = None,
     source_type: str = "auto",
+    retain_completed_run: RetainCompletedRun | None = None,
 ) -> int | None:
     """Persist an auto-saved ``ExecutionRun`` so results survive page refresh.
 
@@ -957,6 +959,12 @@ async def _auto_persist_run(
                     )
                 },
             )
+
+        if retain_completed_run is not None and run_row.status == "completed":
+            transaction = session.get_transaction()
+            await retain_completed_run(session, run_row)
+            if session.get_transaction() is not transaction:
+                raise ValueError("Run retention hooks cannot end their caller transaction")
 
         run_id = run_row.id
         await session.commit()

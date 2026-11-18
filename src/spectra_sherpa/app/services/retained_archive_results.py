@@ -76,6 +76,16 @@ class ArchivedResults(Frozen):
         return self
 
 
+def archived_run_record(run: ExecutionRunOut) -> ArchivedRun:
+    return ArchivedRun(
+        source_run_id=run.id,
+        source_workflow_id=run.workflow_id,
+        source_project_id=run.project_id,
+        record_json=run.model_dump_json(exclude={"evidence_completeness", "evidence_gaps"}),
+        evidence=run.evidence_completeness or RunEvidence(),
+    )
+
+
 def capture_archived_runs(
     runs: tuple[ExecutionRunOut, ...], *, max_bytes: int
 ) -> tuple[ArchivedResults, list[ArchiveMember]]:
@@ -86,18 +96,7 @@ def capture_archived_runs(
     """
     if len(runs) > MAX_ARCHIVE_RUNS or max_bytes < 0:
         raise ValueError("Retained archive run or byte limit exceeded")
-    index = ArchivedResults(
-        runs=tuple(
-            ArchivedRun(
-                source_run_id=run.id,
-                source_workflow_id=run.workflow_id,
-                source_project_id=run.project_id,
-                record_json=run.model_dump_json(exclude={"evidence_completeness", "evidence_gaps"}),
-                evidence=run.evidence_completeness or RunEvidence(),
-            )
-            for run in runs
-        )
-    )
+    index = ArchivedResults(runs=tuple(archived_run_record(run) for run in runs))
     encoded_index = index.model_dump_json().encode("utf-8")
     if len(encoded_index) > min(MAX_INDEX_BYTES, max_bytes):
         raise ValueError("Retained archive metadata exceeds its byte limit")

@@ -23,7 +23,7 @@ from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -4255,6 +4255,7 @@ def _public_archive_report(report: dict[str, Any]) -> dict[str, Any]:
 )
 async def export_project_sherpa_object(
     project_id: int,
+    request: Request,
     version_id: int | None = None,
     retained_run_ids: Annotated[list[int] | None, Query(max_length=256)] = None,
     session: AsyncSession = Depends(get_session),
@@ -4278,7 +4279,7 @@ async def export_project_sherpa_object(
     try:
         with archive_inspection_slot() if retained_run_ids else nullcontext():
             retained_runs = await selected_archive_runs(session, current_user.id, project_id, retained_run_ids)
-            async with retained_archive_export_admission(session, current_user.id, project_id, retained_runs):
+            async with retained_archive_export_admission(session, current_user.id, project_id, retained_runs, request):
                 if version_id:
                     query = select(ProjectVersion).where(
                         ProjectVersion.id == version_id, ProjectVersion.project_id == project_id

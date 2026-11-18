@@ -60,7 +60,7 @@ from spectra_sherpa.app.services.run_params import (
     build_saved_definition_snapshot,
     build_workflow_version_snapshot,
 )
-from spectra_sherpa.app.services.saved_execution_admission import SavedExecutionAdmission
+from spectra_sherpa.app.services.saved_execution_admission import RetainCompletedRun, SavedExecutionAdmission
 from spectra_sherpa.app.services.serialization import serialize_result
 from spectra_sherpa.app.services.workflow_access import (
     admitted_model_artifact_ids,
@@ -678,11 +678,14 @@ async def execute_saved_workflow(
     *,
     batch_binding=None,
     admission: SavedExecutionAdmission | None = None,
+    retain_completed_run: RetainCompletedRun | None = None,
 ) -> WorkflowExecuteResponse:
     """Canonical execution, optionally with one caller-owned admission record."""
     from contextlib import AsyncExitStack
 
     if admission is None:
+        if retain_completed_run is not None:
+            raise ValueError("Run retention hook requires trusted execution admission")
         return await _execute_saved_workflow(
             workflow_id, payload, session, current_user, idempotency_key, batch_binding=batch_binding
         )
@@ -715,6 +718,7 @@ async def execute_saved_workflow(
                 current_user,
                 idempotency_key,
                 admission=admission,
+                retain_completed_run=retain_completed_run,
                 sources_stack=sources_stack,
                 admission_transaction=transaction,
             )
@@ -732,6 +736,7 @@ async def _execute_saved_workflow(
     *,
     batch_binding=None,
     admission: SavedExecutionAdmission | None = None,
+    retain_completed_run: RetainCompletedRun | None = None,
     sources_stack=None,
     admission_transaction=None,
 ) -> WorkflowExecuteResponse:
@@ -953,6 +958,8 @@ async def _execute_saved_workflow(
             kwargs["source_metadata"] = {**(kwargs.get("source_metadata") or {}), **batch_binding.metadata}
             kwargs["source_type"] = "batch"
             kwargs["run_kind"] = batch_binding.metadata["run_kind"]
+        if retain_completed_run is not None:
+            kwargs["retain_completed_run"] = retain_completed_run
         return await _auto_persist_run(*args, **kwargs)
 
     # Idempotency: ownership check has passed (so an unauthenticated /

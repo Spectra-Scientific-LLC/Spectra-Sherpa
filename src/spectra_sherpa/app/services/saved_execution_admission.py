@@ -7,13 +7,18 @@ callers can bind their durable admission records in that same transaction.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.services.frozen_workflow_sources import FrozenWorkflowSources
 from spectra_sherpa.core.captured_model_artifacts import CapturedModelArtifacts
+
+# A trusted caller may bind evidence to the same transaction as the terminal run.
+RetainCompletedRun = Callable[[AsyncSession, ExecutionRun], Awaitable[None]]
 
 
 @dataclass(frozen=True)

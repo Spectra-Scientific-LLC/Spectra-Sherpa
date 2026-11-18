@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from spectra_sherpa.app.api.v1.routes import projects
 from spectra_sherpa.app.contracts import retained_archive_export as admission
@@ -47,7 +47,7 @@ async def saved_run(test_session, test_user, tmp_path, monkeypatch):
 async def test_selected_run_and_original_output_export_without_pack_code(test_session, test_user, saved_run):
     project, run, encoded = saved_run
     response = await projects.export_project_sherpa_object(
-        project.id, session=test_session, current_user=test_user, retained_run_ids=[run.id]
+        project.id, Request({"type": "http"}), session=test_session, current_user=test_user, retained_run_ids=[run.id]
     )
     try:
         payload = Path(response.path).read_bytes()
@@ -90,7 +90,9 @@ async def test_managed_export_requires_positive_disclosure_provider(test_session
     monkeypatch.setattr(admission, "uses_managed_project_access", lambda: True)
     monkeypatch.setattr(admission, "_provider", None)
     with pytest.raises(HTTPException, match="not available"):
-        async with admission.retained_archive_export_admission(test_session, test_user.id, project.id, runs):
+        async with admission.retained_archive_export_admission(
+            test_session, test_user.id, project.id, runs, Request({"type": "http"})
+        ):
             pytest.fail("Unqualified managed result export entered byte collection")
 
 
@@ -117,7 +119,11 @@ async def test_disclosure_commit_failure_removes_archive_before_response(
     monkeypatch.setattr(admission, "_provider", failed_commit)
     with pytest.raises(HTTPException, match="could not commit"):
         await projects.export_project_sherpa_object(
-            project.id, session=test_session, current_user=test_user, retained_run_ids=[run.id]
+            project.id,
+            Request({"type": "http"}),
+            session=test_session,
+            current_user=test_user,
+            retained_run_ids=[run.id],
         )
     assert created and all(not Path(path).exists() for path in created)
 
@@ -160,7 +166,11 @@ async def test_capacity_is_reserved_before_database_selection(test_session, test
     with archive_inspection_slot(), archive_inspection_slot():
         with pytest.raises(HTTPException) as caught:
             await projects.export_project_sherpa_object(
-                project.id, session=test_session, current_user=test_user, retained_run_ids=[run.id]
+                project.id,
+                Request({"type": "http"}),
+                session=test_session,
+                current_user=test_user,
+                retained_run_ids=[run.id],
             )
     assert caught.value.status_code == 503
 
