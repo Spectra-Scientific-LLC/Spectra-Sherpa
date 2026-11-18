@@ -32,8 +32,9 @@ if os.environ.get("SPECTRA_DAG_SKIP_BUILTIN_REGISTRATION") != "1":
         time_series,
     )
 
-    # Lock the exact installed operation vocabulary for this process.
-    node_registry.freeze_builtins()
+# Imports populate the explicit built-ins; trusted startup may compose packs
+# before the first ordinary catalog read seals the process vocabulary.
+node_registry._finish_builtin_imports(lean=os.environ.get("SPECTRA_DAG_SKIP_BUILTIN_REGISTRATION") == "1")
 
 
 def __getattr__(name: str):

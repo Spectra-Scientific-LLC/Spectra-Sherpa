@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from tests.eigenvector_pytest_fixtures import patch_eigenvector_loader  # noqa: F401
+
 if TYPE_CHECKING:
     from spectra_sherpa.app.models.user import User
 
@@ -321,18 +323,6 @@ def reset_rate_limiter_state() -> None:
         (settings.data_dir / f"{name}.json").write_text("{}")
 
     yield
-
-
-@pytest.fixture
-def patch_eigenvector_loader(monkeypatch: pytest.MonkeyPatch):
-    """Route Eigenvector execution tests to generated non-upstream fixtures."""
-    from tests.eigenvector_test_fixtures import generated_eigenvector_result
-
-    monkeypatch.setattr(
-        "spectra_sherpa.app.lib.eigenvector.load_eigenvector_dataset",
-        generated_eigenvector_result,
-    )
-    return generated_eigenvector_result
 
 
 @pytest.fixture

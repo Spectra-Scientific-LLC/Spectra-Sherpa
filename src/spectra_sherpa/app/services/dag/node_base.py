@@ -7,6 +7,7 @@ Nodes can be connected to form directed acyclic graphs (DAGs).
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import logging
 import math
@@ -18,6 +19,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Type
 
 from spectra_sherpa.core.execution_runtime import ExecutionRuntime
 from spectra_sherpa.core.node_identity import canonical_node_type
+from spectra_sherpa.core.pack_manifest import PackManifest
 
 from .transport import reject_spectrochempy_transport
 
@@ -234,6 +236,8 @@ class NodeMetadata:
     # hosted campaign can safely admit.  Keeping this callable beside the
     # node prevents the managed executor from growing a second operation map.
     managed_parameter_validator: Optional[Callable[[dict[str, object]], dict[str, object]]] = None
+    # Installed product ownership, independent of current execution entitlement.
+    distribution: str = "oss"
 
     def resolved_execution_contract(self):
         """Return the immutable M4 contract, or ``None`` for an uncontracted node.
@@ -790,16 +794,71 @@ def resolved_runtime_worker_capabilities(node: Node) -> tuple[str, ...]:
 class NodeRegistry:
     """Registry for available node types.
 
-    Built-in modules populate the registry during deterministic application
-    import. ``freeze_builtins()`` then makes that exact vocabulary immutable
-    for the lifetime of the process.
+    Explicit built-in imports populate the managed registry without sealing it.
+    Trusted bootstrap or the first ordinary read seals one exact composition.
+    Isolated registries remain available for contract construction and tests.
     """
 
-    def __init__(self):
+    def __init__(self, *, managed_startup: bool = False):
+        self._managed_startup = managed_startup
+        self._startup_state = "loading" if managed_startup else "isolated"
+        self._startup_owner = threading.get_ident()
+        self._lean_builtin_imports = False
+        self._builtin_active = 0
+        self._composition: tuple[tuple[Any, ...], ...] = ()
+        self._pack_manifests: tuple[PackManifest, ...] = ()
+        self._pack_tools: tuple[Any, ...] = ()
+        self._composition_digest: str | None = None
         self._nodes: Dict[str, Type[Node]] = {}
         self._builtin_types: set[str] = set()
         self._frozen: bool = False
         self._lock = threading.RLock()
+
+    @property
+    def pack_manifests(self) -> tuple[PackManifest, ...]:
+        self._ensure_ready()
+        return self._pack_manifests
+
+    @property
+    def composition_digest(self) -> str:
+        self._ensure_ready()
+        return self._composition_digest or hashlib.sha256(b"[]").hexdigest()
+
+    def _finish_builtin_imports(self, *, lean: bool = False) -> None:
+        with self._lock:
+            if self._startup_state != "loading":
+                raise ValueError("Built-in startup is not active")
+            self._lean_builtin_imports = lean
+            self._startup_state = "pending"
+
+    def _ensure_ready(self) -> None:
+        if not self._managed_startup:
+            return
+        with self._lock:
+            if self._startup_state == "pending":
+                if self._builtin_active:
+                    raise ValueError("Node catalog is unavailable during built-in registration")
+                self._builtin_types = set(self._nodes)
+                self._frozen = True
+                self._startup_state = "frozen"
+            elif self._startup_state != "frozen":
+                raise ValueError("Node catalog is unavailable during or after failed startup")
+
+    def _register_builtin(self, node_class: Type[Node]) -> None:
+        with self._lock:
+            permitted = self._startup_state == "loading" or (
+                self._startup_state == "pending" and self._lean_builtin_imports
+            )
+            if not permitted or threading.get_ident() != self._startup_owner:
+                raise ValueError("Node registry is frozen; runtime node registration is disabled")
+            if not node_class.__module__.startswith("spectra_sherpa.app.services.dag.nodes."):
+                raise ValueError("Built-in registration requires an explicit installed node module")
+            self._builtin_active += 1
+        try:
+            self._register_validated(node_class)
+        finally:
+            with self._lock:
+                self._builtin_active -= 1
 
     @property
     def is_frozen(self) -> bool:
@@ -813,6 +872,9 @@ class NodeRegistry:
         Call this once after all built-in nodes have been imported.
         After freezing, no code may add, replace, or remove a node type.
         """
+        if self._managed_startup:
+            self._ensure_ready()
+            return
         with self._lock:
             self._builtin_types = set(self._nodes.keys())
             self._frozen = True
@@ -833,30 +895,37 @@ class NodeRegistry:
         Raises:
             ValueError: If the registry is frozen or the node contract is invalid
         """
+        if self._managed_startup:
+            self._ensure_ready()
+            raise ValueError("Node registry is frozen; runtime node registration is disabled")
+        self._register_validated(node_class)
+
+    def _register_validated(self, node_class: Type[Node]) -> None:
         with self._lock:
             if self._frozen:
                 raise ValueError("Node registry is frozen; runtime node registration is disabled")
-            metadata = node_class.get_metadata()
-            node_type = metadata.node_type
-            policy_errors = validate_explicit_node_policy(metadata)
-            if policy_errors:
-                raise ValueError("\n".join(policy_errors))
-            contract_errors = validate_execute_port_contract(node_class)
-            if contract_errors:
-                raise ValueError("\n".join(contract_errors))
-
+        # Class metadata may import modules. Never hold the catalog lock while
+        # calling installed Python: Python import locks have separate ownership.
+        metadata = node_class.get_metadata()
+        node_type = metadata.node_type
+        if self._managed_startup and metadata.distribution != "oss":
+            raise ValueError("Built-in nodes must declare OSS distribution")
+        policy_errors = validate_explicit_node_policy(metadata)
+        if policy_errors:
+            raise ValueError("\n".join(policy_errors))
+        contract_errors = validate_execute_port_contract(node_class)
+        if contract_errors:
+            raise ValueError("\n".join(contract_errors))
+        with self._lock:
+            if self._frozen:
+                raise ValueError("Node registry is frozen; runtime node registration is disabled")
             if node_type in self._nodes:
-                logger.warning(
-                    "Node type %r re-registered (overwriting %s with %s)",
-                    node_type,
-                    self._nodes[node_type].__name__,
-                    node_class.__name__,
-                )
-
+                raise ValueError(f"Duplicate node type: {node_type}")
             self._nodes[node_type] = node_class
 
     def __contains__(self, node_type: str) -> bool:
         """Check if a node type is registered."""
+        self._ensure_ready()
         with self._lock:
             return canonical_node_type(node_type) in self._nodes
 
@@ -869,8 +938,11 @@ class NodeRegistry:
         Raises:
             ValueError: If attempting to unregister a built-in node type.
         """
+        self._ensure_ready()
         with self._lock:
             node_type = canonical_node_type(node_type)
+            if self._frozen and node_type in self._nodes:
+                raise ValueError("Cannot unregister a frozen node type")
             if node_type in self._builtin_types:
                 raise ValueError(f"Cannot unregister built-in node type {node_type!r}")
             return self._nodes.pop(node_type, None) is not None
@@ -890,6 +962,7 @@ class NodeRegistry:
         Raises:
             KeyError: If node type is not registered
         """
+        self._ensure_ready()
         with self._lock:
             node_type = canonical_node_type(node_type)
             if node_type not in self._nodes:
@@ -901,11 +974,13 @@ class NodeRegistry:
 
     def get_metadata(self, node_type: str) -> NodeMetadata:
         """Get metadata for a node type."""
+        self._ensure_ready()
         with self._lock:
             node_type = canonical_node_type(node_type)
             if node_type not in self._nodes:
                 raise KeyError(f"Unknown node type: {node_type}")
-            return self._nodes[node_type].get_metadata()
+            implementation = self._nodes[node_type]
+        return implementation.get_metadata()
 
     def get_catalog_metadata(self, node_type: str) -> NodeMetadata:
         """Get scientist-facing catalog metadata without changing execution metadata."""
@@ -915,6 +990,7 @@ class NodeRegistry:
 
     def get_node_class(self, node_type: str) -> Type[Node]:
         """Get the registered Node class for a node type."""
+        self._ensure_ready()
         with self._lock:
             node_type = canonical_node_type(node_type)
             if node_type not in self._nodes:
@@ -923,15 +999,10 @@ class NodeRegistry:
 
     def list_nodes(self) -> List[NodeMetadata]:
         """List all registered node types (deduplicated by class identity)."""
+        self._ensure_ready()
         with self._lock:
-            seen: set[int] = set()
-            result: List[NodeMetadata] = []
-            for cls in self._nodes.values():
-                cls_id = id(cls)
-                if cls_id not in seen:
-                    seen.add(cls_id)
-                    result.append(cls.get_metadata())
-            return result
+            implementations = tuple(dict.fromkeys(self._nodes.values()))
+        return [implementation.get_metadata() for implementation in implementations]
 
     def list_catalog_nodes(self) -> List[NodeMetadata]:
         """List the scientist-facing projection of every registered node."""
@@ -941,12 +1012,12 @@ class NodeRegistry:
 
     def list_by_category(self, category: str) -> List[NodeMetadata]:
         """List nodes in a specific category."""
-        with self._lock:
-            return [metadata for metadata in self.list_nodes() if metadata.category == category]
+        self._ensure_ready()
+        return [metadata for metadata in self.list_nodes() if metadata.category == category]
 
 
 # Global registry instance
-node_registry = NodeRegistry()
+node_registry = NodeRegistry(managed_startup=True)
 
 
 def register_node(node_class: Type[Node]) -> Type[Node]:
@@ -958,5 +1029,5 @@ def register_node(node_class: Type[Node]) -> Type[Node]:
         class MyNode(Node):
             ...
     """
-    node_registry.register(node_class)
+    node_registry._register_builtin(node_class)
     return node_class
