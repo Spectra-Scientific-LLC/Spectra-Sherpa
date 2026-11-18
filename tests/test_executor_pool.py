@@ -959,9 +959,9 @@ async def test_legacy_assertion_failure_stops_only_owned_running_workers(tmp_pat
                     original_poll = worker._popen.poll
 
                     def manager_only_poll(*args, _poll=original_poll, **kwargs):
-                        assert threading.current_thread() is manager or not manager.is_alive(), (
-                            "Only the executor manager may reap a worker before shutdown completes"
-                        )
+                        assert (
+                            threading.current_thread() is manager or not manager.is_alive()
+                        ), "Only the executor manager may reap a worker before shutdown completes"
                         return _poll(*args, **kwargs)
 
                     monkeypatch.setattr(worker._popen, "poll", manager_only_poll)
