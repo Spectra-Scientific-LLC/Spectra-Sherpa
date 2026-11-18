@@ -500,6 +500,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
   // Actions
   function loadTemplate(templateId: number) {
+    requireEditableWorkflow();
     const template = templates.value.find((item) => item.id === templateId);
     if (!template) {
       console.warn(`Template not found: ${templateId}`);
@@ -1339,12 +1340,19 @@ export const useWorkflowStore = defineStore("workflow", () => {
     targetWorkflowId: number,
     initialData?: ParamsMap,
   ): Promise<WorkflowExecuteResponse> {
+    if (targetWorkflowId === workflowId.value) requireEditableWorkflow();
     const workbookStore = useWorkbookStore();
     const sheet = workbookStore.sheets.find((s) => s.workflowId === targetWorkflowId);
     if (sheet?.purpose === "managed_candidate_authority") {
       throw new Error(
         "Campaign candidate workflows can only be run by their Optimize campaign",
       );
+    }
+    const ownership = workflowOwnership.capture();
+    const retained = await api.get<components["schemas"]["WorkflowDetail"]>(`/workflows/${targetWorkflowId}`);
+    if (!ownership.isCurrent()) throw new Error("Active workspace changed before running the saved workflow.");
+    if (retained.data.retained_inspection?.read_only) {
+      throw new Error("This retained workflow is read-only because its recorded operations are unavailable.");
     }
     // Trial tabs mirror the source workflow's run state — see executeWorkflow.
     const trialMirrors = workbookStore.sheets.filter(

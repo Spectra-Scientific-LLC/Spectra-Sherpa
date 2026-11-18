@@ -354,7 +354,8 @@ def retain_run_outputs(
     ).model_dump()
 
 
-def read_output(user_id: int, evidence: OutputEvidence) -> Any:
+def read_output_bytes(user_id: int, evidence: OutputEvidence) -> bytes:
+    """Read the original verified envelope for lossless retained transport."""
     if evidence.storage != "file" or evidence.sha256 is None:
         raise FileNotFoundError(evidence.reason or "This historical output was not retained.")
     path = _user_directory(user_id) / f"{evidence.sha256}.json"
@@ -382,7 +383,11 @@ def read_output(user_id: int, evidence: OutputEvidence) -> Any:
         raise ValueError("Unsupported retained output format")
     if "value" not in envelope:
         raise ValueError("Retained output has no value")
-    return envelope["value"]
+    return payload
+
+
+def read_output(user_id: int, evidence: OutputEvidence) -> Any:
+    return json.loads(read_output_bytes(user_id, evidence))["value"]
 
 
 def prune_unreferenced_outputs(user_id: int, retained_digests: set[str], *, grace_seconds: int = 86400) -> int:

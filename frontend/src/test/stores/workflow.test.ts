@@ -501,7 +501,9 @@ describe("Workflow Store execution state restoration on loadWorkflow", () => {
     await expect(store.saveWorkflow()).rejects.toThrow("read-only");
     await expect(store.executeWorkflow()).rejects.toThrow("read-only");
     await expect(store.executeNode("old")).rejects.toThrow("read-only");
+    await expect(store.executeStoredWorkflow(42)).rejects.toThrow("read-only");
     await expect(store.exportToPython()).rejects.toThrow("read-only");
+    expect(() => store.loadTemplate(1)).toThrow("read-only");
     expect(api.put).not.toHaveBeenCalled();
     await store.loadWorkflow(43);
     expect(store.retainedInspection).toBeNull();

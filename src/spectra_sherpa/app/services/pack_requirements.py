@@ -66,3 +66,11 @@ def capture_saved_pack_binding(nodes: Sequence[Mapping[str, Any]]) -> dict[str, 
     except (PackManifestError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail={"code": "pack_binding_not_retainable"}) from exc
     return binding.model_dump(mode="json") if binding.nodes else None
+
+
+def require_saved_workflow_pack_binding(workflow: Any) -> PackGraphBinding:
+    """Check an existing recipe before export source reads or node callbacks."""
+    return require_matching_pack_binding(
+        [{"node_id": node.node_id, "node_type": node.node_type} for node in workflow.nodes],
+        read_stored_pack_binding(getattr(workflow, "pack_binding", None)),
+    )

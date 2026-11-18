@@ -178,6 +178,10 @@ def build_canonical_executable_export(
     current registry through :func:`workflow_spec`.
     """
 
+    from spectra_sherpa.app.services.pack_requirements import require_saved_workflow_pack_binding
+
+    retained_binding = require_saved_workflow_pack_binding(workflow)
+
     if getattr(workflow, "fold_validation_plan", None) is not None:
         raise ValueError(
             "Executable code export cannot preserve the sheet validation plan; export its .sherpa project instead."
@@ -320,6 +324,8 @@ def build_canonical_executable_export(
         for edge in workflow.edges
     ]
     admitted = workflow_spec(nodes=nodes, edges=edges)
+    if retained_binding.nodes and admitted.payload.get("pack_binding") != retained_binding.model_dump(mode="json"):
+        raise ValueError("Executable export must preserve the recorded pack binding")
     node_types = {str(node["node_id"]): str(node["node_type"]) for node in admitted.payload["nodes"]}
     node_labels: dict[str, str] = {}
     for node_id, node_type in node_types.items():
