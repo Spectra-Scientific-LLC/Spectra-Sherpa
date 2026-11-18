@@ -797,14 +797,14 @@ def create_app(
     # Hosted applications must not publish their admin-route inventory.
     publish_api_docs = include_api_docs and (is_local() or allows_implicit_loopback_identity())
 
+    lifespan_options = {"worker_initializer": worker_initializer} if worker_initializer is not None else {}
+    core_lifespan = _make_lifespan(extra_startup, extra_shutdown, **lifespan_options)
     _app = FastAPI(
         title=settings.app_name,
         openapi_url="/api/openapi.json" if publish_api_docs else None,
         docs_url="/api/docs" if publish_api_docs else None,
         redoc_url="/api/redoc" if publish_api_docs else None,
-        lifespan=compose_lifespan(
-            _make_lifespan(extra_startup, extra_shutdown, worker_initializer), extra_lifespans or ()
-        ),
+        lifespan=compose_lifespan(core_lifespan, extra_lifespans or ()),
     )
     from spectra_sherpa.app.services.ws_action_registry import build_default_ws_action_registry
 
