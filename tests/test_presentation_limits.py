@@ -28,7 +28,8 @@ async def test_model_comparison_bounds_actual_combined_results(monkeypatch):
 
     calls = []
 
-    async def apply(uid, dataset, *, scope):
+    async def apply(uid, dataset, *, scope, pack_authorizer):
+        await pack_authorizer(())
         calls.append(uid)
         return {"transformed": [0.0] * 30_000}
 
@@ -41,7 +42,8 @@ async def test_model_comparison_bounds_actual_combined_results(monkeypatch):
 async def test_model_comparison_does_not_charge_input_features_as_output(monkeypatch):
     from spectra_sherpa.app.services import model_application
 
-    async def apply(uid, dataset, *, scope):
+    async def apply(uid, dataset, *, scope, pack_authorizer):
+        await pack_authorizer(())
         return {"artifact_uid": uid, "predictions": [1.0] * 80}
 
     monkeypatch.setattr(model_application, "apply_model_to_dataset", apply)
