@@ -4,9 +4,9 @@ Trusted application startup can compose explicitly installed node and tool packs
 before work begins. This foundation does not yet propagate pack dependencies
 through retained workflows or artifacts, or provide commercial entitlement admission.
 
-Contract imports must not freeze the global DAG catalog. The DAG package will
-offer an explicit `bootstrap(extensions=...)` entry point for trusted application
-startup. The first ordinary registry read bootstraps the OSS-only catalog when
+Contract imports do not freeze the global DAG catalog. The application service
+`app.services.pack_bootstrap` supplies `bootstrap(extensions=...)` for trusted
+startup. Scientific registry/worker code does not import application tool services. The first ordinary registry read bootstraps the OSS-only catalog when
 the host has supplied no extensions. A direct runtime registration attempt must
 first finalize that default catalog and then fail before inspecting its candidate.
 The existing closed-code boundary therefore remains the default.

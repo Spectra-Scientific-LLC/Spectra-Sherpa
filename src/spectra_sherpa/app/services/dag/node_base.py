@@ -7,6 +7,7 @@ Nodes can be connected to form directed acyclic graphs (DAGs).
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import logging
 import math
@@ -14,7 +15,7 @@ import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Type
+from typing import Any, Callable, Dict, List, Mapping, Optional, Type
 
 from spectra_sherpa.core.execution_runtime import ExecutionRuntime
 from spectra_sherpa.core.node_identity import canonical_node_type
@@ -23,9 +24,6 @@ from spectra_sherpa.core.pack_manifest import PackManifest
 from .transport import reject_spectrochempy_transport
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from .bootstrap import ComposedPackTool
 
 
 @dataclass
@@ -809,12 +807,22 @@ class NodeRegistry:
         self._builtin_active = 0
         self._composition: tuple[tuple[Any, ...], ...] = ()
         self._pack_manifests: tuple[PackManifest, ...] = ()
-        self._pack_tools: tuple[ComposedPackTool, ...] = ()
+        self._pack_tools: tuple[Any, ...] = ()
         self._composition_digest: str | None = None
         self._nodes: Dict[str, Type[Node]] = {}
         self._builtin_types: set[str] = set()
         self._frozen: bool = False
         self._lock = threading.RLock()
+
+    @property
+    def pack_manifests(self) -> tuple[PackManifest, ...]:
+        self._ensure_ready()
+        return self._pack_manifests
+
+    @property
+    def composition_digest(self) -> str:
+        self._ensure_ready()
+        return self._composition_digest or hashlib.sha256(b"[]").hexdigest()
 
     def _finish_builtin_imports(self, *, lean: bool = False) -> None:
         with self._lock:

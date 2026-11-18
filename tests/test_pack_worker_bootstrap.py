@@ -17,7 +17,7 @@ def test_spawned_pack_worker_matches_host_and_refuses_missing_composition(tmp_pa
             import os
             from pathlib import Path
             from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodePolicy, node_registry
-            from spectra_sherpa.app.services.dag.bootstrap import InstalledPack, bootstrap
+            from spectra_sherpa.app.services.pack_bootstrap import InstalledPack, bootstrap
             from spectra_sherpa.core.pack_build import PackFile, build_sha256
             from spectra_sherpa.core.pack_manifest import PackManifest
 

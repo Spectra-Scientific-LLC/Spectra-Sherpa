@@ -62,13 +62,11 @@ def _isolated_call(output_path: str, function, args: tuple) -> None:
 def _initialize_worker(initializer, expected_packs, expected_digest=None) -> None:
     # Only trusted host startup supplies this callable. Request/workflow data
     # cannot choose imports, initialization functions or installed composition.
-    from .bootstrap import installed_composition_digest, installed_pack_manifests
-
     if initializer is not None:
         initializer()
-    if installed_pack_manifests() != expected_packs:
+    if node_registry.pack_manifests != expected_packs:
         raise RuntimeError("Scientific worker installed pack composition differs from its host")
-    if expected_digest is not None and installed_composition_digest() != expected_digest:
+    if expected_digest is not None and node_registry.composition_digest != expected_digest:
         raise RuntimeError("Scientific worker node/tool bindings differ from its host")
 
 
@@ -225,10 +223,9 @@ class IsolatedWorkerPool:
     def __init__(self, max_workers: int, *, initializer: Callable[[], None] | None = None):
         if max_workers < 1:
             raise ValueError("max_workers must be positive")
-        from .bootstrap import installed_composition_digest, installed_pack_manifests
 
-        self._expected_packs = installed_pack_manifests()
-        self._expected_digest = installed_composition_digest()
+        self._expected_packs = node_registry.pack_manifests
+        self._expected_digest = node_registry.composition_digest
         if self._expected_packs and initializer is None:
             raise ValueError("Installed packs require an explicit trusted worker initializer")
         self._initializer = initializer

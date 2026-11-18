@@ -20,7 +20,7 @@ from spectra_sherpa.app.services.tools.schemas import ToolDefinition, ToolHandle
 from spectra_sherpa.core.pack_build import PackFile, verify_installed_build
 from spectra_sherpa.core.pack_manifest import PackManifest, validate_pack_set
 
-from .node_base import Node, NodeRegistry, node_registry
+from .dag.node_base import Node, NodeRegistry, node_registry
 
 
 @dataclass(frozen=True)
@@ -191,8 +191,7 @@ def bootstrap(*, extensions: tuple[InstalledPack, ...] = ()) -> tuple[PackManife
 
 
 def installed_pack_manifests() -> tuple[PackManifest, ...]:
-    node_registry._ensure_ready()
-    return node_registry._pack_manifests
+    return node_registry.pack_manifests
 
 
 def installed_pack_tools() -> tuple[ComposedPackTool, ...]:
@@ -203,5 +202,4 @@ def installed_pack_tools() -> tuple[ComposedPackTool, ...]:
 
 def installed_composition_digest() -> str:
     """Cross-process binding of manifests, node contracts and tool interfaces."""
-    node_registry._ensure_ready()
-    return node_registry._composition_digest or hashlib.sha256(b"[]").hexdigest()
+    return node_registry.composition_digest

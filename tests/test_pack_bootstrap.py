@@ -15,7 +15,7 @@ from spectra_sherpa.app.services.tools.schemas import ToolDefinition
 from spectra_sherpa.core.pack_build import PackFile, build_sha256
 from tests.test_pack_manifest import pack
 
-startup = importlib.import_module("spectra_sherpa.app.services.dag.bootstrap")
+startup = importlib.import_module("spectra_sherpa.app.services.pack_bootstrap")
 
 
 NODE_SOURCE = """
@@ -242,6 +242,7 @@ def test_duplicate_tool_aliases_and_missing_handlers_are_refused(registry, exten
 
 
 def test_worker_digest_guard_refuses_equal_manifests_with_changed_node_contract(registry, extension, monkeypatch):
+    from spectra_sherpa.app.services.dag import executor_pool
     from spectra_sherpa.app.services.dag.executor_pool import _initialize_worker
     from spectra_sherpa.execution_contract_vocabulary import NodeExecutionContract
 
@@ -250,6 +251,7 @@ def test_worker_digest_guard_refuses_equal_manifests_with_changed_node_contract(
     replacement = NodeRegistry(managed_startup=True)
     replacement._finish_builtin_imports()
     monkeypatch.setattr(startup, "node_registry", replacement)
+    monkeypatch.setattr(executor_pool, "node_registry", replacement)
     payload = extension.nodes[0].metadata.execution_contract.as_dict()
     payload["implementation_version"] = "999.0"
     extension.nodes[0].metadata.execution_contract = NodeExecutionContract.from_dict(payload)
@@ -274,7 +276,7 @@ from spectra_sherpa.app.services.dag.node_base import node_registry
 assert not node_registry.is_frozen
 assert node_registry.list_nodes()
 assert node_registry.is_frozen
-from spectra_sherpa.app.services.dag.bootstrap import bootstrap
+from spectra_sherpa.app.services.pack_bootstrap import bootstrap
 assert bootstrap() == ()
 """
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=45)
