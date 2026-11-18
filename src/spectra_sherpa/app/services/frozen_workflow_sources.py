@@ -22,8 +22,8 @@ from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.services.collection_definitions import read_collection_definition
 from spectra_sherpa.app.services.dataset_access import require_experiment_access
 from spectra_sherpa.app.services.dataset_source_resolver import ApplicationDatasetSourceResolver, _experiment_path
-from spectra_sherpa.app.services.drained_thread import drained_read as _drained_read
 from spectra_sherpa.app.services.prepared_data import load_prepared_data_overrides_strict
+from spectra_sherpa.core.drained_thread import drained_read as _drained_read
 from spectra_sherpa.core.execution_runtime import ResolvedExperimentCollection, ResolvedExperimentFile
 
 _MAX_BYTES = 64 * 1024 * 1024

@@ -1086,7 +1086,7 @@ class DAGExecutor:
         self._cached_model_packs.pop(node.node_id, None)
         if node.metadata.node_type != "model.load_apply":
             return ()
-        from spectra_sherpa.app.services.drained_thread import drained_read
+        from spectra_sherpa.core.drained_thread import drained_read
 
         from .nodes.modeling.load_apply_node import LoadApplyModelNode
 
