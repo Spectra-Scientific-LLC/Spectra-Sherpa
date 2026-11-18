@@ -1086,7 +1086,7 @@ class DAGExecutor:
         self._cached_model_packs.pop(node.node_id, None)
         if node.metadata.node_type != "model.load_apply":
             return ()
-        from spectra_sherpa.app.services.frozen_workflow_sources import _drained_read
+        from spectra_sherpa.app.services.drained_thread import drained_read
 
         from .nodes.modeling.load_apply_node import LoadApplyModelNode
 
@@ -1099,7 +1099,7 @@ class DAGExecutor:
         )
         model_id = node._resolve_model_id(reference)
         try:
-            required = await _drained_read(read_model_replay_requirements, reader, model_id)
+            required = await drained_read(read_model_replay_requirements, reader, model_id)
         except FileNotFoundError:
             # Preserve the consumer's existing missing-artifact result.
             return ()
