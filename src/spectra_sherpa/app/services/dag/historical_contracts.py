@@ -25,7 +25,10 @@ from spectra_sherpa.app.services.dag.validation_graph import (
     validation_graph_from_dict,
     validation_graph_identity_digest,
 )
-from spectra_sherpa.core.contract_compatibility import inspection_predecessor_catalog
+from spectra_sherpa.core.contract_compatibility import (
+    inspection_predecessor_catalog,
+    pack_retention_inspection_registration,
+)
 from spectra_sherpa.execution_contract_vocabulary import NodeExecutionContract
 
 
@@ -278,11 +281,51 @@ _BASELINE_CV_INSPECTION_CONSUMERS = {
 }
 
 
+def _verified_archived_contract(archived: Mapping, digest: str) -> NodeExecutionContract:
+    contract = NodeExecutionContract.from_dict(archived["payload"])
+    if contract.digest != archived["digest"] or contract.digest != digest:
+        raise ValidationGraphError("unknown historical operation/contract identity")
+    return contract
+
+
+def _pack_inspection_reader(catalog, operation, contract, current):
+    if contract.digest == current.digest:
+        return None, True
+    registration = pack_retention_inspection_registration(
+        catalog["profile"]["profile_digest"], operation, contract.digest, current.digest
+    )
+    if registration is None or not registration["source_only"]:
+        return registration, False
+    ignored = {"implementation_components", "implementation_digest"}
+    if {k: v for k, v in contract.payload.items() if k not in ignored} != {
+        k: v for k, v in current.payload.items() if k not in ignored
+    }:
+        raise ValidationGraphError("pack-retention scientific declarations changed")
+    return registration, True
+
+
+def _inspection_exceptions(registration, inspected, operation, predates_automatic_pls):
+    if registration is not None:
+        return registration["component_curve"], registration["classifier_curve"], registration["legacy_application"]
+    return (
+        inspected and operation == "model.fitted_pls",
+        inspected and operation == "classification.plsda" and not predates_automatic_pls,
+        inspected and operation == "model.load_apply",
+    )
+
+
 class HistoricalReconstructionContext:
     """One packaged predecessor authority; callers cannot supply contracts."""
 
     def __init__(self, profile_digest: str | None = None):
         self._catalog = inspection_predecessor_catalog(profile_digest)
+
+    @property
+    def predates_pack_retention(self) -> bool:
+        return (
+            self._catalog["profile"]["profile_digest"]
+            == "a66a3b73b19b1e864df07a5e1622b8f8c9fa75b65a36b83ee2b7c3b84da680cf"
+        )
 
     @property
     def predates_baseline_cv(self) -> bool:
@@ -328,7 +371,8 @@ class HistoricalReconstructionContext:
 
     def added_pls_parameters(self) -> set[str]:
         if (
-            self.predates_baseline_cv
+            self.predates_pack_retention
+            or self.predates_baseline_cv
             or self.predates_baseline_warning
             or self.predates_plsda_diagnostic_identity
             or self.predates_preprocessing_expansion
@@ -376,7 +420,7 @@ class HistoricalReconstructionContext:
                         raise ValidationGraphError("historical PLS recipe contains changed component controls")
                     for key in additions:
                         parameters.pop(key)
-            if node["operation_id"] == "model.load_apply":
+            if node["operation_id"] == "model.load_apply" and not self.predates_pack_retention:
                 parameters = node["parameters"]
                 if parameters.pop("acknowledge_legacy_input_uncertainty", None) is not False:
                     raise ValidationGraphError("historical application cannot acknowledge a legacy model")
@@ -412,6 +456,14 @@ class HistoricalReconstructionContext:
             candidate = staging["contracts"].get(operation) or staging.get("profile_contracts", {}).get(operation)
             if candidate is not None and candidate["digest"] == digest:
                 archived = candidate
+        if archived is None and catalog["profile"]["operations"].get(operation) == digest:
+            frozen = inspection_predecessor_catalog("a66a3b73b19b1e864df07a5e1622b8f8c9fa75b65a36b83ee2b7c3b84da680cf")
+            candidate = frozen["contracts"].get(operation)
+            if candidate is not None and candidate["digest"] == digest:
+                verified = NodeExecutionContract.from_dict(candidate["payload"])
+                if verified.digest != digest:
+                    raise ValidationGraphError("pre-pack historical payload identity mismatch")
+                archived = candidate
         return archived
 
     def contract(self, operation: str, digest: str) -> NodeExecutionContract:
@@ -429,9 +481,10 @@ class HistoricalReconstructionContext:
             if catalog["profile"]["operations"].get(operation) != digest or current.digest != digest:
                 raise ValidationGraphError("unknown historical operation/contract identity")
             return current
-        contract = NodeExecutionContract.from_dict(archived["payload"])
-        if contract.digest != archived["digest"] or contract.digest != digest:
-            raise ValidationGraphError("unknown historical operation/contract identity")
+        contract = _verified_archived_contract(archived, digest)
+        pack_reader, source_only = _pack_inspection_reader(catalog, operation, contract, current)
+        if source_only:
+            return contract
         if (
             self.predates_plsda_diagnostic_identity
             or (operation, contract.digest, current.digest) in _BASELINE_CV_INSPECTION_CONSUMERS
@@ -466,12 +519,10 @@ class HistoricalReconstructionContext:
         )
         previous_consumer = catalog["current_contracts"].get(operation, digest)
         inspected_consumer = inspected == (previous_consumer, current.digest)
-        component_curve_consumer = inspected_consumer and operation == "model.fitted_pls"
-        classifier_curve_consumer = (
-            inspected_consumer and operation == "classification.plsda" and not self.predates_automatic_pls
+        component_curve_consumer, classifier_curve_consumer, legacy_application_consumer = _inspection_exceptions(
+            pack_reader, inspected_consumer, operation, self.predates_automatic_pls
         )
-        legacy_application_consumer = inspected_consumer and operation == "model.load_apply"
-        if current.digest != previous_consumer and not inspected_consumer:
+        if current.digest != previous_consumer and not inspected_consumer and pack_reader is None:
             raise ValidationGraphError("current implementation is not qualified for historical reconstruction")
         # A parameter-schema digest alone is not a schema. Reusing the current
         # admission requires the exact reviewed consumer and unchanged complete
@@ -640,6 +691,7 @@ class HistoricalReconstructionContext:
                 projected["parameters"] = {**parameters, **defaults}
             if (
                 operation == "model.load_apply"
+                and not self.predates_pack_retention
                 and contracts[node_id].digest
                 != node_registry.get_metadata(operation).resolved_execution_contract().digest
             ):

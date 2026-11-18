@@ -46,6 +46,7 @@
     "docs/developers/llm-provider.md",
     "docs/developers/model-load-apply-source-binding-review.md",
     "docs/developers/native-desktop-release.md",
+    "docs/developers/pack-retention-compatibility.md",
     "docs/developers/picomatch-audit-disposition.md",
     "docs/developers/pls-applicability-screening.md",
     "docs/developers/prediction-uncertainty.md",
