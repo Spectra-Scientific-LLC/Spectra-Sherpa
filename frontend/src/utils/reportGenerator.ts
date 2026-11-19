@@ -193,6 +193,7 @@ function buildStyleSheet(): string {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--ss-surface); color: var(--ss-action-text); line-height: 1.6;
       max-width: 1000px; margin: 0 auto; padding: 40px 24px;
+      overflow-wrap: anywhere;
     }
     h1 { font-size: 1.8rem; color: var(--ss-text-strong); margin-bottom: 8px; }
     h2 { font-size: 1.3rem; color: var(--ss-text-strong); margin: 32px 0 16px; border-bottom: 1px solid var(--ss-border-strong); padding-bottom: 8px; }
@@ -248,6 +249,15 @@ function buildStyleSheet(): string {
     .narrative-section { background: var(--ss-surface-subtle); border: 1px solid var(--ss-border-strong); border-radius: 8px; padding: 20px 24px; margin: 16px 0; line-height: 1.8; font-size: 0.9rem; }
     .narrative-section p { margin-bottom: 12px; }
     .label-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; background: color-mix(in srgb, var(--ss-action) 20%, transparent); color: var(--ss-action); margin-right: 4px; }
+    @media screen and (max-width: 600px) {
+      body { padding: 20px 12px; }
+      .meta-grid { grid-template-columns: minmax(0, 1fr); }
+      .node-header, .run-header { flex-wrap: wrap; }
+      .params-table, .connection-table, .comparison-table { table-layout: fixed; }
+      .params-table th, .params-table td,
+      .connection-table th, .connection-table td,
+      .comparison-table th, .comparison-table td { padding: 6px 4px; }
+    }
     @media print {
       @page { size: A4; margin: 14mm; }
       body {
