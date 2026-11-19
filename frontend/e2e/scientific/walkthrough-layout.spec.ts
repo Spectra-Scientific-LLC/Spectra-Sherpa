@@ -41,3 +41,26 @@ test("project cards and Data controls fit beside expanded navigation @smoke", as
   }
   await page.screenshot({ path: test.info().outputPath("expanded-navigation-data.png") });
 });
+
+test("source preview chart and toolbar fit inside the padded graph panel @smoke", async ({ page, request }) => {
+  const dataset = await createDataset(request, "Source preview layout", { source: "sklearn", name: "iris" });
+  await page.addInitScript(() => localStorage.setItem("navCollapsed", "false"));
+  await page.setViewportSize({ width: 871, height: 1000 });
+  await page.goto(`/data?project=${dataset.project.id}&tab=import`);
+  const catalog = page.locator(".ref-group-panel").filter({ hasText: "scikit-learn datasets" });
+  await catalog.locator(".p-panel-header button").click();
+  await catalog.locator(".ref-dataset-item").filter({ hasText: "Iris" }).click();
+  const graph = page.locator(".source-plot .plotly-chart");
+  await expect(graph.locator(".main-svg").first()).toBeVisible();
+  for (const width of [871, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const bounds = await graph.evaluate(element => {
+      const plot = element.getBoundingClientRect();
+      const panel = element.closest(".source-plot")!.getBoundingClientRect();
+      return { left: plot.left, right: plot.right, panelLeft: panel.left, panelRight: panel.right };
+    });
+    expect(bounds.left).toBeGreaterThanOrEqual(bounds.panelLeft);
+    expect(bounds.right).toBeLessThanOrEqual(bounds.panelRight);
+  }
+  await page.screenshot({ path: test.info().outputPath("source-preview-layout.png") });
+});
