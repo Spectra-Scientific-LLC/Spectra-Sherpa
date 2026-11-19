@@ -173,22 +173,9 @@ const apodizationOptions = [
 </script>
 
 <style scoped>
-.synthesis-grid { display: grid; gap: 0.75rem; }
-.synthesis-grid--source {
-  grid-template-columns: minmax(180px, 1.4fr) minmax(115px, 0.8fr) repeat(4, minmax(120px, 0.85fr));
-}
-.synthesis-grid--generation {
-  grid-template-columns: minmax(110px, 0.75fr) minmax(150px, 1fr) minmax(150px, 1fr) minmax(245px, 1.35fr);
-  margin-top: 0.75rem;
-}
+.synthesis-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); }
+.synthesis-grid--generation { margin-top: 0.75rem; }
 .field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
-.field label { color: var(--text-color-secondary); font-size: 0.78rem; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
-.field :deep(.p-dropdown), .field :deep(.p-inputnumber) { width: 100%; }
-@media (max-width: 720px) {
-  .synthesis-grid { grid-template-columns: 1fr; }
-  .field label { white-space: normal; }
-}
-@media (min-width: 721px) and (max-width: 980px) {
-  .synthesis-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-}
+.field label { color: var(--text-color-secondary); font-size: 0.78rem; font-weight: 600; text-transform: uppercase; }
+.field :deep(.p-dropdown), .field :deep(.p-inputnumber), .field :deep(.p-inputnumber-input) { width: 100%; min-width: 0; }
 </style>
