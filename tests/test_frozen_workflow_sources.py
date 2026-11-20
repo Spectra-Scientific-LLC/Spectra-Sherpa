@@ -61,6 +61,44 @@ async def test_canonical_source_identity_survives_disk_change(test_session, test
     assert not captured.exists()
 
 
+async def test_registered_file_snapshot_pins_projection_and_refuses_changed_member(
+    test_session, test_user, source, monkeypatch
+):
+    from spectra_sherpa.app.services.dag.nodes.data import loaders
+
+    node, path = source
+    original = path.read_bytes()
+    reference = {
+        "projection_id": "registered-fixture",
+        "member_size_bytes": len(original),
+        "member_sha256": hashlib.sha256(original).hexdigest(),
+    }
+    monkeypatch.setattr(frozen, "read_registered_reference_sidecar", lambda _: reference)
+    dataset = FileLoadNode("source", node.parameters)._load_file(path)
+
+    def load_projection(member, *, registered_reference, **kwargs):
+        assert member != path and member.read_bytes() == original
+        assert registered_reference == reference
+        return SimpleNamespace(dataset=dataset, selected_asset_id=reference["projection_id"])
+
+    monkeypatch.setattr(loaders, "_load_registered_reference_asset", load_projection)
+    options = {"nodes": [node], "actor_id": test_user.id, "project_id": None}
+    async with frozen.freeze_workflow_sources(test_session, **options) as resolver:
+        path.write_text("live source changed")
+        envelope = await resolver.resolve_experiment_file(**node.parameters)
+        envelope.preloaded_dataset.X[0, 0] = 90
+        valid = FileLoadNode("source", {**node.parameters, "asset_id": reference["projection_id"]})
+        valid.bind_execution_runtime(ExecutionRuntime(dataset_source_resolver=resolver))
+        assert (await valid.execute())["default"].X.tolist() == [[1, 2, 3], [4, 5, 6]]
+        wrong = FileLoadNode("source", {**node.parameters, "asset_id": "other-projection"})
+        wrong.bind_execution_runtime(ExecutionRuntime(dataset_source_resolver=resolver))
+        with pytest.raises(ValueError, match="asset differs"):
+            await wrong.execute()
+    with pytest.raises(ValueError, match="changed during source capture"):
+        async with frozen.freeze_workflow_sources(test_session, **options):
+            pytest.fail("changed registered source admitted")
+
+
 async def test_exact_collection_does_not_expand_or_reread(test_session, test_user, source):
     node, path = source
     params = {

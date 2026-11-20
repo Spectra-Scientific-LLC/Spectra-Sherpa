@@ -27,11 +27,16 @@ from spectra_sherpa.core.drained_thread import drained_read as _drained_read
 from spectra_sherpa.core.execution_runtime import ResolvedExperimentCollection, ResolvedExperimentFile
 
 _MAX_BYTES = 64 * 1024 * 1024
+_MAX_DECODED_REFERENCE_BYTES = 128 * 1024 * 1024
 _MAX_FILES = 128
 
 
 def _copy_envelope(value):
-    return replace(value, prepared_overrides=copy.deepcopy(dict(value.prepared_overrides)))
+    return replace(
+        value,
+        prepared_overrides=copy.deepcopy(dict(value.prepared_overrides)),
+        preloaded_dataset=copy.deepcopy(value.preloaded_dataset),
+    )
 
 
 class FrozenWorkflowSources:
@@ -65,12 +70,11 @@ class FrozenWorkflowSources:
         raise ValueError("Library sources are outside the admitted snapshot")
 
 
-def _capture_file(record, root, remaining):
+def _capture_file(record, root, remaining, file_node, reference_remaining):
     path = _experiment_path(record.experiment_id, record.file_path)
-    # Registered references may depend on a separate member tree. This bounded
-    # envelope does not silently reinterpret a reference as an ordinary file.
-    if read_registered_reference_sidecar(path) is not None:
-        raise ValueError("Registered references require a complete reference snapshot")
+    reference = read_registered_reference_sidecar(path)
+    if reference is not None and not file_node:
+        raise ValueError("Registered reference collections require a complete reference snapshot")
     prepared = load_prepared_data_overrides_strict(file_path=str(path)).to_sidecar_dict()
     destination = root / str(record.id) / path.name
     destination.parent.mkdir()
@@ -83,7 +87,7 @@ def _capture_file(record, root, remaining):
                 raise ValueError("Workflow source snapshot exceeds the byte limit")
             target.write(chunk)
             digest.update(chunk)
-    return ResolvedExperimentFile(
+    captured = ResolvedExperimentFile(
         path=str(destination),
         original_file_path=record.file_path,
         created_datetime=record.created_at.isoformat(),
@@ -93,6 +97,28 @@ def _capture_file(record, root, remaining):
         sha256=digest.hexdigest(),
         prepared_overrides=copy.deepcopy(prepared),
     )
+    if reference is None:
+        return captured, 0
+    if (
+        captured.sha256 != reference["member_sha256"]
+        or captured.size_bytes != reference["member_size_bytes"]
+        or read_registered_reference_sidecar(path) != reference
+    ):
+        raise ValueError("Registered reference changed during source capture")
+    from spectra_sherpa.app.services.dag.nodes.data.loaders import _load_registered_reference_asset
+
+    projection = _load_registered_reference_asset(
+        destination,
+        registered_reference=reference,
+        file_name=record.file_path,
+        asset_id=None,
+        prepared_overrides=prepared,
+    )
+    dataset = projection.dataset
+    decoded_size = dataset.X.nbytes + (dataset.target.nbytes if dataset.target is not None else 0)
+    if decoded_size > reference_remaining:
+        raise ValueError("Decoded registered reference snapshot exceeds the byte limit")
+    return replace(captured, preloaded_dataset=dataset, preloaded_asset_id=projection.selected_asset_id), decoded_size
 
 
 @asynccontextmanager
@@ -108,6 +134,7 @@ async def freeze_workflow_sources(session, *, nodes, actor_id, project_id):
     files, collections, views = {}, {}, {}
     collection_scopes = {}
     total = 0
+    total_reference_bytes = 0
     source_count = 0
     with TemporaryDirectory(prefix="spectra-admitted-sources-") as directory:
         root = Path(directory)
@@ -118,13 +145,12 @@ async def freeze_workflow_sources(session, *, nodes, actor_id, project_id):
             if source_count > 8:
                 raise ValueError("Workflow snapshot source limit exceeded")
             params = node.parameters
+            file_node = node.node_type == "data.file_load"
             experiment_id = int(params["experiment_id"])
             stage = params.get("stage", "raw")
             await require_experiment_access(session, experiment_id, actor_id, project_id)
             ids = (
-                [int(params["file_id"])]
-                if node.node_type == "data.file_load"
-                else [int(value) for value in params.get("selected_file_ids", [])]
+                [int(params["file_id"])] if file_node else [int(value) for value in params.get("selected_file_ids", [])]
             )
             if not ids or len(ids) > _MAX_FILES or len(set(ids)) != len(ids):
                 raise ValueError("Snapshot requires distinct explicit source members")
@@ -149,8 +175,18 @@ async def freeze_workflow_sources(session, *, nodes, actor_id, project_id):
                 if key not in files:
                     if len(files) >= _MAX_FILES:
                         raise ValueError("Workflow snapshot file limit exceeded")
-                    files[key] = await _drained_read(_capture_file, record, root, _MAX_BYTES - total)
+                    files[key], reference_size = await _drained_read(
+                        _capture_file,
+                        record,
+                        root,
+                        _MAX_BYTES - total,
+                        file_node,
+                        _MAX_DECODED_REFERENCE_BYTES - total_reference_bytes,
+                    )
                     total += files[key].size_bytes
+                    total_reference_bytes += reference_size
+                if not file_node and files[key].preloaded_dataset is not None:
+                    raise ValueError("Registered reference collections require a complete reference snapshot")
                 captured.append(files[key])
             if node.node_type == "data.collection_load":
                 key = (experiment_id, stage)
