@@ -62,6 +62,36 @@ describe("contextual actions", () => {
     expect(api.actions.value).toHaveLength(1);
   });
 
+  it("publishes the dataset selection and aborts work on a new revision of the same file", async () => {
+    setActivePinia(createPinia());
+    useAuthStore().user = { id: 1, username: "scientist" };
+    useProjectStore().currentProjectId = 1;
+    const selection = { surface: "dataset" as const, projectId: 1, experimentId: 42, fileId: 12, selectionRevision: 1 };
+    let finish!: () => void;
+    let signal!: AbortSignal;
+    const execute = vi.fn((_ctx, supplied: AbortSignal) => {
+      signal = supplied;
+      return new Promise<void>((resolve) => { finish = resolve; });
+    });
+    registerContextualActions("test", [
+      { id: "legacy", label: "Legacy", available: () => true, execute: vi.fn() },
+      { id: "inspect", label: "Inspect", surfaces: ["dataset"],
+        available: (value) => value.surface === "dataset", execute },
+    ], () => true);
+    const wrapper = mount(ContextualActions, {
+      props: { context: selection }, global: { stubs: { Button: true } },
+    });
+    await flushPromises();
+    expect(useContextualActions().actions.value.map(action => action.label)).toEqual(["Inspect"]);
+    const pending = useContextualActions().execute("test:inspect");
+    expect(execute).toHaveBeenCalledWith(selection, expect.any(AbortSignal));
+    await wrapper.setProps({ context: { ...selection, selectionRevision: 2 } });
+    expect(signal.aborted).toBe(true);
+    finish();
+    await pending;
+    wrapper.unmount();
+  });
+
   it("does not abort an in-flight action when the same context values are republished", async () => {
     setActivePinia(createPinia());
     const auth = useAuthStore();

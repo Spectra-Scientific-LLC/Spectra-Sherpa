@@ -73,7 +73,9 @@ export function registerContextualActions(owner: string, actions: ContextualActi
 
 function available(item: Contribution): boolean {
   try {
-    return item.current() && context.value !== null && item.action.available(context.value);
+    const active = context.value;
+    const surfaces = item.action.surfaces ?? ["run", "deploy"];
+    return item.current() && active !== null && surfaces.includes(active.surface) && item.action.available(active);
   } catch {
     return false;
   }
