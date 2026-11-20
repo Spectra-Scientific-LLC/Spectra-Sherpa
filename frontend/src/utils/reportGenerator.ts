@@ -273,7 +273,7 @@ function buildStyleSheet(): string {
         color: var(--ss-text-strong);
       }
       h2 { border-bottom-color: var(--ss-border-strong); page-break-after: avoid; break-after: avoid; }
-      h3 { background: var(--ss-action-tint); border-left-color: var(--ss-action); break-after: avoid; }
+      h3 { background: var(--ss-action-tint); border-left-color: var(--ss-action); break-inside: avoid; break-after: avoid; }
       .node-card, .meta-item, .plot-card, .run-card, .narrative-section {
         background: var(--ss-surface);
         border-color: var(--ss-border-strong);
