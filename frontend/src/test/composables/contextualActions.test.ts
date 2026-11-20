@@ -62,11 +62,19 @@ describe("contextual actions", () => {
     expect(api.actions.value).toHaveLength(1);
   });
 
-  it("publishes the dataset selection and aborts work on a new revision of the same file", async () => {
+  it.each([
+    [
+      { surface: "dataset" as const, projectId: 1, experimentId: 42, fileId: 12, selectionRevision: 1 },
+      { surface: "dataset" as const, projectId: 1, experimentId: 42, fileId: 12, selectionRevision: 2 },
+    ],
+    [
+      { surface: "workflow" as const, projectId: 1, workflowId: 42, workflowHash: "one" },
+      { surface: "workflow" as const, projectId: 1, workflowId: 42, workflowHash: "two" },
+    ],
+  ])("publishes the selection and aborts work on a new revision", async (selection, changed) => {
     setActivePinia(createPinia());
     useAuthStore().user = { id: 1, username: "scientist" };
     useProjectStore().currentProjectId = 1;
-    const selection = { surface: "dataset" as const, projectId: 1, experimentId: 42, fileId: 12, selectionRevision: 1 };
     let finish!: () => void;
     let signal!: AbortSignal;
     const execute = vi.fn((_ctx, supplied: AbortSignal) => {
@@ -75,8 +83,8 @@ describe("contextual actions", () => {
     });
     registerContextualActions("test", [
       { id: "legacy", label: "Legacy", available: () => true, execute: vi.fn() },
-      { id: "inspect", label: "Inspect", surfaces: ["dataset"],
-        available: (value) => value.surface === "dataset", execute },
+      { id: "inspect", label: "Inspect", surfaces: [selection.surface],
+        available: (value) => value.surface === selection.surface, execute },
     ], () => true);
     const wrapper = mount(ContextualActions, {
       props: { context: selection }, global: { stubs: { Button: true } },
@@ -85,7 +93,7 @@ describe("contextual actions", () => {
     expect(useContextualActions().actions.value.map(action => action.label)).toEqual(["Inspect"]);
     const pending = useContextualActions().execute("test:inspect");
     expect(execute).toHaveBeenCalledWith(selection, expect.any(AbortSignal));
-    await wrapper.setProps({ context: { ...selection, selectionRevision: 2 } });
+    await wrapper.setProps({ context: changed });
     expect(signal.aborted).toBe(true);
     finish();
     await pending;

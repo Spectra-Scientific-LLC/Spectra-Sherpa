@@ -76,6 +76,7 @@ export interface HostPrimaryNavigation {
 export type HostActionContext =
   | { surface: "run"; projectId: number; runId: number; nodeId?: string }
   | { surface: "dataset"; projectId: number; experimentId: number; fileId: number | null; selectionRevision: number }
+  | { surface: "workflow"; projectId: number; workflowId: number; workflowHash: string | null }
   | {
       surface: "deploy";
       projectId: number;

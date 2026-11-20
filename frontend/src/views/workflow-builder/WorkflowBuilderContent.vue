@@ -88,6 +88,7 @@
         <Menu ref="exportMenuRef" :model="exportMenuItems" :popup="true" />
 
         <template #after>
+          <ContextualActions :context="savedWorkflowActionContext" />
           <span v-if="pendingRecoveryDraft" role="status">
             Unsaved browser draft found. The saved workflow is shown.
             <Button label="Restore draft" class="p-button-text p-button-sm" @click="applyRecoveryDraft" />
@@ -420,6 +421,8 @@ import TemplatePickerDialog from "@/components/TemplatePickerDialog.vue";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { usePrimaryNavigation } from "@/composables/usePrimaryNavigation";
 import WorkflowToolbar from "./WorkflowToolbar.vue";
+import ContextualActions from "@/components/ContextualActions.vue";
+import type { HostActionContext } from "@/extension-contract/v1";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
 import WorkflowInspector from "./WorkflowInspector.vue";
 import ResizableInspectorPanel from "@/components/ResizableInspectorPanel.vue";
@@ -1433,6 +1436,14 @@ const selectedNodeOutput = computed(() => {
 });
 
 const isTrialTabActive = computed(() => workbookStore.activeSheet?.kind === "trial");
+const savedWorkflowActionContext = computed<HostActionContext | null>(() => {
+  const projectId = projectStore.currentProjectId;
+  const workflowId = workflowStore.workflowId;
+  if (projectId == null || workflowId == null || workbookStore.projectId !== projectId ||
+      workbookStore.activeSheet?.workflowId !== workflowId || workflowContextLoading.value ||
+      workflowStore.hasUnsavedChanges || retainedReadOnly.value || isTrialTabActive.value) return null;
+  return { surface: "workflow", projectId, workflowId, workflowHash: workflowStore.workflowHash };
+});
 const isManagedCandidateAuthority = computed(
   () => workbookStore.activeSheet?.purpose === "managed_candidate_authority",
 );
