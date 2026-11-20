@@ -3179,16 +3179,14 @@ const datasetActionContext = computed(() => {
   const experiment = selectedExperiment.value;
   if (projectId == null || !experiment || experiment.project_id !== projectId ||
       dataStore.experimentFilesLoading || dataStore.experimentFilesRefusal ||
+      datasetViewBusy.value || datasetViewError.value || selectedDatasetView.value ||
       !analysisSelectionHydrated.value || !["idle", "saved"].includes(analysisSelectionStatus.value)) {
     return null;
   }
-  const fileId = dataStore.activeFileId;
-  const files = dataStore.experimentFiles;
-  const hasRawSource = fileId == null
-    ? files.some(file => file.stage === "raw")
-    : files.some(file => file.id === fileId && file.stage === "raw");
-  return hasRawSource ? {
-    surface: "dataset" as const, projectId, experimentId: experiment.id, fileId,
+  const files = plotFileSelections.value[experiment.id] ?? dataStore.experimentFiles.filter(file => file.stage === "raw");
+  const [file] = files;
+  return files.length === 1 && file?.stage === "raw" ? {
+    surface: "dataset" as const, projectId, experimentId: experiment.id, fileId: file.id,
     selectionRevision: datasetActionRevision.value,
   } : null;
 });
