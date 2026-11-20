@@ -15,6 +15,7 @@ from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_node import WorkflowNode
 from spectra_sherpa.app.schemas.workflows import WorkflowExecuteRequest
+from spectra_sherpa.app.services.saved_execution_admission import SavedRunOutputScope
 from spectra_sherpa.app.types import ensure_type_registry_loaded
 from tests.test_frozen_workflow_sources import source  # noqa: F401
 
@@ -153,6 +154,39 @@ async def test_existing_transaction_is_not_implicitly_committed(test_session, te
         )
     await test_session.rollback()
     assert not (await test_session.scalars(select(Workflow).where(Workflow.name == "unrelated staged mutation"))).all()
+
+
+@pytest.mark.parametrize("fail", [False, True])
+async def test_scoped_run_filters_live_and_retained_outputs(test_session, test_user, saved, monkeypatch, fail):
+    from spectra_sherpa.app.services.dag.executor import DAGExecutor
+
+    async def execute(executor, **kwargs):
+        executor.results["source"] = {"default": [123], "hidden": "secret-output"}
+        executor.diagnostics["source"] = {"message": "secret-diagnostic"}
+        if fail:
+            raise RuntimeError("secret-error")
+        return executor.results
+
+    monkeypatch.setattr(DAGExecutor, "execute", execute)
+    workflow_id, path = saved
+    admission = Admission(path)
+    sessions = async_sessionmaker(test_session.bind, expire_on_commit=False)
+    async with sessions() as session:
+        response = await execute_saved_workflow(
+            workflow_id,
+            WorkflowExecuteRequest(),
+            session,
+            test_user,
+            "scoped_results_1",
+            admission=admission,
+            output_scope=SavedRunOutputScope({"source": frozenset({"default"})}),
+        )
+    assert "secret-" not in response.model_dump_json()
+    assert response.results == {"source": {"default": [123]}}
+    async with sessions() as session:
+        run = await session.get(ExecutionRun, response.run_id)
+        assert run.results_summary == response.results
+        assert "secret-" not in json.dumps(run.diagnostics)
 
 
 async def test_withdrawal_never_retains_partial_output(test_session, test_user, saved):

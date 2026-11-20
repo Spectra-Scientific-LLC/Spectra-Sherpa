@@ -7,7 +7,7 @@ callers can bind their durable admission records in that same transaction.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -19,6 +19,20 @@ from spectra_sherpa.core.captured_model_artifacts import CapturedModelArtifacts
 
 # A trusted caller may bind evidence to the same transaction as the terminal run.
 RetainCompletedRun = Callable[[AsyncSession, ExecutionRun], Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class SavedRunOutputScope:
+    """Explicit port allowlist for the trusted caller's visible run results."""
+
+    ports: Mapping[str, frozenset[str]]
+
+    def project(self, results: dict[str, Any]) -> dict[str, Any]:
+        return {
+            node_id: {port: output for port, output in outputs.items() if port in self.ports[node_id]}
+            for node_id, outputs in results.items()
+            if node_id in self.ports and isinstance(outputs, dict)
+        }
 
 
 @dataclass(frozen=True)

@@ -63,7 +63,11 @@ from spectra_sherpa.app.services.run_params import (
     build_saved_definition_snapshot,
     build_workflow_version_snapshot,
 )
-from spectra_sherpa.app.services.saved_execution_admission import RetainCompletedRun, SavedExecutionAdmission
+from spectra_sherpa.app.services.saved_execution_admission import (
+    RetainCompletedRun,
+    SavedExecutionAdmission,
+    SavedRunOutputScope,
+)
 from spectra_sherpa.app.services.serialization import serialize_result
 from spectra_sherpa.app.services.workflow_access import (
     admitted_model_artifact_ids,
@@ -719,6 +723,7 @@ async def execute_saved_workflow(
     batch_binding=None,
     admission: SavedExecutionAdmission | None = None,
     retain_completed_run: RetainCompletedRun | None = None,
+    output_scope: SavedRunOutputScope | None = None,
 ) -> WorkflowExecuteResponse:
     """Canonical execution, optionally with one caller-owned admission record."""
     from contextlib import AsyncExitStack
@@ -726,11 +731,15 @@ async def execute_saved_workflow(
     if admission is None:
         if retain_completed_run is not None:
             raise ValueError("Run retention hook requires trusted execution admission")
+        if output_scope is not None:
+            raise ValueError("Run output scope requires trusted execution admission")
         return await _execute_saved_workflow(
             workflow_id, payload, session, current_user, idempotency_key, batch_binding=batch_binding
         )
     if session.in_transaction():
         raise ValueError("Execution admission requires a fresh dedicated session")
+    if output_scope is not None:
+        output_scope = SavedRunOutputScope({key: frozenset(ports) for key, ports in output_scope.ports.items()})
     if batch_binding is not None or payload.initial_data or payload.node_id:
         raise ValueError("Execution admission requires the complete saved workflow")
     if validate_idempotency_key(idempotency_key) is None:
@@ -759,6 +768,7 @@ async def execute_saved_workflow(
                 idempotency_key,
                 admission=admission,
                 retain_completed_run=retain_completed_run,
+                output_scope=output_scope,
                 sources_stack=sources_stack,
                 admission_transaction=transaction,
             )
@@ -777,6 +787,7 @@ async def _execute_saved_workflow(
     batch_binding=None,
     admission: SavedExecutionAdmission | None = None,
     retain_completed_run: RetainCompletedRun | None = None,
+    output_scope: SavedRunOutputScope | None = None,
     sources_stack=None,
     admission_transaction=None,
 ) -> WorkflowExecuteResponse:
@@ -1441,7 +1452,7 @@ async def _execute_saved_workflow(
                         "type": "node_status",
                         "node_id": node_id,
                         "status": status,
-                        "error": error,
+                        "error": error if output_scope is None else None,
                         "timestamp": _time.time(),
                     },
                 )
@@ -1477,6 +1488,8 @@ async def _execute_saved_workflow(
             await batch_binding.verify_current()
         if admission is not None:
             await _verify_saved_admission(admission, session)
+        if output_scope is not None:
+            results = output_scope.project(results)
         # Serialize results to JSON-safe format (per-node, so one failure doesn't lose all)
         logger.debug("[Serialization] Starting serialization of %s node results...", len(results))
         serialized_results = {}
@@ -1508,9 +1521,10 @@ async def _execute_saved_workflow(
                 logger.warning(
                     "  Serialization failed for node %s (%s): %s", node_id, result_type, ser_err, exc_info=True
                 )
-                serialization_errors.append(f"Node {node_id}: {ser_err}")
+                reason = str(ser_err) if output_scope is None else "Output unavailable"
+                serialization_errors.append(f"Node {node_id}: {reason}")
                 serialized_results[node_id] = {
-                    "error": f"Serialization failed: {ser_err}",
+                    "error": f"Serialization failed: {reason}",
                     "type": result_type,
                 }
 
@@ -1568,7 +1582,9 @@ async def _execute_saved_workflow(
             logger.debug("[Serialization] Errors: %s", error_msg)
 
         diagnostics_serialized = serialize_result(
-            getattr(executor, "diagnostics", {}), owner_user_id=user_id, project_id=wf_project_id
+            getattr(executor, "diagnostics", {}) if output_scope is None else {},
+            owner_user_id=user_id,
+            project_id=wf_project_id,
         )
         # Audit-side run summary so triage can distinguish a serialization
         # failure (results object couldn't be JSON-encoded) from an actual
@@ -1592,7 +1608,9 @@ async def _execute_saved_workflow(
         # Phase 1 ships a port-name + data-source-id pair; per-port file
         # hashes / target hashes / fitted-state hashes land in Phase 3
         # alongside the multi-port abstraction.
-        scientific_receipts = _execution_dataset_scientific_receipts(executor.results)
+        scientific_receipts = _execution_dataset_scientific_receipts(
+            executor.results if output_scope is None else results
+        )
         input_ports_record = _collect_input_ports(
             workflow,
             payload.initial_data,
@@ -1820,6 +1838,8 @@ async def _execute_saved_workflow(
         partial_result_presentations: dict[str, dict[str, Any]] = {}
         partial_serialization_errors: list[str] = []
         raw_results = executor.results if executor else {}
+        if output_scope is not None:
+            raw_results = output_scope.project(raw_results)
         for node_id, node_result in raw_results.items():
             result_type = type(node_result).__name__
             try:
@@ -1835,20 +1855,21 @@ async def _execute_saved_workflow(
                     partial_result_descriptors[node_id],
                 )
             except Exception as ser_err:
-                partial_serialization_errors.append(f"Node {node_id}: {ser_err}")
+                reason = str(ser_err) if output_scope is None else "Output unavailable"
+                partial_serialization_errors.append(f"Node {node_id}: {reason}")
                 partial_results[node_id] = {
-                    "error": f"Serialization failed: {ser_err}",
+                    "error": f"Serialization failed: {reason}",
                     "type": result_type,
                 }
 
-        error_parts = [str(e)]
+        error_parts = [str(e) if output_scope is None else "Workflow execution failed"]
         if partial_serialization_errors:
             error_parts.append("; ".join(partial_serialization_errors))
         error_msg = " | ".join(part for part in error_parts if part)
         response_status = "partial" if partial_results else "error"
 
         partial_diagnostics = serialize_result(
-            getattr(executor, "diagnostics", {}) if executor else {},
+            getattr(executor, "diagnostics", {}) if executor and output_scope is None else {},
             owner_user_id=user_id,
             project_id=wf_project_id,
         )
