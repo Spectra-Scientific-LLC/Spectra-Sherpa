@@ -13450,6 +13450,19 @@
             "description": "Trial parameters for target node",
             "title": "Trial Params",
             "type": "object"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Saved workflow open in the editor, if any",
+            "title": "Workflow Id"
           }
         },
         "required": [
@@ -30810,7 +30823,7 @@
     },
     "/api/v1/workflows/trial/execute": {
       "post": {
-        "description": "Execute a trial run of a node with trial parameters.\n\nThis endpoint is used by the DetailView to run a node with temporary\nparameters without persisting anything to the database. It creates\na fresh DAG executor for each trial run (no caching).\n\nThe trial execution:\n1. Builds a temporary DAG from the provided nodes/edges\n2. Overrides the target node's parameters with trial_params\n3. Executes the target node and its dependencies\n4. Returns only the target node's result\n\nThis is completely independent of any stored workflow state.",
+        "description": "Execute a trial run of a node with trial parameters.\n\nThis endpoint is used by the DetailView to run a node with temporary\nparameters without persisting anything to the database. It creates\na fresh DAG executor for each trial run (no caching).\n\nThe trial execution:\n1. Builds a temporary DAG from the provided nodes/edges\n2. Overrides the target node's parameters with trial_params\n3. Executes the target node and its dependencies\n4. Returns only the target node's result\n\nWhen the editor has a saved workflow open, apply its host policy to the\ntemporary graph before consuming quota or accessing data.",
         "operationId": "execute_trial_api_v1_workflows_trial_execute_post",
         "requestBody": {
           "content": {

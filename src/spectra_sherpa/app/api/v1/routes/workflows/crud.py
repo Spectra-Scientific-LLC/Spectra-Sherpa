@@ -828,6 +828,8 @@ async def duplicate_workflow(
     current_user: User = Depends(get_current_user),
 ) -> WorkflowDetail:
     """Clone a workflow as a new project sheet without copying runs or version history."""
+    from spectra_sherpa.app.contracts.saved_workflow_access import require_saved_workflow_operation
+
     user_id = current_user.id
     source_query = (
         select(Workflow)
@@ -872,6 +874,7 @@ async def duplicate_workflow(
         raise HTTPException(status_code=409, detail=f"Saved workflow graph is not current: {exc}") from exc
 
     await require_project(source.project_id, user_id, session)
+    await require_saved_workflow_operation(session, user_id, source, "copy")
     max_order = await session.scalar(
         select(func.max(Workflow.sheet_order)).where(
             Workflow.project_id == source.project_id,
@@ -1446,6 +1449,7 @@ async def persist_ai_fork(
     and binds it to a pre-created conversation_id.
     """
     from spectra_sherpa.app.contracts.ai_provider_registry import get_sherpa_advisor
+    from spectra_sherpa.app.contracts.saved_workflow_access import require_saved_workflow_operation
 
     payload = payload.model_copy(deep=True)
     user_id = current_user.id
@@ -1480,6 +1484,7 @@ async def persist_ai_fork(
     parent_wf = (await session.execute(query.with_for_update())).scalar_one()
     if parent_wf.project_id != initial_project_id:
         raise HTTPException(status_code=409, detail="Parent project changed during proposal admission")
+    await require_saved_workflow_operation(session, user_id, parent_wf, "copy")
 
     from spectra_sherpa.app.services.dag.proposal_contract import (
         admit_ordinary_definition,

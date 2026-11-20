@@ -4,10 +4,12 @@ import hashlib
 import json
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from spectra_sherpa.app.api.v1.routes.workflows.execute import execute_saved_workflow
+from spectra_sherpa.app.contracts import saved_workflow_access
 from spectra_sherpa.app.contracts.scientific_access import ScientificAccessDenied
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.workflow import Workflow
@@ -108,6 +110,36 @@ async def test_atomic_marker_and_canonical_run(test_session, test_user, saved, f
             result = runs[0].results_summary["source"]["default"]
             assert result["data"] == [[1, 2, 3], [4, 5, 6]]
             assert admission.original_digest in json.dumps(result)
+
+
+@pytest.mark.parametrize("node_id", [None, "source"])
+async def test_host_workflow_policy_precedes_run_reservation(test_session, test_user, saved, monkeypatch, node_id):
+    workflow_id, path = saved
+    trusted = Admission(path)
+
+    async def require_admission(session, actor_id, workflow, operation, admission):
+        assert actor_id == test_user.id and workflow.id == workflow_id
+        assert operation == "run"
+        if admission is not trusted:
+            raise HTTPException(409, "Workflow approval required")
+
+    monkeypatch.setattr(saved_workflow_access, "_policy", None)
+    saved_workflow_access.set_saved_workflow_policy(require_admission)
+    sessions = async_sessionmaker(test_session.bind, expire_on_commit=False)
+    async with sessions() as session:
+        with pytest.raises(HTTPException, match="Workflow approval required"):
+            await execute_saved_workflow(
+                workflow_id, WorkflowExecuteRequest(node_id=node_id), session, test_user, "policy_check_1"
+            )
+        assert not (await session.scalars(select(ExecutionRun))).all()
+    async with sessions() as session:
+        result = await execute_saved_workflow(
+            workflow_id, WorkflowExecuteRequest(), session, test_user, "policy_check_1", admission=trusted
+        )
+    assert result.status == "completed"
+    async with sessions() as session:
+        with pytest.raises(HTTPException, match="Workflow approval required"):
+            await execute_saved_workflow(workflow_id, WorkflowExecuteRequest(), session, test_user, "policy_check_1")
 
 
 async def test_existing_transaction_is_not_implicitly_committed(test_session, test_user, saved):

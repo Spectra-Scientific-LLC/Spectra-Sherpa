@@ -115,6 +115,7 @@ describe("useNodeTrial", () => {
       nodeData: {
         id: 1,
         type: "model.pca",
+        workflowId: 42,
         workflowNodes: [{ id: 1, type: "model.pca", params: {} }],
         workflowEdges: [],
         params: {},
@@ -125,7 +126,7 @@ describe("useNodeTrial", () => {
     await api().handleRunTrial();
     expect(postMock).toHaveBeenCalledWith(
       "/workflows/trial/execute",
-      expect.objectContaining({ target_node_id: "1", trial_params: { n_components: 3 } }),
+      expect.objectContaining({ target_node_id: "1", workflow_id: 42, trial_params: { n_components: 3 } }),
     );
     expect(n).toHaveBeenCalledWith({ foo: "bar" }, undefined, undefined);
     expect(nodeData.value.output).toEqual({ data: [[1, 2]], metadata: { diagnostics: {} } });

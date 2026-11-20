@@ -3891,7 +3891,8 @@ export interface paths {
          *     3. Executes the target node and its dependencies
          *     4. Returns only the target node's result
          *
-         *     This is completely independent of any stored workflow state.
+         *     When the editor has a saved workflow open, apply its host policy to the
+         *     temporary graph before consuming quota or accessing data.
          */
         post: operations["execute_trial_api_v1_workflows_trial_execute_post"];
         delete?: never;
@@ -9285,6 +9286,11 @@ export interface components {
             trial_params: {
                 [key: string]: unknown;
             };
+            /**
+             * Workflow Id
+             * @description Saved workflow open in the editor, if any
+             */
+            workflow_id?: number | null;
         };
         /**
          * TrialExecuteResponse
