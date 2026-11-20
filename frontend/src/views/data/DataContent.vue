@@ -3179,7 +3179,7 @@ const datasetActionContext = computed(() => {
   const experiment = selectedExperiment.value;
   if (projectId == null || !experiment || experiment.project_id !== projectId ||
       dataStore.experimentFilesLoading || dataStore.experimentFilesRefusal ||
-      datasetViewBusy.value || datasetViewError.value || selectedDatasetView.value ||
+      datasetViewBusy.value || datasetViewError.value || selectedDatasetView.value || curationAction.value ||
       !analysisSelectionHydrated.value || !["idle", "saved"].includes(analysisSelectionStatus.value)) {
     return null;
   }
