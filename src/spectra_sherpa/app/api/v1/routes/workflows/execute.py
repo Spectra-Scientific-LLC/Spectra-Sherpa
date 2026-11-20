@@ -20,6 +20,7 @@ from sqlalchemy.orm import selectinload
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.contracts.pack_access import authorize_project_packs
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
+from spectra_sherpa.app.contracts.saved_workflow_access import require_saved_workflow_execution
 from spectra_sherpa.app.contracts.scientific_access import ScientificAccessDenied, require_scientific_access
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.lib.workflow_purpose import MANAGED_CANDIDATE_AUTHORITY
@@ -816,6 +817,8 @@ async def _execute_saved_workflow(
                 ),
             },
         )
+
+    await require_saved_workflow_execution(session, user_id, workflow, admission)
 
     # Snapshot the workflow's ORM attributes BEFORE any commit / execute
     # may expire them. These were originally snapshotted further down,
