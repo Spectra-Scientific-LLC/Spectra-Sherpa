@@ -28,6 +28,8 @@ watch(() => JSON.stringify([
   props.context?.surface === "dataset" ? props.context.experimentId : null,
   props.context?.surface === "dataset" ? props.context.fileId : null,
   props.context?.surface === "dataset" ? props.context.selectionRevision : null,
+  props.context?.surface === "workflow" ? props.context.workflowId : null,
+  props.context?.surface === "workflow" ? props.context.workflowHash : null,
   actionContextRevision.value,
   auth.user?.id ?? null,
   project.currentProjectId ?? null,
