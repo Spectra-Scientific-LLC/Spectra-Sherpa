@@ -920,6 +920,7 @@ function absoluteTimestamp(dateStr: string): string {
 }
 
 .project-card {
+  min-width: 0;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -976,6 +977,7 @@ function absoluteTimestamp(dateStr: string): string {
 }
 
 .title-stack .project-open {
+  min-width: 0;
   font-size: 1rem;
   font-weight: 500;
   overflow: hidden;
@@ -1008,6 +1010,7 @@ function absoluteTimestamp(dateStr: string): string {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 /* Metrics: text, separated by a thin middle-dot. No pills. */
@@ -1185,7 +1188,7 @@ function absoluteTimestamp(dateStr: string): string {
 
 @media (max-width: 1100px) {
   .projects-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
