@@ -1305,6 +1305,7 @@
             />
             <div v-once id="active-dataset-display-settings" class="dataset-display-settings-target" />
           </div>
+          <ContextualActions v-if="datasetActionContext" :context="datasetActionContext" />
           <DataContentsPanel
             :focus-target="route.query.focus === 'target'"
             :scope-key="JSON.stringify(dataScopeIdentity())"
@@ -1649,6 +1650,7 @@ import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
+import ContextualActions from "@/components/ContextualActions.vue";
 import { resolveMethodHelpUrl } from "@/utils/documentation";
 import PlotSelectionCheckbox from "@/components/data/PlotSelectionCheckbox.vue";
 import DataContentsPanel from "./DataContentsPanel.vue";
@@ -3171,6 +3173,25 @@ const selectedExperiment = computed(() => {
   if (!dataStore.activeExperimentId) return null;
   return dataStore.experiments.find((e) => e.id === dataStore.activeExperimentId) ?? null;
 });
+const datasetActionRevision = ref(0);
+const datasetActionContext = computed(() => {
+  const projectId = projectStore.currentProjectId;
+  const experiment = selectedExperiment.value;
+  if (projectId == null || !experiment || experiment.project_id !== projectId ||
+      dataStore.experimentFilesLoading || dataStore.experimentFilesRefusal ||
+      !analysisSelectionHydrated.value || !["idle", "saved"].includes(analysisSelectionStatus.value)) {
+    return null;
+  }
+  const fileId = dataStore.activeFileId;
+  const files = dataStore.experimentFiles;
+  const hasRawSource = fileId == null
+    ? files.some(file => file.stage === "raw")
+    : files.some(file => file.id === fileId && file.stage === "raw");
+  return hasRawSource ? {
+    surface: "dataset" as const, projectId, experimentId: experiment.id, fileId,
+    selectionRevision: datasetActionRevision.value,
+  } : null;
+});
 
 const allExperimentsPlotted = computed(
   () =>
@@ -3316,6 +3337,14 @@ const originalSourceFilesKey = computed(() =>
   originalSourceFiles.value
     .map((file) => `${file.id}:${file.stage}:${file.file_size_bytes ?? "?"}`)
     .join("|"),
+);
+watch(
+  () => JSON.stringify([
+    requestedAnalysisSelection.value, originalSourceFilesKey.value, analysisChoice.value.sourceDigest,
+    currentPortfolioView.value?.selection_sha256,
+  ]),
+  () => { datasetActionRevision.value += 1; },
+  { flush: "sync" },
 );
 let sourceInventoryGeneration = 0;
 watch(

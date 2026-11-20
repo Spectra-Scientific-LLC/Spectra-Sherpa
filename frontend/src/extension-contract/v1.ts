@@ -75,6 +75,7 @@ export interface HostPrimaryNavigation {
 
 export type HostActionContext =
   | { surface: "run"; projectId: number; runId: number; nodeId?: string }
+  | { surface: "dataset"; projectId: number; experimentId: number; fileId: number | null; selectionRevision: number }
   | {
       surface: "deploy";
       projectId: number;
@@ -86,6 +87,7 @@ export interface HostContextualAction {
   id: string;
   label: string;
   icon?: string;
+  surfaces?: readonly HostActionContext["surface"][];
   available(context: Readonly<HostActionContext>): boolean;
   execute(context: Readonly<HostActionContext>, signal: AbortSignal): void | Promise<void>;
 }
