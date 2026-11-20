@@ -117,8 +117,9 @@ async def test_host_workflow_policy_precedes_run_reservation(test_session, test_
     workflow_id, path = saved
     trusted = Admission(path)
 
-    async def require_admission(session, actor_id, workflow, admission):
+    async def require_admission(session, actor_id, workflow, operation, admission):
         assert actor_id == test_user.id and workflow.id == workflow_id
+        assert operation == "run"
         if admission is not trusted:
             raise HTTPException(409, "Workflow approval required")
 

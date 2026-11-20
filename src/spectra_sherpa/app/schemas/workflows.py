@@ -565,6 +565,7 @@ class TrialExecuteRequest(BaseModel):
     edges: list[TrialEdgeDefinition] = Field(default_factory=list, description="Workflow edges")
     initial_data: dict[str, Any] | None = Field(None, description="Initial data for source nodes (node_id -> data)")
     project_id: int | None = Field(None, description="Project scope for experiment-backed trial data")
+    workflow_id: int | None = Field(None, gt=0, description="Saved workflow open in the editor, if any")
 
 
 class TrialExecuteResponse(BaseModel):

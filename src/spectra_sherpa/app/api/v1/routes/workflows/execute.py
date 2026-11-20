@@ -20,7 +20,7 @@ from sqlalchemy.orm import selectinload
 from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.contracts.pack_access import authorize_project_packs
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
-from spectra_sherpa.app.contracts.saved_workflow_access import require_saved_workflow_execution
+from spectra_sherpa.app.contracts.saved_workflow_access import require_saved_workflow_operation
 from spectra_sherpa.app.contracts.scientific_access import ScientificAccessDenied, require_scientific_access
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.lib.workflow_purpose import MANAGED_CANDIDATE_AUTHORITY
@@ -369,8 +369,25 @@ async def execute_trial(
     3. Executes the target node and its dependencies
     4. Returns only the target node's result
 
-    This is completely independent of any stored workflow state.
+    When the editor has a saved workflow open, apply its host policy to the
+    temporary graph before consuming quota or accessing data.
     """
+    if payload.workflow_id is not None:
+        workflow = await session.scalar(
+            select(Workflow).where(
+                Workflow.id == payload.workflow_id,
+                Workflow.project_id == payload.project_id,
+                or_(Workflow.user_id == current_user.id, uses_managed_project_access()),
+            )
+        )
+        if workflow is None:
+            raise HTTPException(404, "Workflow not found")
+        await require_scientific_access(
+            session, current_user.id, workflow.project_id, "execute", resource_owner_id=workflow.user_id
+        )
+        if workflow.purpose == MANAGED_CANDIDATE_AUTHORITY:
+            raise HTTPException(409, "Managed optimization candidates must run through their campaign.")
+        await require_saved_workflow_operation(session, current_user.id, workflow, "run")
     _enforce_demo_trial_execution_policy(payload, current_user.id)
     effective_nodes = _effective_trial_nodes(payload)
     from spectra_sherpa.app.services.dag.pack_requirements import capture_pack_graph_binding
@@ -818,7 +835,7 @@ async def _execute_saved_workflow(
             },
         )
 
-    await require_saved_workflow_execution(session, user_id, workflow, admission)
+    await require_saved_workflow_operation(session, user_id, workflow, "run", admission)
 
     # Snapshot the workflow's ORM attributes BEFORE any commit / execute
     # may expire them. These were originally snapshotted further down,

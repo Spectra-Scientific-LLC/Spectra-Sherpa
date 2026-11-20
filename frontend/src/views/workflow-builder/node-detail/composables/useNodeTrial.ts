@@ -208,6 +208,7 @@ export function useNodeTrial({
         edges: trialEdges,
         initial_data: Object.keys(initialData).length > 0 ? initialData : null,
         project_id: nodeData.value.projectId ?? null,
+        workflow_id: nodeData.value.workflowId ?? null,
       };
 
       const changes: string[] = [];
@@ -282,7 +283,8 @@ export function useNodeTrial({
     } catch (error: any) {
       if (!mounted) return;
       isExecuting.value = false;
-      const message = error?.response?.data?.detail || error?.message || String(error);
+      const detail = error?.response?.data?.detail;
+      const message = (typeof detail === "string" ? detail : detail?.message) || error?.message || String(error);
       addLog("error", "Trial failed", message);
       toast.add({
         severity: "error",

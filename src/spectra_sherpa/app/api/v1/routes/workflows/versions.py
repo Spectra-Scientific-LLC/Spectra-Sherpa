@@ -376,6 +376,8 @@ async def open_version_as_new_sheet(
     snapshot.  The original workflow and all of its other versions are
     untouched.
     """
+    from spectra_sherpa.app.contracts.saved_workflow_access import require_saved_workflow_operation
+
     user_id = current_user.id
 
     # Source workflow + ownership.
@@ -412,6 +414,7 @@ async def open_version_as_new_sheet(
         raise HTTPException(status_code=404, detail="Version not found")
 
     await require_project(source.project_id, user_id, session, operation="write")
+    await require_saved_workflow_operation(session, user_id, source, "copy")
 
     snapshot = version.snapshot or {}
     binding = _admit_snapshot_graph(snapshot)

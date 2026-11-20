@@ -130,7 +130,7 @@ async def _prepare_verification_pair(payload, pair, session, user_id, *, refusal
     from sqlalchemy.orm import selectinload
 
     from spectra_sherpa.app.contracts.demo_policy import require_trial_dataset_access
-    from spectra_sherpa.app.contracts.saved_workflow_access import require_saved_workflow_execution
+    from spectra_sherpa.app.contracts.saved_workflow_access import require_saved_workflow_operation
     from spectra_sherpa.app.lib.workflow_purpose import MANAGED_CANDIDATE_AUTHORITY
     from spectra_sherpa.app.services.batch_verification import (
         bind_workflow_definition,
@@ -158,7 +158,7 @@ async def _prepare_verification_pair(payload, pair, session, user_id, *, refusal
     if workflow.purpose == MANAGED_CANDIDATE_AUTHORITY:
         raise ValueError("Managed optimization candidates must run through their campaign.")
     if payload.mode == "run_workflow":
-        await require_saved_workflow_execution(session, user_id, workflow)
+        await require_saved_workflow_operation(session, user_id, workflow, "run")
     request = ArtifactBatchRunRequest(
         artifact_uids=[pair.artifact_uid or "unused"],
         dataset=pair.dataset,
