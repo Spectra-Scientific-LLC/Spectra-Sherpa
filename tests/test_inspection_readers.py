@@ -115,8 +115,32 @@ async def test_same_owner_other_project_and_unbound_handles_are_refused(facts):
 
 
 @pytest.mark.parametrize("operation", ["describe_dataset", "inspect_workflow"])
-async def test_global_privacy_switch_is_not_overridden_by_connection_consent(facts, monkeypatch, operation):
+async def test_connection_confirmation_replaces_local_default_off_switch(facts, monkeypatch, operation):
+    from spectra_sherpa.app.core.config import app_config
+
+    # Local mode's global egress switch is off by default. The connection's own
+    # external-provider confirmation is the consent for its reads.
     monkeypatch.setattr(security, "is_egress_enabled", lambda: False)
+    monkeypatch.setattr(app_config, "mode", "local")
+    monkeypatch.delenv("EGRESS_ENABLED", raising=False)
+    arguments = {"dataset_id": facts[2]} if operation == "describe_dataset" else {"workflow_id": facts[3]}
+    assert await read(facts, operation, arguments)
+
+
+@pytest.mark.parametrize("operation", ["describe_dataset", "inspect_workflow"])
+@pytest.mark.parametrize("refusal", ["explicit_off", "hosted_off", "degraded"])
+async def test_explicit_or_hosted_privacy_switch_is_not_overridden(facts, monkeypatch, operation, refusal):
+    from spectra_sherpa.app.contracts import runtime_status
+    from spectra_sherpa.app.core.config import app_config
+
+    monkeypatch.setattr(security, "is_egress_enabled", lambda: False)
+    monkeypatch.setattr(app_config, "mode", "enterprise" if refusal == "hosted_off" else "local")
+    if refusal == "explicit_off":
+        monkeypatch.setenv("EGRESS_ENABLED", "false")
+    else:
+        monkeypatch.delenv("EGRESS_ENABLED", raising=False)
+    if refusal == "degraded":
+        monkeypatch.setattr(runtime_status, "_provider", lambda: {"is_degraded": True})
     arguments = {"dataset_id": facts[2]} if operation == "describe_dataset" else {"workflow_id": facts[3]}
     with pytest.raises(InspectionRefused, match="privacy_denied"):
         await read(facts, operation, arguments)

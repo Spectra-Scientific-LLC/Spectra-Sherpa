@@ -149,11 +149,15 @@ connection. The checkbox is off by default. Existing credentials remain
 catalog-only after upgrade; revoke and replace them to grant broader access.
 Consent is persisted and checked before and after each read.
 
-Both readers also require the connection's metadata disclosure and the existing
-global egress switch plus metadata-to-LLM-context permission. Workflow inspection
-also requires workflows-to-LLM-context permission. Connection consent does not
-override these settings. Missing fine-grained overrides use existing user defaults;
-policy lookup failures refuse disclosure. Current identity, project membership,
+Both readers also require the connection's metadata disclosure and the user's
+metadata-to-LLM-context permission. Workflow inspection also requires
+workflows-to-LLM-context permission. In local mode, network egress is off by
+default; the acknowledgement given when creating the connection is the consent
+for that connection's reads, so egress need not be enabled globally. An explicit
+`EGRESS_ENABLED` setting, an unavailable network runtime, and hosted deployments
+keep the global switch, and explicit per-data-type denials always apply. Missing
+fine-grained overrides use existing user defaults; policy lookup failures refuse
+disclosure. Current identity, project membership,
 object binding and privacy policy are checked again before returning results.
 A privacy change during a read therefore prevents disclosure. Tool discovery
 lists the supported interfaces, not a guarantee that the current privacy policy
