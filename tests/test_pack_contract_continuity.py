@@ -33,9 +33,9 @@ CHANGED = {
     "custom.noise_injection": "72933054d9e3f7990d6cbf2654aea7dc202ba165b138ee13b62db14a85d7b3d8",
     "custom.saturation_model": "b8b82f83727ca8ea6f7d5adbfa2156501edac4995a96395f3db76dde8eddcc18",
     "custom.system_saturation": "881e7c203dd4f056d30269f1d06f19d42a2da6214350dcd1562da4a7cd8ac4fa",
-    "data.collection_load": "4e0a615ce581879bc1f8f5e21e0024a1ab9bf665ece18505fde6bc346cf79602",
+    "data.collection_load": "a1d3108c821c030029544e547d3002c9ef93731ade09c20fe3173837401c50c7",
     "data.file_load": "1e5ede067a30af3bf377a416a3f88973e553d1f82937f01215c26e7838528f6d",
-    "data.load_group": "f540eceba671bad1af3a4ec1c7fb8e1060e97bfe1bdd2bc78ecf54151d4beba4",
+    "data.load_group": "570b9fc19fa5c57973db2bc4581d244c608c6833df28c30534658fe5c01b3e1e",
     "data.nist_library": "528651c6627f2082f580cee4349bc63d73d9e31bfde13ac2d0f7ad23c2be7373",
     "data.synthetic_curve": "964ed0896e6a81b185e514876abef565d5e2d5906d8fda0344f3e161f61985b4",
     "diagnostics.labeled_regression_evaluator": "779a67294b03730c740771ab3c6911899430ba69d5c6b1befdaa719968334924",
@@ -107,7 +107,16 @@ def test_each_historical_registration_preserves_original_identity(entry):
     profile, op, predecessor, consumer = (
         entry[k] for k in ("profile_digest", "operation_id", "predecessor_digest", "consumer_digest")
     )
-    assert node_registry.get_metadata(op).resolved_execution_contract().digest == consumer
+    current = node_registry.get_metadata(op).resolved_execution_contract().digest
+    if current != consumer:
+        # Older exact registrations remain readable. Only these source-only
+        # readers gained a new implementation with unchanged declarations.
+        assert op in {"data.collection_load", "data.load_group"}
+        assert entry["source_only"] is True and entry["legacy_application"] is False
+        assert pack_retention_inspection_registration(profile, op, predecessor, current) == {
+            **entry,
+            "consumer_digest": current,
+        }
     assert HistoricalReconstructionContext(profile).contract(op, predecessor).digest == predecessor
     assert pack_retention_inspection_registration(profile, op, predecessor, consumer) == entry
     for fields in (
@@ -164,3 +173,15 @@ def test_corrupt_existing_payload_is_not_replaced_by_frozen_fallback():
     context._catalog["contracts"][op]["payload"]["implementation_version"] = "corrupted"
     with pytest.raises(ValidationGraphError, match="unknown historical operation/contract identity"):
         context.contract(op, predecessor)
+
+
+@pytest.mark.parametrize("operation", ["data.collection_load", "data.load_group"])
+def test_frozen_source_reader_compatibility_cannot_authorize_execution(operation):
+    context = HistoricalReconstructionContext(PROFILE)
+    predecessor = context._catalog["contracts"][operation]["digest"]
+    current = node_registry.get_metadata(operation).resolved_execution_contract().digest
+    entry = pack_retention_inspection_registration(PROFILE, operation, predecessor, current)
+    assert entry["source_only"] is True and entry["legacy_application"] is False
+    assert not saved_state_predecessor_is_compatible(predecessor, current, operation_id=operation, serializer="unknown")
+    assert context.contract(operation, predecessor).digest == predecessor
+    assert operation not in context._catalog["profile"]["operations"]

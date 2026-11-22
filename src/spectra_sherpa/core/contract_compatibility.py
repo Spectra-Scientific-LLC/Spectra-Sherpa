@@ -1795,7 +1795,7 @@ def pack_retention_inspection_registration(
 ) -> dict | None:
     """Exact read-only qualification; never execution or fitted-state authority."""
     raw = files("spectra_sherpa.core").joinpath("contract_inspection_pack_retention.json").read_bytes()
-    if hashlib.sha256(raw).hexdigest() != "d0b34f8096a3f205f5ce005cc9160fc9da476399cb45ab09d72b554e32478db0":
+    if hashlib.sha256(raw).hexdigest() != "8497d2307f88760c5f6123751d65e2b75f8122417a810bf51576b666b1177d33":
         raise ValueError("trusted pack-retention inspection registrations mismatch")
     matches = [
         entry
