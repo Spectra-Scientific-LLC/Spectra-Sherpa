@@ -89,6 +89,22 @@ describe("Saved report evidence", () => {
     }
     expect(generateProvenanceReport(report)).toContain("Corn &lt;M5&gt;");
   });
+  it("keeps the retained prediction scope in offline HTML and Markdown exports", () => {
+    const report = data();
+    report.runs![0].prediction_context = {
+      role: "prediction_only", instrument_relation: "different",
+      calibration_instrument: "M5", prediction_instrument: "MP5",
+      transfer_correction: "none", held_out_accuracy_applies: false,
+    };
+    for (const output of [generateProvenanceReport(report), generateMarkdownReport(report)]) {
+      expect(output).toContain("Uncorrected cross-instrument predictions: M5 → MP5.");
+      expect(output).toContain("Held-out accuracy does not apply to this dataset.");
+    }
+    report.runs![0].prediction_context = null;
+    for (const output of [generateProvenanceReport(report), generateMarkdownReport(report)]) {
+      expect(output).not.toContain("Held-out accuracy does not apply");
+    }
+  });
   it("carries the same saved validation facts into preview HTML and Markdown, refusing another run's summary", () => {
     const report = data();
     report.runs![0].validation_summary = {

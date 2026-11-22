@@ -16,3 +16,9 @@ class PredictionContext(BaseModel):
     held_out_accuracy_applies: Literal[False] = Field(
         description="The calibration held-out score does not establish accuracy on this prediction dataset."
     )
+
+
+def retained_prediction_context(source_metadata: dict | None) -> dict | None:
+    """Validated retained scope for Results and report exports, or None."""
+    value = (source_metadata or {}).get("prediction_context")
+    return None if value is None else PredictionContext.model_validate(value).model_dump(mode="json")

@@ -1,4 +1,5 @@
 import { reportNodePlotsMarkdown } from "./reportNodePlots";
+import { predictionScopeLines } from "./predictionScope";
 /**
  * Markdown report generator — produces clean markdown from the same
  * ReportData used by the HTML generator. Keeps both export formats
@@ -136,6 +137,7 @@ function buildRunsSection(runs: RunReportEntry[], nodes: ReportNode[]): string {
           : "Not recorded";
       lines.push(`- **Run source**: ${run.workflow_identity.source_name || "Not recorded"} (${origin})`);
     }
+    for (const line of predictionScopeLines(run.prediction_context)) lines.push(`- **Prediction scope**: ${reportMarkdownText(line)}`);
     if (run.evidence_notice) lines.push(`- **Evidence**: ${run.evidence_notice}`);
     if (run.evidence_gaps?.length) {
       lines.push("\n#### Incomplete durable evidence\n");

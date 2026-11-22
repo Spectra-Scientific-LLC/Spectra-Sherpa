@@ -45,11 +45,7 @@
         <strong>Baseline warning:</strong> {{ warning }}
       </p>
       <div v-if="detail.prediction_context" role="note" aria-label="Prediction scope">
-        <p v-if="detail.prediction_context.instrument_relation === 'different'">
-          Uncorrected cross-instrument predictions:
-          {{ detail.prediction_context.calibration_instrument }} → {{ detail.prediction_context.prediction_instrument }}.
-        </p>
-        <p>Prediction only. No instrument-transfer correction was applied. Held-out accuracy does not apply to this dataset.</p>
+        <p v-for="line in predictionScopeLines(detail.prediction_context)" :key="line">{{ line }}</p>
       </div>
       <ModelSummaryCard :summary="modelSummary" compact display="context"
         :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
@@ -296,6 +292,7 @@ import { evidenceScopeLabel, visibleEvidenceGapLabel, type EvidenceGap } from '@
 import { formatTimestamp } from '@/utils/format';
 import { useScopedRequest, type ScopedRequestTicket } from '@/composables/useScopedRequest';
 import { registerProjectScopeReset } from '@/stores/projectScopeRegistry';
+import { predictionScopeLines, type PredictionContext } from '@/utils/predictionScope';
 
 interface Evidence {
   state: string;
@@ -314,9 +311,7 @@ interface Definition {
 }
 interface Detail {
   population_summary?: unknown;
-  prediction_context?: { role: 'prediction_only'; instrument_relation: 'different' | 'same' | 'unknown';
-      calibration_instrument: string | null; prediction_instrument: string | null;
-      transfer_correction: 'none'; held_out_accuracy_applies: false } | null;
+  prediction_context?: PredictionContext | null;
   batch?: { batch_id: string; batch_index: number; batch_size: number; execution_mode: string;
     scope_label: string; dataset?: { name: string }; dataset_view?: { name: string }; n_included_samples: number } | null;
   environment_snapshot?: Record<string, unknown> | null;
