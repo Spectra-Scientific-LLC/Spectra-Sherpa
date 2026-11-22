@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from types import SimpleNamespace
 from typing import Any
 
@@ -11,6 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from spectra_sherpa.app.contracts.runtime_status import external_services_available
+from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.core.security import check_egress_permission
 from spectra_sherpa.app.models.data_egress import DataType, EgressDestination
 from spectra_sherpa.app.models.user import User
@@ -32,8 +35,25 @@ class WorkflowArguments(BaseModel):
     workflow_id: int = Field(gt=0)
 
 
+def connection_is_consent() -> bool:
+    """Whether this connection's own confirmation stands in for local mode's default-off egress switch.
+
+    Creating an inspection connection requires the user to confirm that results
+    may reach the client's chosen AI provider. In local mode that confirmation is
+    the consent for the connection's reads, so a user does not also have to
+    enable network egress globally. An explicit EGRESS_ENABLED setting, an
+    unavailable runtime, and hosted deployments keep the global switch.
+    """
+    return app_config.mode == "local" and not os.getenv("EGRESS_ENABLED") and external_services_available()
+
+
 async def authorize_policy(session: AsyncSession, identity: InspectionIdentity, data_types: list[str]) -> User:
-    """Use the existing current egress authority; no policy cache or consent override."""
+    """Use the existing current egress authority; no policy cache.
+
+    The user's AI-sharing permission and any per-data-type rule still apply;
+    only local mode's default global switch is replaced by the connection's
+    confirmation (see ``connection_is_consent``).
+    """
     from spectra_sherpa.app.services.inspection_bridge import InspectionRefused
 
     user = await session.scalar(
@@ -51,6 +71,7 @@ async def authorize_policy(session: AsyncSession, identity: InspectionIdentity, 
             data_type=data_type,
             destination=EgressDestination.LLM_CONTEXT,
             session=session,
+            skip_global_check=connection_is_consent(),
             fail_closed_on_policy_error=True,
         ):
             raise InspectionRefused("privacy_denied")
