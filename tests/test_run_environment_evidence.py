@@ -33,6 +33,16 @@ async def test_capture_survives_reopen_and_api_inspection(test_session, test_use
         results_summary={},
         executed_at=datetime.now(timezone.utc),
     )
+    prediction_context = {
+        "role": "prediction_only",
+        "instrument_relation": "different",
+        "calibration_instrument": "M5",
+        "prediction_instrument": "MP5",
+        "transfer_correction": "none",
+        "held_out_accuracy_applies": False,
+    }
+    if source == "batch":
+        run.source_metadata = {"execution_mode": "apply_model", "prediction_context": prediction_context}
     test_session.add(run)
     await test_session.commit()
     snapshot = run.environment_snapshot
@@ -46,6 +56,9 @@ async def test_capture_survives_reopen_and_api_inspection(test_session, test_use
     test_session.expunge(run)
     response = await inspect_run_evidence(run_id, project_id=project_id, session=test_session, current_user=test_user)
     assert response["environment_snapshot"] == snapshot
+    if source == "batch":
+        assert response["batch"] is None
+        assert response["prediction_context"] == prediction_context
 
 
 @pytest.mark.asyncio

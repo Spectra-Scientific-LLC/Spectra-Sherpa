@@ -281,3 +281,67 @@ async def test_cancel_scope_drains_owned_reader():
         await frozen._drained_read(reader)
     await cancel
     assert ended.is_set()
+
+
+async def test_registered_collection_retains_projection_after_live_bytes_change(
+    test_session, test_user, source, monkeypatch
+):
+    from spectra_sherpa.app.services.dag.nodes.data import loaders
+
+    node, path = source
+    original = path.read_bytes()
+    reference = {
+        "projection_id": "fixture-view",
+        "member_size_bytes": len(original),
+        "member_sha256": hashlib.sha256(original).hexdigest(),
+    }
+    dataset = FileLoadNode("source", node.parameters)._load_file(path)
+    monkeypatch.setattr(frozen, "read_registered_reference_sidecar", lambda _: reference)
+    monkeypatch.setattr(
+        loaders,
+        "_load_registered_reference_asset",
+        lambda *a, **k: SimpleNamespace(dataset=dataset, selected_asset_id="fixture-view"),
+    )
+    params = {
+        "experiment_id": node.parameters["experiment_id"],
+        "stage": "raw",
+        "selected_file_ids": [str(node.parameters["file_id"])],
+        "asset_id": "fixture-view",
+    }
+    from spectra_sherpa.app.services.model_application import _loaded_files_to_sherpa
+    from spectra_sherpa.io.types import SourceMember
+
+    assembled = _loaded_files_to_sherpa(
+        [
+            loaders._LoadedDataset(
+                dataset=dataset,
+                file_name="raw/spectra.csv",
+                selected_asset_id="fixture-view",
+                prepared_overrides=frozen.load_prepared_data_overrides_strict(file_path=str(path)).to_sidecar_dict(),
+                source_members=(SourceMember("raw/spectra.csv", reference["member_sha256"], len(original)),),
+            )
+        ],
+        "Snapshot spectra",
+    )
+    params["source_manifest_sha256"] = assembled.meta["source_collection"]["manifest_digest"]
+    params["scientific_collection_sha256"] = assembled.meta["source_collection"]["scientific_collection_sha256"]
+    collection = SimpleNamespace(node_id="source", node_type="data.collection_load", parameters=params)
+    async with frozen.freeze_workflow_sources(
+        test_session, nodes=[collection], actor_id=test_user.id, project_id=None
+    ) as resolver:
+        path.write_text("source overwritten after admission")
+        envelope = await resolver.resolve_experiment_collection(experiment_id=params["experiment_id"])
+        envelope.files[0].preloaded_dataset.X[0, 0] = 90
+
+        def refuse_live_read(*args, **kwargs):
+            pytest.fail("captured projection was reparsed from live bytes")
+
+        monkeypatch.setattr(loaders.ExperimentDatasetReader, "_load_file", refuse_live_read)
+        canonical = loaders.CollectionLoadNode("source", params)
+        canonical.bind_execution_runtime(ExecutionRuntime(dataset_source_resolver=resolver))
+        result = await canonical.execute()
+        assert result["default"].X.tolist() == [[1, 2, 3], [4, 5, 6]]
+        wrong = loaders.CollectionLoadNode("source", {**params, "asset_id": "other-view"})
+        wrong.bind_execution_runtime(ExecutionRuntime(dataset_source_resolver=resolver))
+        with pytest.raises(ValueError, match="asset differs"):
+            await wrong.execute()

@@ -957,7 +957,11 @@ async def inspect_run_evidence(
     )
     await session.refresh(run, attribute_names=["source_metadata"])
     source = run.source_metadata or {}
+    from spectra_sherpa.app.schemas.prediction_context import retained_prediction_context
+
+    prediction_context = retained_prediction_context(source)
     response = {
+        "prediction_context": prediction_context,
         "run": _run_navigation(run, workflow_name).model_dump(mode="json"),
         "evidence": evidence.model_dump(),
         "evidence_gaps": [item.model_dump() for item in evidence.gaps()],

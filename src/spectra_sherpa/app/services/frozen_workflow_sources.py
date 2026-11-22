@@ -70,11 +70,9 @@ class FrozenWorkflowSources:
         raise ValueError("Library sources are outside the admitted snapshot")
 
 
-def _capture_file(record, root, remaining, file_node, reference_remaining):
+def _capture_file(record, root, remaining, reference_remaining):
     path = _experiment_path(record.experiment_id, record.file_path)
     reference = read_registered_reference_sidecar(path)
-    if reference is not None and not file_node:
-        raise ValueError("Registered reference collections require a complete reference snapshot")
     prepared = load_prepared_data_overrides_strict(file_path=str(path)).to_sidecar_dict()
     destination = root / str(record.id) / path.name
     destination.parent.mkdir()
@@ -180,13 +178,10 @@ async def freeze_workflow_sources(session, *, nodes, actor_id, project_id):
                         record,
                         root,
                         _MAX_BYTES - total,
-                        file_node,
                         _MAX_DECODED_REFERENCE_BYTES - total_reference_bytes,
                     )
                     total += files[key].size_bytes
                     total_reference_bytes += reference_size
-                if not file_node and files[key].preloaded_dataset is not None:
-                    raise ValueError("Registered reference collections require a complete reference snapshot")
                 captured.append(files[key])
             if node.node_type == "data.collection_load":
                 key = (experiment_id, stage)

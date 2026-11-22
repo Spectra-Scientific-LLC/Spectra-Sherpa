@@ -374,12 +374,24 @@ class ExperimentDatasetReader:
         retained_elements = 0
         retained_bytes = 0
         for source in collection.files:
-            item = self._load_file(
-                source.path,
-                file_name=source.original_file_path,
-                asset_id=asset_id,
-                prepared_overrides=source.prepared_overrides,
-            )
+            if source.preloaded_dataset is not None:
+                if asset_id is not None and asset_id != source.preloaded_asset_id:
+                    raise ValueError("Captured collection member asset differs from the admitted asset")
+                if source.sha256 is None or source.size_bytes is None:
+                    raise ValueError("Captured collection member omitted its exact byte identity")
+                item = _LoadedDataset(
+                    dataset=copy.deepcopy(source.preloaded_dataset),
+                    file_name=source.original_file_path,
+                    selected_asset_id=source.preloaded_asset_id,
+                    source_members=(SourceMember(source.original_file_path, source.sha256, source.size_bytes),),
+                )
+            else:
+                item = self._load_file(
+                    source.path,
+                    file_name=source.original_file_path,
+                    asset_id=asset_id,
+                    prepared_overrides=source.prepared_overrides,
+                )
             if len(item.source_members) != 1:
                 raise ValueError(
                     f"Registry result for {source.original_file_path!r} must identify exactly one source member"

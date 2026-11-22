@@ -101,6 +101,22 @@ async def test_report_uses_saved_graph_not_current_canvas_and_discloses_missing_
     assert report["nodes"] == definition["nodes"]
     assert report["runs"][0]["saved_definition"] == definition
     assert "not the complete" in report["runs"][0]["evidence_notice"]
+    assert report["runs"][0]["prediction_context"] is None
+
+    context = {
+        "role": "prediction_only",
+        "instrument_relation": "different",
+        "calibration_instrument": "M5",
+        "prediction_instrument": "MP5",
+        "transfer_correction": "none",
+        "held_out_accuracy_applies": False,
+    }
+    run.source_metadata = {**(run.source_metadata or {}), "prediction_context": context}
+    await test_session.commit()
+    report = await workflow_export.get_report_data(
+        workflow.id, run_ids=str(run.id), session=test_session, current_user=test_user
+    )
+    assert report["runs"][0]["prediction_context"] == context
 
     run.evidence_completeness = None
     await test_session.commit()

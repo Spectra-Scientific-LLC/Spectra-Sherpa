@@ -1,4 +1,5 @@
 import { standaloneThemeCss } from "@/theme/interfaceTheme";
+import { predictionScopeLines, type PredictionContext } from "./predictionScope";
 import { reportNodePlotsHtml, type ReportNodePlotSection } from "./reportNodePlots";
 import type { ValidationFigure } from "@/utils/validationReportPlots";
 import type { ReportProjectEvidenceSnapshot } from "@/stores/report";
@@ -62,6 +63,7 @@ export interface RunReportEntry {
   integrity_hash: string | null;
   labels: string[] | null;
   evidence_notice?: string;
+  prediction_context?: PredictionContext | null;
   workflow_identity?: {
     project_id: number | null;
     workflow_id: number;
@@ -388,6 +390,10 @@ function buildRunSection(run: RunReportEntry, nodes: ReportNode[]): string {
         ? "Current project data"
         : "Not recorded";
     html += `<p>Run source: ${escapeHtml(identity.source_name || "Not recorded")} (${escapeHtml(origin)})</p>`;
+  }
+  const predictionScope = predictionScopeLines(run.prediction_context);
+  if (predictionScope.length) {
+    html += `<div role="note" aria-label="Prediction scope">${predictionScope.map((line) => `<p>${escapeHtml(line)}</p>`).join('')}</div>`;
   }
   if (run.evidence_notice) html += `<p>${escapeHtml(run.evidence_notice)}</p>`;
   if (run.evidence_gaps?.length) {

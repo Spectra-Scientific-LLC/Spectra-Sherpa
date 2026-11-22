@@ -1038,5 +1038,25 @@
     "predecessor_digest": "5bec591e25349e7742131f0c74a9a90114f42c34c1e208d67439fd0c282166a3",
     "profile_digest": "a66a3b73b19b1e864df07a5e1622b8f8c9fa75b65a36b83ee2b7c3b84da680cf",
     "source_only": true
+  },
+  {
+    "classifier_curve": false,
+    "component_curve": false,
+    "consumer_digest": "a1d3108c821c030029544e547d3002c9ef93731ade09c20fe3173837401c50c7",
+    "legacy_application": false,
+    "operation_id": "data.collection_load",
+    "predecessor_digest": "903f84a65f603fffb13a05c8ad11b959eb7297f68aa0f128d2c6b1ee3b0814be",
+    "profile_digest": "a66a3b73b19b1e864df07a5e1622b8f8c9fa75b65a36b83ee2b7c3b84da680cf",
+    "source_only": true
+  },
+  {
+    "classifier_curve": false,
+    "component_curve": false,
+    "consumer_digest": "570b9fc19fa5c57973db2bc4581d244c608c6833df28c30534658fe5c01b3e1e",
+    "legacy_application": false,
+    "operation_id": "data.load_group",
+    "predecessor_digest": "9a15f827b009ed2795d6ba2cef242a41538675ab23225eaaa04210188242ba4c",
+    "profile_digest": "a66a3b73b19b1e864df07a5e1622b8f8c9fa75b65a36b83ee2b7c3b84da680cf",
+    "source_only": true
   }
 ]

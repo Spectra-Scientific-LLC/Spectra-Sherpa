@@ -44,6 +44,9 @@
       <p v-for="warning in baselineWarnings" :key="warning" role="status" class="evidence-gaps">
         <strong>Baseline warning:</strong> {{ warning }}
       </p>
+      <div v-if="detail.prediction_context" role="note" aria-label="Prediction scope">
+        <p v-for="line in predictionScopeLines(detail.prediction_context)" :key="line">{{ line }}</p>
+      </div>
       <ModelSummaryCard :summary="modelSummary" compact display="context"
         :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
       <RetainedPopulationSummary ref="retainedSummaryAnchor" :value="detail.population_summary" :run-id="detail.run.id"
@@ -289,6 +292,7 @@ import { evidenceScopeLabel, visibleEvidenceGapLabel, type EvidenceGap } from '@
 import { formatTimestamp } from '@/utils/format';
 import { useScopedRequest, type ScopedRequestTicket } from '@/composables/useScopedRequest';
 import { registerProjectScopeReset } from '@/stores/projectScopeRegistry';
+import { predictionScopeLines, type PredictionContext } from '@/utils/predictionScope';
 
 interface Evidence {
   state: string;
@@ -307,6 +311,7 @@ interface Definition {
 }
 interface Detail {
   population_summary?: unknown;
+  prediction_context?: PredictionContext | null;
   batch?: { batch_id: string; batch_index: number; batch_size: number; execution_mode: string;
     scope_label: string; dataset?: { name: string }; dataset_view?: { name: string }; n_included_samples: number } | null;
   environment_snapshot?: Record<string, unknown> | null;

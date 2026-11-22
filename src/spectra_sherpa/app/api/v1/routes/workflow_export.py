@@ -291,6 +291,7 @@ async def get_report_data(
         if len(runs) != len(set(parsed_run_ids)):
             raise HTTPException(status_code=404, detail="One or more selected runs are unavailable in this workflow")
 
+        from spectra_sherpa.app.schemas.prediction_context import retained_prediction_context
         from spectra_sherpa.app.services.run_population_summary import RetainedDefinitionRead
         from spectra_sherpa.app.services.run_validation_summary import validation_summary
 
@@ -359,6 +360,7 @@ async def get_report_data(
                 "saved_definition": definition,
                 "validation_summary": summary,
                 "workflow_identity": _workflow_identity(workflow, definition=definition),
+                "prediction_context": retained_prediction_context(r.source_metadata),
                 "evidence_gaps": [item.model_dump() for item in _run_evidence_gaps(r)],
                 "evidence_notice": (
                     (
