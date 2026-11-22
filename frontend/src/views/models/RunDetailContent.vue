@@ -44,15 +44,19 @@
       <p v-for="warning in baselineWarnings" :key="warning" role="status" class="evidence-gaps">
         <strong>Baseline warning:</strong> {{ warning }}
       </p>
-      <ModelSummaryCard :summary="modelSummary" compact display="context"
-        :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
-          <div v-if="detail.batch?.prediction_context" role="note" aria-label="Prediction scope">
-            <p v-if="detail.batch.prediction_context.instrument_relation === 'different'">
+          <div v-if="detail.prediction_context" role="note" aria-label="Prediction scope">
+            <p v-if="detail.prediction_context.instrument_relation === 'different'">
               Uncorrected cross-instrument predictions:
-              {{ detail.batch.prediction_context.calibration_instrument }} → {{ detail.batch.prediction_context.prediction_instrument }}.
+              {{ detail.prediction_context.calibration_instrument }} → {{ detail.prediction_context.prediction_instrument }}.
             </p>
             <p>Prediction only. No instrument-transfer correction was applied. Held-out accuracy does not apply to this dataset.</p>
           </div>
+      <p v-else-if="detail.run.run_kind === 'batch_inference'" role="note" aria-label="Prediction scope">
+        Model application. Training or held-out scores do not establish accuracy on this dataset.
+        Instrument-transfer correction is not recorded in this prediction context.
+      </p>
+      <ModelSummaryCard :summary="modelSummary" compact display="context"
+        :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
       <RetainedPopulationSummary ref="retainedSummaryAnchor" :value="detail.population_summary" :run-id="detail.run.id"
         :labels="nodeLabels" @inspect="inspectPopulationSource" @download="downloadPopulationMap" />
       <p v-if="populationDownloadError" role="status">{{ populationDownloadError }}</p>
@@ -315,10 +319,10 @@ interface Definition {
 }
 interface Detail {
   population_summary?: unknown;
-  batch?: { batch_id: string; batch_index: number; batch_size: number; execution_mode: string;
-    prediction_context?: { role: 'prediction_only'; instrument_relation: 'different' | 'same' | 'unknown';
+  prediction_context?: { role: 'prediction_only'; instrument_relation: 'different' | 'same' | 'unknown';
       calibration_instrument: string | null; prediction_instrument: string | null;
       transfer_correction: 'none'; held_out_accuracy_applies: false } | null;
+  batch?: { batch_id: string; batch_index: number; batch_size: number; execution_mode: string;
     scope_label: string; dataset?: { name: string }; dataset_view?: { name: string }; n_included_samples: number } | null;
   environment_snapshot?: Record<string, unknown> | null;
   params_snapshot?: Record<string, Record<string, unknown>> | null;

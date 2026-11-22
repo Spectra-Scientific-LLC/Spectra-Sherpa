@@ -957,7 +957,15 @@ async def inspect_run_evidence(
     )
     await session.refresh(run, attribute_names=["source_metadata"])
     source = run.source_metadata or {}
+    from spectra_sherpa.app.schemas.prediction_context import PredictionContext
+
+    prediction_context = (
+        PredictionContext.model_validate(source["prediction_context"]).model_dump(mode="json")
+        if source.get("prediction_context") is not None
+        else None
+    )
     response = {
+        "prediction_context": prediction_context,
         "run": _run_navigation(run, workflow_name).model_dump(mode="json"),
         "evidence": evidence.model_dump(),
         "evidence_gaps": [item.model_dump() for item in evidence.gaps()],
@@ -981,7 +989,6 @@ async def inspect_run_evidence(
                     "dataset_view",
                     "n_included_samples",
                     "artifact_uid",
-                    "prediction_context",
                 )
             }
             if source.get("batch_id")
