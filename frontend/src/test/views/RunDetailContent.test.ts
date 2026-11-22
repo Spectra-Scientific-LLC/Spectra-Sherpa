@@ -1352,7 +1352,6 @@ it('never scrolls a superseded run when its retained summary arrives late', asyn
   }
 });
 
-
 it('retains the cross-instrument prediction warning after reopening Results', async () => {
   get.mockImplementation(async (url: string) => {
     if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture), batch: null,
@@ -1372,15 +1371,11 @@ it('retains the cross-instrument prediction warning after reopening Results', as
   }
 });
 
-
-it('does not invent transfer or validation evidence for older application runs', async () => {
+it('keeps existing application runs unchanged when no prediction context is retained', async () => {
   get.mockImplementation(async (url: string) => {
     if (url.endsWith('/evidence')) return {data: {...structuredClone(fixture), run: {...fixture.run, run_kind: 'batch_inference'}, prediction_context: null}};
     throw new Error(`Unexpected request ${url}`);
   });
   const {wrapper} = await open('?project=1');
-  const scope = wrapper.get('[aria-label="Prediction scope"]');
-  expect(scope.text()).toContain('held-out scores do not establish accuracy');
-  expect(scope.text()).toContain('Instrument-transfer correction is not recorded');
-  expect(scope.text()).not.toContain('M5');
+  expect(wrapper.find('[aria-label="Prediction scope"]').exists()).toBe(false);
 });

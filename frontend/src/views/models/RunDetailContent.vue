@@ -44,17 +44,13 @@
       <p v-for="warning in baselineWarnings" :key="warning" role="status" class="evidence-gaps">
         <strong>Baseline warning:</strong> {{ warning }}
       </p>
-          <div v-if="detail.prediction_context" role="note" aria-label="Prediction scope">
-            <p v-if="detail.prediction_context.instrument_relation === 'different'">
-              Uncorrected cross-instrument predictions:
-              {{ detail.prediction_context.calibration_instrument }} → {{ detail.prediction_context.prediction_instrument }}.
-            </p>
-            <p>Prediction only. No instrument-transfer correction was applied. Held-out accuracy does not apply to this dataset.</p>
-          </div>
-      <p v-else-if="detail.run.run_kind === 'batch_inference'" role="note" aria-label="Prediction scope">
-        Model application. Training or held-out scores do not establish accuracy on this dataset.
-        Instrument-transfer correction is not recorded in this prediction context.
-      </p>
+      <div v-if="detail.prediction_context" role="note" aria-label="Prediction scope">
+        <p v-if="detail.prediction_context.instrument_relation === 'different'">
+          Uncorrected cross-instrument predictions:
+          {{ detail.prediction_context.calibration_instrument }} → {{ detail.prediction_context.prediction_instrument }}.
+        </p>
+        <p>Prediction only. No instrument-transfer correction was applied. Held-out accuracy does not apply to this dataset.</p>
+      </div>
       <ModelSummaryCard :summary="modelSummary" compact display="context"
         :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
       <RetainedPopulationSummary ref="retainedSummaryAnchor" :value="detail.population_summary" :run-id="detail.run.id"
@@ -87,7 +83,6 @@
         </details>
         <section v-if="detail.batch" aria-label="Batch verification">
           <h2>Batch verification</h2>
-
           <dl>
             <dt>Batch</dt><dd>{{ detail.batch.batch_id }} · {{ detail.batch.batch_index }} / {{ detail.batch.batch_size }}</dd>
             <dt>Execution mode</dt><dd>{{ detail.batch.execution_mode === 'apply_model' ? 'Apply trained model — no refit' : 'Run workflow — train/evaluate' }}</dd>
