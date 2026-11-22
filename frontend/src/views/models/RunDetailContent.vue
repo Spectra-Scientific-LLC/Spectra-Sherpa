@@ -46,6 +46,13 @@
       </p>
       <ModelSummaryCard :summary="modelSummary" compact display="context"
         :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)" @edit-selection="openWorkflow" />
+          <div v-if="detail.batch?.prediction_context" role="note" aria-label="Prediction scope">
+            <p v-if="detail.batch.prediction_context.instrument_relation === 'different'">
+              Uncorrected cross-instrument predictions:
+              {{ detail.batch.prediction_context.calibration_instrument }} → {{ detail.batch.prediction_context.prediction_instrument }}.
+            </p>
+            <p>Prediction only. No instrument-transfer correction was applied. Held-out accuracy does not apply to this dataset.</p>
+          </div>
       <RetainedPopulationSummary ref="retainedSummaryAnchor" :value="detail.population_summary" :run-id="detail.run.id"
         :labels="nodeLabels" @inspect="inspectPopulationSource" @download="downloadPopulationMap" />
       <p v-if="populationDownloadError" role="status">{{ populationDownloadError }}</p>
@@ -76,6 +83,7 @@
         </details>
         <section v-if="detail.batch" aria-label="Batch verification">
           <h2>Batch verification</h2>
+
           <dl>
             <dt>Batch</dt><dd>{{ detail.batch.batch_id }} · {{ detail.batch.batch_index }} / {{ detail.batch.batch_size }}</dd>
             <dt>Execution mode</dt><dd>{{ detail.batch.execution_mode === 'apply_model' ? 'Apply trained model — no refit' : 'Run workflow — train/evaluate' }}</dd>
@@ -308,6 +316,9 @@ interface Definition {
 interface Detail {
   population_summary?: unknown;
   batch?: { batch_id: string; batch_index: number; batch_size: number; execution_mode: string;
+    prediction_context?: { role: 'prediction_only'; instrument_relation: 'different' | 'same' | 'unknown';
+      calibration_instrument: string | null; prediction_instrument: string | null;
+      transfer_correction: 'none'; held_out_accuracy_applies: false } | null;
     scope_label: string; dataset?: { name: string }; dataset_view?: { name: string }; n_included_samples: number } | null;
   environment_snapshot?: Record<string, unknown> | null;
   params_snapshot?: Record<string, Record<string, unknown>> | null;

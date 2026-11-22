@@ -981,6 +981,7 @@ async def inspect_run_evidence(
                     "dataset_view",
                     "n_included_samples",
                     "artifact_uid",
+                    "prediction_context",
                 )
             }
             if source.get("batch_id")
