@@ -418,9 +418,11 @@ const onProjectChange = async () => {
   align-items: center;
   gap: 12px;
   flex: 1;
+  min-width: 0;
 }
 
 .nav-collapse-toggle {
+  flex-shrink: 0;
   align-items: center;
   background: transparent;
   border: 1px solid var(--ss-border-strong);
@@ -446,6 +448,7 @@ const onProjectChange = async () => {
 }
 
 .topbar-center {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -468,6 +471,7 @@ const onProjectChange = async () => {
 }
 
 .topbar-right {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -496,6 +500,8 @@ const onProjectChange = async () => {
   background: var(--ss-surface-subtle);
   border-radius: 8px;
   border: 1px solid var(--ss-border);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .project-icon {
@@ -506,12 +512,16 @@ const onProjectChange = async () => {
 .project-dropdown {
   border: none;
   background: transparent;
-  min-width: 150px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .project-dropdown :deep(.p-dropdown-label) {
   padding: 4px 8px;
   font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .project-dropdown :deep(.p-dropdown-trigger) {

@@ -134,6 +134,21 @@ const displayed = computed(() => displayPlot(
   new Set(props.selectedPointIds || []),
   plotSurface,
 ));
+// Container-anchored top titles otherwise share the modebar's first row.
+// Reserve one screen toolbar row without changing the retained projection or
+// the print layout used by offline reports.
+const interactiveLayout = computed(() => {
+  const layout = displayed.value.layout;
+  const title = layout.title as PlotlyLayout | undefined;
+  const margin = layout.margin as PlotlyLayout | undefined;
+  if (plotSurface === "print" || props.config?.displayModeBar === false
+    || !title || typeof title !== "object" || title.yref !== "container" || title.yanchor !== "top"
+    || typeof title.y !== "number" || title.y < 0.95
+    || typeof layout.height !== "number" || layout.height <= 0 || typeof margin?.t !== "number") return layout;
+  const toolbarRow = 32;
+  return { ...layout, title: { ...title, y: title.y - toolbarRow / layout.height },
+    margin: { ...margin, t: margin.t + toolbarRow } };
+});
 const refusal = computed(() => scientificPlotRefusal(props.layout));
 const hasSubset = computed(() => plotHasSubset(props.layout || {}, displayed.value.omitted, props.sourcePopulation));
 const contextText = computed(() => plotContext(
@@ -326,7 +341,7 @@ const render = (layoutOnly = false): Promise<boolean> => {
       try {
         if (layoutOnly && !needsFullRender) {
           const flat: Record<string, unknown> = {};
-          for (const [key, val] of Object.entries(cloneForPlotly(displayed.value.layout))) {
+          for (const [key, val] of Object.entries(cloneForPlotly(interactiveLayout.value))) {
             if (val && typeof val === "object" && !Array.isArray(val)) {
               for (const [subKey, subVal] of Object.entries(val as Record<string, unknown>))
                 flat[`${key}.${subKey}`] = subVal;
@@ -337,7 +352,7 @@ const render = (layoutOnly = false): Promise<boolean> => {
           await Plotly.react(
             element,
             cloneForPlotly(displayed.value.data),
-            cloneForPlotly(displayed.value.layout),
+            cloneForPlotly(interactiveLayout.value),
             { responsive: true, displaylogo: false, ...cloneForPlotly(observationConfig.value) },
           );
         }

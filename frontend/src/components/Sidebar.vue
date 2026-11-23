@@ -20,14 +20,16 @@
             <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
           </RouterLink>
           <template v-if="hasSections(item.to)">
-            <button v-if="collapsed" type="button" class="nav-expand"
+            <button
+              v-if="collapsed" type="button" class="nav-expand"
               :aria-label="'Expand ' + item.label + ' sections'" :title="'Expand ' + item.label + ' sections'"
               :aria-expanded="false" @click="$emit('expand')">
               <i class="pi pi-angle-right" aria-hidden="true"></i>
             </button>
             <ul v-else class="nav-children" :aria-label="item.label + ' sections'">
               <li v-for="section in activeSections?.items" :key="section.id">
-                <button type="button" class="nav-child"
+                <button
+                  type="button" class="nav-child"
                   :class="{ 'nav-child--active': activeSections?.selected === section.id }"
                   :aria-current="activeSections?.selected === section.id ? 'true' : undefined"
                   :aria-controls="section.panelId"
@@ -174,6 +176,13 @@ const navigationGroups = computed(() => [
 }
 
 .nav-group { position: relative; }
+/* Keep the section disclosure out of the page link's pointer target. */
+.collapsed .nav-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: center;
+}
+.collapsed .nav-link { grid-column: 1; }
 .nav-children {
   list-style: none;
   padding: 0 0 0.5rem 2.5rem;
@@ -205,10 +214,9 @@ const navigationGroups = computed(() => [
   outline-offset: -2px;
 }
 .nav-expand {
-  position: absolute;
-  right: 0;
-  top: 0.5rem;
-  min-width: 1.5rem;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 24px;
   min-height: 2rem;
   padding: 0;
   border: 0;
@@ -272,7 +280,7 @@ const navigationGroups = computed(() => [
 
 .collapsed .nav-link {
   justify-content: center;
-  padding: 12px;
+  padding: 12px 4px;
 }
 
 .collapsed .nav-link i {
