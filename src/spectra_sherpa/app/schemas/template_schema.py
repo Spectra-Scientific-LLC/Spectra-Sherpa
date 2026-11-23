@@ -141,6 +141,22 @@ class TemplateCanonicalProject(BaseModel):
     managed_candidate: TemplateManagedCandidate
 
 
+class TemplateGovernedProcedure(BaseModel):
+    """A template that is also a canonical procedure for governed use.
+
+    Governed callers (a guided journey or a skill) build the workflow from this
+    template rather than defining their own graph. They may change only the
+    parameters listed here, per node.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_node: str = Field(min_length=1, description="Node that receives the project data binding")
+    tunable: dict[str, list[str]] = Field(
+        default_factory=dict, description="Parameters a governed caller may set, keyed by node_id"
+    )
+
+
 class TemplateData(BaseModel):
     """The inner ``template_data`` payload of a workflow template."""
 
@@ -161,6 +177,9 @@ class TemplateData(BaseModel):
             "Optional closed project contract that persists a separate, visible managed-candidate "
             "workflow alongside the scientist-facing workflow."
         ),
+    )
+    governed_procedure: TemplateGovernedProcedure | None = Field(
+        None, description="Declares this template as a canonical procedure for governed use."
     )
 
 

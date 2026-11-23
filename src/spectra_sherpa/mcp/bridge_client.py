@@ -12,8 +12,26 @@ from uuid import UUID
 
 import httpx
 
+from spectra_sherpa.mcp.refusals import REFUSALS, refusal_text
+
 MAX_REQUEST_BYTES = 8192
 MAX_RESPONSE_BYTES = 64 * 1024
+
+
+async def _refusal_code(response) -> str:
+    """Map a refused call to a fixed refusal code; never echo the server's text."""
+    if response.status_code in (401, 403):
+        return "access_denied"
+    if response.status_code == 408:
+        return "timeout"
+    if response.status_code == 429:
+        return "busy"
+    try:
+        raw = await response.aread()
+        detail = json.loads(raw[:4096]).get("detail") if len(raw) <= 4096 else None
+    except (ValueError, UnicodeError, AttributeError):
+        detail = None
+    return detail if isinstance(detail, str) and detail in REFUSALS else "inspection_failed"
 
 
 class BridgeUnavailable(ValueError):
@@ -60,13 +78,13 @@ async def inspect(connection: Connection, operation: str, arguments: dict[str, A
     from spectra_sherpa.app.services.inspection_bridge import OPERATIONS
 
     if operation not in OPERATIONS:
-        raise BridgeUnavailable("Unsupported inspection operation")
+        raise BridgeUnavailable(refusal_text("unsupported_operation"))
     try:
         payload = json.dumps({"operation": operation, "arguments": arguments}, allow_nan=False).encode()
     except (TypeError, ValueError, UnicodeError) as exc:
-        raise BridgeUnavailable("Invalid inspection arguments") from exc
+        raise BridgeUnavailable(refusal_text("invalid_arguments")) from exc
     if len(payload) > MAX_REQUEST_BYTES:
-        raise BridgeUnavailable("Inspection request exceeds limit")
+        raise BridgeUnavailable(refusal_text("request_limit"))
     try:
         # Never send the credential to an environment proxy or follow redirects.
         async with (
@@ -80,18 +98,18 @@ async def inspect(connection: Connection, operation: str, arguments: dict[str, A
                 headers={"Authorization": f"Bearer {connection.credential}", "Content-Type": "application/json"},
             ) as response:
                 if response.status_code != 200:
-                    raise BridgeUnavailable("Workbench refused inspection")
+                    raise BridgeUnavailable(refusal_text(await _refusal_code(response)))
                 body = bytearray()
                 async for chunk in response.aiter_bytes():
                     if len(body) + len(chunk) > MAX_RESPONSE_BYTES:
-                        raise BridgeUnavailable("Inspection response exceeds limit")
+                        raise BridgeUnavailable(refusal_text("response_limit"))
                     body.extend(chunk)
     except (httpx.HTTPError, TimeoutError) as exc:
-        raise BridgeUnavailable("Workbench inspection unavailable") from exc
+        raise BridgeUnavailable(refusal_text("unavailable")) from exc
     try:
         result = json.loads(body)
     except (ValueError, UnicodeError) as exc:
-        raise BridgeUnavailable("Invalid inspection response") from exc
+        raise BridgeUnavailable(refusal_text("invalid_response")) from exc
     if not isinstance(result, dict):
-        raise BridgeUnavailable("Invalid inspection response")
+        raise BridgeUnavailable(refusal_text("invalid_response"))
     return result

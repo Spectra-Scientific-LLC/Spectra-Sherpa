@@ -206,4 +206,5 @@ def test_client_safe_llms_reflect_catalog_injected_after_config_created(monkeypa
         "provider": "acme",
         "model": "acme-1",
         "enabled": True,
+        "local": False,
     }

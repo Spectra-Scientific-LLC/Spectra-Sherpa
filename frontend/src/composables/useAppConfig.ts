@@ -76,6 +76,17 @@ const hasLLMConfigured = computed(() => {
 })
 
 /**
+ * Where AI processing happens: on this computer, at a hosted provider, or not at all.
+ */
+const aiPlacement = computed<'local' | 'hosted' | 'off'>(() => {
+  if (config.value?.capabilities?.managedLlm) return 'hosted'
+  if (configuredLLMs.value.length > 0) {
+    return configuredLLMs.value.every((llm) => llm.local === true) ? 'local' : 'hosted'
+  }
+  return hasLLMConfigured.value ? 'hosted' : 'off'
+})
+
+/**
  * Get current app mode
  */
 const appMode = computed(() => config.value?.mode || 'enterprise')
@@ -143,6 +154,7 @@ export function useAppConfig() {
     reloadConfig,  // NEW: Force reload config
     configuredLLMs,
     hasLLMConfigured,
+    aiPlacement,
     appMode,
     siteProfile,
     egressEnabled,

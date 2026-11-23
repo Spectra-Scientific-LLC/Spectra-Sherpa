@@ -13,49 +13,11 @@ def create_server(connection: Connection):
     from mcp.server import Server
 
     from spectra_sherpa import __version__
-    from spectra_sherpa.app.services.inspection_bridge import ARGUMENT_MODELS
-    from spectra_sherpa.app.services.inspection_comparison import register_comparison_catalog
-    from spectra_sherpa.app.services.inspection_science import register_scientific_catalog
-    from spectra_sherpa.app.services.tools import builtin  # noqa: F401
-    from spectra_sherpa.app.services.tools.builtin.runs import inspection_run_catalog
-    from spectra_sherpa.app.services.tools.catalog import project_tool_catalog
-    from spectra_sherpa.app.services.tools.registry import tool_registry
+    from spectra_sherpa.mcp.catalog import read_catalog
 
     # Run readers require a trusted project context absent from ordinary
-    # provider ToolContext. Keep their contracts out of that global catalog.
-    catalog_registry = inspection_run_catalog()
-    register_scientific_catalog(catalog_registry)
-    register_comparison_catalog(catalog_registry)
-    for name in sorted(ARGUMENT_MODELS):
-        if catalog_registry.get(name) is None:
-            entry = tool_registry.get(name)
-            if entry is None:
-                raise ValueError("Unregistered inspection interface")
-            catalog_registry.register(*entry)
-    tools = []
-    for entry in project_tool_catalog(catalog_registry, sorted(ARGUMENT_MODELS)):
-        output_schema = entry["output_schema"]
-        if entry["tool_id"] == "list_node_types":
-            output_schema = {
-                "type": "object",
-                "properties": {
-                    "items": output_schema,
-                    "next_offset": {"type": ["integer", "null"], "description": "Next page offset, or null."},
-                },
-                "required": ["items", "next_offset"],
-                "additionalProperties": False,
-            }
-        tools.append(
-            types.Tool(
-                name=entry["name"],
-                description=entry["description"],
-                inputSchema=ARGUMENT_MODELS[entry["tool_id"]].model_json_schema(),
-                outputSchema=output_schema,
-                annotations=types.ToolAnnotations(
-                    readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
-                ),
-            )
-        )
+    # provider ToolContext; the shared catalog keeps them out of that registry.
+    tools = [tool for _, tool in read_catalog()]
 
     async def list_tools(context, params):
         # Client handshake names carry no authority. Revalidate the Workbench

@@ -15,6 +15,8 @@ export interface LLMConfig {
   provider: LLMProvider;
   model: string;
   enabled: boolean;
+  /** True when the configured AI endpoint runs on this computer. */
+  local?: boolean;
 }
 
 export interface AppFeatures {
@@ -22,6 +24,8 @@ export interface AppFeatures {
   authUI?: boolean;
   /** Optional hosted capability; the server still owns admission. */
   managedCampaigns?: boolean;
+  /** Optional hosted capability: governed templates run as a guided journey on this site. */
+  guidedProcedures?: boolean;
   apiTokenSettings: boolean;
   /** False only in the desktop app when OS credential protection is unavailable. */
   credentialStorage?: boolean;
