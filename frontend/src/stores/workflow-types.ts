@@ -146,6 +146,8 @@ export interface WorkflowTemplate {
     data_modalities?: DataModality[];
     status: TemplateStatus;
     status_detail?: string;
+    /** Present when the template is also a canonical procedure for governed use. */
+    governed_procedure?: { source_node: string; tunable?: Record<string, string[]> };
   };
   is_active: boolean;
   created_at: string;

@@ -47,9 +47,9 @@ async def test_bounded_request_and_redirect_refusal(monkeypatch):
         return original(**kwargs, transport=httpx.MockTransport(handle))
 
     monkeypatch.setattr(module.httpx, "AsyncClient", factory)
-    with pytest.raises(module.BridgeUnavailable, match="Unsupported"):
+    with pytest.raises(module.BridgeUnavailable, match="read-only"):
         await module.inspect(connection, "run_workflow", {})
-    with pytest.raises(module.BridgeUnavailable, match="request exceeds"):
+    with pytest.raises(module.BridgeUnavailable, match="request exceeds the size limit"):
         await module.inspect(connection, "list_node_types", {"category": "a" * 8192})
     assert seen == []
     with pytest.raises(module.BridgeUnavailable) as error:

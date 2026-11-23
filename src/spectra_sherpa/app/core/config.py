@@ -146,6 +146,16 @@ class LLMConfig(BaseModel):
         return self.api_key is not None and len(self.api_key) > 0
 
 
+def _runs_on_this_machine(llm: "LLMConfig") -> bool:
+    """True when the configured AI endpoint is on this computer (Ollama or a loopback URL)."""
+    from urllib.parse import urlsplit
+
+    if llm.provider == "ollama" and not llm.base_url:
+        return True
+    host = urlsplit(llm.base_url or "").hostname or ""
+    return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost")
+
+
 class AppMode(str, Enum):
     """Built-in runtime identifiers; private products register their own policy."""
 
@@ -407,7 +417,13 @@ class AppConfig(BaseModel):
                 **{cap: False for cap in ALL_SHERPA_CAPABILITIES},
             },
             "llms": {
-                name: {"provider": llm.provider, "model": llm.model, "enabled": llm.is_configured}
+                name: {
+                    "provider": llm.provider,
+                    "model": llm.model,
+                    "enabled": llm.is_configured,
+                    # Whether the AI runs on this machine (shown as Local, not Hosted).
+                    "local": _runs_on_this_machine(llm),
+                }
                 for name, llm in live_llms.items()
             },
             "limits": limits,

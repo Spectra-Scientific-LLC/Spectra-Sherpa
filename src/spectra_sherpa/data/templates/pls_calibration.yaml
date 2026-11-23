@@ -108,6 +108,16 @@ template_data:
     zoom: 0.85
     pan_x: 0
     pan_y: 0
+  governed_procedure:
+    source_node: data_1
+    tunable:
+      partition_1:
+      - split_method
+      - test_size
+      model_1:
+      - scale
+      - component_fit_mode
+      - n_components
   data_roles:
     X_spectra:
       role_type: X_spectra

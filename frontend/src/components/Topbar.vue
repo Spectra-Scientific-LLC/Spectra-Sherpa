@@ -185,7 +185,7 @@ const llmStore = useLlmStore();
 const authStore = useAuthStore();
 const router = useRouter();
 const { backendConnected } = useBackendStatus();
-const { appMode, siteProfile, hasLLMConfigured, reloadConfig } = useAppConfig();
+const { appMode, siteProfile, hasLLMConfigured, aiPlacement, reloadConfig } = useAppConfig();
 const notificationDrawerVisible = ref(false);
 const aboutVisible = ref(false);
 
@@ -261,21 +261,27 @@ const provenanceLights = computed<ProjectProvenanceRecord[]>(() => provenanceKin
 const provenanceTooltip = (record: ProjectProvenanceRecord): string =>
   `${record.label}: ${availabilityDetail(record)}${activeProvenance.value?.verified_at ? ` • checked ${new Date(activeProvenance.value.verified_at).toLocaleTimeString()}` : ""}`;
 
+// One light for the AI: where it runs (Local, Hosted or Off) and its connection state.
+const aiWhere = computed(() =>
+  aiPlacement.value === "local"
+    ? "AI: Local. The AI runs on this computer."
+    : "AI: Hosted. Data you share with the AI is sent to its provider.",
+);
 const llmStatus = computed(() => {
   if (llmStore.connectionStatus === "connected") {
-    return { class: "status-green", tooltip: "LLM: Connected" };
+    return { class: "status-green", tooltip: `${aiWhere.value} Connected.` };
   }
   if (llmStore.connectionStatus === "connecting") {
-    return { class: "status-yellow status-pulse", tooltip: "LLM: Connecting..." };
+    return { class: "status-yellow status-pulse", tooltip: `${aiWhere.value} Connecting...` };
   }
   if (llmStore.configStatus === "configured" || hasLLMConfigured.value) {
-    return { class: "status-blue", tooltip: "LLM: Ready" };
+    return { class: "status-blue", tooltip: `${aiWhere.value} Ready.` };
   }
   if (llmStore.configStatus === "unknown") {
-    return { class: "status-yellow", tooltip: "LLM: Checking..." };
+    return { class: "status-yellow", tooltip: "AI: Checking..." };
   }
-  // A local LLM is optional. Reserve red for failures in required services.
-  return { class: "status-gray", tooltip: "AI provider: Not configured (optional)" };
+  // AI is optional. Reserve red for failures in required services.
+  return { class: "status-gray", tooltip: "AI: Off. No AI provider is configured (optional)." };
 });
 
 // Refresh status immediately when the BYO-chat config is saved, instead of

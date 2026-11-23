@@ -4,6 +4,7 @@ import Button from "primevue/button";
 import ProgressSpinner from "primevue/progressspinner";
 import Message from "primevue/message";
 import { useWorkflowStore, type WorkflowTemplate } from "@/stores/workflow";
+import { useAppConfig } from "@/composables/useAppConfig";
 import type {
   CompatibilityStatus,
   DataModality,
@@ -25,6 +26,13 @@ const workflowStore = useWorkflowStore();
 const selectedModality = ref<"all" | DataModality>("all");
 
 const templateStatus = (template: WorkflowTemplate) => template.status;
+const { isFeatureEnabled } = useAppConfig();
+// Shown only where this site runs governed templates as a guided journey.
+const isGuided = (template: WorkflowTemplate) =>
+  Boolean(template.template_data?.governed_procedure) && isFeatureEnabled("guidedProcedures");
+const GUIDED_TOOLTIP =
+  "Guided on this site: open your dataset in My Dataset and choose Design calibration to design, approve, "
+  + "freeze and evaluate once, with AI assistance.";
 
 const isTemplateDisabled = (template: WorkflowTemplate): boolean =>
   templateStatus(template) !== "ready" ||
@@ -226,8 +234,11 @@ onMounted(async () => {
                     />
                   </span>
                 </div>
-                <span class="template-status" :class="templateStatus(template)">
-                  {{ templateStatusLabel(template) }}
+                <span class="template-labels">
+                  <span v-if="isGuided(template)" class="template-guided" :title="GUIDED_TOOLTIP">Guided</span>
+                  <span class="template-status" :class="templateStatus(template)">
+                    {{ templateStatusLabel(template) }}
+                  </span>
                 </span>
               </div>
               <p>{{ template.description }}</p>
@@ -398,6 +409,22 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.45rem;
+}
+
+.template-labels {
+  display: inline-flex;
+  gap: 0.375rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.template-guided {
+  border: 1px solid var(--ss-action, var(--primary-color));
+  border-radius: 999px;
+  color: var(--ss-action, var(--primary-color));
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
 }
 
 .template-status {

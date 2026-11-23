@@ -6,6 +6,11 @@ import { useWorkflowStore } from "@/stores/workflow";
 import type { TemplateStatus, WorkflowTemplate } from "@/stores/workflow-types";
 import TemplateGallery from "@/views/workflow-builder/TemplateGallery.vue";
 
+const features = vi.hoisted(() => ({ guidedProcedures: false }));
+vi.mock("@/composables/useAppConfig", () => ({
+  useAppConfig: () => ({ isFeatureEnabled: (name: string) => Boolean((features as Record<string, boolean>)[name]) }),
+}));
+
 const template = (
   id: number,
   name: string,
@@ -213,5 +218,28 @@ describe("TemplateGallery explicit qualification states", () => {
         .get("button")
         .attributes("disabled"),
     ).toBeDefined();
+  });
+
+  it.each([
+    [true, true],
+    [false, false],
+  ])("labels a governed template Guided only where the site runs it (%s)", async (enabled, shown) => {
+    features.guidedProcedures = enabled;
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useWorkflowStore(pinia);
+    const governed = template(1, "PLS Regression Calibration", "ready", null);
+    governed.template_data.governed_procedure = { source_node: "data_1", tunable: {} };
+    store.templates = [governed, template(2, "Qualified PCA", "ready", null)];
+    vi.spyOn(store, "fetchTemplates").mockResolvedValue(store.templates);
+    vi.spyOn(store, "fetchCompatibilityMatrix").mockResolvedValue(store.compatibilityMatrix);
+    const wrapper = mount(TemplateGallery, {
+      global: { plugins: [pinia], stubs: { Button: true, Message: true, ProgressSpinner: true } },
+    });
+    await flushPromises();
+    const labels = wrapper.findAll(".template-guided");
+    expect(labels.length).toBe(shown ? 1 : 0);
+    if (shown) expect(labels[0].attributes("title")).toContain("Design calibration");
+    features.guidedProcedures = false;
   });
 });
