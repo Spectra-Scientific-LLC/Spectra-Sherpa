@@ -7875,7 +7875,7 @@ function formatDate(dateStr: string): string {
 
 .source-side-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
   gap: 1.25rem;
   align-items: start;
 }
@@ -8368,6 +8368,7 @@ function formatDate(dateStr: string): string {
 
 .upload-action {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.75rem;
   margin-top: 0.25rem;
@@ -8453,8 +8454,12 @@ function formatDate(dateStr: string): string {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  flex: 1;
-  min-width: 12rem;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.upload-action > :deep(.p-button) {
+  flex-shrink: 0;
 }
 
 .upload-name label {

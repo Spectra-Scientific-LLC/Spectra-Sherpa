@@ -803,6 +803,8 @@ onMounted(async () => {
   flex-direction: column;
   padding: 0 1rem;
   color: var(--text-color);
+  min-width: 0;
+  max-width: 100%;
 }
 
 :global(.content:has(.report-content)) {
@@ -976,9 +978,12 @@ onMounted(async () => {
   overflow: hidden;
   flex: 1;
   min-height: 500px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .preview-iframe {
+  display: block;
   width: 100%;
   height: 100%;
   min-height: 500px;

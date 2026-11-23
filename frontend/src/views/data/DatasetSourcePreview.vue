@@ -1186,6 +1186,10 @@ const previewPlotLayout = computed(() => {
   margin: 0.75rem;
 }
 
+.source-plot > .plotly-chart {
+  width: calc(100% - 1.5rem);
+}
+
 .plot-empty {
   min-height: 180px;
   border: 1px dashed var(--surface-border);

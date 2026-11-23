@@ -37,6 +37,21 @@ async function settle(): Promise<void> {
 }
 
 describe("PlotlyChart", () => {
+  it.each(["print", "hidden toolbar"])("preserves retained title coordinates for %s", async (surface) => {
+    const layout = { height: 1100, margin: { t: 130 }, title: {
+      text: "Retained summary", y: 0.99, yref: "container", yanchor: "top",
+    } };
+    const original = structuredClone(layout);
+    const wrapper = mount(PlotlyChart, {
+      props: { data: [{ x: [1], y: [2] }], layout,
+        config: surface === "hidden toolbar" ? { displayModeBar: false } : {} },
+      global: { provide: { [PLOT_SURFACE as symbol]: surface === "print" ? "print" : "screen" } },
+    });
+    await settle();
+    expect(reactMock.mock.calls.at(-1)?.[2]).toMatchObject(original);
+    expect(layout).toEqual(original);
+    wrapper.unmount();
+  });
   it("keeps an inherited dark panel on full render, relayout and PNG download", async () => {
     const wrapper = mount(PlotlyChart, {
       props: { data: [{ type: "scatter", x: [1, 2], y: [3, 4] }], layout: { xaxis: { title: "PC1" } } },
