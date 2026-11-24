@@ -30,7 +30,7 @@ def test_current_source_and_published_install_are_distinct():
     index = (PACKAGE_ROOT / "docs/index.md").read_text(encoding="utf-8")
     local = (PACKAGE_ROOT / "docs/onboarding/local-30-minutes.md").read_text(encoding="utf-8")
     migration = (PACKAGE_ROOT / "docs/onboarding/migrate-to-0.6.md").read_text(encoding="utf-8")
-    assert "v0.6.4" in index
+    assert "v0.7.0" in index
     assert "source version alone does not" in index.lower()
     assert "establish availability" in index.lower() and "https://pypi.org/" in index
     assert "Desktop packaging remains paused" in index
@@ -44,7 +44,7 @@ def test_current_source_and_published_install_are_distinct():
 def test_historical_release_is_not_rewritten_as_candidate():
     release = (PACKAGE_ROOT / "docs/releases/0.6.0.md").read_text(encoding="utf-8")
     assert 'pip install "spectra-sherpa==0.6.0"' in release
-    assert "v0.6.4" not in release
+    assert "v0.7.0" not in release
     changelog = (PACKAGE_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert len(re.findall(r"^## \[0\.6\.0\] - (Unreleased|20\d{2}-\d{2}-\d{2})$", changelog, re.MULTILINE)) == 1
     assert len(re.findall(r"^## \[0\.6\.4\] - (Unreleased|20\d{2}-\d{2}-\d{2})$", changelog, re.MULTILINE)) == 1

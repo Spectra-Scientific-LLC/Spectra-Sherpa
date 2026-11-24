@@ -385,6 +385,7 @@ const headerMenuActions = computed(() => [...headerActions.value.map(action => {
   return { ...submenu, disabled: !detail.value?.run.project_id };
 }), ...contextualActions.value.map(action => ({
   label: action.label, icon: action.icon, disabled: contextualRunning.value !== null,
+  loading: contextualRunning.value === action.key,
   command: () => { void executeContextualAction(action.key); },
 }))]);
 const runNameDraft = ref('');
@@ -859,7 +860,10 @@ async function loadModelSummary(request: ScopedRequestTicket) {
     const records: Array<{ source: any; value: unknown }> = [];
     const missing: string[] = [];
     for (const source of summarySources(definition.value, contracts, model?.node_id ?? null)) {
-      if (!detail.value?.evidence.outputs[source.nodeId]?.[source.port]?.storage) {
+      const evidence = detail.value?.evidence.outputs[source.nodeId]?.[source.port];
+      // A possible output is not a retention gap unless the run recorded it.
+      if (!evidence) continue;
+      if (!evidence.storage) {
         if (source.port === 'component_curve') missing.push(`${source.nodeId}/component_curve (not retained in this run)`);
         continue;
       }
