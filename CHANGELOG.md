@@ -5,6 +5,51 @@ All notable changes to SpectraSherpa will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - Unreleased
+
+Changes for `0.7.0` are listed below. Source version and date alone do not
+establish publication or qualification; release receipts identify the exact
+source revision and artifact hashes. Desktop packaging remains paused until
+separately authorized.
+
+### Read-only local MCP
+
+- Install `spectra-sherpa[mcp]` and run `spectra-sherpa mcp` to let an AI client
+  of your choice inspect one Workbench project. Create the connection in the
+  Workbench; it is bound to one project, expires, can be revoked, and its calls
+  are listed for review.
+- The connection reads datasets, workflows, retained runs, diagnostics and
+  comparisons. It never saves, runs, exports or applies anything: you build and
+  run analyses in the Workbench or the SDK, and your AI inspects the results.
+- Project summaries and retained results are shared only when you enable them
+  for that connection. Per-data-type AI sharing rules still apply. In local mode,
+  confirming the connection is the consent for its reads, so network egress does
+  not have to be enabled globally.
+- A refused call says why and where you can act instead (for example, "create a
+  new connection in the Workbench").
+
+### Procedures and templates
+
+- A template is the single definition of its procedure. `pls_calibration`
+  declares which parameters a guided journey may change; anything else is
+  refused.
+- Hosts that run a template as a guided journey show a Guided label on it. Local
+  installs show no label.
+
+### AI light and reports
+
+- The top bar shows where AI runs: Local (on this computer), Hosted (data you
+  share is sent to the provider) or Off.
+- Results and report exports of a model applied to new data state that the
+  predictions are prediction-only: held-out accuracy does not apply, and no
+  instrument-transfer correction was made.
+- Saved workflows keep exact registered dataset references and retained output
+  scopes; compact layouts no longer clip reports or navigation.
+
+### Requirements
+
+- Python 3.11.5 through 3.12.x (`>=3.11.5,<3.13`).
+
 ## [0.6.4] - 2026-11-01
 
 Changes for `0.6.4` are listed below. Source version and date alone do not

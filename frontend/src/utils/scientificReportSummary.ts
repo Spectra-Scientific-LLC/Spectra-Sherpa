@@ -4,6 +4,7 @@ import { scientificErrorMetricLabel, scientificMetricKey } from "./scientificDis
 import { resolveMethodHelpUrl } from "./documentation";
 import type { ScientificValueDescriptor } from "@/stores/workflow-types";
 import { formatTimestamp } from "./format";
+import { predictionScopeLines } from "./predictionScope";
 
 type Row = [string, string];
 interface SummaryGroup { title: string; rows: Row[]; notices: string[]; table?: { headers: string[]; rows: string[][] } }
@@ -186,7 +187,7 @@ function withoutRenderedClassRows(value: unknown, depth = 0): unknown {
 }
 
 function runGroups(run: RunReportEntry): SummaryGroup[] {
-  const notices = [run.evidence_notice, ...(run.evidence_gaps ?? []).map((gap) =>
+  const notices = [...predictionScopeLines(run.prediction_context), run.evidence_notice, ...(run.evidence_gaps ?? []).map((gap) =>
     `${gap.node_id} / ${gap.output}: ${gap.reason} ${gap.recovery}`)].filter((v): v is string => !!v);
   if (run.status !== "completed") notices.unshift(`Run outcome: ${run.status}. Results may be incomplete.`);
   const context: Row[] = [["Run", `#${run.id} — ${run.status}`]];
