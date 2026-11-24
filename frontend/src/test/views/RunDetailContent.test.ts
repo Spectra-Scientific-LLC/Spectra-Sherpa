@@ -566,7 +566,7 @@ describe("Persistent run inspection", () => {
     wrapper.unmount();
   });
 
-  it("opens with a model summary built only from retained calibration and test statistics", async () => {
+  it.each(['omitted', 'missing', 'unreadable'] as const)("keeps retained statistics visible when the component curve is %s", async (curve) => {
     const comparison = (role: string, target: string, metrics: Record<string, number>) => ({
       schema_version: 'spectrasherpa-regression-comparison/1', data: [], metadata: { role },
       statistics: { targets: [{ target, metrics }] },
@@ -577,7 +577,11 @@ describe("Persistent run inspection", () => {
         evidence: { qualification: 'qualified', outputs: {
           __workflow__: { definition: { state: 'exact', storage: 'file' } },
           __diagnostics__: { _scientific_presentations: { state: 'exact', storage: 'file' } },
-          model_1: { calibration_comparison: { state: 'exact', storage: 'file' } },
+          model_1: {
+            calibration_comparison: { state: 'exact', storage: 'file' },
+            ...(curve === 'missing' && { component_curve: { state: 'missing', reason: 'Output exceeded the configured limit.' } }),
+            ...(curve === 'unreadable' && { component_curve: { state: 'exact', storage: 'file' } }),
+          },
           eval_1: { comparison: { state: 'exact', storage: 'file' } },
         } } } };
       if (url.endsWith('/__workflow__/definition')) return { data: { value: { schema_version: 1, nodes: [
@@ -590,6 +594,7 @@ describe("Persistent run inspection", () => {
         eval_1: { contract: { presentations: [{ presentation_id: 'held_out_comparison', kind: 'regression_comparison', source_ports: ['comparison'] }] } },
       } } };
       if (url.endsWith('/model_1/calibration_comparison')) return { data: { value: comparison('calibration', 'Target 1', { n_samples: 30, rmse: 0.2894, r2: 0.9999 }) } };
+      if (url.endsWith('/model_1/component_curve')) throw new Error('Saved output unavailable');
       if (url.endsWith('/eval_1/comparison')) return { data: { value: comparison('held_out_test', 'Moisture', { n_samples: 10, rmse: 0.3975, r2: 0.9992 }) } };
       return { data: { value: null } };
     });
@@ -605,6 +610,13 @@ describe("Persistent run inspection", () => {
     expect(statistics.text()).toContain('RMSEP (units not declared) 0.3975');
     expect(statistics.text()).toContain('Protocol: Calibration fit');
     expect(statistics.text()).toContain('Protocol: Held-out test');
+    const curveReads = get.mock.calls.filter(([url]) => url.endsWith('/model_1/component_curve'));
+    expect(curveReads).toHaveLength(curve === 'unreadable' ? 1 : 0);
+    if (curve === 'omitted') {
+      expect(wrapper.find('.summary-error').exists()).toBe(false);
+    } else {
+      expect(wrapper.get('.summary-error').text()).toContain('model_1/component_curve');
+    }
     wrapper.unmount();
   });
   it('uses independent canonical Summary, Results and Validation panels without discarding retained evidence', async () => {
