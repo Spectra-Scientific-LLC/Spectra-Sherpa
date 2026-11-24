@@ -385,6 +385,7 @@ const headerMenuActions = computed(() => [...headerActions.value.map(action => {
   return { ...submenu, disabled: !detail.value?.run.project_id };
 }), ...contextualActions.value.map(action => ({
   label: action.label, icon: action.icon, disabled: contextualRunning.value !== null,
+  loading: contextualRunning.value === action.key,
   command: () => { void executeContextualAction(action.key); },
 }))]);
 const runNameDraft = ref('');

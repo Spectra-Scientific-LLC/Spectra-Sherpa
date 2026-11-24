@@ -1054,6 +1054,31 @@ describe('Inspect contributed header actions', () => {
       removeContextualActions('inspect-header-test');
     }
   });
+
+  it('marks a started menu action as working until it settles', async () => {
+    installIdentifiedRuns();
+    let finish!: () => void;
+    const execute = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+    registerContextualActions('inspect-busy-test', [{
+      id: 'freeze', label: 'Freeze and evaluate', icon: 'pi pi-lock',
+      available: context => context.surface === 'run' && context.runId === 42,
+      execute,
+    }], () => true);
+    try {
+      const { wrapper } = await open('?project=1&view=Summary', true);
+      const menu = () => (wrapper.vm as unknown as { headerActions: { label: string; loading?: boolean; command: () => void }[] })
+        .headerActions.find(item => item.label === 'Freeze and evaluate')!;
+      expect(menu().loading).toBe(false);
+      menu().command();
+      await flushPromises();
+      expect(menu().loading).toBe(true);
+      finish();
+      await flushPromises();
+      expect(menu().loading).toBe(false);
+    } finally {
+      removeContextualActions('inspect-busy-test');
+    }
+  });
 });
 
 

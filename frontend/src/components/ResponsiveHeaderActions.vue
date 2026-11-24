@@ -12,6 +12,7 @@
       v-if="items.length > 0"
       label="Actions"
       icon="pi pi-bars"
+      :loading="items.some((item) => item.loading)"
       class="p-button-sm responsive-header-actions__trigger"
       :aria-expanded="collapsed ? undefined : 'false'"
       @click="toggleMenu"
@@ -33,6 +34,8 @@ export interface HeaderActionMenuItem {
   label?: string;
   icon?: string;
   disabled?: boolean;
+  // A started action is still working; the collapsed trigger shows it.
+  loading?: boolean;
   separator?: boolean;
   items?: HeaderActionMenuItem[];
   command?: (event?: unknown) => void;
