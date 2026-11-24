@@ -56,8 +56,8 @@ spectra-sherpa
 ```
 
 Open `http://localhost:8000`; no hosted account is required. This repository
-contains **v0.6.4** source; check [PyPI](https://pypi.org/project/spectra-sherpa/)
-for availability and the [upgrade notes](docs/releases/0.6.4.md) before updating
+contains **v0.7.0** source; check [PyPI](https://pypi.org/project/spectra-sherpa/)
+for availability and the [changelog](CHANGELOG.md) before updating
 an existing installation. See [local setup](docs/onboarding/local-30-minutes.md)
 for source installation and provider configuration.
 
