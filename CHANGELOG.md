@@ -48,7 +48,7 @@ separately authorized.
 
 ### Requirements
 
-- Python 3.11.5 or later.
+- Python 3.11.5 through 3.12.x (`>=3.11.5,<3.13`).
 
 ## [0.6.4] - 2026-11-01
 
