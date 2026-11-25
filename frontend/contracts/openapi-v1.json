@@ -18454,6 +18454,135 @@
       "post": {
         "description": "Stream a single-turn chat completion via the BYO endpoint.\n\nReturns 503 when the BYO chat endpoint is not configured — which is\nexactly when the ``chatAssistant`` capability is disabled in ``/config``.\nThe frontend checks the capability flag before showing the chat UI, so\nin practice this only fires on direct API calls when the endpoint is missing.",
         "operationId": "chat_stream_api_v1_chat_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "max_paragraphs": {
+                    "maximum": 6.0,
+                    "minimum": 1.0,
+                    "type": "integer"
+                  },
+                  "max_tokens": {
+                    "maximum": 4096.0,
+                    "minimum": 1.0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "message": {
+                    "maxLength": 16000,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "additionalProperties": true,
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "verbose": {
+                    "type": "boolean"
+                  },
+                  "workbench_view": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "dataset_id": {
+                            "anyOf": [
+                              {
+                                "maxLength": 128,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Dataset Id"
+                          },
+                          "project_id": {
+                            "exclusiveMinimum": 0.0,
+                            "title": "Project Id",
+                            "type": "integer"
+                          },
+                          "run_id": {
+                            "anyOf": [
+                              {
+                                "exclusiveMinimum": 0.0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Run Id"
+                          },
+                          "run_ids": {
+                            "anyOf": [
+                              {
+                                "items": {
+                                  "exclusiveMinimum": 0.0,
+                                  "type": "integer"
+                                },
+                                "maxItems": 2,
+                                "type": "array"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Run Ids"
+                          },
+                          "screen": {
+                            "enum": [
+                              "dataset",
+                              "workflow",
+                              "results",
+                              "compare"
+                            ],
+                            "title": "Screen",
+                            "type": "string"
+                          },
+                          "workflow_id": {
+                            "anyOf": [
+                              {
+                                "exclusiveMinimum": 0.0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "title": "Workflow Id"
+                          }
+                        },
+                        "required": [
+                          "screen",
+                          "project_id"
+                        ],
+                        "title": "WorkbenchView",
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "message"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

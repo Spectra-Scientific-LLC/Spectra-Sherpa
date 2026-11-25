@@ -192,3 +192,63 @@ def test_haiku_bounded_explanations_reserve_tokens_for_visible_text():
     plain = ChatRequest("Explain this result.", True, 1, None)
     assert AnthropicMessagesProvider._body(config, compact, stream=True)["thinking"] == {"type": "disabled"}
     assert "thinking" not in AnthropicMessagesProvider._body(config, plain, stream=True)
+
+
+def test_chat_openapi_uses_runtime_workbench_view_schema():
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.include_router(chat.router, prefix="/api/v1")
+    request_schema = app.openapi()["paths"]["/api/v1/chat/stream"]["post"]["requestBody"]["content"][
+        "application/json"
+    ]["schema"]
+    assert request_schema["required"] == ["message"]
+    expected_view = WorkbenchView.model_json_schema()
+    # FastAPI omits null defaults when serializing the OpenAPI document.
+    for field in expected_view["properties"].values():
+        if field.get("default") is None:
+            field.pop("default", None)
+    assert request_schema["properties"]["workbench_view"]["anyOf"] == [expected_view, {"type": "null"}]
+
+
+async def test_plain_chat_remains_valid_without_workbench_view(local, monkeypatch):
+    read = AsyncMock()
+    monkeypatch.setattr(chat, "read_workbench_evidence", read)
+
+    async def stream(message, **kwargs):
+        assert message == "Explain PCA"
+        assert "evidence_prompt" not in kwargs
+        yield "Synthetic plain reply."
+
+    monkeypatch.setattr(basic_chat, "stream_chat", stream)
+    assert await events({"message": "Explain PCA"}) == [
+        {"type": "chunk", "text": "Synthetic plain reply."},
+        {"type": "done"},
+    ]
+    read.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("screen", "selected"),
+    [
+        ("dataset", {"dataset_id": "dataset-a"}),
+        ("workflow", {"workflow_id": 3}),
+        ("results", {"run_id": 7}),
+        ("compare", {"run_ids": [7, 8]}),
+    ],
+)
+async def test_chat_accepts_each_workbench_view_and_rejects_cross_screen_selection(
+    local, monkeypatch, screen, selected
+):
+    read = AsyncMock(side_effect=InspectionRefused("privacy_denied"))
+    monkeypatch.setattr(chat, "read_workbench_evidence", read)
+    valid = reading(screen, **selected)
+    reply = await events({"message": "Explain this", "workbench_view": valid})
+    assert reply[0] == {"type": "notice", "text": byok_reply.PRIVACY_BLOCKED}
+    assert read.await_args.args[2] == WorkbenchView.model_validate(valid)
+
+    foreign_field = {"workflow_id": 3} if screen == "dataset" else {"dataset_id": "dataset-a"}
+    with pytest.raises(HTTPException) as exc:
+        await events({"message": "Explain this", "workbench_view": {**valid, **foreign_field}})
+    assert exc.value.status_code == 422
+    assert read.await_count == 1

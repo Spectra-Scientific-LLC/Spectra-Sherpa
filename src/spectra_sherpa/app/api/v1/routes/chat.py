@@ -30,7 +30,30 @@ router = APIRouter(prefix="/chat")
 _chat_limiter = basic_chat.chat_limiter
 
 
-@router.post("/stream")
+@router.post(
+    "/stream",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["message"],
+                        "properties": {
+                            "message": {"type": "string", "minLength": 1, "maxLength": basic_chat.MAX_INPUT_CHARS},
+                            "metadata": {"type": ["object", "null"], "additionalProperties": True},
+                            "verbose": {"type": "boolean"},
+                            "max_paragraphs": {"type": "integer", "minimum": 1, "maximum": 6},
+                            "max_tokens": {"type": ["integer", "null"], "minimum": 1, "maximum": 4096},
+                            "workbench_view": {"anyOf": [WorkbenchView.model_json_schema(), {"type": "null"}]},
+                        },
+                    }
+                }
+            },
+        }
+    },
+)
 async def chat_stream(
     request: Request,
     user=Depends(get_current_user),

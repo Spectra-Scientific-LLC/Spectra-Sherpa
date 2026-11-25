@@ -1,4 +1,4 @@
-import type { components } from "./api/v1";
+import type { components, paths } from "./api/v1";
 
 export type ExperimentStage = "raw" | "preprocessed" | "synthetic";
 
@@ -312,11 +312,9 @@ export interface NistLibraryEntry {
 
 export type JobInfo = components["schemas"]["JobInfo"];
 
-export type ByokView =
-  | { project_id: number; screen: "dataset"; dataset_id?: string }
-  | { project_id: number; screen: "workflow"; workflow_id?: number }
-  | { project_id: number; screen: "results"; run_id?: number }
-  | { project_id: number; screen: "compare"; run_ids?: [number, number] };
+export type ByokView = NonNullable<
+  paths["/api/v1/chat/stream"]["post"]["requestBody"]["content"]["application/json"]["workbench_view"]
+>;
 
 export interface LlmMessage {
   id: string;
