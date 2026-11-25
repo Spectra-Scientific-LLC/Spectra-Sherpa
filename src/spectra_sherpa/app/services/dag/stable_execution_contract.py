@@ -83,6 +83,18 @@ def _source_component(component: ModuleType) -> dict[str, str]:
     return {"component_id": component.__name__, "digest": hashlib.sha256(source).hexdigest()}
 
 
+def _custom_source_component(component: ModuleType) -> dict[str, str]:
+    """Name a local custom-node module by its exact source bytes; never in-tree code."""
+
+    if component.__name__ == "spectra_sherpa" or component.__name__.startswith("spectra_sherpa."):
+        raise StableExecutionContractError("local custom nodes must be defined outside spectra_sherpa")
+    try:
+        source = inspect.getsource(component).encode("utf-8")
+    except OSError as exc:
+        raise StableExecutionContractError(f"custom node source for {component.__name__!r} is unreadable") from exc
+    return {"component_id": component.__name__, "digest": hashlib.sha256(source).hexdigest()}
+
+
 def _distribution_component(distribution: str, version: str) -> dict[str, str]:
     """Name a contract-pinned external implementation version.
 
@@ -170,6 +182,7 @@ def bind_stable_execution_contract(
     group_access: str = "none",
     supervised_task: str = "none",
     input_rank_policy: DatasetRankPolicy = DatasetRankPolicy.REQUIRES_2D,
+    custom_trust_class: CustomTrustClass = CustomTrustClass.NOT_APPLICABLE,
 ) -> NodeExecutionContract:
     """Attach and return the one full contract for a reviewed node class.
 
@@ -209,7 +222,10 @@ def bind_stable_execution_contract(
             + ", ".join(unpinned_distributions)
         )
 
-    components = [_source_component(node_module)]
+    # A local custom node is defined in the user's own module, outside the
+    # spectra_sherpa tree; its exact source is still the digest's first component.
+    local_custom = custom_trust_class is not CustomTrustClass.NOT_APPLICABLE
+    components = [_custom_source_component(node_module) if local_custom else _source_component(node_module)]
     components.extend(_source_component(module) for module in implementation_modules)
     if callable(getattr(node_class, "project_population", None)):
         # A declared display application is part of what this implementation
@@ -229,7 +245,7 @@ def bind_stable_execution_contract(
         "contract_version": "4.0",
         "operation_id": metadata.node_type,
         "runtime_family": runtime_family.value,
-        "custom_trust_class": CustomTrustClass.NOT_APPLICABLE.value,
+        "custom_trust_class": custom_trust_class.value,
         "lifecycle_kind": lifecycle_kind.value,
         "implementation_id": implementation_id,
         "implementation_version": implementation_version,

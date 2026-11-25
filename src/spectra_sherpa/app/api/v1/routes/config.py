@@ -435,6 +435,56 @@ def _normalized_byo_endpoint(url: str) -> str:
     return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path.rstrip("/"), parsed.query, ""))
 
 
+class CustomNodesConfigRequest(BaseModel):
+    enabled: bool
+
+
+def _custom_nodes_state() -> dict:
+    from spectra_sherpa.app.services import custom_nodes
+
+    enabled = custom_nodes.enabled()
+    return {
+        "available": custom_nodes.available(),
+        "enabled": enabled,
+        "active": custom_nodes.active(),
+        "restart_required": enabled != custom_nodes.active(),
+        "folder": str(custom_nodes.my_nodes_dir()),
+        "sources": [status.as_dict() for status in custom_nodes.source_statuses()],
+    }
+
+
+@router.get("/custom-nodes")
+async def get_custom_nodes_config(http_request: Request, user=Depends(get_current_user)):
+    """Local custom-node switch, My nodes folder and what loaded at startup."""
+    from spectra_sherpa.app.services import custom_nodes
+
+    if not custom_nodes.available() or not _can_manage_byo_chat(http_request):
+        raise HTTPException(status_code=404, detail="Not found.")
+    return _custom_nodes_state()
+
+
+@router.put("/custom-nodes")
+async def set_custom_nodes_config(
+    request: CustomNodesConfigRequest, http_request: Request, user=Depends(get_current_user)
+):
+    """Turn custom nodes on or off in .env; the change applies on restart."""
+    from dotenv import set_key as dotenv_set_key
+
+    from spectra_sherpa.app.services import custom_nodes
+
+    if not custom_nodes.available():
+        raise HTTPException(status_code=404, detail="Not found.")
+    if not _can_manage_byo_chat(http_request):
+        raise HTTPException(status_code=403, detail="Custom nodes can be turned on only from this computer.")
+    value = "1" if request.enabled else "0"
+    dotenv_set_key(_find_or_create_env_path(), custom_nodes.ENABLE_ENV, value)
+    os.environ[custom_nodes.ENABLE_ENV] = value
+    if request.enabled:
+        custom_nodes.my_nodes_dir().mkdir(parents=True, exist_ok=True)
+    logger.info("Custom nodes turned %s; restart required", "on" if request.enabled else "off")
+    return _custom_nodes_state()
+
+
 @router.get("/byo-chat-config")
 async def get_byo_chat_config(http_request: Request):
     """Return current BYO chat endpoint configuration (key masked). Local mode only."""

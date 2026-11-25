@@ -229,7 +229,7 @@ class IsolatedWorkerPool:
 
         self._expected_packs = node_registry.pack_manifests
         self._expected_digest = node_registry.composition_digest
-        if self._expected_packs and initializer is None:
+        if (self._expected_packs or node_registry.custom_sources) and initializer is None:
             raise ValueError("Installed packs require an explicit trusted worker initializer")
         self._initializer = initializer
         self._slots = asyncio.Semaphore(max_workers)

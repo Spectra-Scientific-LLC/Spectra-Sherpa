@@ -1,10 +1,12 @@
 # Adding a Scientific Node
 
 !!! abstract "Summary"
-    For contributors: how to add a new workflow node — a reviewed scientific contract, not a plugin — from scaffold to qualification.
+    For contributors: how to add a new first-party workflow node — a reviewed scientific contract — from scaffold to qualification.
 
-A SpectraSherpa node is a reviewed scientific contract, not a dynamically
-loaded plugin. This guide uses a moving-median despiking operation as a small,
+A first-party SpectraSherpa node is a reviewed scientific contract. To use your
+own method locally without contributing it, write a
+[custom node](custom-nodes.md) instead: custom nodes are author-owned and load
+only in your local Workbench. This guide uses a moving-median despiking operation as a small,
 real example. The operation replaces each ordinate with the median inside an
 odd-width window; its purpose, edge rule, and effect on metadata must be fixed
 before implementation.
@@ -62,21 +64,25 @@ Declare the node metadata, explicit execution policy, citations, and stable
 execution contract. Workbench, SDK, saved graphs, Python export, and model
 reproduction must call the same implementation rather than parallel wrappers.
 
-Start from the maintained scaffold:
+Start from the maintained scaffold. Without arguments it asks questions; with
+`NAME` it runs without prompts, which suits coding agents:
 
 ```bash
-make node-scaffold
+make node-scaffold NAME=MovingMedianNode CATEGORY=preprocessing
 ```
 
+It writes a node with typed ports, an explicit policy, a parameter validator,
+provenance and a bound execution contract, plus a test file with oracle,
+refusal and preservation tests. Every `TODO` marks a decision you must make.
 The scaffold is a starting structure, not qualification. Review every generated
 port, parameter, policy, and refusal.
 
 ## 8. Register it in source
 
 Add the node to the built-in reviewed registry and its documentation family.
-The installed application intentionally does not discover arbitrary entry
-points or user-directory Python. Scientific execution is a trust boundary: a
-new operation enters through source review, closed contracts, and tests.
+First-party operations enter through source review, closed contracts, and
+tests. The application loads a user's own code only as a local
+[custom node](custom-nodes.md), never as a first-party operation.
 
 ## 9. Test against an independent oracle
 

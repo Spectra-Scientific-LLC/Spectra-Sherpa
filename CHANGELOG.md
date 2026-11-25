@@ -28,6 +28,23 @@ separately authorized.
 - A refused call says why and where you can act instead (for example, "create a
   new connection in the Workbench").
 
+### Custom nodes
+
+- Turn your own Python function into a workflow node with one decorator,
+  `@custom_node` from `spectra_sherpa.sdk.custom`. Put it in a subfolder of your
+  My nodes folder, or share it as a package with a `spectra_sherpa.custom_nodes`
+  entry point, then turn on custom nodes in Settings and restart.
+- Custom nodes run in local Workbench only. They keep every sample, feature,
+  axis and unit unless declared otherwise, and these defaults are checked on
+  every run. Fitted nodes and nodes that read reference values or groups are not
+  available yet.
+- `spectra-sherpa nodes check <folder>` validates a source and runs each node on
+  a bundled example dataset. Each output records the source, its file digest and
+  the node's execution-contract digest.
+- `make node-scaffold NAME=...` now runs without prompts and generates a
+  first-party node with the current execution contract and qualification tests.
+  See [Custom Nodes](docs/developers/custom-nodes.md).
+
 ### Procedures and templates
 
 - A template is the single definition of its procedure. `pls_calibration`
