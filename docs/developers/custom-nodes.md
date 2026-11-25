@@ -71,15 +71,19 @@ The decorator reads everything from the function itself:
 - **Label and category** come from `@custom_node(label=..., category=...)`.
   Categories are `preprocessing`, `exploratory`, `selection` and `output`.
 - **Help text** is the docstring.
-- **Data in and out** come from the type hints: `Spectra` (the spectra with
-  their axis, units and sample identities) or `numpy.ndarray` (samples ×
-  features values only).
+- **Data in and out** come from the type hints: `Spectra` (copied values with
+  their feature axis and units) or `numpy.ndarray` (samples × features values
+  only).
 - **Parameters** are the remaining arguments. Each needs a default.
+
+Your function never sees the dataset behind the spectra: no reference values,
+groups, sample labels or history. Workbench rebuilds the output from its own
+copy of the samples, axis and units, so they are always kept exactly.
 
 ### A numpy preprocessing function
 
 If your function takes and returns a plain array, annotate both as
-`np.ndarray`. Workbench keeps the axis, units and sample identities for you.
+`np.ndarray`. Workbench keeps the samples, axis and units for you.
 
 ```python
 from typing import Annotated
@@ -234,6 +238,7 @@ application in this release.
 | `... changed the number of features; declare changes_features=True ...` | Declare the opt-in and return `spectra.select_features(...).with_values(...)`. |
 | `... must keep every sample` | Return one row per input sample, in order. |
 | `... returned NaN or infinite values` | Handle edge cases (division by zero, empty windows) in your function. |
+| `... must return the spectra it received ...` | Return `spectra.with_values(...)`, not a new `Spectra(...)`. |
 | `with_values() needs an array of shape ...` | Return values of the same shape, or select features first. |
 | `Parameter 'x' needs a default value` | Give every parameter after the first a default. |
 | `The first argument must be annotated as Spectra or numpy.ndarray` | Annotate the data argument and the return value. |

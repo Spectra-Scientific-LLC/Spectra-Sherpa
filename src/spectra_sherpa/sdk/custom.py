@@ -96,29 +96,73 @@ def param(
 
 
 class Spectra:
-    """The spectra a custom node receives and returns.
+    """The spectra a custom node receives and returns: values, feature axis and units only.
 
-    ``values`` is a copy of the samples x features array. ``axis`` holds the
-    feature coordinates (for example wavenumbers) when the data has them. Return
-    ``spectra.with_values(new_values)``; to keep only some features (cropping,
+    A custom function never sees the dataset behind them: no reference values,
+    groups, sample metadata or provenance. ``values`` is a copy of the
+    samples x features array and ``axis`` a copy of the feature coordinates
+    (for example wavenumbers) when the data has them. Return
+    ``spectra.with_values(new_values)``. To keep only some features (cropping,
     derivative edges) declare ``changes_features=True`` and return
-    ``spectra.select_features(keep).with_values(...)``.
+    ``spectra.select_features(keep).with_values(...)``. Workbench rebuilds the
+    output from its own copy of the samples, axis and units.
     """
 
-    __slots__ = ("_dataset", "_values")
+    __slots__ = ("_values", "_axis", "_axis_units", "_value_units", "_features", "_replaced", "_origin")
 
-    def __init__(self, dataset: Any, values: np.ndarray | None = None) -> None:
-        self._dataset = dataset
-        self._values = values
+    def __init__(
+        self,
+        values: Any,
+        *,
+        axis: Any = None,
+        axis_units: str | None = None,
+        value_units: str | None = None,
+        _features: Any = None,
+        _replaced: bool = False,
+        _origin: object | None = None,
+    ) -> None:
+        array = np.array(values, dtype=np.float64, copy=True)
+        if array.ndim != 2:
+            raise CustomNodeError("Spectra values must be a samples x features array")
+        array.setflags(write=False)
+        features = np.arange(array.shape[1]) if _features is None else np.array(_features, dtype=np.int64)
+        features.setflags(write=False)
+        coordinates = None
+        if axis is not None:
+            coordinates = np.array(axis, dtype=np.float64, copy=True)
+            if coordinates.shape != (array.shape[1],):
+                raise CustomNodeError("Spectra axis must have one coordinate per feature")
+            coordinates.setflags(write=False)
+        self._values = array
+        self._axis = coordinates
+        self._axis_units = str(axis_units) if axis_units else None
+        self._value_units = str(value_units) if value_units else None
+        self._features = features
+        self._replaced = _replaced
+        self._origin = _origin
+
+    @classmethod
+    def _from_dataset(cls, dataset: Any) -> "Spectra":
+        """Engine-only: copy the values, axis and units out of a dataset."""
+        feature_axis = getattr(dataset, "feature_axis", None)
+        coordinates = getattr(feature_axis, "values", None)
+        if coordinates is not None and np.shape(coordinates) != (np.shape(dataset.X)[1],):
+            coordinates = None
+        return cls(
+            dataset.X,
+            axis=coordinates,
+            axis_units=getattr(feature_axis, "units", None),
+            value_units=getattr(dataset, "units", None),
+            _origin=object(),
+        )
 
     @property
     def values(self) -> np.ndarray:
-        current = self._values if self._values is not None else self._dataset.X
-        return np.array(current, dtype=np.float64, copy=True)
+        return self._values.copy()
 
     @property
     def shape(self) -> tuple[int, int]:
-        rows, columns = np.shape(self._values if self._values is not None else self._dataset.X)[:2]
+        rows, columns = self._values.shape
         return int(rows), int(columns)
 
     @property
@@ -131,20 +175,15 @@ class Spectra:
 
     @property
     def axis(self) -> np.ndarray | None:
-        axis = getattr(self._dataset, "feature_axis", None)
-        values = getattr(axis, "values", None)
-        return None if values is None else np.array(values, dtype=np.float64, copy=True)
+        return None if self._axis is None else self._axis.copy()
 
     @property
     def axis_units(self) -> str | None:
-        axis = getattr(self._dataset, "feature_axis", None)
-        units = getattr(axis, "units", None)
-        return str(units) if units else None
+        return self._axis_units
 
     @property
     def value_units(self) -> str | None:
-        units = getattr(self._dataset, "units", None)
-        return str(units) if units else None
+        return self._value_units
 
     def with_values(self, values: Any) -> "Spectra":
         """Return these spectra with new values of the same shape."""
@@ -154,11 +193,19 @@ class Spectra:
                 f"with_values() needs an array of shape {self.shape}; got {tuple(array.shape)}. "
                 "To drop features, use select_features() first and declare changes_features=True."
             )
-        return Spectra(self._dataset, array)
+        return Spectra(
+            array,
+            axis=self._axis,
+            axis_units=self._axis_units,
+            value_units=self._value_units,
+            _features=self._features,
+            _replaced=True,
+            _origin=self._origin,
+        )
 
     def select_features(self, keep: Any) -> "Spectra":
         """Keep a subset of features: a boolean mask, integer positions or a slice."""
-        if self._values is not None:
+        if self._replaced:
             raise CustomNodeError("Call select_features() before with_values().")
         index = np.arange(self.n_features)[keep] if isinstance(keep, slice) else np.asarray(keep)
         if index.dtype == bool:
@@ -169,14 +216,14 @@ class Spectra:
             raise CustomNodeError("select_features() needs a non-empty mask, slice or list of feature positions")
         if np.any(np.diff(index) <= 0) or index[0] < 0 or index[-1] >= self.n_features:
             raise CustomNodeError("select_features() positions must be increasing and within range")
-        mask = np.zeros(self.n_features, dtype=bool)
-        mask[index] = True
-        return Spectra(self._dataset[:, mask])
-
-    @property
-    def dataset(self) -> Any:
-        """The underlying read-only dataset, for advanced metadata reads."""
-        return self._dataset
+        return Spectra(
+            self._values[:, index],
+            axis=None if self._axis is None else self._axis[index],
+            axis_units=self._axis_units,
+            value_units=self._value_units,
+            _features=self._features[index],
+            _origin=self._origin,
+        )
 
 
 @dataclass(frozen=True)

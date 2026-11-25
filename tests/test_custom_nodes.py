@@ -214,6 +214,37 @@ def test_changes_features_keeps_a_declared_subset_with_its_axis():
     assert np.allclose(output.X, source.X[:, 5:25] - 1.0)
 
 
+def test_custom_functions_never_see_reference_values_or_the_dataset():
+    import spectra_sherpa.sdk as ss
+
+    seen = {}
+
+    @custom_node(label="Probe")
+    def probe(spectra: Spectra) -> Spectra:
+        seen["dataset"] = hasattr(spectra, "dataset")
+        seen["slots"] = [type(getattr(spectra, name)).__name__ for name in Spectra.__slots__]
+        return spectra.with_values(spectra.values + 1.0)
+
+    axis = np.linspace(400.0, 1800.0, 12)
+    values = np.vstack([np.sin(axis / 200.0) + index for index in range(5)])
+    source = ss.data.from_array(values, x=axis, units="cm-1", y=np.arange(5.0), y_name="moisture")
+    output = _run(custom_nodes.build_node_class(_spec(probe), "lab", "0.0.0"), dataset=source)
+    assert seen["dataset"] is False
+    # Only copied arrays, units, positions and an opaque origin token reach the function.
+    assert set(seen["slots"]) <= {"ndarray", "str", "NoneType", "bool", "object"}
+    # The engine rebuilt the output from its own dataset, so reference values survive untouched.
+    assert np.allclose(output.target, source.target) and np.allclose(output.X, values + 1.0)
+
+
+def test_a_function_cannot_return_spectra_it_did_not_receive():
+    @custom_node(label="Forge")
+    def forge(spectra: Spectra) -> Spectra:
+        return Spectra(np.zeros(spectra.shape))
+
+    with pytest.raises(CustomNodeError, match="must return the spectra it received"):
+        _run(custom_nodes.build_node_class(_spec(forge), "lab", "0.0.0"))
+
+
 # ── Sources and composition ────────────────────────────────────────────────
 
 
@@ -380,6 +411,30 @@ def test_local_workbench_loads_runs_and_binds_a_custom_node(tmp_path):
     )
     # The managed-optimization vocabulary is unchanged by an installed custom node.
     assert baseline["profile"] == report["profile"]
+
+
+def test_a_bad_source_folder_is_reported_and_workbench_still_starts(tmp_path):
+    (tmp_path / "data" / "user" / "my_nodes" / "01-notes").mkdir(parents=True)
+    (tmp_path / "data" / "user" / "my_nodes" / "empty").mkdir(parents=True)
+    report = _app_process(
+        tmp_path,
+        """
+        import json
+        import spectra_sherpa.app.main  # startup must not abort
+        from spectra_sherpa.app.services import custom_nodes
+        from spectra_sherpa.app.services.dag.node_base import node_registry
+        print(json.dumps({
+            "statuses": {s.source: [s.status, s.message] for s in custom_nodes.source_statuses()},
+            "loaded": [n.node_type for n in node_registry.list_nodes() if n.node_type.startswith("user.")],
+        }))
+        """,
+    )
+    assert report["loaded"] == ["user.whitaker-hayes.despike"]
+    assert report["statuses"]["whitaker-hayes"][0] == "loaded"
+    assert (
+        report["statuses"]["01-notes"][0] == "failed" and "start it with a letter" in report["statuses"]["01-notes"][1]
+    )
+    assert report["statuses"]["empty"] == ["failed", "CustomNodeError: The folder has no .py files"]
 
 
 def test_hosted_modes_never_load_custom_nodes(tmp_path):

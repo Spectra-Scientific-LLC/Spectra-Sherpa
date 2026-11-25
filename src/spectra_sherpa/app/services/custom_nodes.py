@@ -205,6 +205,10 @@ def _result_values(spec: CustomNodeSpec, returned: Any, received: Spectra) -> Sp
             )
         result = received.with_values(array)
     elif isinstance(returned, Spectra):
+        if returned._origin is None or returned._origin is not received._origin:
+            raise CustomNodeError(
+                f"{spec.label} must return the spectra it received, for example spectra.with_values(values)"
+            )
         result = returned
     else:
         raise CustomNodeError(f"{spec.label} must return Spectra (for example spectra.with_values(values))")
@@ -222,19 +226,48 @@ def _result_values(spec: CustomNodeSpec, returned: Any, received: Spectra) -> Sp
 def apply_custom_function(spec: CustomNodeSpec, source_data: Any, parameters: dict[str, object]) -> Spectra:
     """Call the author's function once and enforce the declared defaults on its result.
 
-    This is the one computation shared by the node and by ``nodes check``.
+    The function receives only copied values, feature axis and units, never the
+    dataset. This is the one computation shared by the node and by ``nodes check``.
     """
     if getattr(source_data, "ndim", None) != 2:
         raise CustomNodeError(f"{spec.label} needs a two-dimensional samples x features dataset")
-    received = Spectra(source_data)
+    received = Spectra._from_dataset(source_data)
     argument = received if spec.input_kind == "spectra" else received.values
     return _result_values(spec, spec.function(argument, **parameters), received)
+
+
+def _feature_positions(result: Spectra, source_features: int) -> np.ndarray:
+    positions = np.asarray(result._features)
+    if (
+        positions.ndim != 1
+        or positions.size != result.n_features
+        or positions.size == 0
+        or not np.issubdtype(positions.dtype, np.integer)
+        or np.any(np.diff(positions) <= 0)
+        or positions[0] < 0
+        or positions[-1] >= source_features
+    ):
+        raise CustomNodeError("The returned spectra do not name valid features of the input")
+    return positions
+
+
+def build_output(source_data: Any, result: Spectra) -> Any:
+    """Rebuild the output from the engine's own samples, axis and units."""
+    from spectra_sherpa.app.services.dag.io_contracts import build_dataset_like
+
+    positions = _feature_positions(result, int(source_data.shape[1]))
+    base = source_data
+    if positions.size != source_data.shape[1]:
+        mask = np.zeros(source_data.shape[1], dtype=bool)
+        mask[positions] = True
+        base = source_data[:, mask]
+    return build_dataset_like(result.values, base, units=getattr(source_data, "units", None))
 
 
 def build_node_class(spec: CustomNodeSpec, source: str, version: str, build: str = "unrecorded") -> type:
     """One ordinary node class, bound through the stable execution contract."""
     from spectra_sherpa.app.services.dag import supervision_binding
-    from spectra_sherpa.app.services.dag.io_contracts import build_dataset_like, coerce_to_sherpa
+    from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
     from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
     from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodePolicy, NodeResult, PortMetadata
     from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
@@ -291,8 +324,7 @@ def build_node_class(spec: CustomNodeSpec, source: str, version: str, build: str
         source_data = coerce_to_sherpa(input_data if input_data is not None else default, input_name="input_data")
         parameters = validator(dict(self.parameters))
         result = await asyncio.to_thread(apply_custom_function, spec, source_data, parameters)
-        base = result.dataset
-        output = build_dataset_like(result.values, base, units=getattr(base, "units", None))
+        output = build_output(source_data, result)
         add_processing_step(
             output,
             operation,
@@ -399,25 +431,47 @@ def folder_candidate(directory: Path) -> _Candidate:
     return candidate
 
 
-def _folder_candidates() -> list[_Candidate]:
+def _failure(name: str, kind: str, location: str, exc: BaseException) -> SourceStatus:
+    logger.warning("Custom-node source %s was not loaded: %s", location, exc)
+    return SourceStatus(name, kind, location, None, "failed", message=f"{type(exc).__name__}: {exc}"[:500])
+
+
+def _folder_candidates() -> tuple[list[_Candidate], list[SourceStatus]]:
+    """Every My nodes subfolder; one that cannot become a source is reported, not fatal."""
+    candidates, failures = [], []
     root = my_nodes_dir()
-    if not root.is_dir():
-        return []
-    return [
-        folder_candidate(path)
-        for path in sorted(root.iterdir())
-        if path.is_dir() and not path.name.startswith((".", "_"))
-    ]
+    try:
+        if not root.is_dir():
+            return [], []
+        folders = sorted(path for path in root.iterdir() if path.is_dir() and not path.name.startswith((".", "_")))
+    except OSError as exc:
+        return [], [_failure("my-nodes", "folder", str(root), exc)]
+    for path in folders:
+        try:
+            candidates.append(folder_candidate(path))
+        except Exception as exc:
+            failures.append(_failure(path.name, "folder", str(path), exc))
+    return candidates, failures
 
 
-def _package_candidates() -> list[_Candidate]:
-    candidates = []
-    for entry_point in sorted(importlib.metadata.entry_points(group=ENTRY_POINT_GROUP), key=lambda item: item.name):
-        distribution = getattr(entry_point, "dist", None)
-        name = distribution.metadata["Name"] if distribution is not None else entry_point.name
-        version = distribution.version if distribution is not None else "0.0.0"
-        module_name = entry_point.value.split(":", 1)[0]
-        candidate = _Candidate(source_id(name), "package", f"{name}=={version}", version, Path("."))
+def _package_candidates() -> tuple[list[_Candidate], list[SourceStatus]]:
+    """Every declared entry point; a broken declaration is reported, not fatal."""
+    candidates, failures = [], []
+    try:
+        entry_points = sorted(importlib.metadata.entry_points(group=ENTRY_POINT_GROUP), key=lambda item: item.name)
+    except Exception as exc:
+        return [], [_failure("packages", "package", ENTRY_POINT_GROUP, exc)]
+    for entry_point in entry_points:
+        name = entry_point.name
+        try:
+            distribution = getattr(entry_point, "dist", None)
+            name = distribution.metadata["Name"] if distribution is not None else entry_point.name
+            version = distribution.version if distribution is not None else "0.0.0"
+            module_name = entry_point.value.split(":", 1)[0]
+            candidate = _Candidate(source_id(name), "package", f"{name}=={version}", version, Path("."))
+        except Exception as exc:
+            failures.append(_failure(name, "package", entry_point.value, exc))
+            continue
 
         def load(module_name=module_name, candidate=candidate):
             module = importlib.import_module(module_name)
@@ -432,7 +486,7 @@ def _package_candidates() -> list[_Candidate]:
 
         candidate.load_modules = load
         candidates.append(candidate)
-    return candidates
+    return candidates, failures
 
 
 @dataclass(frozen=True)
@@ -551,27 +605,38 @@ def initialize_custom_nodes() -> None:
             logger.warning("Custom nodes are ignored outside local Workbench")
             return
         _active = True
-        composed, statuses = compose_sources(_folder_candidates() + _package_candidates())
-        if composed:
-            from spectra_sherpa.app.services.dag.node_base import node_registry
+        try:
+            _status = tuple(_compose_enabled_sources())
+        except Exception as exc:  # never let a user's source stop Workbench from starting
+            logger.exception("Custom nodes could not be loaded")
+            _status = (_failure("custom-nodes", "folder", str(my_nodes_dir()), exc),)
 
-            try:
-                node_registry.compose_local_custom_nodes(
-                    tuple(node for _, result in composed for node in result.nodes),
-                    [result.identity(candidate.kind) for candidate, result in composed],
+
+def _compose_enabled_sources() -> list[SourceStatus]:
+    folders, folder_failures = _folder_candidates()
+    packages, package_failures = _package_candidates()
+    composed, statuses = compose_sources(folders + packages)
+    statuses = folder_failures + package_failures + statuses
+    if composed:
+        from spectra_sherpa.app.services.dag.node_base import node_registry
+
+        try:
+            node_registry.compose_local_custom_nodes(
+                tuple(node for _, result in composed for node in result.nodes),
+                [result.identity(candidate.kind) for candidate, result in composed],
+            )
+        except Exception as exc:
+            logger.error("Custom nodes could not be composed: %s", exc)
+            message = f"Custom nodes could not be loaded: {exc}"[:500]
+            statuses = [
+                (
+                    SourceStatus(item.source, item.kind, item.location, None, "failed", message=message)
+                    if item.status == "loaded"
+                    else item
                 )
-            except Exception as exc:
-                logger.error("Custom nodes could not be composed: %s", exc)
-                message = f"Custom nodes could not be loaded: {exc}"[:500]
-                statuses = [
-                    (
-                        SourceStatus(item.source, item.kind, item.location, None, "failed", message=message)
-                        if item.status == "loaded"
-                        else item
-                    )
-                    for item in statuses
-                ]
-        _status = tuple(statuses)
+                for item in statuses
+            ]
+    return statuses
 
 
 def worker_initializer():
