@@ -221,7 +221,8 @@ source name and version, the SHA-256 of all the source's files, and the node's
 execution-contract digest, which includes the digest of its module. Runs
 therefore show exactly which code produced each result.
 
-Editing a node changes these digests for later runs; earlier runs keep theirs.
+Workbench compiles each custom-node file from the exact bytes it records,
+never from cached bytecode. Editing a node changes these digests for later runs; earlier runs keep theirs.
 If a saved workflow uses a custom node whose source is missing, the workflow
 check names the node and tells you to restore the folder or package, turn on
 custom nodes and restart. Changes take effect on restart, like an upgrade, and
@@ -244,6 +245,8 @@ application in this release.
 | `The first argument must be annotated as Spectra or numpy.ndarray` | Annotate the data argument and the return value. |
 | `fits=True is not available in this release ...` | Remove the opt-in; use the SDK for fitted steps for now. |
 | `No @custom_node functions were found` | Decorate at least one top-level function in the source. |
+| `SystemExit: the source exited while importing ...` | Move script code such as `argparse` or `sys.exit()` under `if __name__ == "__main__":`. |
+| `... changed while it was loading` | Save your edits, then restart Workbench. |
 | `Two sources use the name ...` | Rename one folder or package. |
 
 ## Checklist for coding agents

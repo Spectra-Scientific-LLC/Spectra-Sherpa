@@ -286,6 +286,79 @@ def test_failing_and_colliding_sources_are_reported_not_loaded(tmp_path):
     assert "Two sources use the name 'twin'" in by_location[str(first)].message
 
 
+SCALE = textwrap.dedent('''
+    from spectra_sherpa.sdk.custom import Spectra, custom_node
+
+
+    @custom_node(label="Scale")
+    def scale(spectra: Spectra) -> Spectra:
+        """Multiply every value by a fixed factor."""
+        return spectra.with_values(spectra.values * 2.0)
+''')
+
+
+def test_the_recorded_build_is_the_code_that_ran_even_with_stale_bytecode(tmp_path):
+    """A same-size edit that keeps the timestamp must not run the cached old code."""
+    import py_compile
+
+    folder = _source(tmp_path, "scaler", SCALE)
+    path = folder / "scaler.py"
+    stat = path.stat()
+    py_compile.compile(str(path), doraise=True)  # a valid cache for the old bytes
+    path.write_text(SCALE.replace("* 2.0", "* 3.0"))  # same size
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))  # same timestamp
+    for key in [key for key in sys.modules if key.startswith("spectra_user_nodes_scaler")]:
+        del sys.modules[key]
+    composed, statuses = custom_nodes.compose_sources([custom_nodes.folder_candidate(folder)])
+    assert [status.status for status in statuses] == ["loaded"]
+    node_class = composed[0][1].nodes[0]
+    output = _run(node_class)
+    assert np.allclose(np.asarray(output.data), 3.0 * np.asarray(_dataset().data))
+    from spectra_sherpa.core.pack_build import build_sha256
+
+    assert composed[0][1].build_sha256 == build_sha256(custom_nodes._inventory(folder.resolve()))
+
+
+def test_a_source_edited_while_loading_is_refused(tmp_path, monkeypatch):
+    folder = _source(tmp_path, "racer", SCALE)
+    original = custom_nodes._inventory
+
+    def edit_then_inventory(root):
+        (folder / "racer.py").write_text(SCALE.replace("* 2.0", "* 4.0"))
+        return original(root)
+
+    monkeypatch.setattr(custom_nodes, "_inventory", edit_then_inventory)
+    composed, statuses = custom_nodes.compose_sources([custom_nodes.folder_candidate(folder)])
+    assert composed == []
+    assert "racer.py changed while it was loading" in statuses[0].message
+
+
+def test_a_source_that_exits_at_import_is_reported_and_its_neighbour_loads(tmp_path):
+    good = _source(tmp_path, "good")
+    script = _source(
+        tmp_path,
+        "script",
+        "import argparse\nargparse.ArgumentParser().parse_args(['--unknown'])\n" + SCALE,
+    )
+    composed, statuses = custom_nodes.compose_sources([custom_nodes.folder_candidate(path) for path in (good, script)])
+    assert [result.source for _, result in composed] == ["good"]
+    failed = {status.location: status for status in statuses}[str(script)]
+    assert failed.status == "failed"
+    assert failed.message.startswith("SystemExit: the source exited while importing (code 2)")
+    assert "__main__" in failed.message
+    ok, lines = custom_nodes.check_source(str(script))
+    assert not ok and "SystemExit" in lines[-1]
+
+
+def test_a_node_that_calls_sys_exit_fails_the_run_only():
+    @custom_node(label="Quitter")
+    def quitter(spectra: Spectra) -> Spectra:
+        raise SystemExit(3)
+
+    with pytest.raises(CustomNodeError, match=r"called sys.exit\(\) \(3\)"):
+        custom_nodes.apply_custom_function(_spec(quitter), _dataset(), {})
+
+
 def test_source_names_are_normalized_or_refused():
     assert custom_nodes.source_id("Whitaker_Hayes") == "whitaker-hayes"
     with pytest.raises(CustomNodeError, match="start it with a letter"):
@@ -416,6 +489,11 @@ def test_local_workbench_loads_runs_and_binds_a_custom_node(tmp_path):
 def test_a_bad_source_folder_is_reported_and_workbench_still_starts(tmp_path):
     (tmp_path / "data" / "user" / "my_nodes" / "01-notes").mkdir(parents=True)
     (tmp_path / "data" / "user" / "my_nodes" / "empty").mkdir(parents=True)
+    _source(
+        tmp_path / "data" / "user" / "my_nodes",
+        "cli_script",
+        "import argparse\nargparse.ArgumentParser().parse_args(['--unknown'])\n",
+    )
     report = _app_process(
         tmp_path,
         """
@@ -435,6 +513,8 @@ def test_a_bad_source_folder_is_reported_and_workbench_still_starts(tmp_path):
         report["statuses"]["01-notes"][0] == "failed" and "start it with a letter" in report["statuses"]["01-notes"][1]
     )
     assert report["statuses"]["empty"] == ["failed", "CustomNodeError: The folder has no .py files"]
+    assert report["statuses"]["cli-script"][0] == "failed"
+    assert report["statuses"]["cli-script"][1].startswith("SystemExit: the source exited while importing")
 
 
 def test_hosted_modes_never_load_custom_nodes(tmp_path):

@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import importlib
+import importlib.abc
+import importlib.machinery
 import importlib.metadata
 import importlib.util
 import logging
@@ -233,7 +235,11 @@ def apply_custom_function(spec: CustomNodeSpec, source_data: Any, parameters: di
         raise CustomNodeError(f"{spec.label} needs a two-dimensional samples x features dataset")
     received = Spectra._from_dataset(source_data)
     argument = received if spec.input_kind == "spectra" else received.values
-    return _result_values(spec, spec.function(argument, **parameters), received)
+    try:
+        returned = spec.function(argument, **parameters)
+    except SystemExit as exc:  # a run must fail like any other error, never stop Workbench
+        raise CustomNodeError(f"{spec.label} called sys.exit() ({exc.code!r}); raise an exception instead") from None
+    return _result_values(spec, returned, received)
 
 
 def _feature_positions(result: Spectra, source_features: int) -> np.ndarray:
@@ -396,14 +402,87 @@ def _inventory(root: Path):
     return tuple(files)
 
 
+# The SHA-256 of the exact source bytes each custom-node module was compiled
+# from in this process. Custom-node modules never run cached bytecode, so a
+# source's recorded build always describes the code that actually ran.
+_EXECUTED: dict[Path, str] = {}
+
+
+class _SourceBytesLoader(importlib.machinery.SourceFileLoader):
+    """Compile a module from the bytes it records, never from ``__pycache__``.
+
+    A cached ``.pyc`` is trusted by modification time and size, so a same-size
+    edit with a preserved timestamp would otherwise run the old code while the
+    build digest describes the new file.
+    """
+
+    def get_code(self, fullname: str):
+        path = self.get_filename(fullname)
+        data = self.get_data(path)
+        _EXECUTED[Path(path).resolve()] = hashlib.sha256(data).hexdigest()
+        return self.source_to_code(data, path)
+
+
+class _SourceBytesFinder(importlib.abc.MetaPathFinder):
+    """Route imports of a package's own source files through the loader above."""
+
+    def __init__(self, root: Path):
+        self.root = root.resolve()
+
+    def find_spec(self, fullname, path=None, target=None):
+        spec = importlib.machinery.PathFinder.find_spec(fullname, path, target)
+        if spec is None or not isinstance(spec.loader, importlib.machinery.SourceFileLoader) or not spec.origin:
+            return None
+        if not Path(spec.origin).resolve().is_relative_to(self.root):
+            return None
+        spec.loader = _SourceBytesLoader(fullname, spec.origin)
+        return spec
+
+
+def _import_package_module(module_name: str) -> ModuleType:
+    top = importlib.util.find_spec(module_name.split(".", 1)[0])
+    locations = list(getattr(top, "submodule_search_locations", None) or ()) if top is not None else []
+    finder = _SourceBytesFinder(Path(locations[0])) if locations else None
+    if finder is not None:
+        sys.meta_path.insert(0, finder)
+    try:
+        return importlib.import_module(module_name)
+    finally:
+        if finder is not None:
+            sys.meta_path.remove(finder)
+
+
+def _require_executed_bytes(root: Path, modules: list[ModuleType], files) -> None:
+    """Refuse a source unless every module of it ran the inventoried bytes."""
+    expected = {(root / item.path).resolve(): item.sha256 for item in files}
+    loaded = {Path(module.__file__).resolve() for module in modules if getattr(module, "__file__", None)}
+    for module in list(sys.modules.values()):
+        location = getattr(module, "__file__", None)
+        if location and Path(location).resolve() in expected:
+            loaded.add(Path(location).resolve())
+    for path in sorted(loaded):
+        relative = path.relative_to(root) if path.is_relative_to(root) else path
+        if path not in expected:
+            raise CustomNodeError(f"{relative} is outside the source folder and cannot be recorded")
+        executed = _EXECUTED.get(path)
+        if executed is None:
+            raise CustomNodeError(f"{relative} was imported before custom nodes loaded, so its code cannot be recorded")
+        if executed != expected[path]:
+            raise CustomNodeError(f"{relative} changed while it was loading; restart to load the saved version")
+
+
 def _import_file(path: Path, source: str) -> ModuleType:
     name = f"{_MODULE_PREFIX}_{source.replace('-', '_')}_{path.stem}"
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
         raise CustomNodeError(f"{path.name} needs a Python identifier file name")
     existing = sys.modules.get(name)
-    if existing is not None and Path(getattr(existing, "__file__", "")).resolve() == path.resolve():
+    if (
+        existing is not None
+        and Path(getattr(existing, "__file__", "")).resolve() == path.resolve()
+        and _EXECUTED.get(path.resolve()) == hashlib.sha256(path.read_bytes()).hexdigest()
+    ):
         return existing
-    spec = importlib.util.spec_from_file_location(name, path)
+    spec = importlib.util.spec_from_file_location(name, path, loader=_SourceBytesLoader(name, str(path)))
     if spec is None or spec.loader is None:
         raise CustomNodeError(f"{path.name} cannot be imported")
     module = importlib.util.module_from_spec(spec)
@@ -431,9 +510,24 @@ def folder_candidate(directory: Path) -> _Candidate:
     return candidate
 
 
+# What a source may raise without stopping Workbench. ``SystemExit`` comes from
+# converted scripts that call ``argparse`` or ``sys.exit()`` at module scope;
+# ``KeyboardInterrupt`` still stops startup as the user intends.
+_SOURCE_ERRORS = (Exception, SystemExit)
+
+
+def _describe(exc: BaseException) -> str:
+    if isinstance(exc, SystemExit):
+        return (
+            f"SystemExit: the source exited while importing (code {exc.code!r}). "
+            'Move script code such as argparse under `if __name__ == "__main__":`.'
+        )[:500]
+    return f"{type(exc).__name__}: {exc}"[:500]
+
+
 def _failure(name: str, kind: str, location: str, exc: BaseException) -> SourceStatus:
     logger.warning("Custom-node source %s was not loaded: %s", location, exc)
-    return SourceStatus(name, kind, location, None, "failed", message=f"{type(exc).__name__}: {exc}"[:500])
+    return SourceStatus(name, kind, location, None, "failed", message=_describe(exc))
 
 
 def _folder_candidates() -> tuple[list[_Candidate], list[SourceStatus]]:
@@ -474,7 +568,7 @@ def _package_candidates() -> tuple[list[_Candidate], list[SourceStatus]]:
             continue
 
         def load(module_name=module_name, candidate=candidate):
-            module = importlib.import_module(module_name)
+            module = _import_package_module(module_name)
             location = getattr(module, "__file__", None)
             if not location:
                 raise CustomNodeError(f"{module_name} has no source file")
@@ -535,6 +629,7 @@ def _compose(candidate: _Candidate) -> _Composed:
     sizes = [(candidate.root / item.path).stat().st_size for item in files]
     if max(sizes, default=0) > MAX_FILE_BYTES or sum(sizes) > MAX_BUILD_BYTES:
         raise CustomNodeError("A custom-node source is too large; keep data files out of its folder")
+    _require_executed_bytes(candidate.root, modules, files)
     build = build_sha256(files)
     nodes = tuple(build_node_class(spec, candidate.source, version, build) for spec in specs)
     staged = NodeRegistry()
@@ -561,18 +656,8 @@ def compose_sources(candidates: list[_Candidate]) -> tuple[list[tuple[_Candidate
             continue
         try:
             result = _compose(candidate)
-        except Exception as exc:  # an author's code may raise anything at import
-            logger.warning("Custom-node source %s did not load: %s", candidate.location, exc)
-            statuses.append(
-                SourceStatus(
-                    candidate.source,
-                    candidate.kind,
-                    candidate.location,
-                    None,
-                    "failed",
-                    message=f"{type(exc).__name__}: {exc}"[:500],
-                )
-            )
+        except _SOURCE_ERRORS as exc:  # an author's code may raise anything at import
+            statuses.append(_failure(candidate.source, candidate.kind, candidate.location, exc))
             continue
         composed.append((candidate, result))
         statuses.append(
@@ -607,7 +692,7 @@ def initialize_custom_nodes() -> None:
         _active = True
         try:
             _status = tuple(_compose_enabled_sources())
-        except Exception as exc:  # never let a user's source stop Workbench from starting
+        except _SOURCE_ERRORS as exc:  # never let a user's source stop Workbench from starting
             logger.exception("Custom nodes could not be loaded")
             _status = (_failure("custom-nodes", "folder", str(my_nodes_dir()), exc),)
 
@@ -687,14 +772,14 @@ def check_source(location: str) -> tuple[bool, list[str]]:
             candidate = _Candidate(source_id(location.split(".")[0]), "package", location, "0.0.0", Path("."))
 
             def load(candidate=candidate):
-                module = importlib.import_module(location)
+                module = _import_package_module(location)
                 candidate.root = Path(module.__file__).resolve().parent
                 return [module]
 
             candidate.load_modules = load
         pack = _compose(candidate)
-    except Exception as exc:
-        lines.append(f"FAILED to load: {type(exc).__name__}: {exc}")
+    except _SOURCE_ERRORS as exc:
+        lines.append(f"FAILED to load: {_describe(exc)}")
         return False, lines
     lines.append(
         f"Source {pack.source!r}: {len(pack.nodes)} node(s), {pack.files} file(s), build {pack.build_sha256[:12]}"
@@ -711,9 +796,9 @@ def check_source(location: str) -> tuple[bool, list[str]]:
         try:
             spec = node_class.custom_spec
             output = apply_custom_function(spec, dataset, canonical_parameters(spec, {}))
-        except Exception as exc:
+        except _SOURCE_ERRORS as exc:
             ok = False
-            lines.append(f"FAILED {metadata.node_type} ({metadata.label}): {type(exc).__name__}: {exc}")
+            lines.append(f"FAILED {metadata.node_type} ({metadata.label}): {_describe(exc)}")
             continue
         lines.append(
             f"OK {metadata.node_type} ({metadata.label}, {metadata.category}); parameters: {parameters or 'none'}; "
