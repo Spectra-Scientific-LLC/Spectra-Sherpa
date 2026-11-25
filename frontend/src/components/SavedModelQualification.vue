@@ -20,7 +20,7 @@
       <template v-if="record.kind === 'assessment'">
         <p>Validation: {{ record.payload.calculation?.complete_rows ?? '—' }} complete specimens · fitted components {{ record.payload.calculation?.effective_fitted_components ?? '—' }}.</p>
         <p v-for="(response, index) in record.payload.calculation?.responses || []" :key="index">
-          {{ record.payload.policy?.response_identity?.names?.[index] || `Response ${index + 1}` }}:
+          {{ record.payload.policy?.response_identity?.names?.[index] || `Response ${Number(index) + 1}` }}:
           RMSEP {{ response.metrics?.rmse ?? '—' }} (limit {{ record.payload.policy?.responses?.[index]?.max_rmsep ?? '—' }}),
           bias {{ response.metrics?.bias ?? '—' }} (absolute limit {{ record.payload.policy?.responses?.[index]?.max_absolute_bias ?? '—' }}).
         </p>
