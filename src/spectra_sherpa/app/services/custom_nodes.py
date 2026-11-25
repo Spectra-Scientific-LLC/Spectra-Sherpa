@@ -219,6 +219,18 @@ def _result_values(spec: CustomNodeSpec, returned: Any, received: Spectra) -> Sp
     return result
 
 
+def apply_custom_function(spec: CustomNodeSpec, source_data: Any, parameters: dict[str, object]) -> Spectra:
+    """Call the author's function once and enforce the declared defaults on its result.
+
+    This is the one computation shared by the node and by ``nodes check``.
+    """
+    if getattr(source_data, "ndim", None) != 2:
+        raise CustomNodeError(f"{spec.label} needs a two-dimensional samples x features dataset")
+    received = Spectra(source_data)
+    argument = received if spec.input_kind == "spectra" else received.values
+    return _result_values(spec, spec.function(argument, **parameters), received)
+
+
 def build_node_class(spec: CustomNodeSpec, source: str, version: str, build: str = "unrecorded") -> type:
     """One ordinary node class, bound through the stable execution contract."""
     from spectra_sherpa.app.services.dag import supervision_binding
@@ -277,13 +289,8 @@ def build_node_class(spec: CustomNodeSpec, source: str, version: str, build: str
     async def execute(self, input_data: Any = None, default: Any = None, **kwargs: Any):
         del kwargs
         source_data = coerce_to_sherpa(input_data if input_data is not None else default, input_name="input_data")
-        if source_data.ndim != 2:
-            raise CustomNodeError(f"{spec.label} needs a two-dimensional samples x features dataset")
         parameters = validator(dict(self.parameters))
-        received = Spectra(source_data)
-        argument = received if spec.input_kind == "spectra" else received.values
-        returned = await asyncio.to_thread(spec.function, argument, **parameters)
-        result = _result_values(spec, returned, received)
+        result = await asyncio.to_thread(apply_custom_function, spec, source_data, parameters)
         base = result.dataset
         output = build_dataset_like(result.values, base, units=getattr(base, "units", None))
         add_processing_step(
@@ -298,7 +305,7 @@ def build_node_class(spec: CustomNodeSpec, source: str, version: str, build: str
                 "source_version": version,
                 "source_build_sha256": build,
                 "execution_contract_sha256": self.metadata.execution_contract.digest,
-                "features_in": received.n_features,
+                "features_in": int(source_data.shape[1]),
                 "features_out": result.n_features,
             },
         )
@@ -315,6 +322,7 @@ def build_node_class(spec: CustomNodeSpec, source: str, version: str, build: str
             "__doc__": spec.description,
             "metadata": metadata,
             "execute": execute,
+            "custom_spec": spec,
         },
     )
     bind_stable_execution_contract(
@@ -636,9 +644,8 @@ def check_source(location: str) -> tuple[bool, list[str]]:
             for item in metadata.parameters
         )
         try:
-            node = node_class("check", {})
-            result = asyncio.run(node.execute(dataset))
-            output = result.outputs["default"]
+            spec = node_class.custom_spec
+            output = apply_custom_function(spec, dataset, canonical_parameters(spec, {}))
         except Exception as exc:
             ok = False
             lines.append(f"FAILED {metadata.node_type} ({metadata.label}): {type(exc).__name__}: {exc}")
