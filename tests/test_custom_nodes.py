@@ -359,6 +359,27 @@ def test_a_node_that_calls_sys_exit_fails_the_run_only():
         custom_nodes.apply_custom_function(_spec(quitter), _dataset(), {})
 
 
+def test_missing_input_values_may_pass_through_but_new_ones_are_refused():
+    @custom_node(label="Keep")
+    def keep(spectra: Spectra) -> Spectra:
+        return spectra.with_values(spectra.values * 2.0)
+
+    @custom_node(label="Divide")
+    def divide(values: np.ndarray) -> np.ndarray:
+        return values / (values - values[0, 0])
+
+    dataset = _dataset()
+    values = np.asarray(dataset.X, dtype=float).copy()
+    values[1, 3] = np.nan
+    import spectra_sherpa.sdk as ss
+
+    missing = ss.data.from_array(values, x=np.asarray(dataset.feature_axis.values), units="cm-1")
+    result = custom_nodes.apply_custom_function(_spec(keep), missing, {})
+    assert np.isnan(result.values[1, 3]) and np.isfinite(np.delete(result.values.ravel(), 1 * 30 + 3)).all()
+    with pytest.raises(CustomNodeError, match="where the input was finite. The input has missing values"):
+        custom_nodes.apply_custom_function(_spec(divide), missing, {})
+
+
 def test_source_names_are_normalized_or_refused():
     assert custom_nodes.source_id("Whitaker_Hayes") == "whitaker-hayes"
     with pytest.raises(CustomNodeError, match="start it with a letter"):
@@ -420,6 +441,93 @@ def test_every_documented_example_passes_the_self_check(tmp_path):
         assert passed, "\n".join(lines)
 
 
+def test_documented_area_normalize_keeps_its_sign_on_a_descending_axis(tmp_path):
+    import re
+
+    import spectra_sherpa.sdk as ss
+
+    page = (PACKAGE_ROOT / "docs" / "developers" / "custom-nodes.md").read_text(encoding="utf-8")
+    example = next(block for block in re.findall(r"```python\n(.*?)```", page, re.S) if "Area normalize" in block)
+    folder = _source(tmp_path, "area", example)
+    composed, _ = custom_nodes.compose_sources([custom_nodes.folder_candidate(folder)])
+    spec = composed[0][1].nodes[0].custom_spec
+    axis = np.linspace(4000.0, 400.0, 40)  # IR wavenumbers usually decrease
+    values = np.vstack([np.exp(-0.5 * ((axis - 1600.0 - 100 * row) / 150.0) ** 2) + 0.1 for row in range(3)])
+    result = custom_nodes.apply_custom_function(spec, ss.data.from_array(values, x=axis, units="cm-1"), {})
+    areas = np.abs(np.sum((result.values[:, 1:] + result.values[:, :-1]) / 2 * np.diff(axis), axis=1))
+    assert (result.values > 0).all() and np.allclose(areas, 1.0)
+
+
+def _distribution(site: Path, package: Path, name: str = "lab-nodes", version: str = "1.2.0") -> None:
+    """A minimal installed distribution declaring the custom-node entry point."""
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "despike.py").write_text(DESPIKE)
+    info = site / f"{name.replace('-', '_')}-{version}.dist-info"
+    info.mkdir(parents=True)
+    (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+    (info / "entry_points.txt").write_text(f"[{custom_nodes.ENTRY_POINT_GROUP}]\nlab_nodes = lab_nodes.despike\n")
+
+
+def _forget_lab_nodes():
+    for key in [key for key in sys.modules if key == "lab_nodes" or key.startswith("lab_nodes.")]:
+        del sys.modules[key]
+
+
+def test_an_installed_package_loads_from_its_entry_point(tmp_path, monkeypatch):
+    site = tmp_path / "site"
+    _distribution(site, site / "lab_nodes")
+    monkeypatch.syspath_prepend(str(site))
+    _forget_lab_nodes()
+    try:
+        candidates, failures = custom_nodes._package_candidates()
+        ours = [item for item in candidates if item.source == "lab-nodes"]
+        composed, statuses = custom_nodes.compose_sources(ours)
+        assert failures == [] and [status.status for status in statuses] == ["loaded"], statuses
+        result = composed[0][1]
+        assert (result.version, result.nodes[0].get_metadata().node_type) == ("1.2.0", "user.lab-nodes.despike")
+        assert {item.path for item in result.inventory} == {"__init__.py", "despike.py"}
+    finally:
+        _forget_lab_nodes()
+
+
+def test_an_editable_install_mapped_by_its_own_finder_loads(tmp_path, monkeypatch):
+    """Like a flat-layout ``pip install -e .``: the package is not on sys.path."""
+    import importlib.abc
+    import importlib.util
+
+    site, project = tmp_path / "site", tmp_path / "project"
+    _distribution(site, project / "lab_nodes")
+    monkeypatch.syspath_prepend(str(site))
+
+    class EditableFinder(importlib.abc.MetaPathFinder):
+        def find_spec(self, fullname, path=None, target=None):
+            if fullname != "lab_nodes":
+                return None
+            origin = project / "lab_nodes" / "__init__.py"
+            return importlib.util.spec_from_file_location(
+                fullname, origin, submodule_search_locations=[str(origin.parent)]
+            )
+
+    monkeypatch.setattr(sys, "meta_path", [*sys.meta_path, EditableFinder()])
+    _forget_lab_nodes()
+    try:
+        candidates, _ = custom_nodes._package_candidates()
+        composed, statuses = custom_nodes.compose_sources([item for item in candidates if item.source == "lab-nodes"])
+        assert [status.status for status in statuses] == ["loaded"], statuses
+    finally:
+        _forget_lab_nodes()
+
+
+def test_a_top_level_module_entry_point_is_refused_with_the_fix(tmp_path, monkeypatch):
+    (tmp_path / "lone_node.py").write_text(DESPIKE)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    candidate = custom_nodes._Candidate("lone", "package", "lone==1.0.0", "1.0.0", Path("."))
+    candidate.load_modules = lambda: custom_nodes._load_package("lone_node", candidate)
+    _, statuses = custom_nodes.compose_sources([candidate])
+    assert "inside a package directory" in statuses[0].message
+
+
 # ── Whole-process behavior (fresh interpreters own the global catalog) ────
 
 
@@ -464,7 +572,9 @@ def test_local_workbench_loads_runs_and_binds_a_custom_node(tmp_path):
             "recorded": impact["source_build_sha256"] == source["build_sha256"]
             and impact["execution_contract_sha256"] == source["nodes"][0][3],
             "profile": managed_optimization_profile().digest,
-            "worker_initializer": custom_nodes.worker_initializer() is custom_nodes.initialize_custom_nodes,
+            "worker_initializer": (
+                custom_nodes.worker_initializer().func is custom_nodes._initialize_worker_from_snapshot
+            ),
         }))
         """,
     )
@@ -535,7 +645,7 @@ def test_hosted_modes_never_load_custom_nodes(tmp_path):
     assert report == {"nodes": [], "active": False}
 
 
-def test_spawned_worker_runs_the_same_custom_node(tmp_path):
+def test_spawned_workers_run_the_startup_code_after_edits_and_a_changed_setting(tmp_path):
     report = _app_process(
         tmp_path,
         """
@@ -545,6 +655,16 @@ def test_spawned_worker_runs_the_same_custom_node(tmp_path):
         from spectra_sherpa.app.services import custom_nodes
         from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
         from tests.custom_node_worker import run_despike
+
+        local = run_despike()
+        # After startup: edit the node, add a file and a source, turn custom
+        # nodes off. Workers must still run exactly what loaded at startup.
+        folder = custom_nodes.my_nodes_dir() / "whitaker_hayes"
+        (folder / "whitaker_hayes.py").write_text("raise RuntimeError('edited after startup')\\n")
+        (folder / "notes.txt").write_text("new notes")
+        (custom_nodes.my_nodes_dir() / "added").mkdir()
+        (custom_nodes.my_nodes_dir() / "added" / "added.py").write_text("raise RuntimeError('new source')\\n")
+        os.environ["SPECTRA_SHERPA_CUSTOM_NODES"] = "0"
 
         async def main():
             pool = IsolatedWorkerPool(1, initializer=custom_nodes.worker_initializer())
@@ -556,7 +676,6 @@ def test_spawned_worker_runs_the_same_custom_node(tmp_path):
             return remote
 
         remote = asyncio.run(main())
-        local = run_despike()
         print(json.dumps({"different_process": remote[0] != local[0], "same": remote[1] == local[1]}))
         """,
     )

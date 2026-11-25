@@ -17,6 +17,7 @@ through :func:`initialize_custom_nodes`.
 from __future__ import annotations
 
 import asyncio
+import functools
 import hashlib
 import importlib
 import importlib.abc
@@ -81,12 +82,18 @@ class _Candidate:
     root: Path
     modules: list[ModuleType] = field(default_factory=list)
     load_modules: Any = None
+    # Workers rebuild from the host's startup snapshot: its inventory and build.
+    frozen: dict[str, Any] | None = None
+    module_name: str | None = None
 
 
 _lock = threading.Lock()
 _loaded = False
 _active = False
 _status: tuple[SourceStatus, ...] = ()
+# What the host composed at startup, handed to every spawned worker so that
+# later edits, a changed setting or a new folder never change a worker.
+_snapshot: tuple[dict[str, Any], ...] = ()
 
 
 def enabled() -> bool:
@@ -220,8 +227,16 @@ def _result_values(spec: CustomNodeSpec, returned: Any, received: Spectra) -> Sp
         raise CustomNodeError(
             f"{spec.label} changed the number of features; declare changes_features=True if that is intended"
         )
-    if not np.all(np.isfinite(result.values)):
-        raise CustomNodeError(f"{spec.label} returned NaN or infinite values")
+    output = result.values
+    if not np.all(np.isfinite(output)):
+        # Missing values the input already had may pass through; only values
+        # the function made non-finite are its error.
+        given = received._values[:, np.asarray(result._features)]
+        if np.any(~np.isfinite(output) & np.isfinite(given)):
+            hint = ""
+            if not np.all(np.isfinite(received._values)):
+                hint = " The input has missing values; handle them in your function, for example with np.nanmedian."
+            raise CustomNodeError(f"{spec.label} returned NaN or infinite values where the input was finite.{hint}")
     return result
 
 
@@ -402,10 +417,13 @@ def _inventory(root: Path):
     return tuple(files)
 
 
-# The SHA-256 of the exact source bytes each custom-node module was compiled
-# from in this process. Custom-node modules never run cached bytecode, so a
-# source's recorded build always describes the code that actually ran.
+# The SHA-256 and bytes of the exact source each custom-node module was
+# compiled from in this process. Custom-node modules never run cached bytecode,
+# so a source's recorded build always describes the code that actually ran.
 _EXECUTED: dict[Path, str] = {}
+_SOURCE_BYTES: dict[Path, bytes] = {}
+# In a spawned worker: the host's bytes, compiled instead of the files on disk.
+_FROZEN: dict[Path, bytes] = {}
 
 
 class _SourceBytesLoader(importlib.machinery.SourceFileLoader):
@@ -413,24 +431,50 @@ class _SourceBytesLoader(importlib.machinery.SourceFileLoader):
 
     A cached ``.pyc`` is trusted by modification time and size, so a same-size
     edit with a preserved timestamp would otherwise run the old code while the
-    build digest describes the new file.
+    build digest describes the new file. ``get_source`` returns those same
+    bytes, so the execution-contract digest also names the code that ran.
     """
 
     def get_code(self, fullname: str):
-        path = self.get_filename(fullname)
-        data = self.get_data(path)
-        _EXECUTED[Path(path).resolve()] = hashlib.sha256(data).hexdigest()
-        return self.source_to_code(data, path)
+        filename = self.get_filename(fullname)
+        path = Path(filename).resolve()
+        data = _FROZEN.get(path)
+        if data is None:
+            data = self.get_data(filename)
+        _SOURCE_BYTES[path] = data
+        _EXECUTED[path] = hashlib.sha256(data).hexdigest()
+        return self.source_to_code(data, filename)
+
+    def get_source(self, fullname: str):
+        data = _SOURCE_BYTES.get(Path(self.get_filename(fullname)).resolve())
+        return super().get_source(fullname) if data is None else importlib.util.decode_source(data)
 
 
 class _SourceBytesFinder(importlib.abc.MetaPathFinder):
-    """Route imports of a package's own source files through the loader above."""
+    """Route imports of a package's own source files through the loader above.
+
+    It asks the other finders for the module, so editable installs that map a
+    package through their own finder are covered as well as ``sys.path``.
+    """
 
     def __init__(self, root: Path):
         self.root = root.resolve()
+        self._busy = threading.local()
 
     def find_spec(self, fullname, path=None, target=None):
-        spec = importlib.machinery.PathFinder.find_spec(fullname, path, target)
+        if getattr(self._busy, "active", False):
+            return None
+        self._busy.active = True
+        try:
+            spec = None
+            for finder in sys.meta_path:
+                if finder is self or not hasattr(finder, "find_spec"):
+                    continue
+                spec = finder.find_spec(fullname, path, target)
+                if spec is not None:
+                    break
+        finally:
+            self._busy.active = False
         if spec is None or not isinstance(spec.loader, importlib.machinery.SourceFileLoader) or not spec.origin:
             return None
         if not Path(spec.origin).resolve().is_relative_to(self.root):
@@ -442,14 +486,14 @@ class _SourceBytesFinder(importlib.abc.MetaPathFinder):
 def _import_package_module(module_name: str) -> ModuleType:
     top = importlib.util.find_spec(module_name.split(".", 1)[0])
     locations = list(getattr(top, "submodule_search_locations", None) or ()) if top is not None else []
-    finder = _SourceBytesFinder(Path(locations[0])) if locations else None
-    if finder is not None:
-        sys.meta_path.insert(0, finder)
+    if not locations:
+        raise CustomNodeError("Put custom nodes inside a package directory, not a top-level module")
+    finder = _SourceBytesFinder(Path(locations[0]))
+    sys.meta_path.insert(0, finder)
     try:
         return importlib.import_module(module_name)
     finally:
-        if finder is not None:
-            sys.meta_path.remove(finder)
+        sys.meta_path.remove(finder)
 
 
 def _require_executed_bytes(root: Path, modules: list[ModuleType], files) -> None:
@@ -466,7 +510,10 @@ def _require_executed_bytes(root: Path, modules: list[ModuleType], files) -> Non
             raise CustomNodeError(f"{relative} is outside the source folder and cannot be recorded")
         executed = _EXECUTED.get(path)
         if executed is None:
-            raise CustomNodeError(f"{relative} was imported before custom nodes loaded, so its code cannot be recorded")
+            raise CustomNodeError(
+                f"{relative} was not compiled from its source file, so its code cannot be recorded. "
+                "Install the package with its .py files and make sure nothing imports it before Workbench starts."
+            )
         if executed != expected[path]:
             raise CustomNodeError(f"{relative} changed while it was loading; restart to load the saved version")
 
@@ -479,7 +526,8 @@ def _import_file(path: Path, source: str) -> ModuleType:
     if (
         existing is not None
         and Path(getattr(existing, "__file__", "")).resolve() == path.resolve()
-        and _EXECUTED.get(path.resolve()) == hashlib.sha256(path.read_bytes()).hexdigest()
+        and _EXECUTED.get(path.resolve())
+        == hashlib.sha256(_FROZEN.get(path.resolve()) or path.read_bytes()).hexdigest()
     ):
         return existing
     spec = importlib.util.spec_from_file_location(name, path, loader=_SourceBytesLoader(name, str(path)))
@@ -501,10 +549,15 @@ def folder_candidate(directory: Path) -> _Candidate:
     candidate = _Candidate(source, "folder", str(directory), "0.0.0", directory.resolve())
 
     def load():
-        files = sorted(path for path in directory.glob("*.py") if path.is_file())
+        if candidate.frozen is not None:
+            files = [Path(item) for item in candidate.frozen["module_files"]]
+        else:
+            files = sorted(path for path in directory.glob("*.py") if path.is_file())
         if not files:
             raise CustomNodeError("The folder has no .py files")
-        return [_import_file(path, source) for path in files]
+        modules = [_import_file(path, source) for path in files]
+        candidate.modules = modules
+        return modules
 
     candidate.load_modules = load
     return candidate
@@ -567,20 +620,20 @@ def _package_candidates() -> tuple[list[_Candidate], list[SourceStatus]]:
             failures.append(_failure(name, "package", entry_point.value, exc))
             continue
 
-        def load(module_name=module_name, candidate=candidate):
-            module = _import_package_module(module_name)
-            location = getattr(module, "__file__", None)
-            if not location:
-                raise CustomNodeError(f"{module_name} has no source file")
-            root = Path(location).resolve().parent
-            if root.name == "site-packages" or root.name == "dist-packages":
-                raise CustomNodeError("Put custom nodes inside a package directory, not a top-level module")
-            candidate.root = root
-            return [module]
-
-        candidate.load_modules = load
+        candidate.module_name = module_name
+        candidate.load_modules = functools.partial(_load_package, module_name, candidate)
         candidates.append(candidate)
     return candidates, failures
+
+
+def _load_package(module_name: str, candidate: _Candidate) -> list[ModuleType]:
+    module = _import_package_module(module_name)
+    location = getattr(module, "__file__", None)
+    if not location:
+        raise CustomNodeError(f"{module_name} has no source file")
+    candidate.root = Path(location).resolve().parent
+    candidate.modules = [module]
+    return [module]
 
 
 @dataclass(frozen=True)
@@ -590,6 +643,7 @@ class _Composed:
     build_sha256: str
     files: int
     nodes: tuple[type, ...]
+    inventory: tuple[Any, ...] = ()
 
     def identity(self, kind: str) -> dict[str, Any]:
         return {
@@ -613,7 +667,7 @@ def _compose(candidate: _Candidate) -> _Composed:
     """Import, build and validate one source in isolation; never touches the catalog."""
     from spectra_sherpa.app.services.dag.node_base import NodeRegistry
     from spectra_sherpa.app.services.pack_bootstrap import _require_inventoried_source
-    from spectra_sherpa.core.pack_build import MAX_BUILD_BYTES, MAX_BUILD_FILES, MAX_FILE_BYTES, build_sha256
+    from spectra_sherpa.core.pack_build import MAX_BUILD_BYTES, MAX_BUILD_FILES, MAX_FILE_BYTES, PackFile, build_sha256
 
     version = _semver(candidate.version)
     modules = candidate.load_modules()
@@ -623,21 +677,29 @@ def _compose(candidate: _Candidate) -> _Composed:
     names = [spec.name for spec in specs]
     if len(names) != len(set(names)):
         raise CustomNodeError("Two custom nodes in this source share a function name")
-    files = _inventory(candidate.root)
-    if len(files) > MAX_BUILD_FILES:
-        raise CustomNodeError(f"A custom-node source may contain at most {MAX_BUILD_FILES} files")
-    sizes = [(candidate.root / item.path).stat().st_size for item in files]
-    if max(sizes, default=0) > MAX_FILE_BYTES or sum(sizes) > MAX_BUILD_BYTES:
-        raise CustomNodeError("A custom-node source is too large; keep data files out of its folder")
-    _require_executed_bytes(candidate.root, modules, files)
-    build = build_sha256(files)
+    if candidate.frozen is not None:
+        # A worker: the host already inventoried and checked this source at
+        # startup. Rebuild exactly that, whatever is on disk now.
+        files = tuple(PackFile(path=path, sha256=sha) for path, sha in candidate.frozen["files"])
+        _require_executed_bytes(candidate.root, modules, files)
+        build = candidate.frozen["build_sha256"]
+    else:
+        files = _inventory(candidate.root)
+        if len(files) > MAX_BUILD_FILES:
+            raise CustomNodeError(f"A custom-node source may contain at most {MAX_BUILD_FILES} files")
+        sizes = [(candidate.root / item.path).stat().st_size for item in files]
+        if max(sizes, default=0) > MAX_FILE_BYTES or sum(sizes) > MAX_BUILD_BYTES:
+            raise CustomNodeError("A custom-node source is too large; keep data files out of its folder")
+        _require_executed_bytes(candidate.root, modules, files)
+        build = build_sha256(files)
     nodes = tuple(build_node_class(spec, candidate.source, version, build) for spec in specs)
     staged = NodeRegistry()
     inventory = {item.path for item in files}
     for node_class in nodes:
-        _require_inventoried_source(node_class, candidate.root, inventory)
+        if candidate.frozen is None:
+            _require_inventoried_source(node_class, candidate.root, inventory)
         staged.register(node_class)
-    return _Composed(candidate.source, version, build, len(files), nodes)
+    return _Composed(candidate.source, version, build, len(files), nodes, files)
 
 
 def compose_sources(candidates: list[_Candidate]) -> tuple[list[tuple[_Candidate, _Composed]], list[SourceStatus]]:
@@ -674,11 +736,7 @@ def compose_sources(candidates: list[_Candidate]) -> tuple[list[tuple[_Candidate
 
 
 def initialize_custom_nodes() -> None:
-    """Compose enabled custom-node sources before the catalog is sealed.
-
-    Also the spawned-worker initializer: it rebuilds the same composition, and
-    the worker pool refuses a worker whose composition digest differs.
-    """
+    """Compose enabled custom-node sources before the catalog is sealed."""
     global _loaded, _active, _status
     with _lock:
         if _loaded:
@@ -698,18 +756,15 @@ def initialize_custom_nodes() -> None:
 
 
 def _compose_enabled_sources() -> list[SourceStatus]:
+    global _snapshot
     folders, folder_failures = _folder_candidates()
     packages, package_failures = _package_candidates()
     composed, statuses = compose_sources(folders + packages)
     statuses = folder_failures + package_failures + statuses
     if composed:
-        from spectra_sherpa.app.services.dag.node_base import node_registry
-
         try:
-            node_registry.compose_local_custom_nodes(
-                tuple(node for _, result in composed for node in result.nodes),
-                [result.identity(candidate.kind) for candidate, result in composed],
-            )
+            _register(composed)
+            _snapshot = tuple(_snapshot_entry(candidate, result) for candidate, result in composed)
         except Exception as exc:
             logger.error("Custom nodes could not be composed: %s", exc)
             message = f"Custom nodes could not be loaded: {exc}"[:500]
@@ -724,16 +779,76 @@ def _compose_enabled_sources() -> list[SourceStatus]:
     return statuses
 
 
+def _register(composed: list[tuple[_Candidate, _Composed]]) -> None:
+    from spectra_sherpa.app.services.dag.node_base import node_registry
+
+    node_registry.compose_local_custom_nodes(
+        tuple(node for _, result in composed for node in result.nodes),
+        [result.identity(candidate.kind) for candidate, result in composed],
+    )
+
+
+def _snapshot_entry(candidate: _Candidate, result: _Composed) -> dict[str, Any]:
+    """Everything a worker needs to rebuild this source exactly as the host ran it."""
+    root = candidate.root.resolve()
+    return {
+        "source": candidate.source,
+        "kind": candidate.kind,
+        "location": candidate.location,
+        "version": candidate.version,
+        "root": str(root),
+        "module_name": candidate.module_name,
+        "module_files": [str(Path(module.__file__).resolve()) for module in candidate.modules],
+        "files": [(item.path, item.sha256) for item in result.inventory],
+        "build_sha256": result.build_sha256,
+        "bytes": {str(path): data for path, data in _SOURCE_BYTES.items() if path.is_relative_to(root)},
+    }
+
+
+def _initialize_worker_from_snapshot(snapshot: tuple[dict[str, Any], ...]) -> None:
+    """Spawned-worker initializer: rebuild the host's startup composition.
+
+    It reads neither the custom-nodes setting nor the files on disk, so edits,
+    a changed setting or a new source folder after startup never make a worker
+    differ from its host. The worker pool still verifies the composition digest.
+    """
+    global _loaded, _active, _status
+    with _lock:
+        if _loaded:
+            return
+        _loaded, _active = True, True
+        candidates = []
+        for entry in snapshot:
+            _FROZEN.update({Path(path): data for path, data in entry["bytes"].items()})
+            if entry["kind"] == "folder":
+                candidate = folder_candidate(Path(entry["location"]))
+            else:
+                candidate = _Candidate(entry["source"], "package", entry["location"], entry["version"], Path("."))
+                candidate.module_name = entry["module_name"]
+                candidate.load_modules = functools.partial(_load_package, entry["module_name"], candidate)
+            candidate.frozen = entry
+            candidate.root = Path(entry["root"])
+            candidates.append(candidate)
+        composed, statuses = compose_sources(candidates)
+        _status = tuple(statuses)
+        if len(composed) != len(snapshot):
+            failed = "; ".join(f"{item.source}: {item.message}" for item in statuses if item.status != "loaded")
+            raise RuntimeError(f"Custom nodes could not be rebuilt in the worker: {failed}")
+        _register(composed)
+
+
 def worker_initializer():
     """The initializer the worker pool needs once custom nodes are composed."""
     from spectra_sherpa.app.services.dag.node_base import node_registry
 
-    return initialize_custom_nodes if node_registry.custom_sources else None
+    if not node_registry.custom_sources:
+        return None
+    return functools.partial(_initialize_worker_from_snapshot, _snapshot)
 
 
 def _reset_for_tests() -> None:
-    global _loaded, _active, _status
-    _loaded, _active, _status = False, False, ()
+    global _loaded, _active, _status, _snapshot
+    _loaded, _active, _status, _snapshot = False, False, (), ()
 
 
 # ── Self-check for authors and coding agents ───────────────────────────────
@@ -770,13 +885,7 @@ def check_source(location: str) -> tuple[bool, list[str]]:
             candidate = folder_candidate(path)
         else:
             candidate = _Candidate(source_id(location.split(".")[0]), "package", location, "0.0.0", Path("."))
-
-            def load(candidate=candidate):
-                module = _import_package_module(location)
-                candidate.root = Path(module.__file__).resolve().parent
-                return [module]
-
-            candidate.load_modules = load
+            candidate.load_modules = functools.partial(_load_package, location, candidate)
         pack = _compose(candidate)
     except _SOURCE_ERRORS as exc:
         lines.append(f"FAILED to load: {_describe(exc)}")

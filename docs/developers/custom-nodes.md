@@ -126,7 +126,8 @@ def area_normalize(spectra: Spectra, area: Literal["absolute", "signed"] = "abso
     values = spectra.values
     axis = spectra.axis if spectra.axis is not None else np.arange(values.shape[1], dtype=float)
     integrand = np.abs(values) if area == "absolute" else values
-    totals = np.sum((integrand[:, 1:] + integrand[:, :-1]) / 2 * np.diff(axis), axis=1)
+    # abs(): IR wavenumber axes usually decrease, and an area is never negative.
+    totals = np.sum((integrand[:, 1:] + integrand[:, :-1]) / 2 * np.abs(np.diff(axis)), axis=1)
     if np.any(totals == 0):
         raise ValueError("A spectrum has zero area and cannot be normalized")
     return spectra.with_values(values / totals[:, None])
@@ -222,11 +223,14 @@ execution-contract digest, which includes the digest of its module. Runs
 therefore show exactly which code produced each result.
 
 Workbench compiles each custom-node file from the exact bytes it records,
-never from cached bytecode. Editing a node changes these digests for later runs; earlier runs keep theirs.
+never from cached bytecode. Editing a node, adding a source or turning custom
+nodes off takes effect on restart, like an upgrade. Until then every run,
+including runs in spawned workers, uses exactly the code that loaded at
+startup, so earlier and later runs each record the code they used.
+
 If a saved workflow uses a custom node whose source is missing, the workflow
 check names the node and tells you to restore the folder or package, turn on
-custom nodes and restart. Changes take effect on restart, like an upgrade, and
-spawned workers verify that they load exactly the same nodes as Workbench.
+custom nodes and restart.
 
 Custom nodes are not offered by the assistant's workflow proposals or by
 managed optimization, and they cannot be exported to Python or as a released
@@ -238,7 +242,7 @@ application in this release.
 | --- | --- |
 | `... changed the number of features; declare changes_features=True ...` | Declare the opt-in and return `spectra.select_features(...).with_values(...)`. |
 | `... must keep every sample` | Return one row per input sample, in order. |
-| `... returned NaN or infinite values` | Handle edge cases (division by zero, empty windows) in your function. |
+| `... returned NaN or infinite values where the input was finite` | Handle edge cases (division by zero, empty windows, missing input values) in your function. Missing values already in the input may pass through. |
 | `... must return the spectra it received ...` | Return `spectra.with_values(...)`, not a new `Spectra(...)`. |
 | `with_values() needs an array of shape ...` | Return values of the same shape, or select features first. |
 | `Parameter 'x' needs a default value` | Give every parameter after the first a default. |

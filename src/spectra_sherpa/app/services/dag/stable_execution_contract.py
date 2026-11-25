@@ -88,9 +88,13 @@ def _custom_source_component(component: ModuleType) -> dict[str, str]:
 
     if component.__name__ == "spectra_sherpa" or component.__name__.startswith("spectra_sherpa."):
         raise StableExecutionContractError("local custom nodes must be defined outside spectra_sherpa")
+    # Prefer the loader's text: the custom-node loader returns the exact bytes
+    # it compiled, which can differ from the file if it was edited since.
+    loader = getattr(component, "__loader__", None)
     try:
-        source = inspect.getsource(component).encode("utf-8")
-    except OSError as exc:
+        text = loader.get_source(component.__name__) if hasattr(loader, "get_source") else None
+        source = (text if text is not None else inspect.getsource(component)).encode("utf-8")
+    except (OSError, ImportError) as exc:
         raise StableExecutionContractError(f"custom node source for {component.__name__!r} is unreadable") from exc
     return {"component_id": component.__name__, "digest": hashlib.sha256(source).hexdigest()}
 
