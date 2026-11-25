@@ -95,6 +95,14 @@ def test_unsupported_opt_ins_are_refused_by_name(option):
         custom_node(label="X", **{option: True})
 
 
+def test_unsupported_opt_ins_may_be_stated_as_false():
+    @custom_node(label="Explicit", fits=False, uses_target=False)
+    def explicit(spectra: Spectra) -> Spectra:
+        return spectra
+
+    assert _spec(explicit).label == "Explicit"
+
+
 def test_definition_errors_name_the_fix():
     with pytest.raises(CustomNodeError, match="needs a default value"):
 
@@ -680,3 +688,47 @@ def test_spawned_workers_run_the_startup_code_after_edits_and_a_changed_setting(
         """,
     )
     assert report == {"different_process": True, "same": True}
+
+
+# ── Export (custom nodes are not exportable in this release) ──────────────
+
+
+@pytest.mark.asyncio
+async def test_every_executable_export_refuses_custom_nodes_by_name(auth_client, test_session, test_user):
+    from spectra_sherpa.app.models.project import Project
+    from spectra_sherpa.app.models.workflow import Workflow
+    from spectra_sherpa.app.models.workflow_node import WorkflowNode
+
+    project = Project(user_id=test_user.id, name="Custom export", description="")
+    test_session.add(project)
+    await test_session.flush()
+    workflow = Workflow(user_id=test_user.id, project_id=project.id, name="Uses a custom node", description="")
+    test_session.add(workflow)
+    await test_session.flush()
+    test_session.add(
+        WorkflowNode(
+            workflow_id=workflow.id,
+            node_id="despike",
+            node_type="user.whitaker-hayes.despike",
+            label="Despike",
+            parameters={},
+            position_x=0,
+            position_y=0,
+        )
+    )
+    await test_session.commit()
+
+    responses = [
+        await auth_client.get(f"/api/v1/workflows/{workflow.id}/export/python"),
+        await auth_client.get(f"/api/v1/workflows/{workflow.id}/export/notebook"),
+        await auth_client.get(f"/api/v1/workflows/{workflow.id}/export/download?format=zip"),
+        await auth_client.post(
+            f"/api/v1/projects/{project.id}/scripts/generate",
+            json={"workflow_id": workflow.id, "name": "custom.py"},
+        ),
+    ]
+    assert [response.status_code for response in responses] == [422, 422, 422, 422]
+    for response in responses:
+        detail = response.json()["detail"]
+        assert "Custom nodes cannot be exported" in detail
+        assert "despike (user.whitaker-hayes.despike)" in detail

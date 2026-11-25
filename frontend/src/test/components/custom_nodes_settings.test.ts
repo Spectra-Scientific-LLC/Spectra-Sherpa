@@ -46,6 +46,18 @@ describe('custom nodes settings', () => {
     wrapper.unmount();
   });
 
+  it('puts the box back when the change cannot be saved', async () => {
+    mocks.put.mockRejectedValue(new Error('Read-only .env'));
+    const wrapper = mount(CustomNodesSettingsSection);
+    await flushPromises();
+    const box = wrapper.get('input[name=custom_nodes_enabled]');
+    await box.setValue(false);
+    await flushPromises();
+    expect(wrapper.get('[role=alert]').text()).toBe('Could not change this setting.');
+    expect((box.element as HTMLInputElement).checked).toBe(true);
+    wrapper.unmount();
+  });
+
   it('shows nothing where custom nodes are unavailable', async () => {
     mocks.get.mockRejectedValue(new Error('Not found'));
     const wrapper = mount(CustomNodesSettingsSection);

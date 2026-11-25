@@ -3,7 +3,7 @@
     <h3>Custom nodes</h3>
     <p>Load your own Python functions as workflow nodes from your My nodes folder and from installed packages. You are responsible for the science of your nodes.</p>
     <label>
-      <input type="checkbox" :checked="state.enabled" :disabled="busy" name="custom_nodes_enabled" @change="toggle(($event.target as HTMLInputElement).checked)" />
+      <input type="checkbox" :checked="state.enabled" :disabled="busy" name="custom_nodes_enabled" @change="toggle($event.target as HTMLInputElement)" />
       Load custom nodes
     </label>
     <p>My nodes folder: <code>{{ state.folder }}</code></p>
@@ -57,15 +57,17 @@ async function load() {
   }
 }
 
-async function toggle(enabled: boolean) {
+async function toggle(input: HTMLInputElement) {
   if (busy.value) return;
   busy.value = true; error.value = '';
   try {
-    const { data } = await api.put<CustomNodesState>('/config/custom-nodes', { enabled });
+    const { data } = await api.put<CustomNodesState>('/config/custom-nodes', { enabled: input.checked });
     state.value = data;
   } catch {
     error.value = 'Could not change this setting.';
     await load();
+    // The bound value may not have changed, so put the clicked box back too.
+    input.checked = state.value?.enabled ?? !input.checked;
   } finally { busy.value = false; }
 }
 

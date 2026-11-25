@@ -346,10 +346,12 @@ def custom_node(
     ``random_seed="seed"`` to name an int seed parameter for a stochastic
     node, and ``timeout_seconds`` / ``memory_mb`` for heavier work.
     """
-    for option in unsupported:
+    for option, value in unsupported.items():
         reason = _UNSUPPORTED_OPT_INS.get(option)
         if reason is None:
             raise CustomNodeError(f"Unknown custom_node option {option!r}")
+        if value is False:
+            continue  # stating the default explicitly is fine
         raise CustomNodeError(f"{option}=True is not available in this release: {reason} are not supported yet.")
     if not isinstance(label, str) or not label.strip() or len(label) > 80:
         raise CustomNodeError("label must be 1 to 80 characters")
