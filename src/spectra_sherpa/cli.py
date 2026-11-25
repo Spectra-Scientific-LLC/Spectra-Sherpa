@@ -580,7 +580,23 @@ def main(argv: list[str] | None = None, *, _server_runner: Callable[..., None] |
     prewarm_parser.add_argument("--temperature-k", type=float, default=293.0, help="Temperature in K")
     prewarm_parser.add_argument("--pressure-atm", type=float, default=1.0, help="Pressure in atm")
 
+    nodes_parser = subparsers.add_parser("nodes", help="Check your own custom nodes before loading them")
+    nodes_subparsers = nodes_parser.add_subparsers(dest="nodes_command", required=True)
+    nodes_check = nodes_subparsers.add_parser(
+        "check", help="Load a custom-node source and run each node once on a bundled example dataset"
+    )
+    nodes_check.add_argument(
+        "source", help="A My nodes source folder, a .py file inside one, or an importable package module"
+    )
+
     args = parser.parse_args(argv)
+
+    if args.command == "nodes":
+        from spectra_sherpa.app.services.custom_nodes import check_source
+
+        passed, report = check_source(args.source)
+        print("\n".join(report))
+        raise SystemExit(0 if passed else 1)
 
     if args.command == "mcp":
         # Protocol stdout must never contain ordinary startup or .env warnings.

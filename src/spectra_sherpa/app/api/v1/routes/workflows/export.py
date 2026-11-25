@@ -21,7 +21,12 @@ from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.schemas.workflows import WorkflowPythonExportResponse
 from spectra_sherpa.app.services.export_store import save_jupyter_workflow_export, save_python_workflow_export
 from spectra_sherpa.app.services.notebook_export import generate_notebook
-from spectra_sherpa.app.services.python_export import build_canonical_executable_export, generate_python_code
+from spectra_sherpa.app.services.python_export import (
+    CustomNodeExportUnavailable,
+    build_canonical_executable_export,
+    generate_python_code,
+    refuse_custom_nodes,
+)
 from spectra_sherpa.app.services.workflow_export_context import WorkflowExportContext, build_workflow_export_context
 
 logger = logging.getLogger(__name__)
@@ -118,6 +123,7 @@ async def export_workflow_to_python(
         )
 
     try:
+        refuse_custom_nodes(workflow)
         export_context = await build_workflow_export_context(workflow, session, actor_user_id=user_id)
         python_code = generate_python_code(workflow, export_context=export_context)
         saved_path = save_python_workflow_export(workflow.id, workflow.name, python_code)
@@ -129,6 +135,8 @@ async def export_workflow_to_python(
             "saved_path": str(saved_path.relative_to(settings.data_dir)),
             "export_mode": "canonical_dag",
         }
+    except CustomNodeExportUnavailable as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
     except ValueError as e:
         # Unsupported node types or cycles — client-actionable error
         logger.info("Workflow %s Python export rejected: %s", workflow_id, e)
@@ -179,6 +187,7 @@ async def export_workflow_to_notebook(
         )
 
     try:
+        refuse_custom_nodes(workflow)
         export_context = await build_workflow_export_context(workflow, session, actor_user_id=user_id)
         notebook = generate_notebook(workflow, export_context=export_context)
         saved_path = save_jupyter_workflow_export(workflow.id, workflow.name, notebook)
@@ -190,6 +199,8 @@ async def export_workflow_to_notebook(
             "filename": f"{safe_name}_workflow.ipynb",
             "saved_path": str(saved_path.relative_to(settings.data_dir)),
         }
+    except CustomNodeExportUnavailable as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
     except ValueError as e:
         logger.info("Workflow %s notebook export rejected: %s", workflow_id, e)
         raise HTTPException(
@@ -258,8 +269,11 @@ async def download_workflow_export(
     safe_name = safe_download_stem(workflow.name, fallback="workflow", lowercase=True)
 
     try:
+        refuse_custom_nodes(workflow)
         export_context = await build_workflow_export_context(workflow, session, actor_user_id=user_id)
         python_code = generate_python_code(workflow, export_context=export_context)
+    except CustomNodeExportUnavailable as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
     except ValueError as e:
         logger.info("Workflow %s download export rejected: %s", workflow_id, e)
         raise HTTPException(

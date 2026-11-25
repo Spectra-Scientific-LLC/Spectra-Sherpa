@@ -20,5 +20,9 @@ Run `make evidence-check`; generation is never proof of qualification.
   affected workflow in Chrome and record dataset, workflow, node, port and outcome.
 - Use `python scripts/run_public_tests.py` for the standalone test profile.
   Do not remove failing gates or rewrite immutable historical evidence.
+- To turn a user's function into a node, follow the agent checklist in
+  [custom nodes](docs/developers/custom-nodes.md) and run
+  `spectra-sherpa nodes check <folder>`. For a first-party node, use
+  `make node-scaffold NAME=...` and [adding a node](docs/developers/adding-a-node.md).
 - Maintainer changes shared with the monorepo need linked OSS/monorepo PRs.
   Keep unrelated worktrees untouched. Do not merge without explicit approval.

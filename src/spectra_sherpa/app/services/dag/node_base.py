@@ -818,6 +818,7 @@ class NodeRegistry:
         self._composition: tuple[tuple[Any, ...], ...] = ()
         self._pack_manifests: tuple[PackManifest, ...] = ()
         self._pack_tools: tuple[Any, ...] = ()
+        self._custom_sources: tuple[dict[str, Any], ...] = ()
         self._composition_digest: str | None = None
         self._nodes: Dict[str, Type[Node]] = {}
         self._builtin_types: set[str] = set()
@@ -828,6 +829,51 @@ class NodeRegistry:
     def pack_manifests(self) -> tuple[PackManifest, ...]:
         self._ensure_ready()
         return self._pack_manifests
+
+    @property
+    def custom_sources(self) -> tuple[dict[str, Any], ...]:
+        """Identity of a local user's custom-node sources composed at startup."""
+        self._ensure_ready()
+        return self._custom_sources
+
+    def compose_local_custom_nodes(self, node_classes: tuple[Type[Node], ...], sources: list[dict[str, Any]]) -> None:
+        """Seal built-ins plus a local user's ``user.`` custom nodes, once, before any read.
+
+        Validation is staged; a refusal leaves the built-in catalog unsealed and
+        usable. Custom nodes can never replace a built-in operation.
+        """
+        import json
+
+        with self._lock:
+            if not self._managed_startup or self._startup_state != "pending" or self._builtin_active:
+                raise ValueError("Custom nodes must be composed at startup, before the catalog is read")
+            self._startup_state = "composing"
+            builtin_nodes = dict(self._nodes)
+        try:
+            staged = NodeRegistry()
+            for node_class in node_classes:
+                metadata = node_class.get_metadata()
+                if metadata.distribution != "user" or not metadata.node_type.startswith("user."):
+                    raise ValueError("Custom nodes must use the user distribution and user. operations")
+                staged.register(node_class)
+            if set(staged._nodes) & set(builtin_nodes):
+                raise ValueError("A custom node collides with an installed built-in")
+            identity = tuple(sources)
+            digest = hashlib.sha256(
+                json.dumps({"custom_nodes": list(identity)}, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            with self._lock:
+                self._nodes = {**builtin_nodes, **staged._nodes}
+                self._builtin_types = set(builtin_nodes)
+                self._custom_sources = identity
+                self._composition_digest = digest
+                self._frozen = True
+                self._startup_state = "frozen"
+        except BaseException:
+            with self._lock:
+                self._nodes = builtin_nodes
+                self._startup_state = "pending"
+            raise
 
     @property
     def composition_digest(self) -> str:

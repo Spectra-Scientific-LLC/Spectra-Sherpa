@@ -119,9 +119,13 @@ def preflight_workflow(
         try:
             metadata = node_registry.get_metadata(node.node_type)
         except KeyError:
-            result.issues.append(
-                PreflightIssue("error", "unknown_node_type", f"Unknown node type: {node.node_type}", node.node_id)
+            message = (
+                f"Custom node {node.node_type} is not loaded. Restore its source in your My nodes folder or "
+                "reinstall its package, turn on custom nodes in Settings, and restart."
+                if node.node_type.startswith("user.")
+                else f"Unknown node type: {node.node_type}"
             )
+            result.issues.append(PreflightIssue("error", "unknown_node_type", message, node.node_id))
             continue
         metadata_by_id[node.node_id] = metadata
         if metadata.execution_contract is None:

@@ -90,16 +90,17 @@ nav:
       - 11.9. Prediction Uncertainty: developers/prediction-uncertainty.md
       - 11.10. Scientific Query Admission: developers/scientific-query-admission.md
       - 11.11. Adding a Scientific Node: developers/adding-a-node.md
-      - 11.12. LLM Provider Extension: developers/llm-provider.md
-      - 11.13. SDK Validation Contract: developers/sdk-validation.md
-      - 11.14. Portable Workflow Contract: developers/sdk-workflow.md
-      - 11.15. Executable Workflow Capsules: developers/workflow-capsule.md
-      - 11.16. Public Reproducibility Benchmark: developers/public-benchmark.md
-      - 11.17. Protected Benchmark Governance: developers/protected-benchmark-governance.md
-      - 11.18. Testing and Release Hygiene: developers/testing-release.md
-      - 11.19. Windows Portability: developers/windows-portability.md
-      - 11.20. Windows and macOS Signing Runbook: developers/native-desktop-release.md
-      - 11.21. Ubuntu desktop release: developers/ubuntu-desktop-release.md
+      - 11.12. Custom Nodes: developers/custom-nodes.md
+      - 11.13. LLM Provider Extension: developers/llm-provider.md
+      - 11.14. SDK Validation Contract: developers/sdk-validation.md
+      - 11.15. Portable Workflow Contract: developers/sdk-workflow.md
+      - 11.16. Executable Workflow Capsules: developers/workflow-capsule.md
+      - 11.17. Public Reproducibility Benchmark: developers/public-benchmark.md
+      - 11.18. Protected Benchmark Governance: developers/protected-benchmark-governance.md
+      - 11.19. Testing and Release Hygiene: developers/testing-release.md
+      - 11.20. Windows Portability: developers/windows-portability.md
+      - 11.21. Windows and macOS Signing Runbook: developers/native-desktop-release.md
+      - 11.22. Ubuntu desktop release: developers/ubuntu-desktop-release.md
   - 12. Attributions:
       - Scientific and Software Attributions: attributions/index.md
       - 12.1. Scientific Python: attributions/scientific-python.md
