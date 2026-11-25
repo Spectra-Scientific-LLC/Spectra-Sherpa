@@ -14,11 +14,14 @@ from contextlib import aclosing
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 
 from spectra_sherpa.app.api.deps import get_current_user
 from spectra_sherpa.app.contracts.capabilities import CHAT_ASSISTANT
-from spectra_sherpa.app.services import basic_chat
+from spectra_sherpa.app.services import basic_chat, byok_reply
+from spectra_sherpa.app.services.byok_evidence import InspectionRefused, WorkbenchView, read_workbench_evidence
 from spectra_sherpa.app.services.chat_providers.base import ChatOutputLimitError
+from spectra_sherpa.app.services.inspection_grants import InspectionAccessDenied
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +56,7 @@ async def chat_stream(
             detail={
                 "code": "capability_unavailable",
                 "capability": CHAT_ASSISTANT,
-                "message": "BYO chat endpoint not configured. Check the provider, endpoint URL, and API key.",
+                "message": "Configure BYO Chat in Settings. Advanced setup can use environment variables.",
             },
         )
     user_key = f"user:{getattr(user, 'id', None) or 'anonymous'}"
@@ -64,6 +67,12 @@ async def chat_stream(
         )
 
     body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="Invalid chat request.")
+    try:
+        view = WorkbenchView.model_validate(body["workbench_view"]) if body.get("workbench_view") is not None else None
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="Invalid Workbench selection.") from exc
     message = body.get("message", "")
     if not message:
         raise HTTPException(
@@ -87,21 +96,71 @@ async def chat_stream(
         raise HTTPException(status_code=422, detail="max_tokens must be an integer from 1 to 4096.")
     metadata = body.get("metadata", None)
 
+    config = basic_chat.get_config() if view is not None else None
+
+    def _event(kind, **fields):
+        return f"data: {json.dumps({'type': kind, **fields})}\n\n"
+
     async def _generate():
+        options = {}
         try:
+            if view is not None:
+                from spectra_sherpa.app.db.session import async_session
+
+                if (view.screen == "results" and byok_reply.needs_pair(message)) or (
+                    view.screen == "compare" and view.run_ids is None
+                ):
+                    yield _event("facts", lines=[byok_reply.CHOOSE_PAIR])
+                    yield _event("done")
+                    return
+                evidence = await read_workbench_evidence(async_session, user.id, view)
+                if evidence.facts:
+                    await evidence.revalidate(async_session)
+                    facts = byok_reply.reply_facts(evidence)
+                    output_tokens = min(
+                        max_tokens or byok_reply.MAX_EXPLANATION_TOKENS, byok_reply.MAX_EXPLANATION_TOKENS
+                    )
+                    prompt = byok_reply.explanation_prompt(evidence, facts, message, output_tokens)
+                    if prompt is None:
+                        yield _event("facts", lines=[*facts, byok_reply.CONTEXT_TOO_SMALL])
+                        yield _event("done")
+                        return
+                    assert config is not None
+
+                    async def recheck():
+                        await evidence.revalidate(async_session)
+
+                    options = {
+                        "evidence_prompt": prompt,
+                        "expected_config": config,
+                        "before_disclosure": recheck,
+                    }
+                    yield _event("facts", lines=facts, provider=config.provider, model=config.model)
+                else:
+                    output_tokens = max_tokens
+            else:
+                output_tokens = max_tokens
             async with aclosing(
                 basic_chat.stream_chat(
                     message,
                     verbose=verbose,
                     max_paragraphs=max_paragraphs,
-                    metadata=metadata,
+                    metadata=metadata if view is None else None,
                     exchange_owner=user.id,
-                    max_tokens=max_tokens,
+                    max_tokens=output_tokens,
+                    **options,
                 )
             ) as stream:
                 async for chunk in stream:
                     yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except (InspectionRefused, InspectionAccessDenied) as exc:
+            detail = {
+                "privacy_denied": byok_reply.PRIVACY_BLOCKED,
+                "configuration_changed": byok_reply.CONFIG_CHANGED,
+            }.get(getattr(exc, "code", None), byok_reply.SCOPE_UNAVAILABLE)
+            yield _event("notice", text=detail)
+            yield _event("done")
         except ChatOutputLimitError:
             detail = "The model stopped at its output limit. Regenerate or ask a narrower question."
             yield f"data: {json.dumps({'type': 'error', 'detail': detail})}\n\n"

@@ -4,7 +4,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
 import { dispatchSherpaEvent } from "@/lib/sherpaEvents";
-import type { ConversationSummary, LlmMessage } from "@/types";
+import type { ByokView, ConversationSummary, LlmMessage } from "@/types";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
 import { useAuthStore } from "@/stores/auth";
@@ -37,6 +37,9 @@ function normalizeLlmMessages(raw: unknown): LlmMessage[] {
       id: typeof msg.id === "string" && msg.id ? msg.id : createMessageId("llm"),
       role: isLlmRole(msg.role) ? msg.role : "assistant",
       content: typeof msg.content === "string" ? msg.content : "",
+      ...(Array.isArray(msg.workbenchFacts) && msg.workbenchFacts.every(line => typeof line === "string")
+        ? { workbenchFacts: msg.workbenchFacts } : {}),
+      ...(typeof msg.modelAttribution === "string" ? { modelAttribution: msg.modelAttribution } : {}),
     };
   });
 }
@@ -779,8 +782,10 @@ export const useLlmStore = defineStore("llm", () => {
     });
   };
 
-  const sendMessage = async (message: string, metadata?: Record<string, unknown>) => {
-    metadata = { ...metadata, active_attention: attentionSnapshot() };
+  const sendMessage = async (
+    message: string, metadata?: Record<string, unknown>, workbenchView?: ByokView,
+  ) => {
+    if (isServerBacked.value) metadata = { ...metadata, active_attention: attentionSnapshot() };
     if (!message.trim()) {
       return;
     }
@@ -811,7 +816,13 @@ export const useLlmStore = defineStore("llm", () => {
           method: "POST",
           headers: getRequestHeaders(authStore.token),
           signal: controller.signal,
-          body: JSON.stringify({ message, metadata: metadata || null, verbose: currentConfig.value?.verbose ?? true, max_paragraphs: currentConfig.value?.max_paragraphs ?? 2 }),
+          body: JSON.stringify({
+            message,
+            metadata: workbenchView ? null : metadata || null,
+            ...(workbenchView ? { workbench_view: workbenchView } : {}),
+            verbose: currentConfig.value?.verbose ?? true,
+            max_paragraphs: currentConfig.value?.max_paragraphs ?? 2,
+          }),
         });
 
         if (!response.ok) {
@@ -841,6 +852,17 @@ export const useLlmStore = defineStore("llm", () => {
             if (lastMessage?.role === "assistant") {
               lastMessage.content += text;
             }
+          } else if (payload.type === "facts" || payload.type === "notice") {
+            const lastMessage = messages.value[messages.value.length - 1];
+            if (lastMessage?.role !== "assistant") continue;
+            if (payload.type === "notice" && typeof payload.text === "string") {
+              lastMessage.workbenchFacts = [...(lastMessage.workbenchFacts ?? []), payload.text];
+            } else if (Array.isArray(payload.lines) && payload.lines.every(line => typeof line === "string")) {
+              lastMessage.workbenchFacts = payload.lines;
+              if (typeof payload.provider === "string" && typeof payload.model === "string") {
+                lastMessage.modelAttribution = `Model explanation · ${payload.provider} · ${payload.model}`;
+              }
+            }
           } else if (payload.type === "error") {
             throw new Error(
               typeof payload.detail === "string"
@@ -863,7 +885,9 @@ export const useLlmStore = defineStore("llm", () => {
             ? error.message
             : "Unable to reach the configured chat endpoint.";
         const lastMessage = messages.value[messages.value.length - 1];
-        if (lastMessage?.role === "assistant") {
+        if (lastMessage?.role === "assistant" && lastMessage.workbenchFacts) {
+          lastMessage.workbenchFacts.push(detail);
+        } else if (lastMessage?.role === "assistant") {
           lastMessage.content = detail;
         } else {
           messages.value.push(createLlmMessage("assistant", detail));

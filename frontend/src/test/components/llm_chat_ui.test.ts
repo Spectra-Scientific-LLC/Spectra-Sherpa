@@ -422,7 +422,7 @@ describe("ChatPanel", () => {
     const wrapper = mountWithUiStubs(ChatPanel);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, or configure BYO Chat in Settings.");
+    expect(wrapper.text()).toContain("Configure BYO Chat in Settings. Advanced setup uses CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY.");
     expect(wrapper.find(".setup-link").exists()).toBe(false);
   });
 
@@ -491,7 +491,7 @@ describe("ChatPanel", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("Chat access is disabled in Settings > Data & Privacy.");
-    expect(wrapper.text()).not.toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, or configure BYO Chat in Settings.");
+    expect(wrapper.text()).not.toContain("Configure BYO Chat in Settings. Advanced setup uses CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY.");
   });
 
   it("shows only Sherpa Advisor in demo mode when Sherpa is available", async () => {

@@ -221,8 +221,8 @@
                 <div v-else-if="!llmChatEnabled && appMode === 'local'" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
                   <span
-                    >Set <code>CHAT_ENDPOINT_URL</code> and <code>CHAT_ENDPOINT_KEY</code> in your
-                    environment, or configure BYO Chat in Settings.</span
+                    >Configure BYO Chat in Settings. Advanced setup uses
+                    <code>CHAT_ENDPOINT_URL</code> and <code>CHAT_ENDPOINT_KEY</code>.</span
                   >
                 </div>
                 <div v-else-if="!llmChatEnabled" class="no-key-notice">
@@ -247,8 +247,14 @@
                       v-else-if="message.role === 'assistant'"
                       class="chat-bubble chat-bubble--md"
                     >
-                      <ChatMarkdown :source="message.content" :supplier="llmSupplier" />
-                      <FollowUpChips :suggestions="splitFollowUps(message.content).suggestions" @select="sendLlmFollowUp" />
+                      <div v-if="message.workbenchFacts?.length" class="byok-facts">
+                        <p v-for="(line, index) in message.workbenchFacts" :key="index">{{ line }}</p>
+                      </div>
+                      <template v-if="message.content">
+                        <strong v-if="message.modelAttribution">{{ message.modelAttribution }}</strong>
+                        <ChatMarkdown :source="message.content" :supplier="llmSupplier" />
+                        <FollowUpChips v-if="!message.workbenchFacts" :suggestions="splitFollowUps(message.content).suggestions" @select="sendLlmFollowUp" />
+                      </template>
                     </div>
                     <div v-else class="chat-bubble">{{ message.content }}</div>
                   </div>
@@ -427,6 +433,10 @@ import { useSherpaStore } from "@/stores/sherpa";
 import { useExperimentStore } from "@/stores/experiment";
 import { useWorkflowStore } from "@/stores/workflow";
 import { useProjectStore } from "@/stores/project";
+import { useDataStore } from "@/stores/data";
+import { useRunsStore } from "@/stores/runs";
+import { attentionSnapshot } from "@/lib/sherpaAttention";
+import type { ByokView } from "@/types";
 import { useAuthStore } from "@/stores/auth";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useProjectAvailability } from "@/composables/useProjectAvailability";
@@ -1183,6 +1193,12 @@ const sendMessage = async () => {
     return;
   }
 
+  if (appMode.value === "local") {
+    await store.sendMessage(userMessage.value, undefined, captureByokView());
+    userMessage.value = "";
+    return;
+  }
+
   const metadata: Record<string, unknown> = {};
   // Product mode is disclosure-led. Broad experiment and local-project
   // objects are valid only for the ordinary in-process chat path.
@@ -1216,6 +1232,34 @@ const sendMessage = async () => {
   );
   userMessage.value = "";
 };
+
+function captureByokView(): ByokView | undefined {
+  const project_id = projectStore.currentProjectId;
+  if (project_id == null) return;
+  if (route.path === "/data" && route.query.tab === "my-dataset") {
+    const data = useDataStore();
+    const dataset_id = data.fileInfoLoading ? undefined : data.fileInfo?.dataset_id;
+    return { screen: "dataset", project_id, dataset_id };
+  }
+  if (route.path === "/workflow") {
+    const workflow_id = workflowStore.workflowId ?? undefined;
+    return { screen: "workflow", project_id, workflow_id };
+  }
+  if (route.path === "/runs" && route.query.tab === "compare") {
+    const runs = useRunsStore();
+    const displayed = runs.comparison?.runs.map(run => run.id) ?? [];
+    const [left, right] = displayed;
+    const run_ids: [number, number] | undefined =
+      displayed.length === 2 && runs.selectedRunIds.size === 2
+        && runs.selectedRunIds.has(left) && runs.selectedRunIds.has(right) ? [left, right] : undefined;
+    return { screen: "compare", project_id, run_ids };
+  }
+  if (route.params.runId && route.path.startsWith("/runs/")) {
+    const focus = attentionSnapshot();
+    const run_id = focus.run_id === Number(route.params.runId) ? focus.run_id : undefined;
+    return { screen: "results", project_id, run_id };
+  }
+}
 
 const sendLlmFollowUp = async (suggestion: string) => {
   if (llmBusy.value) return;
@@ -1844,6 +1888,14 @@ const collapsed = computed(() => props.collapsed);
   border-color: var(--ss-warning-border);
   background: var(--ss-warning-surface);
   color: var(--ss-warning);
+}
+
+.byok-facts {
+  margin-bottom: 0.5rem;
+}
+
+.byok-facts p {
+  margin: 0.25rem 0;
 }
 
 .chat-messages {

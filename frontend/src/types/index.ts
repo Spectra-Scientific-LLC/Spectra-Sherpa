@@ -312,10 +312,18 @@ export interface NistLibraryEntry {
 
 export type JobInfo = components["schemas"]["JobInfo"];
 
+export type ByokView =
+  | { project_id: number; screen: "dataset"; dataset_id?: string }
+  | { project_id: number; screen: "workflow"; workflow_id?: number }
+  | { project_id: number; screen: "results"; run_id?: number }
+  | { project_id: number; screen: "compare"; run_ids?: [number, number] };
+
 export interface LlmMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  workbenchFacts?: string[];
+  modelAttribution?: string;
 }
 
 export interface ConversationSummary {

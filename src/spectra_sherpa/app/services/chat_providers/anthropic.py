@@ -50,6 +50,10 @@ class AnthropicMessagesProvider:
             "messages": [{"role": "user", "content": request.message}],
             "stream": stream,
         }
+        if request.bounded_explanation and config.model == "claude-haiku-5-5":
+            # Haiku 5.5 defaults to adaptive thinking, which can exhaust a
+            # short explanation budget before producing any user-visible text.
+            body["thinking"] = {"type": "disabled"}
         system_prompts: list[str] = [request.system_prompt] if request.system_prompt else []
         if not request.verbose:
             count = max(1, request.max_paragraphs)
