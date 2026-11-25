@@ -557,6 +557,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/config/custom-nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Custom Nodes Config
+         * @description Local custom-node switch, My nodes folder and what loaded at startup.
+         */
+        get: operations["get_custom_nodes_config_api_v1_config_custom_nodes_get"];
+        /**
+         * Set Custom Nodes Config
+         * @description Turn custom nodes on or off in .env; the change applies on restart.
+         */
+        put: operations["set_custom_nodes_config_api_v1_config_custom_nodes_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/config/llms": {
         parameters: {
             query?: never;
@@ -5669,6 +5693,11 @@ export interface components {
              */
             stage?: "raw" | "preprocessed" | "synthetic";
             target_authority?: components["schemas"]["TargetAuthority"] | null;
+        };
+        /** CustomNodesConfigRequest */
+        CustomNodesConfigRequest: {
+            /** Enabled */
+            enabled: boolean;
         };
         /**
          * DataBindingSpec
@@ -11800,6 +11829,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ByoChatConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_custom_nodes_config_api_v1_config_custom_nodes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_custom_nodes_config_api_v1_config_custom_nodes_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomNodesConfigRequest"];
             };
         };
         responses: {

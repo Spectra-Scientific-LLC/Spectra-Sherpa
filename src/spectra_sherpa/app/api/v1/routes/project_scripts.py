@@ -24,7 +24,11 @@ from spectra_sherpa.app.schemas.project_scripts import (
     ProjectScriptSummary,
     ProjectScriptUpdate,
 )
-from spectra_sherpa.app.services.python_export import generate_python_code
+from spectra_sherpa.app.services.python_export import (
+    CustomNodeExportUnavailable,
+    generate_python_code,
+    refuse_custom_nodes,
+)
 from spectra_sherpa.app.services.workflow_export_context import build_workflow_export_context
 
 logger = logging.getLogger(__name__)
@@ -158,12 +162,15 @@ async def generate_script(
 
     # Generate Python code
     try:
+        refuse_custom_nodes(workflow)
         export_context = await build_workflow_export_context(
             workflow,
             session,
             actor_user_id=current_user.id,
         )
         code = generate_python_code(workflow, export_context=export_context)
+    except CustomNodeExportUnavailable as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
     except Exception:
         raise HTTPException(
             status_code=422,

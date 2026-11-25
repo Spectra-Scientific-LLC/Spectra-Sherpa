@@ -17,6 +17,12 @@ try:
 except (ImportError, AttributeError):
     pass
 
+# A local user's custom nodes must join the node catalog before any import
+# below seals it. This is a no-op unless they are turned on in local mode.
+from spectra_sherpa.app.services import custom_nodes as _custom_nodes
+
+_custom_nodes.initialize_custom_nodes()
+
 from fastapi import APIRouter, FastAPI, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -788,6 +794,10 @@ def create_app(
     """
     origins = get_cors_origins()
     _allow_all = origins == ["*"]
+
+    if worker_initializer is None:
+        # Spawned workers must rebuild any composed custom-node sources.
+        worker_initializer = _custom_nodes.worker_initializer()
 
     mounts = _normalize_router_mounts(extra_routers)
 

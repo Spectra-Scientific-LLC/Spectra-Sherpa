@@ -89,11 +89,13 @@
     </div>
 
     <InspectionSettingsSection v-if="appMode === 'local' && !appConfig?.desktop" />
+    <CustomNodesSettingsSection v-if="appMode === 'local' && !appConfig?.desktop && !privacyOnly" />
   </div>
 </template>
 <script setup lang="ts">
 import axios from 'axios';
 import InspectionSettingsSection from './InspectionSettingsSection.vue';
+import CustomNodesSettingsSection from './CustomNodesSettingsSection.vue';
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import api from '@/api/client';
 import { useAppConfig } from '@/composables/useAppConfig';

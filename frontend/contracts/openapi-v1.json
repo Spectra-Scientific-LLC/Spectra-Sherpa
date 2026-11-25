@@ -3246,6 +3246,19 @@
         "title": "CurationSource",
         "type": "object"
       },
+      "CustomNodesConfigRequest": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "CustomNodesConfigRequest",
+        "type": "object"
+      },
       "DataBindingSpec": {
         "additionalProperties": false,
         "description": "Template data binding supplied at instantiation time.",
@@ -18618,6 +18631,82 @@
           }
         ],
         "summary": "Test Byo Chat Config",
+        "tags": [
+          "config",
+          "config"
+        ]
+      }
+    },
+    "/api/v1/config/custom-nodes": {
+      "get": {
+        "description": "Local custom-node switch, My nodes folder and what loaded at startup.",
+        "operationId": "get_custom_nodes_config_api_v1_config_custom_nodes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Get Custom Nodes Config",
+        "tags": [
+          "config",
+          "config"
+        ]
+      },
+      "put": {
+        "description": "Turn custom nodes on or off in .env; the change applies on restart.",
+        "operationId": "set_custom_nodes_config_api_v1_config_custom_nodes_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomNodesConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          },
+          {
+            "UserAPIKeyHeader": []
+          }
+        ],
+        "summary": "Set Custom Nodes Config",
         "tags": [
           "config",
           "config"

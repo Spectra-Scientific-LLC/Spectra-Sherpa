@@ -321,10 +321,13 @@ def validate_workflow(
         for edge in edges
     ]
 
+    # Assistant proposals never place a local user's own custom node.
     if any(
         isinstance(node["node_type"], str)
-        and node["node_type"].startswith("pro.")
-        and node["node_type"] not in qualified_pack_nodes
+        and (
+            node["node_type"].startswith("user.")
+            or (node["node_type"].startswith("pro.") and node["node_type"] not in qualified_pack_nodes)
+        )
         for node in normalized_nodes
     ):
         return {

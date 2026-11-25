@@ -29,6 +29,29 @@ if TYPE_CHECKING:
     from spectra_sherpa.app.services.workflow_export_context import BundledSourceFile, WorkflowExportContext
 
 
+class CustomNodeExportUnavailable(ValueError):
+    """A workflow uses a local user's own custom node, which cannot be exported yet.
+
+    Its message names the nodes and is safe to show: it carries only node ids
+    and the user's own node types.
+    """
+
+
+def refuse_custom_nodes(workflow: Workflow) -> None:
+    """Refuse executable export of local ``user.*`` custom nodes, naming each one."""
+    custom = [
+        f"{node.node_id} ({node.node_type})"
+        for node in getattr(workflow, "nodes", ()) or ()
+        if str(getattr(node, "node_type", "")).startswith("user.")
+    ]
+    if custom:
+        raise CustomNodeExportUnavailable(
+            "Custom nodes cannot be exported to Python or a notebook in this release: "
+            + ", ".join(sorted(custom))
+            + ". Export the project (.sherpa) instead, or replace them with built-in nodes."
+        )
+
+
 @dataclass(frozen=True)
 class ExportValidationError:
     """Describe why a workflow cannot become a self-contained executable."""
@@ -178,6 +201,7 @@ def build_canonical_executable_export(
     current registry through :func:`workflow_spec`.
     """
 
+    refuse_custom_nodes(workflow)
     if getattr(workflow, "fold_validation_plan", None) is not None:
         raise ValueError(
             "Executable code export cannot preserve the sheet validation plan; export its .sherpa project instead."
@@ -599,9 +623,11 @@ def generate_notebook_module_code(
 __all__ = [
     "BundledSourceBinding",
     "CanonicalExecutableExport",
+    "CustomNodeExportUnavailable",
     "ExportValidationError",
     "build_canonical_executable_export",
     "generate_notebook_module_code",
     "generate_python_code",
+    "refuse_custom_nodes",
     "validate_export",
 ]

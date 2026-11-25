@@ -66,8 +66,8 @@ fmt:             ## Auto-format backend (black + ruff) and frontend (prettier)
 	poetry run ruff check --fix src/ tests/
 	cd frontend && npx prettier --write "src/**/*.{ts,vue,css}"
 
-node-scaffold:   ## Generate boilerplate for a new processing node (interactive)
-	poetry run python scripts/scaffold_node.py
+node-scaffold:   ## New first-party node; NAME=MovingMedianNode [CATEGORY=preprocessing] [TYPE=contract] runs without prompts
+	poetry run python scripts/scaffold_node.py $(if $(NAME),--name $(NAME) --category $(or $(CATEGORY),preprocessing) --type $(or $(TYPE),contract),)
 
 generate-types:  ## Generate TypeScript types from OpenAPI schema
 	cd frontend && npm run generate:types
