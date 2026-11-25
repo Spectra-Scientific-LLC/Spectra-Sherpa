@@ -226,7 +226,9 @@ Workbench compiles each custom-node file from the exact bytes it records,
 never from cached bytecode. Editing a node, adding a source or turning custom
 nodes off takes effect on restart, like an upgrade. Until then every run,
 including runs in spawned workers, uses exactly the code that loaded at
-startup, so earlier and later runs each record the code they used.
+startup, so earlier and later runs each record the code they used. A package's
+Python helpers also come from the startup snapshot, including helpers first
+imported during a run.
 
 If a saved workflow uses a custom node whose source is missing, the workflow
 check names the node and tells you to restore the folder or package, turn on

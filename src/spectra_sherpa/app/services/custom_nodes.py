@@ -435,10 +435,14 @@ class _SourceBytesLoader(importlib.machinery.SourceFileLoader):
     bytes, so the execution-contract digest also names the code that ran.
     """
 
+    def __init__(self, fullname: str, filename: str, source: bytes | None = None):
+        super().__init__(fullname, filename)
+        self.source = source
+
     def get_code(self, fullname: str):
         filename = self.get_filename(fullname)
         path = Path(filename).resolve()
-        data = _FROZEN.get(path)
+        data = self.source if self.source is not None else _FROZEN.get(path)
         if data is None:
             data = self.get_data(filename)
         _SOURCE_BYTES[path] = data
@@ -481,6 +485,43 @@ class _SourceBytesFinder(importlib.abc.MetaPathFinder):
             return None
         spec.loader = _SourceBytesLoader(fullname, spec.origin)
         return spec
+
+
+class _FrozenPackageFinder(importlib.abc.MetaPathFinder):
+    """Serve only the inventoried Python modules of one custom-node package."""
+
+    def __init__(self, name: str, root: Path, sources: dict[str, bytes]):
+        self.name = name
+        self.root = root
+        self.sources = sources
+        self.directories = {parent for path in sources for parent in Path(path).parents}
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == self.name:
+            stem = self.root
+        elif fullname.startswith(f"{self.name}."):
+            stem = self.root.joinpath(*fullname[len(self.name) + 1 :].split("."))
+        else:
+            return None
+
+        package = stem / "__init__.py"
+        module = stem.with_suffix(".py")
+        for source, is_package in ((package, True), (module, False)):
+            if str(source) in self.sources:
+                loader = _SourceBytesLoader(fullname, str(source), self.sources[str(source)])
+                locations = [str(stem)] if is_package else None
+                return importlib.util.spec_from_file_location(
+                    fullname, source, loader=loader, submodule_search_locations=locations
+                )
+        if stem in self.directories:
+            spec = importlib.machinery.ModuleSpec(fullname, loader=None, is_package=True)
+            spec.submodule_search_locations = [str(stem)]
+            return spec
+        raise ModuleNotFoundError(f"{fullname} is absent from the custom-node startup snapshot", name=fullname)
+
+
+def _install_package_snapshot(module_name: str, root: Path, sources: dict[str, bytes]) -> None:
+    sys.meta_path.insert(0, _FrozenPackageFinder(module_name.split(".", 1)[0], root, sources))
 
 
 def _import_package_module(module_name: str) -> ModuleType:
@@ -627,11 +668,15 @@ def _package_candidates() -> tuple[list[_Candidate], list[SourceStatus]]:
 
 
 def _load_package(module_name: str, candidate: _Candidate) -> list[ModuleType]:
-    module = _import_package_module(module_name)
+    module = (
+        importlib.import_module(module_name) if candidate.frozen is not None else _import_package_module(module_name)
+    )
     location = getattr(module, "__file__", None)
     if not location:
         raise CustomNodeError(f"{module_name} has no source file")
-    candidate.root = Path(location).resolve().parent
+    if candidate.frozen is None:
+        top = sys.modules[module_name.split(".", 1)[0]]
+        candidate.root = Path(next(iter(top.__path__))).resolve()
     candidate.modules = [module]
     return [module]
 
@@ -644,6 +689,7 @@ class _Composed:
     files: int
     nodes: tuple[type, ...]
     inventory: tuple[Any, ...] = ()
+    package_sources: dict[str, bytes] = field(default_factory=dict)
 
     def identity(self, kind: str) -> dict[str, Any]:
         return {
@@ -699,7 +745,18 @@ def _compose(candidate: _Candidate) -> _Composed:
         if candidate.frozen is None:
             _require_inventoried_source(node_class, candidate.root, inventory)
         staged.register(node_class)
-    return _Composed(candidate.source, version, build, len(files), nodes, files)
+    package_sources = {}
+    if candidate.module_name is not None and candidate.frozen is None:
+        for item in files:
+            path = candidate.root / item.path
+            if path.suffix == ".py":
+                data = path.read_bytes()
+                if hashlib.sha256(data).hexdigest() != item.sha256:
+                    raise CustomNodeError(
+                        f"{item.path} changed while it was loading; restart to load the saved version"
+                    )
+                package_sources[str(path)] = data
+    return _Composed(candidate.source, version, build, len(files), nodes, files, package_sources)
 
 
 def compose_sources(candidates: list[_Candidate]) -> tuple[list[tuple[_Candidate, _Composed]], list[SourceStatus]]:
@@ -765,6 +822,9 @@ def _compose_enabled_sources() -> list[SourceStatus]:
         try:
             _register(composed)
             _snapshot = tuple(_snapshot_entry(candidate, result) for candidate, result in composed)
+            for candidate, result in composed:
+                if candidate.module_name is not None:
+                    _install_package_snapshot(candidate.module_name, candidate.root, result.package_sources)
         except Exception as exc:
             logger.error("Custom nodes could not be composed: %s", exc)
             message = f"Custom nodes could not be loaded: {exc}"[:500]
@@ -801,7 +861,11 @@ def _snapshot_entry(candidate: _Candidate, result: _Composed) -> dict[str, Any]:
         "module_files": [str(Path(module.__file__).resolve()) for module in candidate.modules],
         "files": [(item.path, item.sha256) for item in result.inventory],
         "build_sha256": result.build_sha256,
-        "bytes": {str(path): data for path, data in _SOURCE_BYTES.items() if path.is_relative_to(root)},
+        "bytes": (
+            result.package_sources
+            if candidate.module_name is not None
+            else {str(path): data for path, data in _SOURCE_BYTES.items() if path.is_relative_to(root)}
+        ),
     }
 
 
@@ -826,6 +890,7 @@ def _initialize_worker_from_snapshot(snapshot: tuple[dict[str, Any], ...]) -> No
                 candidate = _Candidate(entry["source"], "package", entry["location"], entry["version"], Path("."))
                 candidate.module_name = entry["module_name"]
                 candidate.load_modules = functools.partial(_load_package, entry["module_name"], candidate)
+                _install_package_snapshot(entry["module_name"], Path(entry["root"]), entry["bytes"])
             candidate.frozen = entry
             candidate.root = Path(entry["root"])
             candidates.append(candidate)

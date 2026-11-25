@@ -690,6 +690,64 @@ def test_spawned_workers_run_the_startup_code_after_edits_and_a_changed_setting(
     assert report == {"different_process": True, "same": True}
 
 
+def test_lazy_package_imports_use_the_startup_source_in_host_and_worker(tmp_path):
+    package = tmp_path / "lab_nodes"
+    _distribution(tmp_path, package)
+    (package / "despike.py").write_text(textwrap.dedent("""
+            from spectra_sherpa.sdk.custom import Spectra, custom_node
+
+            @custom_node(label="Lazy helper")
+            def despike(spectra: Spectra) -> Spectra:
+                from .helper import OFFSET
+
+                return spectra.with_values(spectra.values * 0 + OFFSET)
+        """))
+    (package / "helper.py").write_text("OFFSET = 1\n")
+    report = _app_process(
+        tmp_path,
+        """
+        import asyncio, json, sys
+        from pathlib import Path
+
+        import spectra_sherpa.app.main
+        from spectra_sherpa.app.services import custom_nodes
+        from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+        from tests.custom_node_worker import run_despike
+
+        assert "lab_nodes.helper" not in sys.modules
+        Path("lab_nodes/helper.py").write_text("OFFSET = 2\\n")
+        Path("lab_nodes/added.py").write_text("OFFSET = 3\\n")
+        try:
+            import lab_nodes.added
+        except ModuleNotFoundError as exc:
+            assert exc.name == "lab_nodes.added"
+        else:
+            raise AssertionError("A source added after startup was imported")
+
+        node_type = "user.lab-nodes.despike"
+        local = run_despike(node_type)
+        Path("lab_nodes/helper.py").unlink()
+
+        async def main():
+            pool = IsolatedWorkerPool(1, initializer=custom_nodes.worker_initializer())
+            try:
+                async with pool.workflow():
+                    return await pool.run(run_despike, node_type, timeout=60)
+            finally:
+                pool.shutdown()
+
+        remote = asyncio.run(main())
+        print(json.dumps({
+            "different_process": remote[0] != local[0],
+            "host": local[1][0][0],
+            "worker": remote[1][0][0],
+        }))
+        """,
+        APP_MODE="local",
+    )
+    assert report == {"different_process": True, "host": 1.0, "worker": 1.0}
+
+
 # ── Export (custom nodes are not exportable in this release) ──────────────
 
 
