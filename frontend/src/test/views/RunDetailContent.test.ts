@@ -463,6 +463,7 @@ describe("Persistent run inspection", () => {
   it('lists applied predictions by the sample IDs of the input saved with the run, and names trust rows by them too', async () => {
     const original = get.getMockImplementation()!;
     let withTrust = false;
+    let withGap = false;
     get.mockImplementation(async (url: string) => {
       if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture), run: { ...fixture.run, run_kind: 'batch_inference' }, evidence: { qualification: 'qualified', outputs: {
         __workflow__: { definition: { state: 'exact', storage: 'file' } },
@@ -479,7 +480,7 @@ describe("Persistent run inspection", () => {
           { node_id: 'file_0::model', node_type: 'model.load_apply', label: 'Saved model', parameters: {} },
         ], edges: [{ from_node_id: 'file_0::input', from_output: 'default', to_node_id: 'file_0::model', to_input: 'X_new' }],
       } } };
-      if (url.endsWith('/file_0%3A%3Amodel/result')) return { data: { value: [[8.61], [8.9], [9.25]] } };
+      if (url.endsWith('/file_0%3A%3Amodel/result')) return { data: { value: [[8.61], [withGap ? null : 8.9], [9.25]] } };
       // The input saved with the run declares its rows' sample IDs.
       if (url.endsWith('/file_0%3A%3Ainput/default')) return { data: { value: {
         type: 'SherpaDataset', data: [[0.1], [0.2], [0.3]],
@@ -500,7 +501,22 @@ describe("Persistent run inspection", () => {
     await table.get('button').trigger('click');
     expect(downloadCsv).toHaveBeenCalledWith(
       [['Sample', 'Predicted'], ['corn-mp5-001', 8.61], ['corn-mp5-002', 8.9], ['corn-mp5-003', 9.25]], expect.any(String));
+    // The predictions plot still comes first; the table follows it.
+    const plot = plain.wrapper.find('.saved-plot');
+    expect(plot.exists()).toBe(true);
+    expect(plot.element.compareDocumentPosition(table.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     plain.wrapper.unmount();
+    // A missing prediction is shown and exported as missing, never as 0.
+    withGap = true;
+    (downloadCsv as any).mockClear?.();
+    const gap = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
+    const gapTable = gap.wrapper.get('[aria-label="Predictions by sample"]');
+    expect(gapTable.findAll('tbody tr')[1].text()).toBe('corn-mp5-002—');
+    await gapTable.get('button').trigger('click');
+    expect(downloadCsv).toHaveBeenLastCalledWith(
+      [['Sample', 'Predicted'], ['corn-mp5-001', 8.61], ['corn-mp5-002', ''], ['corn-mp5-003', 9.25]], expect.any(String));
+    gap.wrapper.unmount();
+    withGap = false;
     withTrust = true;
     const trusted = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
     const trust = trusted.wrapper.get('[aria-label="Saved prediction trust"]');
@@ -615,6 +631,35 @@ describe("Persistent run inspection", () => {
     expect(wrapper.findAll('[aria-label="Validation ledger"]')).toHaveLength(1);
     expect(wrapper.find('.saved-value').exists()).toBe(false);
     expect(wrapper.findComponent({ name: 'QuickPlotModal' }).exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it.each([9, null] as const)('reads an automatic fitted LV count from the produced model when the curve was not saved (%s)', async (recorded) => {
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture),
+        run: { ...fixture.run, produced_artifact_uids: ['pls-auto'] },
+        params_snapshot: { model_1: { component_fit_mode: 'one_standard_error', n_components: 15 } },
+        evidence: { qualification: 'qualified', outputs: {
+          __workflow__: { definition: { state: 'exact', storage: 'file' } },
+          model_1: { component_curve: { state: 'missing', reason: 'Output exceeded the configured limit.' } },
+        } } } };
+      if (url.endsWith('/__workflow__/definition')) return { data: { value: { schema_version: 1, nodes: [
+        { node_id: 'model_1', node_type: 'model.fitted_pls', label: 'Train PLS', parameters: { component_fit_mode: 'one_standard_error' } },
+      ], edges: [] } } };
+      if (url === '/models/pls-auto') return { data: recorded == null ? {} : { n_components: recorded } };
+      return { data: { value: null } };
+    });
+    const { wrapper } = await open('?project=1&view=Summary');
+    const card = wrapper.get('[aria-label="Model summary"]');
+    if (recorded == null) {
+      expect(card.text()).toContain('fitted count not saved');
+      expect(wrapper.get('.summary-error').text()).toContain('model_1/component_curve');
+    } else {
+      expect(card.text()).toContain('9 latent variables');
+      expect(card.text()).not.toContain('fitted count not saved');
+      // The model record answered what the curve would have; no gap is reported for it.
+      expect(wrapper.find('.summary-error').exists()).toBe(false);
+    }
     wrapper.unmount();
   });
 

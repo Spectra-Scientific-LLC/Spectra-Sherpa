@@ -44,7 +44,8 @@
         />
         <SampleMetadataStyleControls
           v-if="metadataGrouping.kind === 'valid' || numericColumns.length"
-          v-model:color-value="sampleColorField"
+          :color-value="sampleColorField"
+          @update:color-value="chooseSampleColor"
           v-model:style-value="sampleLineField"
           :color-options="sampleColorOptions"
           :style-options="sampleLineOptions"
@@ -218,8 +219,14 @@ const selectedFeatureLabels = ref(PRIMARY_AXIS_SET);
 const selectedFeatureTitle = ref(PRIMARY_AXIS_SET);
 const selectedSampleLabels = ref(PRIMARY_AXIS_SET);
 const sampleColorField = ref("__none__");
+// Only a choice made in the colour control stops the target default; this panel's own
+// defaults and resets do not.
 let colorChosenByUser = false;
-watch(sampleColorField, (_value, previous) => { if (previous !== undefined) colorChosenByUser = true; }, { flush: "sync" });
+let automaticColor: string | null = null;
+function chooseSampleColor(value: string): void {
+  colorChosenByUser = true;
+  sampleColorField.value = value;
+}
 const sampleLineField = ref("__none__");
 const FEATURE_TABLE_ROW_LIMIT = computed(() => displayPreferences.maxRows);
 const FEATURE_TABLE_COLUMN_LIMIT = 32;
@@ -473,8 +480,8 @@ function preserveChoice(current: { value: string }, options: Array<{ value: stri
 }
 
 watch(
-  [featureAxisState, sampleAxisState, sampleColorOptions, sampleLineOptions],
-  ([feature, sample, colors, lines]) => {
+  [featureAxisState, sampleAxisState, sampleColorOptions, sampleLineOptions, () => props.targetName],
+  ([feature, sample, colors, lines, target]) => {
     if (feature.kind === "valid") {
       preserveChoice(selectedFeatureScale, feature.scaleOptions);
       preserveChoice(selectedFeatureLabels, feature.labelOptions);
@@ -483,9 +490,16 @@ watch(
     if (sample.kind === "valid") preserveChoice(selectedSampleLabels, sample.labelOptions);
     preserveChoice(sampleColorField, colors);
     // Colour by the modelling target by default, so the spectra show how the response varies.
-    if (sampleColorField.value === "__none__" && !colorChosenByUser && props.targetName
-      && colors.some((option) => option.value === `${GRADIENT}${props.targetName}`)) {
-      sampleColorField.value = `${GRADIENT}${props.targetName}`;
+    // It follows a changed target until the user picks a colour themselves.
+    if (!colorChosenByUser && (sampleColorField.value === "__none__" || sampleColorField.value === automaticColor)) {
+      const wanted = target ? `${GRADIENT}${target}` : null;
+      if (wanted && colors.some((option) => option.value === wanted)) {
+        sampleColorField.value = wanted;
+        automaticColor = wanted;
+      } else if (automaticColor && sampleColorField.value === automaticColor) {
+        sampleColorField.value = "__none__";
+        automaticColor = null;
+      }
     }
     preserveChoice(sampleLineField, lines);
   },

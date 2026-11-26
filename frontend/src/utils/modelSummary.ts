@@ -115,7 +115,11 @@ export interface PlsdaComponentSelectionSummary {
 }
 
 export interface ModelSummary {
-  model: { nodeId: string; method: string; label: string; settings: Array<[string, string]> } | null;
+  model: {
+    nodeId: string; method: string; label: string; settings: Array<[string, string]>;
+    /** Automatic component choice whose fitted count this run did not record. */
+    componentCountMissing?: boolean;
+  } | null;
   preprocessing: string[];
   regression: RegressionStatistics[];
   classification: ClassificationStatistics[];
@@ -400,15 +404,15 @@ export function buildModelSummary(
     const fittedComponents = componentSelection?.selectedComponents
       ?? pcaComponentSelection?.selectedComponents ?? plsdaComponentSelection?.selectedComponents
       ?? (Number.isSafeInteger(modelComponents) && modelComponents! > 0 ? modelComponents! : undefined);
+    const componentCountMissing = fittedComponents == null && parameters.component_fit_mode === "one_standard_error";
     const settings = METHOD_SETTINGS.flatMap(([key, label, format]) => {
-      if (key === "n_components" && fittedComponents == null
-        && parameters.component_fit_mode === "one_standard_error") {
+      if (key === "n_components" && componentCountMissing) {
         return [[label, "Automatic · fitted count not saved"] as [string, string]];
       }
       const text = format(key === "n_components" ? fittedComponents ?? parameters[key] : parameters[key], node.node_type);
       return text ? [[label, text] as [string, string]] : [];
     });
-    model = { nodeId: node.node_id, method: METHODS[node.node_type] ?? node.label ?? node.node_type, label: node.label ?? node.node_id, settings };
+    model = { nodeId: node.node_id, method: METHODS[node.node_type] ?? node.label ?? node.node_type, label: node.label ?? node.node_id, settings, componentCountMissing };
   }
   const unique = <T extends { role: SummaryRole; source: string }>(items: T[], key: (item: T) => string) =>
     [...new Map(items.map((item) => [key(item), item])).values()];

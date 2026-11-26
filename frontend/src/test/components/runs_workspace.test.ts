@@ -63,6 +63,25 @@ describe("Runs workspace", () => {
     expect(m.toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
     view.unmount();
   });
+  it('shows only the run detail on Inspect while its identity is still loading', async () => {
+    const { view } = inspectionContext(null); await flushPromises();
+    expect(view.find('details.run-provenance').exists()).toBe(false);
+    expect(view.text()).not.toContain('Choose a run in History');
+    expect(view.text()).not.toContain('Opening the latest run');
+    view.unmount();
+  });
+  it('names a model by its cross-validated statistic, read from the stored metric key', async () => {
+    m.query.tab = 'artifacts';
+    const model = { artifact_uid: 'model-cv', name: 'PLS moisture', display_name: 'PLS moisture', model_type: 'pls',
+      n_features: 700, n_components: 9, metrics: { r2: 0.999, rmse: 0.01, r2_cv: 0.951, rmsecv: 0.12 },
+      created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z' };
+    m.get.mockImplementation(async (path: string) => ({ data: path === '/models' ? [model] : {} }));
+    const view = mountView(); await flushPromises();
+    const row = view.get('.object-row').text();
+    expect(row).toContain('PLS · 700 variables · 9 LV · Q²');
+    expect(row).not.toContain('R² 0.999');
+    view.unmount();
+  });
   it('hides stale provenance on route/project changes and when Inspect is left', async () => {
     const { view, identity } = inspectionContext(); await flushPromises();
     expect(view.find('details.run-provenance').exists()).toBe(true);

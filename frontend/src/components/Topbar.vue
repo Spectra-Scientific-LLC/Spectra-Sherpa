@@ -54,7 +54,7 @@
         </li>
       </ul>
       <ul class="status-list" aria-label="System readiness">
-        <li v-for="item in [backendStatus, llmStatus, computeStatus]" :key="item.tooltip" class="status-row">
+        <li v-for="item in readinessItems" :key="item.key" class="status-row">
           <span class="status-dot" :class="item.class" aria-hidden="true" />
           {{ item.tooltip }}
         </li>
@@ -297,6 +297,12 @@ const computeStatus = computed(() => {
   }
   return { class: "status-blue", tooltip: "Compute: Local" };
 });
+// Stable keys: two checks may report the same text.
+const readinessItems = computed(() => [
+  { key: "backend", ...backendStatus.value },
+  { key: "llm", ...llmStatus.value },
+  { key: "compute", ...computeStatus.value },
+]);
 
 // Project selection
 const selectedProjectId = ref<number | null>(projectStore.currentProjectId);

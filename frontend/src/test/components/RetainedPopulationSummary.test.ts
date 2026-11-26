@@ -36,6 +36,16 @@ describe('retained population projection', () => {
     expect(wrapper.text()).not.toContain('0 excluded');
     expect(wrapper.find('[aria-label^="Download the sample map"]').exists()).toBe(false);
   });
+  it('names a source without a recorded map beside recorded ones, so its count is not read as zero', () => {
+    const wrapper = mount(RetainedPopulationSummary, { props: { runId: 42, labels: { load: 'M5', load_2: 'MP5' }, value: {
+      ...value,
+      rows: [...value.rows, { label: 'Retained exclusions (load_2)', value: 'Unavailable: source map missing.' }],
+      sources: [...value.sources, { node_id: 'load_2', port: 'exclusions', availability: 'unavailable' }],
+    } } });
+    expect(wrapper.text()).toContain('6 samples · 4 used · 2 excluded');
+    expect(wrapper.text()).toContain('Sample counts not recorded for MP5.');
+    expect(wrapper.find('[aria-label="Download the sample map for MP5"]').exists()).toBe(false);
+  });
   it('refuses inconsistent counts rather than inventing inclusion from report prose', () => {
     const wrapper = mount(RetainedPopulationSummary, { props: { runId: 42, value: {
       ...value, sources: [{ ...value.sources[0], active_count: 5 }],

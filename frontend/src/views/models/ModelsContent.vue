@@ -183,19 +183,21 @@
         </TabPanel>
 
         <TabPanel header="Inspect">
-          <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" ref="inspectContent" :actions-target="inspectActionsTarget" @renamed="refreshRuns" />
-          <!-- Fingerprints identify the exact workflow and software; they are provenance, not results. -->
-          <details v-if="activeTab === TAB_INSPECT && inspectedIdentity" class="run-provenance">
-            <summary>Provenance</summary>
-            <dl :aria-label="`Run #${inspectedIdentity.runId}; Workflow SHA-256: ${inspectedIdentity.workflowSha || 'Not recorded'}; Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`">
-              <dt>Workflow SHA-256</dt><dd>{{ inspectedIdentity.workflowSha || 'Not recorded' }}</dd>
-              <dt>Build SHA-1</dt><dd>{{ inspectedIdentity.buildSha || 'Not recorded' }}</dd>
-            </dl>
-            <Button
-              icon="pi pi-copy" label="Copy run identity" class="p-button-text p-button-sm"
-              :aria-label="`Copy run identity for Run #${inspectedIdentity.runId}`"
-              :disabled="!inspectedIdentity.workflowSha && !inspectedIdentity.buildSha" @click="copyRunIdentity" />
-          </details>
+          <template v-if="activeTab === TAB_INSPECT && route.params?.runId">
+            <RunDetailContent ref="inspectContent" :actions-target="inspectActionsTarget" @renamed="refreshRuns" />
+            <!-- Fingerprints identify the exact workflow and software; they are provenance, not results. -->
+            <details v-if="inspectedIdentity" class="run-provenance">
+              <summary>Provenance</summary>
+              <dl :aria-label="`Run #${inspectedIdentity.runId}; Workflow SHA-256: ${inspectedIdentity.workflowSha || 'Not recorded'}; Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`">
+                <dt>Workflow SHA-256</dt><dd>{{ inspectedIdentity.workflowSha || 'Not recorded' }}</dd>
+                <dt>Build SHA-1</dt><dd>{{ inspectedIdentity.buildSha || 'Not recorded' }}</dd>
+              </dl>
+              <Button
+                icon="pi pi-copy" label="Copy run identity" class="p-button-text p-button-sm"
+                :aria-label="`Copy run identity for Run #${inspectedIdentity.runId}`"
+                :disabled="!inspectedIdentity.workflowSha && !inspectedIdentity.buildSha" @click="copyRunIdentity" />
+            </details>
+          </template>
           <WorkspaceState v-else-if="latestInspectionLoading" kind="loading" variant="page" message="Opening the latest run…" />
           <WorkspaceState v-else :kind="latestInspectionError ? 'error' : 'empty'" variant="page" :message="latestInspectionError || 'Choose a run in History.'">
             <Button label="Open History" icon="pi pi-arrow-left" class="p-button-text" @click="activeTabId = 'run_history'" />
@@ -227,7 +229,11 @@
                   </label>
                 </li>
               </ul>
-              <Button :label="`Compare ${runsStore.selectedCount} runs`" icon="pi pi-chart-bar"
+              <p v-if="runsStore.total > runsStore.runs.length">
+                Showing {{ runsStore.runs.length }} of {{ runsStore.total }} runs.
+                <Button label="Find more in History" class="p-button-link p-button-sm" @click="activeTab = TAB_RUN_HISTORY" />
+              </p>
+              <Button :label="`Compare ${runsStore.selectedCount} run${runsStore.selectedCount === 1 ? '' : 's'}`" icon="pi pi-chart-bar"
                 :disabled="runsStore.selectedCount < 2 || runsStore.selectedCount > 10"
                 :loading="runsStore.comparisonLoading" @click="handleCompareRuns" />
             </template>
@@ -1673,11 +1679,11 @@ const METRIC_PRIORITY: Array<{ key: string; label: string }> = [
   { key: "accuracy", label: "Accuracy" },
   { key: "train_balanced_accuracy", label: "Balanced accuracy (training)" },
   { key: "f1", label: "Macro F1" },
-  { key: "Q²", label: "Q²" },
-  { key: "R² (test)", label: "R² (test)" },
+  { key: "r2_cv", label: "Q²" },
+  { key: "r2_test", label: "R² (test)" },
   { key: "r2", label: "R²" },
-  { key: "RMSECV", label: "RMSECV" },
-  { key: "RMSEP", label: "RMSEP" },
+  { key: "rmsecv", label: "RMSECV" },
+  { key: "rmse_test", label: "RMSEP" },
   { key: "rmse", label: "RMSE" },
   { key: "mae", label: "MAE" },
 ];

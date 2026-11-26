@@ -202,7 +202,21 @@
               <p v-if="presentationError" role="status">{{ presentationError }}</p>
               <p v-if="presentationAvailabilityNotice" role="status">{{ presentationAvailabilityNotice }}</p>
               <p v-if="ledgerUnavailableReason" role="status">{{ ledgerUnavailableReason }}</p>
-              <!-- Applied predictions are listed by the input rows' own sample IDs. -->
+              <section v-if="showRetainedValueFallback" aria-label="Retained values">
+                <p>The saved view is unavailable. These values are shown as recorded.</p>
+                <section v-for="(value, port) in values" :key="port">
+                  <h3>{{ port }}</h3>
+                  <SavedValue :value="value" />
+                </section>
+              </section>
+              <SavedValue v-else-if="!samplePredictions && !validationRows.length && nodeOutput && selectedPresentation && !selectedPresentation.presentation.modes.includes('plot') && selectedPresentation.presentation.kind !== 'numeric_matrix'" :value="nodeOutput.presentation_value" scientific />
+              <QuickPlotModal v-else-if="nodeOutput && selectedDefinition && (!validationRows.length || selectedPresentation?.presentation.modes.includes('plot'))" :key="selectedNode" embedded :model-value="true"
+                :table-only="!!selectedPresentation && !selectedPresentation.presentation.modes.includes('plot')"
+                :node-output="nodeOutput" :node-type="selectedDefinition.node_type" :node-label="selectedDefinition.label || selectedNode"
+                :node-input="nodeInput" :node-inputs="nodeInputs" />
+              <p v-else-if="!selectedDefinition">No saved node definition is available for scientific plotting. Saved values are shown below.</p>
+              <p v-else-if="!rawNodeOutput">No scientific output was saved for this node.</p>
+              <!-- Applied predictions, after their plot, listed by the input rows' own sample IDs. -->
               <section v-if="samplePredictions" class="sample-predictions" aria-label="Predictions by sample">
                 <header>
                   <h3>Predictions</h3>
@@ -213,26 +227,12 @@
                   <tbody>
                     <tr v-for="row in samplePredictions.rows.slice(0, 200)" :key="row.sample">
                       <th scope="row">{{ row.sample }}</th>
-                      <td v-for="(value, index) in row.values" :key="index" class="num" :title="String(value)">{{ formatMeasurement(value, samplePredictions.decimals[index]) }}</td>
+                      <td v-for="(value, index) in row.values" :key="index" class="num" :title="value == null ? 'No prediction' : String(value)">{{ value == null ? '—' : formatMeasurement(value, samplePredictions.decimals[index]) }}</td>
                     </tr>
                   </tbody>
                 </table>
                 <small v-if="samplePredictions.rows.length > 200">Showing the first 200 of {{ samplePredictions.rows.length }} samples. Download the CSV for all of them.</small>
               </section>
-              <section v-if="showRetainedValueFallback" aria-label="Retained values">
-                <p>The saved view is unavailable. These values are shown as recorded.</p>
-                <section v-for="(value, port) in values" :key="port">
-                  <h3>{{ port }}</h3>
-                  <SavedValue :value="value" />
-                </section>
-              </section>
-              <SavedValue v-else-if="!samplePredictions && !validationRows.length && nodeOutput && selectedPresentation && !selectedPresentation.presentation.modes.includes('plot') && selectedPresentation.presentation.kind !== 'numeric_matrix'" :value="nodeOutput.presentation_value" scientific />
-              <QuickPlotModal v-else-if="!samplePredictions && nodeOutput && selectedDefinition && (!validationRows.length || selectedPresentation?.presentation.modes.includes('plot'))" :key="selectedNode" embedded :model-value="true"
-                :table-only="!!selectedPresentation && !selectedPresentation.presentation.modes.includes('plot')"
-                :node-output="nodeOutput" :node-type="selectedDefinition.node_type" :node-label="selectedDefinition.label || selectedNode"
-                :node-input="nodeInput" :node-inputs="nodeInputs" />
-              <p v-else-if="!selectedDefinition">No saved node definition is available for scientific plotting. Saved values are shown below.</p>
-              <p v-else-if="!rawNodeOutput">No scientific output was saved for this node.</p>
               <!-- The plot comes first; the per-sample table follows it. -->
               <ValidationLedger
                 v-if="validationRows.length"
@@ -413,7 +413,6 @@ watch(contextualError, (message, _previous, onCleanup) => {
   toast.add(shown);
   onCleanup(() => toast.remove(shown));
 });
-/** Predictions of an applied model, named by the input rows' declared sample IDs (row order is preserved). */
 /**
  * Sample IDs of the data a saved model was applied to, from the input saved with
  * the run. Prediction keeps row order, so result row i belongs to input row i;
@@ -431,26 +430,29 @@ const trustSampleIds = computed(() => {
   const ids = appliedSampleIds.value;
   return nodeTrust.value && ids && ids.length === nodeTrust.value.rows.length ? ids : null;
 });
+// Hidden when the trust table or the validation ledger already lists these predictions per sample.
 const samplePredictions = computed(() => {
-  if (selectedDefinition.value?.node_type !== 'model.load_apply' || nodeTrust.value) return null;
+  if (selectedDefinition.value?.node_type !== 'model.load_apply' || nodeTrust.value || validationRows.value.length) return null;
   const ids = appliedSampleIds.value;
   const result = values.value.result;
   const matrix = Array.isArray(result) ? result : Array.isArray(result?.data) ? result.data : null;
   if (!Array.isArray(ids) || !matrix || matrix.length !== ids.length) return null;
   const rows = matrix.map((row: unknown, index: number) => ({
     sample: String(ids[index]),
-    values: (Array.isArray(row) ? row : [row]).map((value: unknown) => Number(value)),
+    // A missing prediction stays missing ("—"), never a numeric 0.
+    values: (Array.isArray(row) ? row : [row]).map((value: unknown) =>
+      (typeof value === 'number' && Number.isFinite(value) ? value : null)),
   }));
   const width = rows[0]?.values.length ?? 0;
-  if (!width || rows.some((row: { values: number[] }) => row.values.length !== width)) return null;
+  if (!width || rows.some((row: { values: Array<number | null> }) => row.values.length !== width)) return null;
   const columns = width === 1 ? ['Predicted'] : Array.from({ length: width }, (_, index) => `Predicted ${index + 1}`);
-  const decimals = columns.map((_, index) => columnDecimals(rows.map((row: { values: number[] }) => row.values[index])));
+  const decimals = columns.map((_, index) => columnDecimals(rows.map((row: { values: Array<number | null> }) => row.values[index])));
   return { columns, rows, decimals };
 });
 function downloadSamplePredictions() {
   const table = samplePredictions.value;
   if (!table) return;
-  downloadCsv([['Sample', ...table.columns], ...table.rows.map((row: { sample: string; values: number[] }) => [row.sample, ...row.values])],
+  downloadCsv([['Sample', ...table.columns], ...table.rows.map((row: { sample: string; values: Array<number | null> }) => [row.sample, ...row.values.map((value) => value ?? '')])],
     `${detail.value?.run.name || 'run'}-predictions.csv`);
 }
 const runNameDraft = ref('');
@@ -932,12 +934,14 @@ async function loadModelSummary(request: ScopedRequestTicket) {
     const model = primaryModelNode(definition.value);
     const records: Array<{ source: any; value: unknown }> = [];
     const missing: string[] = [];
+    let curveMissing: string | null = null;
+    let countRecovered = false;
     for (const source of summarySources(definition.value, contracts, model?.node_id ?? null)) {
       const evidence = detail.value?.evidence.outputs[source.nodeId]?.[source.port];
       // A possible output is not a retention gap unless the run recorded it.
       if (!evidence) continue;
       if (!evidence.storage) {
-        if (source.port === 'component_curve') missing.push(`${source.nodeId}/component_curve (not saved in this run)`);
+        if (source.port === 'component_curve') curveMissing = `${source.nodeId}/component_curve (not saved in this run)`;
         continue;
       }
       try { records.push({ source, value: await read(source.nodeId, source.port) }); }
@@ -948,16 +952,19 @@ async function loadModelSummary(request: ScopedRequestTicket) {
     // Automatic component choice without a saved curve: the fitted model it produced still
     // records how many components it kept, so show that instead of "not retained".
     const produced = detail.value?.run.produced_artifact_uids ?? [];
-    if (produced.length === 1 && summary.model?.settings.some(([, value]) => value.includes('fitted count not saved'))) {
+    if (produced.length === 1 && summary.model?.componentCountMissing) {
       try {
         const { data } = await api.get<{ n_components?: unknown }>(`/models/${encodeURIComponent(produced[0])}`);
         if (!request.isCurrent()) return;
         if (typeof data?.n_components === 'number') {
           summary = buildModelSummary(definition.value, detail.value?.params_snapshot ?? null, records, data.n_components);
+          countRecovered = summary.model?.componentCountMissing === false;
         }
       } catch { /* The summary keeps saying the count was not recorded. */ }
     }
     modelSummary.value = summary;
+    // The fitted model's own record answers what the missing curve would have: the count.
+    if (curveMissing && !countRecovered) missing.unshift(curveMissing);
     if (missing.length) summaryError.value = `Some summary statistics could not be loaded: ${missing.join(', ')}.`;
   } catch (err) {
     if (request.isCurrent()) summaryError.value = `Model summary unavailable: ${failure(err)}`;
