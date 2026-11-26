@@ -217,17 +217,18 @@
               <p v-else-if="!selectedDefinition">No saved node definition is available for scientific plotting. Saved values are shown below.</p>
               <p v-else-if="!rawNodeOutput">No scientific output was saved for this node.</p>
               <!-- Applied predictions, after their plot, listed by the input rows' own sample IDs. -->
-              <section v-if="samplePredictions" class="sample-predictions" aria-label="Predictions by sample">
+              <section v-if="samplePredictions" class="sample-predictions" :aria-label="`${samplePredictions.title} by sample`">
                 <header>
-                  <h3>Predictions</h3>
+                  <h3>{{ samplePredictions.title }}</h3>
                   <Button label="Download CSV" icon="pi pi-download" class="p-button-text p-button-sm" @click="downloadSamplePredictions" />
                 </header>
                 <table>
-                  <thead><tr><th scope="col">Sample</th><th v-for="name in samplePredictions.columns" :key="name" scope="col" class="num">{{ name }}</th></tr></thead>
+                  <thead><tr><th scope="col">Sample</th><th v-for="(name, index) in samplePredictions.columns" :key="name" scope="col" :class="{ num: samplePredictions.decimals[index] != null }">{{ name }}</th></tr></thead>
                   <tbody>
                     <tr v-for="row in samplePredictions.rows.slice(0, 200)" :key="row.sample">
                       <th scope="row">{{ row.sample }}</th>
-                      <td v-for="(value, index) in row.values" :key="index" class="num" :title="value == null ? 'No prediction' : String(value)">{{ value == null ? '—' : formatMeasurement(value, samplePredictions.decimals[index]) }}</td>
+                      <td v-for="(cell, index) in row.cells" :key="index" :class="{ num: samplePredictions.decimals[index] != null }"
+                        :title="cell == null ? 'Not recorded' : String(cell)">{{ cell == null ? '—' : samplePredictions.decimals[index] == null ? cell : formatMeasurement(cell, samplePredictions.decimals[index]!) }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -302,6 +303,7 @@ import QuickPlotModal from '@/views/workflow-builder/modals/QuickPlotModal.vue';
 import SavedValue from './SavedValue.vue';
 import { downloadCsv, downloadJson } from '@/utils/download';
 import { columnDecimals, formatMeasurement } from '@/utils/scientificDisplay';
+import { appliedResultTable, type AppliedResultTable } from '@/utils/appliedResultTable';
 import { applicationTrustView, retainedNodeTrustView, type ApplicationTrustView } from '@/utils/applicationTrust';
 import ContextualActions from '@/components/ContextualActions.vue';
 import { useContextualActions } from '@/composables/useContextualActions';
@@ -430,30 +432,20 @@ const trustSampleIds = computed(() => {
   const ids = appliedSampleIds.value;
   return nodeTrust.value && ids && ids.length === nodeTrust.value.rows.length ? ids : null;
 });
-// Hidden when the trust table or the validation ledger already lists these predictions per sample.
-const samplePredictions = computed(() => {
+// The applied model's saved output by sample, named from what the run saved with it and
+// following the output chosen above. Hidden when the trust table or the validation ledger
+// already lists these values per sample.
+const samplePredictions = computed<AppliedResultTable | null>(() => {
   if (selectedDefinition.value?.node_type !== 'model.load_apply' || nodeTrust.value || validationRows.value.length) return null;
-  const ids = appliedSampleIds.value;
-  const result = values.value.result;
-  const matrix = Array.isArray(result) ? result : Array.isArray(result?.data) ? result.data : null;
-  if (!Array.isArray(ids) || !matrix || matrix.length !== ids.length) return null;
-  const rows = matrix.map((row: unknown, index: number) => ({
-    sample: String(ids[index]),
-    // A missing prediction stays missing ("—"), never a numeric 0.
-    values: (Array.isArray(row) ? row : [row]).map((value: unknown) =>
-      (typeof value === 'number' && Number.isFinite(value) ? value : null)),
-  }));
-  const width = rows[0]?.values.length ?? 0;
-  if (!width || rows.some((row: { values: Array<number | null> }) => row.values.length !== width)) return null;
-  const columns = width === 1 ? ['Predicted'] : Array.from({ length: width }, (_, index) => `Predicted ${index + 1}`);
-  const decimals = columns.map((_, index) => columnDecimals(rows.map((row: { values: Array<number | null> }) => row.values[index])));
-  return { columns, rows, decimals };
+  const presentation = selectedPresentation.value?.presentation;
+  const port = presentation?.source_ports?.[0] ?? 'result';
+  return appliedResultTable(values.value, port, appliedSampleIds.value, presentation?.label ?? null, columnDecimals);
 });
 function downloadSamplePredictions() {
   const table = samplePredictions.value;
   if (!table) return;
-  downloadCsv([['Sample', ...table.columns], ...table.rows.map((row: { sample: string; values: Array<number | null> }) => [row.sample, ...row.values.map((value) => value ?? '')])],
-    `${detail.value?.run.name || 'run'}-predictions.csv`);
+  downloadCsv([['Sample', ...table.columns], ...table.rows.map((row) => [row.sample, ...row.cells.map((cell) => cell ?? '')])],
+    `${detail.value?.run.name || 'run'}-${table.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.csv`);
 }
 const runNameDraft = ref('');
 const runNameSaving = ref(false);
@@ -924,6 +916,8 @@ async function loadBaselineWarnings(request: ScopedRequestTicket) {
 }
 // The model card reads only retained, backend-computed statistics; a record
 // that cannot be read is named rather than replaced with a recomputation.
+/** The saved-model fields that identify which run and node produced it, and its fitted count. */
+type ProducedModelRecord = { n_components?: unknown; source_run_id?: unknown; node_id?: unknown };
 async function loadModelSummary(request: ScopedRequestTicket) {
   if (!detail.value || !definition.value) return;
   try {
@@ -935,7 +929,6 @@ async function loadModelSummary(request: ScopedRequestTicket) {
     const records: Array<{ source: any; value: unknown }> = [];
     const missing: string[] = [];
     let curveMissing: string | null = null;
-    let countRecovered = false;
     for (const source of summarySources(definition.value, contracts, model?.node_id ?? null)) {
       const evidence = detail.value?.evidence.outputs[source.nodeId]?.[source.port];
       // A possible output is not a retention gap unless the run recorded it.
@@ -949,22 +942,32 @@ async function loadModelSummary(request: ScopedRequestTicket) {
       if (!request.isCurrent()) return;
     }
     let summary = buildModelSummary(definition.value, detail.value?.params_snapshot ?? null, records);
-    // Automatic component choice without a saved curve: the fitted model it produced still
-    // records how many components it kept, so show that instead of "not retained".
+    // Automatic component choice without a saved curve: the fitted model this run's model
+    // node produced still records how many components it kept. Only that model counts.
     const produced = detail.value?.run.produced_artifact_uids ?? [];
+    const runId = detail.value?.run.id;
+    const modelNodeId = summary.model?.nodeId;
+    let countRecovered = false;
     if (produced.length === 1 && summary.model?.componentCountMissing) {
       try {
-        const { data } = await api.get<{ n_components?: unknown }>(`/models/${encodeURIComponent(produced[0])}`);
+        const { data } = await api.get<ProducedModelRecord>(`/models/${encodeURIComponent(produced[0])}`, { signal: request.signal });
         if (!request.isCurrent()) return;
-        if (typeof data?.n_components === 'number') {
+        if (typeof data?.n_components === 'number' && data.source_run_id === runId && data.node_id === modelNodeId) {
           summary = buildModelSummary(definition.value, detail.value?.params_snapshot ?? null, records, data.n_components);
           countRecovered = summary.model?.componentCountMissing === false;
         }
       } catch { /* The summary keeps saying the count was not recorded. */ }
+      // A lookup that ends after the user moved on must not write into the new view.
+      if (!request.isCurrent()) return;
     }
     modelSummary.value = summary;
-    // The fitted model's own record answers what the missing curve would have: the count.
-    if (curveMissing && !countRecovered) missing.unshift(curveMissing);
+    // The model record restores only the count; the curve's RMSEC/RMSECV, Q², CV design and
+    // selection rule are still missing, so the limitation stays, stated precisely.
+    if (curveMissing) {
+      missing.unshift(countRecovered
+        ? `${modelNodeId}/component_curve (fitted LV count recovered from the saved model; component-selection and cross-validation curve not saved)`
+        : curveMissing);
+    }
     if (missing.length) summaryError.value = `Some summary statistics could not be loaded: ${missing.join(', ')}.`;
   } catch (err) {
     if (request.isCurrent()) summaryError.value = `Model summary unavailable: ${failure(err)}`;

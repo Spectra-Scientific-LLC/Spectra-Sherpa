@@ -470,6 +470,8 @@ describe("Persistent run inspection", () => {
         'file_0::input': { default: { state: 'exact', storage: 'file' } },
         'file_0::model': {
           result: { state: 'exact', storage: 'file' },
+          // A regression application also saves the same matrix as its predictions.
+          y_pred: { state: 'exact', storage: 'file' },
           model_id: { state: 'exact', storage: 'file' },
           ...(withTrust ? { labels: { state: 'exact', storage: 'file' }, applicability: { state: 'exact', storage: 'file', sha256: 'd'.repeat(64) } } : {}),
         },
@@ -480,7 +482,9 @@ describe("Persistent run inspection", () => {
           { node_id: 'file_0::model', node_type: 'model.load_apply', label: 'Saved model', parameters: {} },
         ], edges: [{ from_node_id: 'file_0::input', from_output: 'default', to_node_id: 'file_0::model', to_input: 'X_new' }],
       } } };
-      if (url.endsWith('/file_0%3A%3Amodel/result')) return { data: { value: [[8.61], [withGap ? null : 8.9], [9.25]] } };
+      if (url.endsWith('/file_0%3A%3Amodel/result') || url.endsWith('/file_0%3A%3Amodel/y_pred')) {
+        return { data: { value: [[8.61], [withGap ? null : 8.9], [9.25]] } };
+      }
       // The input saved with the run declares its rows' sample IDs.
       if (url.endsWith('/file_0%3A%3Ainput/default')) return { data: { value: {
         type: 'SherpaDataset', data: [[0.1], [0.2], [0.3]],
@@ -634,10 +638,35 @@ describe("Persistent run inspection", () => {
     wrapper.unmount();
   });
 
-  it.each([9, null] as const)('reads an automatic fitted LV count from the produced model when the curve was not saved (%s)', async (recorded) => {
+  it('does not let a model lookup that fails after the user opens another run write into that run', async () => {
+    const lookup = deferred<{ data: unknown }>();
+    get.mockImplementation(async (url: string) => {
+      const run = url.startsWith('/runs/43/') ? 43 : 42;
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture),
+        run: { ...fixture.run, id: run, name: `Run ${run}`, produced_artifact_uids: run === 42 ? ['pls-auto'] : [] },
+        params_snapshot: { model_1: { component_fit_mode: 'one_standard_error' } },
+        evidence: { qualification: 'qualified', outputs: {
+          __workflow__: { definition: { state: 'exact', storage: 'file' } },
+          ...(run === 42 ? { model_1: { component_curve: { state: 'missing', reason: 'Output exceeded the configured limit.' } } } : {}),
+        } } } };
+      if (url.endsWith('/__workflow__/definition')) return { data: { value: { schema_version: 1, nodes: run === 42 ? [
+        { node_id: 'model_1', node_type: 'model.fitted_pls', label: 'Train PLS', parameters: { component_fit_mode: 'one_standard_error' } },
+      ] : [{ node_id: 'snv_1', node_type: 'preprocess.normalize', label: 'SNV', parameters: {} }], edges: [] } } };
+      if (url === '/models/pls-auto') return lookup.promise;
+      return { data: { value: null } };
+    });
+    const { wrapper, router } = await open('?project=1&view=Summary');
+    await router.push('/runs/43?project=1&view=Summary'); await flushPromises();
+    lookup.reject(new Error('Network down')); await flushPromises();
+    expect(wrapper.text()).toContain('Run 43');
+    expect(wrapper.text()).not.toContain('Train PLS');
+    expect(wrapper.text()).not.toContain('model_1/component_curve');
+    wrapper.unmount();
+  });
+  it.each(['recorded', 'absent', 'other-node'] as const)('reads an automatic fitted LV count only from the model this run node produced (%s)', async (record) => {
     get.mockImplementation(async (url: string) => {
       if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture),
-        run: { ...fixture.run, produced_artifact_uids: ['pls-auto'] },
+        run: { ...fixture.run, id: 42, produced_artifact_uids: ['pls-auto'] },
         params_snapshot: { model_1: { component_fit_mode: 'one_standard_error', n_components: 15 } },
         evidence: { qualification: 'qualified', outputs: {
           __workflow__: { definition: { state: 'exact', storage: 'file' } },
@@ -646,19 +675,23 @@ describe("Persistent run inspection", () => {
       if (url.endsWith('/__workflow__/definition')) return { data: { value: { schema_version: 1, nodes: [
         { node_id: 'model_1', node_type: 'model.fitted_pls', label: 'Train PLS', parameters: { component_fit_mode: 'one_standard_error' } },
       ], edges: [] } } };
-      if (url === '/models/pls-auto') return { data: recorded == null ? {} : { n_components: recorded } };
+      if (url === '/models/pls-auto') return { data: record === 'absent' ? {} : {
+        n_components: 9, source_run_id: 42, node_id: record === 'other-node' ? 'model_2' : 'model_1' } };
       return { data: { value: null } };
     });
     const { wrapper } = await open('?project=1&view=Summary');
     const card = wrapper.get('[aria-label="Model summary"]');
-    if (recorded == null) {
-      expect(card.text()).toContain('fitted count not saved');
-      expect(wrapper.get('.summary-error').text()).toContain('model_1/component_curve');
-    } else {
+    if (record === 'recorded') {
       expect(card.text()).toContain('9 latent variables');
       expect(card.text()).not.toContain('fitted count not saved');
-      // The model record answered what the curve would have; no gap is reported for it.
-      expect(wrapper.find('.summary-error').exists()).toBe(false);
+      // The count is back; the curve's RMSEC/RMSECV, CV design and selection rule are still missing.
+      expect(wrapper.get('.summary-error').text()).toContain(
+        'model_1/component_curve (fitted LV count recovered from the saved model; component-selection and cross-validation curve not saved)');
+    } else {
+      // No count from a record that is absent or belongs to another model node.
+      expect(card.text()).toContain('fitted count not saved');
+      expect(card.text()).not.toContain('9 latent variables');
+      expect(wrapper.get('.summary-error').text()).toContain('model_1/component_curve (not saved in this run)');
     }
     wrapper.unmount();
   });

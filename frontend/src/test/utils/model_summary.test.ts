@@ -52,6 +52,55 @@ describe("model summary from retained records", () => {
     expect(wrapper.get('[aria-label="Headline statistics"]').text()).toContain("RMSEP 0.3975");
     expect(wrapper.findAll("thead th").map((cell) => cell.text())).toEqual(["Statistic", "Held-out test"]);
   });
+  it("gives each response its own labelled headline and unit, never only the first", () => {
+    const value = {
+      schema_version: "spectrasherpa-regression-comparison/1", data: [],
+      metadata: { role: "held_out_test", target_units: ["%", "ppm"] },
+      statistics: { schema_version: "spectrasherpa-regression-statistics/1", targets: [
+        { target: "Moisture", metrics: { n_samples: 10, rmse: 0.2, r2: 0.99 } },
+        { target: "Protein", metrics: { n_samples: 10, rmse: 31, r2: 0.95 } },
+      ] },
+    };
+    const summary = buildModelSummary(plsDefinition, {}, [{ source: { nodeId: "eval_1", port: "comparison", kind: "regression_comparison" }, value }]);
+    const wrapper = mount(ModelSummaryCard, { props: { summary } });
+    const moisture = wrapper.get('[aria-label="Headline statistics for Moisture"]').text();
+    const protein = wrapper.get('[aria-label="Headline statistics for Protein"]').text();
+    expect(moisture).toContain("Moisture");
+    expect(moisture).toContain("RMSEP 0.2");
+    expect(moisture).toContain("%");
+    expect(protein).toContain("RMSEP 31");
+    expect(protein).toContain("ppm");
+    expect(wrapper.find('[aria-label="Headline statistics"]').exists()).toBe(false);
+  });
+  it("never merges two named responses into one table, but folds a generic placeholder into the named one", () => {
+    const named = (role: string, target: string, unit: string, rmse: number) => ({
+      ...comparison(role, target, { n_samples: 10, rmse, r2: 0.9 }), metadata: { role, target_units: [unit] } });
+    const distinct = buildModelSummary(plsDefinition, {}, [
+      { source: { nodeId: "model_1", port: "calibration_comparison", kind: "regression_comparison" }, value: named("calibration", "Moisture", "%", 0.1) },
+      { source: { nodeId: "eval_1", port: "comparison", kind: "regression_comparison" }, value: named("held_out_test", "Protein", "ppm", 30) },
+    ]);
+    const tables = mount(ModelSummaryCard, { props: { summary: distinct } }).findAll("table caption").map((caption) => caption.text());
+    expect(tables).toEqual(["Moisture", "Protein"]);
+    const generic = buildModelSummary(plsDefinition, {}, [
+      { source: { nodeId: "model_1", port: "calibration_comparison", kind: "regression_comparison" }, value: calibration },
+      { source: { nodeId: "eval_1", port: "comparison", kind: "regression_comparison" }, value: test },
+    ]);
+    const merged = mount(ModelSummaryCard, { props: { summary: generic } });
+    expect(merged.findAll("table caption")).toHaveLength(0);
+    expect(merged.findAll("thead th").map((cell) => cell.text())).toEqual(["Statistic", "Calibration fit", "Held-out test"]);
+  });
+  it("does not claim that held-out evaluation never ran when its evidence is simply not saved", () => {
+    const curve = {
+      schema_version: "spectrasherpa-pls-component-curve/1", selected_components: 1, selected_in_curve: true,
+      n_calibration: 12, response_names: ["Moisture"], response_units: ["%"],
+      calibration: [{ components: 1, rmsec: [0.8] }], cross_validation: { status: "unavailable", reason: "Too few groups." },
+    };
+    const summary = buildModelSummary(plsDefinition, {}, [
+      { source: { nodeId: "model_1", port: "component_curve", kind: "component_selection" }, value: curve }]);
+    const text = mount(ModelSummaryCard, { props: { summary } }).text();
+    expect(text).toContain("Held-out evaluation evidence is not saved with this run.");
+    expect(text).not.toContain("No held-out evaluation");
+  });
   it("reads only model and evaluator comparison and metric records", () => {
     const sources = summarySources(plsDefinition, contracts, "model_1");
     expect(sources.map((item) => `${item.nodeId}/${item.port}`)).toEqual([

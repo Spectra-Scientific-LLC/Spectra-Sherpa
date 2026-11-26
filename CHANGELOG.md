@@ -48,18 +48,19 @@ separately authorized.
 ### Clearer results and decisions in the Workbench
 
 - Run pages open on the model summary: RMSEC, RMSECV or RMSEP with R² or Q²
-  lead the card, units are stated once per statistic, and a held-out run shows
-  the latent-variable count of the model it evaluated. Workflow and build
+  lead the card for each response, in its own units, and a held-out run shows
+  the latent-variable count recorded by the model its own node produced. Workflow and build
   fingerprints move to a collapsed Provenance section.
 - The latent-variable curve has a scaled RMSE axis, a tick per LV and a legend;
   the data preview colours spectra by the numeric modelling target; run
   results show the plot before the per-sample table.
-- Applying a saved model lists each prediction under its sample ID, read from
-  the input data saved with the run; the per-file trust table names its rows
-  the same way.
+- Applying a saved model lists its output under each sample ID, read from the
+  input data saved with the run, and names it from what the run saved:
+  predictions, class responses beside the predicted class, or PCA scores. The
+  per-file trust table names its rows the same way.
 - The next step of a guided journey sits on the page as one primary button,
   and delete, rename and download move into each row's "More actions" menu.
-  Compare lets you choose runs in place.
+  Compare lets you choose from all of a project's saved runs in place.
 - Toasts answer what you just did; confirmations close by themselves and
   warnings or refusals stay until dismissed. State that holds without a click
   is shown on the page instead, and pages no longer repeat the same text.

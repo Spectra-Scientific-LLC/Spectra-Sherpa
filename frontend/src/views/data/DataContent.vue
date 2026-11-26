@@ -1584,7 +1584,7 @@ import { useRoute, useRouter } from "vue-router";
 import TabPanel from "primevue/tabpanel";
 import Button from "primevue/button";
 import RowActions from "@/components/RowActions.vue";
-import { combinedViewsExplanation } from "@/utils/packageViewRelations";
+import { combinedViewsExplanation, registeredViewRelation } from "@/utils/packageViewRelations";
 import Checkbox from "primevue/checkbox";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
@@ -3269,8 +3269,14 @@ const activePackageViewNames = computed(() =>
     .map((file) => registeredPackageView(file.file_path))
     .filter((value): value is string => value !== null),
 );
+// The relation comes from the registered package's own catalog entry, and only for an
+// experiment imported from that package (its files are named by their view IDs).
 const combinedViewsWarning = computed(() => combinedViewsExplanation(
-  activeSelectedFiles.value.map((file) => packageViewStem(file.file_path)),
+  registeredViewRelation(
+    activeExperimentMetadata.value?.reference_package_id,
+    activeSelectedFiles.value.map((file) => packageViewStem(file.file_path)),
+    (dataStore.referenceCatalog?.registered ?? []).map((dataset) => dataset.dataset_package),
+  ),
   activePackageViewNames.value,
 ));
 const activePackageViewSummary = computed(() => {

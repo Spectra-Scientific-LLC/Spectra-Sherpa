@@ -12,12 +12,15 @@
         <span v-for="item in populations" :key="item.role"><strong>{{ item.n }}</strong> {{ item.label.toLowerCase() }}</span>
       </p>
       <!-- The headline answers "how good is it": the error for each recorded population. -->
-      <p v-if="headline.length" class="model-summary__headline" aria-label="Headline statistics">
-        <span v-for="item in headline" :key="item.role">
+      <!-- One line per response, each with its own name and unit; none is picked implicitly. -->
+      <p v-for="line in headline" :key="line.target" class="model-summary__headline"
+        :aria-label="headline.length > 1 ? `Headline statistics for ${line.target}` : 'Headline statistics'">
+        <span v-if="headline.length > 1" class="model-summary__response">{{ line.target }}</span>
+        <span v-for="item in line.items" :key="item.role">
           <span class="model-summary__name">{{ item.rmseName }}</span> <strong>{{ item.rmse }}</strong>
           <template v-if="item.r2 != null"> · <span class="model-summary__name">{{ item.r2Name }}</span> {{ item.r2 }}</template>
         </span>
-        <small v-if="headlineUnit">{{ headlineUnit }}</small>
+        <small v-if="line.unit">{{ line.unit }}</small>
       </p>
     </header>
     <p v-if="summary.preprocessing.length" class="model-summary__pretreatment">
@@ -32,7 +35,7 @@
       class="model-summary__design" role="note">
       <template v-if="heldOutCount != null">Evaluated on {{ heldOutCount }} held-out samples.</template>
       <template v-else-if="evidenceSubset">Open the source run for its held-out evaluation, if any.</template>
-      <template v-else>No held-out evaluation in this run.</template>
+      <template v-else>Held-out evaluation evidence is not saved with this run.</template>
     </p>
 
     <ul v-if="compact && compactWarnings.length" class="model-summary__caution" aria-label="Model limitations">
@@ -247,14 +250,16 @@ const hasStatistics = computed(() => Boolean(props.summary?.regression.length ||
 const byRole = <T extends { role: SummaryRole }>(items: T[]): T[] =>
   SUMMARY_ROLES.flatMap((role) => items.filter((item) => item.role === role).slice(0, 1));
 
+const GENERIC_RESPONSE = /^(Target \d+|Response( \d+)?|y)$/i;
 const regressionTables = computed(() => {
   const rows = props.summary?.regression ?? [];
   const targets = [...new Set(rows.map((row) => row.target))];
   // Calibration statistics from the model node can name the response
-  // generically ("Target 1") while evaluators carry its name; a single
-  // response is one table either way.
-  if (targets.length > 1 && new Set(rows.map((row) => row.role)).size === rows.length) {
-    return [{ target: targets.find((name) => !/^Target \d+$/.test(name)) ?? targets[0], columns: byRole<RegressionStatistics>(rows) }];
+  // generically ("Target 1") while evaluators carry its name. Only such generic
+  // placeholders join the one named response; two named responses never merge.
+  const named = targets.filter((name) => !GENERIC_RESPONSE.test(name));
+  if (targets.length > 1 && named.length <= 1 && new Set(rows.map((row) => row.role)).size === rows.length) {
+    return [{ target: named[0] ?? targets[0], columns: byRole<RegressionStatistics>(rows) }];
   }
   return targets.map((target) => ({ target, columns: byRole(rows.filter((row) => row.target === target)) }));
 });
@@ -337,21 +342,22 @@ function unitLabel(name: string, columns: RegressionStatistics[]): string {
   return label.replace("(units not declared)", "(units not recorded)");
 }
 // One headline entry per recorded population, in order calibration → CV → held-out.
-const headline = computed(() => (regressionTables.value[0]?.columns ?? [])
-  .filter((column) => column.rmse != null)
-  .map((column) => ({
-    role: column.role,
-    rmseName: rmseName(column.role),
-    rmse: show(column.rmse),
-    r2Name: column.role === "cross_validation" ? "Q²" : "R²",
-    r2: column.r2 == null ? null : fraction(column.r2),
-  })));
-// Shown only when recorded; the statistics table says when units are missing.
-const headlineUnit = computed(() => {
-  const columns = regressionTables.value[0]?.columns ?? [];
-  const unit = unitLabel("", columns).trim().replace(/^\(|\)$/g, "");
-  return columns.length && unit !== "units not recorded" ? unit : "";
-});
+// One headline per response, each in its own unit (shown only when recorded; the
+// statistics table says when units are missing).
+const headline = computed(() => regressionTables.value.map((table) => {
+  const unit = unitLabel("", table.columns).trim().replace(/^\(|\)$/g, "");
+  return {
+    target: table.target,
+    unit: table.columns.length && unit !== "units not recorded" ? unit : "",
+    items: table.columns.filter((column) => column.rmse != null).map((column) => ({
+      role: column.role,
+      rmseName: rmseName(column.role),
+      rmse: show(column.rmse),
+      r2Name: column.role === "cross_validation" ? "Q²" : "R²",
+      r2: column.r2 == null ? null : fraction(column.r2),
+    })),
+  };
+}).filter((line) => line.items.length));
 const percent = (value: number | null) => (value == null ? "—" : `${Number((value * 100).toPrecision(4))}%`);
 function classificationCvMessage(reason: string | null): string {
   if (!reason) return 'Classification cross-validation is unavailable.';
@@ -374,6 +380,7 @@ function classificationCvMessage(reason: string | null): string {
 .model-summary__populations strong { color: var(--text-color); }
 .model-summary__headline { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem 1.25rem; margin: .5rem 0 0; flex-basis: 100%; font-variant-numeric: tabular-nums; }
 .model-summary__headline strong { font-size: 1.05rem; }
+.model-summary__response { font-weight: 600; }
 .model-summary__headline small { color: var(--text-color-secondary); }
 .model-summary__pretreatment { margin: .6rem 0 0; font-size: .9rem; }
 .model-summary__label { margin-right: .5rem; color: var(--text-color-secondary); }

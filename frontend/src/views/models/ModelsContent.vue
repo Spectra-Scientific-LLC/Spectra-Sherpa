@@ -217,22 +217,26 @@
           />
           <!-- Choose the runs here; comparing needs no trip back to History. -->
           <section v-else class="compare-picker" aria-label="Choose runs to compare">
-            <p v-if="!runsStore.runs.length">No saved runs in this project yet.</p>
+            <WorkspaceState v-if="runsStore.compareCandidatesError && !runsStore.compareCandidates.length" kind="error" :message="runsStore.compareCandidatesError">
+              <Button label="Retry" class="p-button-text p-button-sm" @click="loadCompareCandidates()" />
+            </WorkspaceState>
+            <WorkspaceState v-else-if="runsStore.compareCandidatesTotal === null" kind="loading" message="Loading the project's runs…" />
+            <p v-else-if="!runsStore.compareCandidates.length">No saved runs in this project yet.</p>
             <template v-else>
-              <p>Choose 2–10 runs to compare.</p>
+              <p>Choose 2–10 runs to compare. All saved runs are listed, newest first, whatever the History filter.</p>
               <ul>
-                <li v-for="run in runsStore.runs" :key="run.id">
+                <li v-for="run in runsStore.compareCandidates" :key="run.id">
                   <label>
                     <input type="checkbox" :checked="runsStore.selectedRunIds.has(run.id)" @change="runsStore.toggleRunSelection(run.id)" />
                     <span>{{ run.display_name || run.name || `Run #${run.id}` }}</span>
-                    <small>Run #{{ run.id }}</small>
+                    <small>Run #{{ run.id }} · {{ formatRunKind(run.run_kind) }}</small>
                   </label>
                 </li>
               </ul>
-              <p v-if="runsStore.total > runsStore.runs.length">
-                Showing {{ runsStore.runs.length }} of {{ runsStore.total }} runs.
-                <Button label="Find more in History" class="p-button-link p-button-sm" @click="activeTab = TAB_RUN_HISTORY" />
-              </p>
+              <p v-if="runsStore.compareCandidatesError" role="alert">{{ runsStore.compareCandidatesError }}</p>
+              <Button v-if="runsStore.compareCandidates.length < runsStore.compareCandidatesTotal"
+                :label="`Load older runs (${runsStore.compareCandidates.length} of ${runsStore.compareCandidatesTotal} shown)`"
+                class="p-button-text p-button-sm" :loading="runsStore.compareCandidatesLoading" @click="loadCompareCandidates(true)" />
               <Button :label="`Compare ${runsStore.selectedCount} run${runsStore.selectedCount === 1 ? '' : 's'}`" icon="pi pi-chart-bar"
                 :disabled="runsStore.selectedCount < 2 || runsStore.selectedCount > 10"
                 :loading="runsStore.comparisonLoading" @click="handleCompareRuns" />
@@ -1429,6 +1433,20 @@ async function downloadProjectWithRuns(): Promise<void> {
     toast.add({ severity: "error", summary: "Could not download the selected runs", detail: projectStore.error, life: 4000 });
   }
 }
+
+function loadCompareCandidates(more = false): void {
+  const projectId = projectStore.currentProjectId;
+  if (projectId != null) void runsStore.fetchCompareCandidates(projectId, more);
+}
+// The picker loads its own run list the first time Compare opens without a comparison.
+watch(
+  () => [activeTab.value === TAB_COMPARE && !runsStore.comparison && typeof route.query.evidence !== "string",
+    projectStore.currentProjectId] as const,
+  ([picking]) => {
+    if (picking && runsStore.compareCandidatesTotal === null && !runsStore.compareCandidatesLoading) loadCompareCandidates();
+  },
+  { immediate: true },
+);
 
 async function handleCompareRuns(): Promise<void> {
   const projectId = projectStore.currentProjectId;

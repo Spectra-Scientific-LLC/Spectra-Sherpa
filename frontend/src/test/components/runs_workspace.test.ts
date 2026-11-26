@@ -33,7 +33,9 @@ describe("Runs workspace", () => {
     m.auth = reactive({ user: { id: 1 }, sessionRevision: 0 });
     m.project = { ensureProjectForBrowserTab: vi.fn(), currentProjectId: 1, currentProject: { id: 1, name: "Corn" } };
     m.runs = { runs: [], total: 0, selectedRunIds: new Set(), selectedCount: 0, runsLoading: false, comparison: null, loadError: null,
-      fetchProjectRuns: vi.fn(), clearSelection: vi.fn(), resetProjectScope: vi.fn() };
+      fetchProjectRuns: vi.fn(), clearSelection: vi.fn(), resetProjectScope: vi.fn(),
+      compareCandidates: [], compareCandidatesTotal: 0, compareCandidatesLoading: false, compareCandidatesError: null,
+      fetchCompareCandidates: vi.fn() };
     m.get.mockImplementation(async (path: string) => ({ data: path === "/deploy/capabilities" ? { privateBatchUpload: true } : path === "/runs" ? { runs: [], total: 0 } : [] }));
   });
   const fitted = { project_id: 1, artifact_uid: 'fitted-1', name: 'Saved PLS', model_type: 'pls', n_features: 13,
@@ -295,6 +297,35 @@ describe("Runs workspace", () => {
     expect(view.text()).toContain("Choose a run in History");
     expect(view.findAll('h2').some(heading => heading.text() === 'Inspect')).toBe(false);
     expect(view.findComponent({ name: "RunDetailContent" }).exists()).toBe(false);
+    view.unmount();
+  });
+  it("lets Compare choose from every saved run, not History's page, and tells loading, failure and no runs apart", async () => {
+    m.query = { tab: "compare" };
+    const run = (id: number) => ({ id, name: `Run ${id}`, run_kind: "training" });
+    m.runs.compareCandidatesTotal = null;
+    let view = mountView(); await flushPromises();
+    // The picker asks for the project's runs itself, unfiltered.
+    expect(m.runs.fetchCompareCandidates).toHaveBeenCalledWith(1, false);
+    expect(view.get(".compare-picker").text()).not.toContain("No saved runs");
+    view.unmount();
+    m.runs.compareCandidatesError = "Could not load the project's runs.";
+    view = mountView(); await flushPromises();
+    expect(view.findAllComponents({ name: "WorkspaceState" }).some((state) => state.props("kind") === "error")).toBe(true);
+    expect(view.get(".compare-picker").text()).not.toContain("No saved runs");
+    view.unmount();
+    m.runs.compareCandidatesError = null; m.runs.compareCandidatesTotal = 0;
+    view = mountView(); await flushPromises();
+    expect(view.get(".compare-picker").text()).toContain("No saved runs in this project yet.");
+    view.unmount();
+    // History shows one filtered page; Compare still lists older runs and can load more.
+    m.runs.runs = [run(80)]; m.runs.total = 1;
+    m.runs.compareCandidates = Array.from({ length: 50 }, (_, index) => run(120 - index));
+    m.runs.compareCandidatesTotal = 120;
+    view = mountView(); await flushPromises();
+    expect(view.findAll(".compare-picker li")).toHaveLength(50);
+    const more = view.get('.compare-picker [label="Load older runs (50 of 120 shown)"]');
+    await more.trigger("click");
+    expect(m.runs.fetchCompareCandidates).toHaveBeenLastCalledWith(1, true);
     view.unmount();
   });
   it("offers run choice in place on Compare and the canonical empty state on Inspect", async () => {
