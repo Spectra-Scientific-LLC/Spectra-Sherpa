@@ -63,7 +63,7 @@ export function applicationTrustView(value: unknown): ApplicationTrustView | nul
       q: plsda ? finite(diagnostic?.q) : finite(qValues[position]),
       reason: status === "unavailable" ? String(
         applicability.warning || applicability.unavailable_reason || applicability.t2_unavailable_reason ||
-        "No fitted, row-level applicability screen was retained for this model",
+        "No fitted, row-level applicability screen was saved for this model",
       ) : null,
     };
   });
@@ -76,7 +76,7 @@ export function applicationTrustView(value: unknown): ApplicationTrustView | nul
     qLimit: finite(applicability.q_limit),
     claimScope: plsda || pls
       ? "Global predictor-space screening only; local support and prediction correctness are unqualified."
-      : "No supported fitted predictor-space screening method was retained for this model.",
+      : "No supported fitted predictor-space screening method was saved for this model.",
     rows,
   };
 }

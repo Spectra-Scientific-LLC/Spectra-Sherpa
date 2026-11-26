@@ -166,7 +166,7 @@
         <span>
           Species marked <span class="shift-asterisk">*</span> were wavenumber-shifted onto the
           median grid (same spacing → absorbance unchanged, scientifically sound). Hover the
-          asterisk for the exact shift.
+          asterisk for the shift.
         </span>
       </div>
     </Panel>

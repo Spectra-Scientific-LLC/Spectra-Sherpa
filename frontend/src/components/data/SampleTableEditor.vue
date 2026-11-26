@@ -1029,7 +1029,7 @@ const canApplyPlan = computed(() => plannedWells.value.length > 0 && rows.value.
 const planHintId = useId();
 const planAssignmentHint = computed(() =>
   canApplyPlan.value
-    ? "Preview matching by retained acquisition records, then planned plate order"
+    ? "Preview matching by saved acquisition records, then planned plate order"
     : `A proposal needs planned wells and measured rows (${plannedWells.value.length} planned, ${rows.value.length} measured).`,
 );
 const planComparison = computed(() => compareAcquisitionPlan(rows.value, plannedWells.value,

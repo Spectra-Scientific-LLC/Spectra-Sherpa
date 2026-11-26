@@ -281,10 +281,10 @@ describe("dataset curation", () => {
     expect(
       wrapper.get('input[aria-label="Curate observation source-excluded"]').attributes("disabled"),
     ).toBeDefined();
-    expect(button(wrapper, "Save portfolio with exclusions").attributes("disabled")).toBeDefined();
+    expect(button(wrapper, "Save selection with exclusions").attributes("disabled")).toBeDefined();
     await wrapper.get('input[maxlength="120"]').setValue("Checked");
     await wrapper.get('textarea[maxlength="2000"]').setValue("Acquisition fault");
-    await button(wrapper, "Save portfolio with exclusions").trigger("click");
+    await button(wrapper, "Save selection with exclusions").trigger("click");
     await flushPromises();
     expect(mocks.post).toHaveBeenCalledWith(
       "/experiments/7/dataset-views/curations",
@@ -355,8 +355,8 @@ describe("dataset curation", () => {
     await flushPromises();
     await wrapper.get('input[maxlength="120"]').setValue("Restored");
     await wrapper.get('textarea[maxlength="2000"]').setValue("Record cleared");
-    expect(button(wrapper, "Save portfolio with exclusions").attributes("disabled")).toBeDefined();
-    await button(wrapper, "Save portfolio with restored samples").trigger("click");
+    expect(button(wrapper, "Save selection with exclusions").attributes("disabled")).toBeDefined();
+    await button(wrapper, "Save selection with restored samples").trigger("click");
     await flushPromises();
     expect(wrapper.text()).toContain("Reviewed PLS cohort is pinned");
     expect(wrapper.findAll("button").some((b) => b.text().startsWith("Update PCA"))).toBe(false);

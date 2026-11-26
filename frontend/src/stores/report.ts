@@ -475,7 +475,7 @@ export const useReportStore = defineStore("report", () => {
                   label: "Saved-run plots",
                   node_type: "",
                   plots: [],
-                  notices: ["Select the project that owns this run to load retained plots."],
+                  notices: ["Select the project that owns this run to load saved plots."],
                 },
               ];
         }

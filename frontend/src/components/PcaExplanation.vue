@@ -83,7 +83,7 @@
       </template>
       <p v-else-if="sample" role="status">
         Explanation unavailable for {{ reviewRowLabel(rows.find((row) => row.id === sample), sample) }}:
-        {{ projectionError || "No exact projected observation was retained." }}
+        {{ projectionError || "No projected observation was saved." }}
       </p>
       <p v-else role="status">Select an observation to see its variable contributions.</p>
       <p aria-live="polite">

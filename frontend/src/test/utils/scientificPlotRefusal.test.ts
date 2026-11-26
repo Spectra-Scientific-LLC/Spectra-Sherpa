@@ -79,7 +79,7 @@ const cases: Array<[string, () => plots.ScientificPlot, RegExp]> = [
   [
     "empty declared traces after reopen",
     () => plots.buildDeclaredVisualizationPlot(JSON.parse('{"data":[]}')),
-    /no retained traces/,
+    /no saved traces/,
   ],
 ];
 describe("F3 builder → shared renderer refusal chain", () => {

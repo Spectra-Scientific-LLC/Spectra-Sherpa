@@ -164,7 +164,7 @@
       </summary>
       <div class="explore-content">
         <p v-if="dataStore.fileInfoLoading" class="plot-display-notice" role="status">
-          Refreshing the exact dataset selection…
+          Refreshing the dataset selection…
         </p>
         <p v-else-if="dataStore.fileInfoError" class="sample-table-retrieval-error" role="alert">
           {{ dataStore.fileInfoError }}
@@ -211,7 +211,7 @@
             </template>
           </dl>
           <p v-else class="dataset-step-empty">
-            No acquisition settings were retained for these files.
+            No acquisition settings were saved for these files.
           </p>
           <section
             v-if="requiresDimensionProjection"
@@ -222,7 +222,7 @@
             <div>
               <strong
                 >{{ dataStore.fileInfo.ndim || dataStore.fileInfo.shape?.length }}-D dataset
-                retained</strong
+                saved</strong
               >
               <p>
                 Choose the scientifically intended inner-mode index with
@@ -362,10 +362,10 @@
               />
             </div>
             <p v-if="sampleInclusionEnabled && sampleInclusion.loading" role="status">
-              Loading exact sample inclusion…
+              Loading sample inclusion…
             </p>
             <p v-else-if="sampleInclusionEnabled && sampleInclusionUnmatched" role="alert">
-              Sample identities do not match this portfolio. Refresh the selected data before editing.
+              Sample identities do not match this selection. Refresh the selected data before editing.
             </p>
             <div class="collection-sample-table-scroll">
               <table>
@@ -546,7 +546,7 @@
               />
             </div>
             <p v-if="axisInventoryLoading" class="plot-display-notice" role="status">
-              Loading the complete owner-scoped axis inventory…
+              Loading the complete axis inventory…
             </p>
             <p v-if="axisInventoryError" class="sample-table-retrieval-error" role="alert">
               {{ axisInventoryError }}
@@ -615,7 +615,7 @@
           >
             <div>
               <strong>Project collection</strong>
-              <span>{{ collectionState.fileCount }} exact source files</span>
+              <span>{{ collectionState.fileCount }} source files</span>
             </div>
             <code>{{ collectionState.manifestDigest }}</code>
           </section>
@@ -1396,7 +1396,7 @@ const scientificContextRows = computed(() => {
     rows.push({ label: "Mode roles", value: layout.mode_roles.join(" · ") });
   }
   if (Array.isArray(history.entries)) {
-    rows.push({ label: "Source history", value: `${history.entries.length} retained entries` });
+    rows.push({ label: "Source history", value: `${history.entries.length} saved entries` });
   }
   add("Storage order", history.storage_order);
   add("Scientific digest", manifest.scientific_digest);
@@ -1425,8 +1425,8 @@ watch(
     const isPreview = apiSerializationMetadata()?.mode === "bounded_preview";
     if (!handle) {
       completeSampleTableError.value = isPreview
-        ? "Only an aligned API preview is available; the complete table handle was not retained."
-        : "Native sample metadata and responses could not be retrieved: the dataset handle was not retained. Reload the source.";
+        ? "Only an aligned API preview is available; the complete table was not saved."
+        : "Native sample metadata and responses could not be retrieved: the dataset link was not saved. Reload the source.";
       return;
     }
     completeSampleTableLoading.value = true;
@@ -1442,8 +1442,8 @@ watch(
     } catch {
       if (ticket.isCurrent()) {
         completeSampleTableError.value = isPreview
-          ? "Only an aligned API preview is shown. The complete owner-scoped table could not be retrieved within its 10,000-row and 4 MiB limits."
-          : "Native sample metadata and responses could not be retrieved. Retained source data are unchanged; reload the source to retry.";
+          ? "Only an aligned API preview is shown. The complete table could not be retrieved within its 10,000-row and 4 MiB limits."
+          : "Native sample metadata and responses could not be retrieved. Saved source data are unchanged; reload the source to retry.";
       }
     } finally {
       if (ticket.isCurrent()) completeSampleTableLoading.value = false;
@@ -1465,7 +1465,7 @@ function buildSampleTableState(
       : { kind: "absent" };
   }
   if (!isRecord(raw) || Object.keys(raw).length === 0) {
-    return { kind: "invalid", message: "The retained sample table is empty or malformed." };
+    return { kind: "invalid", message: "The saved sample table is empty or malformed." };
   }
   const exactLabels =
     Array.isArray(labels) &&
@@ -1475,7 +1475,7 @@ function buildSampleTableState(
   if (collectionState.value.kind === "valid" && !exactLabels) {
     return {
       kind: "invalid",
-      message: "The retained sample labels do not match the visible spectra.",
+      message: "The saved sample labels do not match the visible spectra.",
     };
   }
   const columns = Object.keys(raw);
@@ -1485,7 +1485,7 @@ function buildSampleTableState(
     if (!Array.isArray(columnValues) || columnValues.length !== rowCount) {
       return {
         kind: "invalid",
-        message: `Sample-table column ${column} does not match the ${rowCount} retained spectra. Plot grouping is disabled.`,
+        message: `Sample-table column ${column} does not match the ${rowCount} saved spectra. Plot grouping is disabled.`,
       };
     }
     if (!columnValues.every(isLosslessSampleTableScalar)) {
@@ -1508,7 +1508,7 @@ function buildSampleTableState(
         ) {
           return {
             kind: "invalid",
-            message: `Sample-table identity at row ${index + 1} does not match its retained spectrum label.`,
+            message: `Sample-table identity at row ${index + 1} does not match its saved spectrum label.`,
           };
         }
       }
@@ -1636,7 +1636,7 @@ const wireSampleTableState = computed<SampleTableState>(() => {
       !Number.isInteger(previewShape[0]) ||
       Number(previewShape[0]) < 1
     ) {
-      return { kind: "invalid", message: "The bounded API preview has no exact row projection." };
+      return { kind: "invalid", message: "The bounded API preview has no row projection." };
     }
     rowCount = Number(previewShape[0]);
   }
@@ -2278,7 +2278,12 @@ function formatSampleColumn(value: string): string {
 
 function formatSampleValue(value: unknown): string {
   if (value == null || value === "") return "—";
-  if (typeof value === "number" && !Number.isInteger(value)) return scientificNumber(value);
+  // Reference values show as recorded (10.448, not a padded 10.4480); only long
+  // binary fractions are rounded for display. The cell title keeps the raw value.
+  if (typeof value === "number" && !Number.isInteger(value)) {
+    const recorded = String(value);
+    return recorded.length <= 10 && !recorded.includes("e") ? recorded : scientificNumber(value);
+  }
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }

@@ -143,7 +143,7 @@ function ask(kind: "samples" | "variables" | "next" | "compare" | "applicability
             ? "Explain these selected variables and their prediction contributions using the saved diagnostic evidence."
             : "Explain these selected variables and their Q and signed T² contributions using the saved PCA evidence.",
       applicability:
-        "Explain these selected observations' saved PLS scores and T²/Q predictor-space novelty, using the correct calibration or application limits and retained reference population. Distinguish predictor novelty from response error and state unavailable evidence. Passing a global screen does not establish local support or prediction certainty.",
+        "Explain these selected observations' saved PLS scores and T²/Q predictor-space novelty, using the correct calibration or application limits and saved reference population. Distinguish predictor novelty from response error and state unavailable evidence. Passing a global screen does not establish local support or prediction certainty.",
       next: "What should I inspect next to understand these selected diagnostic samples?",
       compare:
         "Explain what changed between these saved runs after sample review; distinguish comparable evidence from descriptive changes.",

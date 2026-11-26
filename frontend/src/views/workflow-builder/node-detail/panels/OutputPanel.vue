@@ -112,7 +112,7 @@
                   Data Role
                   <i
                     class="pi pi-info-circle meta-info-icon"
-                    title="X_spectra has an ordered spectral axis. X_features is an unordered multivariate feature table; spectral preprocessing such as peak finding and baseline correction is blocked for it."
+                    title="Spectra has an ordered spectral axis. X_features is an unordered multivariate feature table; spectral preprocessing such as peak finding and baseline correction is blocked for it."
                   ></i>
                 </span>
                 <span class="insp-value insp-badge">{{ datasetInfo.dataRoleLabel }}</span>

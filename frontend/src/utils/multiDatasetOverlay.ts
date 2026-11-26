@@ -268,7 +268,7 @@ function admitSource(
     ? selectedDatasetRows(dataset, source.selectedFileNames)
     : null;
   if (source.selectedFileNames && selectedIndexes === null) {
-    return `${sourceName} has no exact row-to-file projection for this selection.`;
+    return `${sourceName} has no row-to-file projection for this selection.`;
   }
   const selected = <T>(values: T[]): T[] =>
     selectedIndexes ? selectedIndexes.map((i) => values[i]) : values;

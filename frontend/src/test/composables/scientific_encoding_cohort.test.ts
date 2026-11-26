@@ -167,7 +167,7 @@ describe("scientific encoding and population regimes", () => {
         [1, 3],
         [4, 6],
       ]);
-      expect(w.text()).toContain("2 of 3 retained rows; 1 excluded");
+      expect(w.text()).toContain("2 of 3 saved rows; 1 excluded");
       expect((w.vm as any).previewTableData[1]._index).toBe(3);
       expect(JSON.stringify(input)).toBe(original);
       w.unmount();

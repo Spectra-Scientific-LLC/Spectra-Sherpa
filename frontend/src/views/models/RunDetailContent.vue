@@ -24,11 +24,12 @@
         </select>
         <Button :label="action.label" :icon="action.icon" :title="action.title" :aria-label="action.ariaLabel || action.label" class="p-button-text p-button-sm" :disabled="action.disabled" @click="action.command?.()" />
       </template>
-      <ContextualActions :show-error="false" :context="!loading && !error && detail && detail.run.project_id === project.currentProjectId && project.currentProjectId != null
-        ? { surface: 'run', projectId: project.currentProjectId, runId: detail.run.id } : null" />
     </div>
     </Teleport>
-    <p v-if="contextualError" role="alert">{{ contextualError }}</p>
+    <!-- The next decision for this run stays on the page, never folded into the Actions menu.
+         Its outcome (including a refusal) answers the click, so it is a toast. -->
+    <ContextualActions :show-error="false" :context="!loading && !error && detail && detail.run.project_id === project.currentProjectId && project.currentProjectId != null
+      ? { surface: 'run', projectId: project.currentProjectId, runId: detail.run.id } : null" />
     <WorkspaceState v-if="error" kind="error" variant="page" :message="error">
       <Button icon="pi pi-refresh" label="Retry" class="p-button-text p-button-sm" @click="loadRun()" />
     </WorkspaceState>
@@ -109,7 +110,7 @@
           <ul>
             <li v-for="item in application.results || []" :key="item.artifact_uid">
               {{ item.artifact_uid }}: {{ item.status }}<span v-if="item.error">. {{ item.error }}</span>
-              <span v-if="item.status === 'completed' && !applicationTrust.some(view => view.artifactUid === item.artifact_uid)">. Applicability unavailable: no matching row-level fitted screen was retained.</span>
+              <span v-if="item.status === 'completed' && !applicationTrust.some(view => view.artifactUid === item.artifact_uid)">. Applicability unavailable: no matching row-level fitted screen was saved.</span>
             </li>
           </ul>
           <section v-for="view in applicationTrust" :key="view.artifactUid" class="application-trust" :aria-label="`Prediction trust for ${view.artifactUid}`">
@@ -169,16 +170,15 @@
       </Panel>
           <Panel header="Results" toggleable :collapsed="!expandedSections.includes('Results')" @update:collapsed="setSectionCollapsed('Results', $event)">
           <template v-if="expandedSections.includes('Results')">
-          <p v-if="!selectedNode">No node results were retained.</p>
+          <p v-if="!selectedNode">No node results were saved.</p>
           <ProgressSpinner v-else-if="nodeLoading" />
           <template v-else>
             <h2>{{ selectedDefinition?.label || selectedNode }}</h2>
             <p v-if="nodeFailure" role="alert">{{ nodeFailure }}</p>
-            <p v-for="message in outputMessages" :key="message" role="status">{{ message }}</p>
               <RetainedPopulationMap v-if="route.query.output === 'exclusions'"
                 :key="`${detail.run.id}:${selectedNode}`" :value="values.exclusions" :node-id="selectedNode"
                 :node-label="selectedDefinition?.label || selectedNode" />
-              <section v-if="nodeTrust" class="application-trust" aria-label="Retained prediction trust">
+              <section v-if="nodeTrust" class="application-trust" aria-label="Saved prediction trust">
                 <h3>Per-file prediction trust</h3>
                 <p>Fitted model: {{ values.model_id }}</p>
                 <p>Applied workflow version: {{ detail.run.workflow_version_id ?? 'Unavailable' }}</p>
@@ -186,27 +186,39 @@
                 <p v-if="nodeTrust.rows.length > 200">Showing the first 200 of {{ nodeTrust.rows.length }} rows. Download the complete table.</p>
                 <Button label="Download prediction trust CSV" class="p-button-text p-button-sm" @click="exportApplicationTrust(nodeTrust)" />
                 <div class="application-trust__scroll"><table>
-                  <thead><tr><th>File dataset position</th><th>Prediction</th><th>Global T²/Q screen</th><th>T²</th><th>Q</th><th>Advisor</th></tr></thead>
+                  <thead><tr><th>{{ trustSampleIds ? 'Sample' : 'File dataset position' }}</th><th>Prediction</th><th>Global T²/Q screen</th><th>T²</th><th>Q</th><th>Advisor</th></tr></thead>
                   <tbody><tr v-for="row in nodeTrust.rows.slice(0, 200)" :key="row.sampleIndex">
-                    <td>{{ row.sampleIndex + 1 }}</td><td>{{ formatPrediction(row.prediction) }}</td>
+                    <td>{{ trustSampleIds ? trustSampleIds[row.sampleIndex] : row.sampleIndex + 1 }}</td><td>{{ formatPrediction(row.prediction) }}</td>
                     <td>{{ trustLabel(row.status) }}</td><td>{{ row.t2 ?? '—' }}</td><td>{{ row.q ?? '—' }}</td>
                     <td><Button label="Ask Sherpa" class="p-button-text p-button-sm" :disabled="!applicationAdvisorAvailable" @click="askRunApplicationAdvisor(row.sampleIndex)" /></td>
                   </tr></tbody>
                 </table></div>
               </section>
               <p v-else-if="detail.run.run_kind === 'batch_inference' && selectedDefinition?.node_type === 'model.load_apply'" role="status">
-                Applicability unavailable: no matching, exact fitted row-level screen was retained for this applied model.
+                Sample-level applicability (Hotelling T² and Q residuals) was not computed for this prediction.
               </p>
               <Dropdown v-if="presentationOptions.length" :model-value="selectedPresentation?.presentation.presentation_id" :options="presentationOptions"
                 option-label="label" option-value="value" aria-label="Scientific result" @update:model-value="selectPresentation" />
               <p v-if="presentationError" role="status">{{ presentationError }}</p>
               <p v-if="presentationAvailabilityNotice" role="status">{{ presentationAvailabilityNotice }}</p>
-              <ValidationLedger
-                v-if="validationRows.length"
-                :rows="validationRows"
-                :title="`${detail?.run.name || 'run'}-${selectedNode || 'validation'}`"
-              />
               <p v-if="ledgerUnavailableReason" role="status">{{ ledgerUnavailableReason }}</p>
+              <!-- Applied predictions are listed by the input rows' own sample IDs. -->
+              <section v-if="samplePredictions" class="sample-predictions" aria-label="Predictions by sample">
+                <header>
+                  <h3>Predictions</h3>
+                  <Button label="Download CSV" icon="pi pi-download" class="p-button-text p-button-sm" @click="downloadSamplePredictions" />
+                </header>
+                <table>
+                  <thead><tr><th scope="col">Sample</th><th v-for="name in samplePredictions.columns" :key="name" scope="col" class="num">{{ name }}</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in samplePredictions.rows.slice(0, 200)" :key="row.sample">
+                      <th scope="row">{{ row.sample }}</th>
+                      <td v-for="(value, index) in row.values" :key="index" class="num" :title="String(value)">{{ formatMeasurement(value, samplePredictions.decimals[index]) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <small v-if="samplePredictions.rows.length > 200">Showing the first 200 of {{ samplePredictions.rows.length }} samples. Download the CSV for all of them.</small>
+              </section>
               <section v-if="showRetainedValueFallback" aria-label="Retained values">
                 <p>The saved view is unavailable. These values are shown as recorded.</p>
                 <section v-for="(value, port) in values" :key="port">
@@ -214,15 +226,22 @@
                   <SavedValue :value="value" />
                 </section>
               </section>
-              <SavedValue v-else-if="!validationRows.length && nodeOutput && selectedPresentation && !selectedPresentation.presentation.modes.includes('plot') && selectedPresentation.presentation.kind !== 'numeric_matrix'" :value="nodeOutput.presentation_value" scientific />
-              <QuickPlotModal v-else-if="nodeOutput && selectedDefinition && (!validationRows.length || selectedPresentation?.presentation.modes.includes('plot'))" :key="selectedNode" embedded :model-value="true"
+              <SavedValue v-else-if="!samplePredictions && !validationRows.length && nodeOutput && selectedPresentation && !selectedPresentation.presentation.modes.includes('plot') && selectedPresentation.presentation.kind !== 'numeric_matrix'" :value="nodeOutput.presentation_value" scientific />
+              <QuickPlotModal v-else-if="!samplePredictions && nodeOutput && selectedDefinition && (!validationRows.length || selectedPresentation?.presentation.modes.includes('plot'))" :key="selectedNode" embedded :model-value="true"
                 :table-only="!!selectedPresentation && !selectedPresentation.presentation.modes.includes('plot')"
                 :node-output="nodeOutput" :node-type="selectedDefinition.node_type" :node-label="selectedDefinition.label || selectedNode"
                 :node-input="nodeInput" :node-inputs="nodeInputs" />
-              <p v-else-if="!selectedDefinition">No saved node definition is available for scientific plotting. Retained values are shown below.</p>
-              <p v-else-if="!rawNodeOutput">No scientific output was retained for this node.</p>
-              <details v-if="Object.keys(values).length" class="audit-details">
-                <summary>Raw saved outputs (for audit)</summary>
+              <p v-else-if="!selectedDefinition">No saved node definition is available for scientific plotting. Saved values are shown below.</p>
+              <p v-else-if="!rawNodeOutput">No scientific output was saved for this node.</p>
+              <!-- The plot comes first; the per-sample table follows it. -->
+              <ValidationLedger
+                v-if="validationRows.length"
+                :rows="validationRows"
+                :title="`${detail?.run.name || 'run'}-${selectedNode || 'validation'}`"
+              />
+              <details v-if="Object.keys(values).length || outputMessages.length" class="audit-details">
+                <summary>Provenance</summary>
+                <p v-for="message in outputMessages" :key="message">{{ message }}</p>
                 <details v-for="(value, port) in values" :key="port" @toggle="rawOpen[port] = ($event.target as HTMLDetailsElement).open"><summary>{{ port }}</summary><pre v-if="rawOpen[port]">{{ JSON.stringify(value, null, 2) }}</pre></details>
               </details>
           </template>
@@ -234,7 +253,7 @@
             <template v-else>
               <h3>Diagnostics</h3>
               <SavedValue v-if="diagnostics" :value="diagnostics" scientific />
-              <p v-else>No validation diagnostics were retained for this node.</p>
+              <p v-else>No validation diagnostics were saved for this node.</p>
               <h3>Parameters used in this run</h3>
               <SavedValue v-if="effectiveParameters !== undefined" :value="effectiveParameters" />
               <p v-else role="status">
@@ -242,7 +261,7 @@
               </p>
               <h3>Parameters set in the workflow</h3>
               <SavedValue v-if="selectedDefinition" :value="selectedDefinition.parameters" />
-              <p v-else>Authored parameters were not retained.</p>
+              <p v-else>Authored parameters were not saved.</p>
             </template>
             </template>
           </Panel>
@@ -259,6 +278,7 @@ import RetainedPopulationSummary from "@/components/results/RetainedPopulationSu
 import RetainedPopulationMap from "@/components/results/RetainedPopulationMap.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- saved node payloads use the shared scientific renderer contract. */
 import { computed, ref, shallowRef, watch, onBeforeUnmount } from 'vue';
+import { useToast } from 'primevue/usetoast';
 import { useRoute, useRouter } from 'vue-router';
 import Button from 'primevue/button';
 import Panel from 'primevue/panel';
@@ -281,6 +301,7 @@ import { availableScientificPresentations, resolveScientificPresentation, projec
 import QuickPlotModal from '@/views/workflow-builder/modals/QuickPlotModal.vue';
 import SavedValue from './SavedValue.vue';
 import { downloadCsv, downloadJson } from '@/utils/download';
+import { columnDecimals, formatMeasurement } from '@/utils/scientificDisplay';
 import { applicationTrustView, retainedNodeTrustView, type ApplicationTrustView } from '@/utils/applicationTrust';
 import ContextualActions from '@/components/ContextualActions.vue';
 import { useContextualActions } from '@/composables/useContextualActions';
@@ -377,17 +398,61 @@ const headerActions = computed<RunAction[]>(() => {
     items: artifacts.length > 1 ? artifacts.map(uid => ({ label: uid, command: () => { producedArtifactUid.value = uid; openProducedModel(); } })) : undefined });
   return actions;
 });
-const { actions: contextualActions, running: contextualRunning, error: contextualError, execute: executeContextualAction } = useContextualActions();
-const headerMenuActions = computed(() => [...headerActions.value.map(action => {
+const { error: contextualError } = useContextualActions();
+// The Actions menu holds navigation only; decisions render on the page.
+const headerMenuActions = computed(() => headerActions.value.map(action => {
   if (!action.items) return action;
   // Opening a submenu is navigation between choices, not an artifact choice.
   const { command: _command, ...submenu } = action;
   return { ...submenu, disabled: !detail.value?.run.project_id };
-}), ...contextualActions.value.map(action => ({
-  label: action.label, icon: action.icon, disabled: contextualRunning.value !== null,
-  loading: contextualRunning.value === action.key,
-  command: () => { void executeContextualAction(action.key); },
-}))]);
+}));
+const toast = useToast();
+watch(contextualError, (message, _previous, onCleanup) => {
+  if (!message) return;
+  const shown = { severity: 'error' as const, detail: message };
+  toast.add(shown);
+  onCleanup(() => toast.remove(shown));
+});
+/** Predictions of an applied model, named by the input rows' declared sample IDs (row order is preserved). */
+/**
+ * Sample IDs of the data a saved model was applied to, from the input saved with
+ * the run. Prediction keeps row order, so result row i belongs to input row i;
+ * only declared, unique sample_id values are used, never display labels.
+ */
+const appliedSampleIds = computed<string[] | null>(() => {
+  if (selectedDefinition.value?.node_type !== 'model.load_apply') return null;
+  const input = nodeInputs.value?.X_new as { y_axis?: { sample_table?: { sample_id?: unknown } } } | undefined;
+  const ids = input?.y_axis?.sample_table?.sample_id;
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string' && id.length > 0)) return null;
+  return new Set(ids).size === ids.length ? (ids as string[]) : null;
+});
+// The per-file trust table already lists every prediction; it then names rows by sample ID instead.
+const trustSampleIds = computed(() => {
+  const ids = appliedSampleIds.value;
+  return nodeTrust.value && ids && ids.length === nodeTrust.value.rows.length ? ids : null;
+});
+const samplePredictions = computed(() => {
+  if (selectedDefinition.value?.node_type !== 'model.load_apply' || nodeTrust.value) return null;
+  const ids = appliedSampleIds.value;
+  const result = values.value.result;
+  const matrix = Array.isArray(result) ? result : Array.isArray(result?.data) ? result.data : null;
+  if (!Array.isArray(ids) || !matrix || matrix.length !== ids.length) return null;
+  const rows = matrix.map((row: unknown, index: number) => ({
+    sample: String(ids[index]),
+    values: (Array.isArray(row) ? row : [row]).map((value: unknown) => Number(value)),
+  }));
+  const width = rows[0]?.values.length ?? 0;
+  if (!width || rows.some((row: { values: number[] }) => row.values.length !== width)) return null;
+  const columns = width === 1 ? ['Predicted'] : Array.from({ length: width }, (_, index) => `Predicted ${index + 1}`);
+  const decimals = columns.map((_, index) => columnDecimals(rows.map((row: { values: number[] }) => row.values[index])));
+  return { columns, rows, decimals };
+});
+function downloadSamplePredictions() {
+  const table = samplePredictions.value;
+  if (!table) return;
+  downloadCsv([['Sample', ...table.columns], ...table.rows.map((row: { sample: string; values: number[] }) => [row.sample, ...row.values])],
+    `${detail.value?.run.name || 'run'}-predictions.csv`);
+}
 const runNameDraft = ref('');
 const runNameSaving = ref(false);
 const runNameError = ref('');
@@ -460,7 +525,7 @@ async function downloadPopulationMap(nodeId: string) {
     if (!owner.isCurrent()) return;
     downloadJson({ run_id: run.id, node_id: nodeId, port: 'exclusions', evidence, value }, `run-${run.id}-${nodeId}-exclusions.json`);
   } catch (error) {
-    if (owner.isCurrent()) populationDownloadError.value = `Retained row map unavailable: ${failure(error)}`;
+    if (owner.isCurrent()) populationDownloadError.value = `Saved row map unavailable: ${failure(error)}`;
   }
 }
 const tabs = ["Summary", "Results", "Validation"];
@@ -470,15 +535,19 @@ function setSectionCollapsed(section: string, collapsed: boolean) {
   expandedSections.value = collapsed ? expandedSections.value.filter(name => name !== section) : [...new Set([...expandedSections.value, section])];
   if (!collapsed) setTab(section);
 }
+// A run opens on its Summary (model, statistics, component choice); a link to a
+// step opens that step's Results or Validation.
 const tab = computed(() => {
-  if (tabs.includes(String(route.query.view))) return String(route.query.view);
-  const nodeId = selectedNode.value || preferredNode.value || "";
+  return tabs.includes(String(route.query.view)) ? String(route.query.view) : "Summary";
+});
+/** The section that shows a chosen step: its results, or validation when only diagnostics were saved. */
+function stepSection(nodeId: string): string {
   const hasOutput = Object.values(detail.value?.evidence.outputs[nodeId] ?? {}).some(
     evidence => evidence.state === "exact",
   );
   return !hasOutput && detail.value?.evidence.outputs.__diagnostics__?.[nodeId]?.state === "exact"
     ? "Validation" : "Results";
-});
+}
 const selectedNode = computed(() => (typeof route.query.node === "string" ? route.query.node : ""));
 function exportEnvironment() {
   if (!detail.value?.environment_snapshot) return;
@@ -533,7 +602,7 @@ const presentationAvailabilityNotice = computed(() => {
   const preferred = contract.presentations.find(item => item.presentation_id === contract.default_presentation);
   const shown = presentationOptions.value.find(item => item.value === selectedPresentationId.value);
   return shown && preferred
-    ? `${preferred.label} is unavailable for this run. Showing retained ${shown.label}.`
+    ? `${preferred.label} is unavailable for this run. Showing saved ${shown.label}.`
     : null;
 });
 const selectedPresentation = computed(() => resolveScientificPresentation(undefined, rawNodeOutput.value, selectedPresentationId.value));
@@ -610,7 +679,11 @@ const retainedIdentity = computed(() => {
 defineExpose({ headerActions: headerMenuActions, retainedIdentity });
 const failure = (err: any) => String(err?.response?.data?.detail || err?.message || 'Saved evidence could not be loaded.');
 function setTab(value: string) { if (value) void router.replace({ query: { ...route.query, view: value } }); }
-function selectNode(id: string) { void router.replace({ query: { ...route.query, node: id, presentation: undefined, output: undefined } }); }
+// Choosing a step opens what it produced, unless Validation is already the open view.
+function selectNode(id: string) {
+  const view = route.query.view === 'Validation' ? 'Validation' : stepSection(id);
+  void router.replace({ query: { ...route.query, node: id, view, presentation: undefined, output: undefined } });
+}
 // Automatic choices refine the address the user opened; keep its scroll target.
 function selectDefaultNode(id: string) { void router.replace({ query: { ...route.query, node: id, presentation: undefined, output: undefined }, hash: route.hash }); }
 function selectPresentation(id: string) { void router.replace({ query: { ...route.query, presentation: id } }); }
@@ -634,7 +707,7 @@ function read(node: string, port: string): Promise<any> {
   const projectId = project.currentProjectId;
   const key = `${projectId}/${runId}/${node}/${port}`;
   const evidence = detail.value?.evidence.outputs[node]?.[port];
-  if (!evidence?.storage) return Promise.reject(new Error(evidence?.reason || `No retained output: ${node}/${port}`));
+  if (!evidence?.storage) return Promise.reject(new Error(evidence?.reason || `No saved output: ${node}/${port}`));
   if (!cache.has(key)) {
     // The cache belongs to the run, not an individual node/view. Node changes
     // reject stale presentation effects without aborting another same-run reader.
@@ -745,7 +818,7 @@ async function loadRun(allowProjectSelection = true) {
         for (const uid of successful) {
           if (typeof uid !== 'string') continue;
           if (detail.value.evidence.outputs[uid]?.default?.state !== 'exact') {
-            applicationError.value = `Prediction evidence for ${uid} is unavailable: exact output was not retained.`;
+            applicationError.value = `Prediction evidence for ${uid} is unavailable: output was not saved.`;
             continue;
           }
           try { outputs.push(await read(uid, 'default')); }
@@ -755,7 +828,7 @@ async function loadRun(allowProjectSelection = true) {
         applicationOutputs.value = outputs;
       } catch (err) { if (request.isCurrent()) applicationError.value = failure(err); }
     } else if (detail.value.evidence.outputs.__application__?.selection) {
-      applicationError.value = 'Application context unavailable: exact selection evidence was not retained.';
+      applicationError.value = 'Application context unavailable: selection evidence was not saved.';
     }
     if (!request.isCurrent()) return;
     if (route.query.trust === '1' && detail.value.run.run_kind === 'batch_inference') {
@@ -792,7 +865,7 @@ function askApplicationAdvisor(view: ApplicationTrustView, sampleIndex: number):
   const run = detail.value?.run;
   const record = detail.value?.evidence.outputs[view.artifactUid]?.default;
   if (!applicationAdvisorAvailable.value || !run?.workflow_id || !run.project_id || !record?.sha256) return;
-  requestAdvisorPrompt('Explain this applied row\'s retained global predictor-space screen, its limits, and the next check. Do not infer prediction correctness or local support.', {
+  requestAdvisorPrompt('Explain this applied row\'s saved global predictor-space screen, its limits, and the next check. Do not infer prediction correctness or local support.', {
     diagnosticScope: {
       project_id: run.project_id,
       model_kind: 'application',
@@ -807,7 +880,7 @@ function askRunApplicationAdvisor(sampleIndex: number): void {
   const run = detail.value?.run;
   const record = detail.value?.evidence.outputs[selectedNode.value]?.applicability;
   if (!applicationAdvisorAvailable.value || !run?.workflow_id || !run.project_id || !record?.sha256) return;
-  requestAdvisorPrompt('Explain this saved per-file prediction row\'s retained global predictor-space screen and its limits. Do not infer prediction correctness or local support.', {
+  requestAdvisorPrompt('Explain this saved per-file prediction row\'s saved global predictor-space screen and its limits. Do not infer prediction correctness or local support.', {
     diagnosticScope: {
       project_id: run.project_id, model_kind: 'run_application',
       reference: {
@@ -864,14 +937,27 @@ async function loadModelSummary(request: ScopedRequestTicket) {
       // A possible output is not a retention gap unless the run recorded it.
       if (!evidence) continue;
       if (!evidence.storage) {
-        if (source.port === 'component_curve') missing.push(`${source.nodeId}/component_curve (not retained in this run)`);
+        if (source.port === 'component_curve') missing.push(`${source.nodeId}/component_curve (not saved in this run)`);
         continue;
       }
       try { records.push({ source, value: await read(source.nodeId, source.port) }); }
       catch { missing.push(`${source.nodeId}/${source.port}`); }
       if (!request.isCurrent()) return;
     }
-    modelSummary.value = buildModelSummary(definition.value, detail.value?.params_snapshot ?? null, records);
+    let summary = buildModelSummary(definition.value, detail.value?.params_snapshot ?? null, records);
+    // Automatic component choice without a saved curve: the fitted model it produced still
+    // records how many components it kept, so show that instead of "not retained".
+    const produced = detail.value?.run.produced_artifact_uids ?? [];
+    if (produced.length === 1 && summary.model?.settings.some(([, value]) => value.includes('fitted count not saved'))) {
+      try {
+        const { data } = await api.get<{ n_components?: unknown }>(`/models/${encodeURIComponent(produced[0])}`);
+        if (!request.isCurrent()) return;
+        if (typeof data?.n_components === 'number') {
+          summary = buildModelSummary(definition.value, detail.value?.params_snapshot ?? null, records, data.n_components);
+        }
+      } catch { /* The summary keeps saying the count was not recorded. */ }
+    }
+    modelSummary.value = summary;
     if (missing.length) summaryError.value = `Some summary statistics could not be loaded: ${missing.join(', ')}.`;
   } catch (err) {
     if (request.isCurrent()) summaryError.value = `Model summary unavailable: ${failure(err)}`;
@@ -889,7 +975,7 @@ async function loadNode() {
   try {
     for (const [port, evidence] of Object.entries(detail.value.evidence.outputs[id] || {})) {
       if (port === '_internal' || port.startsWith('__')) continue;
-      if (evidence.state !== 'exact') messages.push(`${port}: ${evidence.state === 'missing' ? 'Not retained. ' : ''}${evidence.reason || evidence.state}`);
+      if (evidence.state !== 'exact') messages.push(`${port}: ${evidence.state === 'missing' ? 'Not saved. ' : ''}${evidence.reason || evidence.state}`);
       if (!evidence.storage) continue;
       try { loaded[port] = await read(id, port); } catch (err) { messages.push(`${port}: ${failure(err)}`); }
       if (!request.isCurrent()) return;
@@ -984,4 +1070,8 @@ details { border-top: 1px solid var(--surface-border); padding: .75rem 0; }
   dl { grid-template-columns: minmax(0, 1fr); gap: .4rem; }
   .run-detail :deep(.saved-value) { grid-template-columns: minmax(0, 1fr); }
 }
+.sample-predictions header { display: flex; align-items: center; justify-content: space-between; }
+.sample-predictions table { border-collapse: collapse; font-size: .9rem; }
+.sample-predictions th, .sample-predictions td { padding: .3rem .75rem; border-bottom: 1px solid var(--surface-border); text-align: left; }
+.sample-predictions .num { text-align: right; font-variant-numeric: tabular-nums; }
 </style>

@@ -77,7 +77,7 @@ describe("retained node report plots", () => {
     expect(render.mock.calls[0][1]).toMatchObject({ showlegend: false });
     expect(render.mock.calls[0][1].legend).toBeUndefined();
     expect(sections[0].plots[0].title).toContain("Explained variance");
-    expect(sections[0].notices).toContain("Scores: required retained output is unavailable.");
+    expect(sections[0].notices).toContain("Scores: required saved output is unavailable.");
   });
   it("captures multiple available plot types from exact saved outputs", async () => {
     vi.mocked(api.get).mockImplementation(async (url) => ({ data: String(url).endsWith("/evidence")
@@ -131,7 +131,7 @@ describe("retained node report plots", () => {
     const render = vi.fn();
     const sections = await captureReportPlots(run(), 1, () => true, render);
     expect(render).not.toHaveBeenCalled();
-    expect(sections[0].notices.join(" ")).toContain("exact retained output unavailable");
+    expect(sections[0].notices.join(" ")).toContain("saved output unavailable");
     expect(api.get).toHaveBeenCalledTimes(1);
   });
   it("does not consult the current canvas when a definition is missing", async () => {

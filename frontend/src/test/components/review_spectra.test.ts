@@ -112,7 +112,7 @@ describe("Exact spectral curve identity", () => {
     expect(chart.props("data")).toHaveLength(1);
     expect(chart.props("data")[0].name).toBe("a");
     expect(chart.props("layout").yaxis.title).toBe("scaled absorbance");
-    expect(wrapper.text()).toContain("1 observations have no retained curves");
+    expect(wrapper.text()).toContain("1 observations have no saved curves");
     wrapper.unmount();
   });
 });

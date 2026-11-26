@@ -682,7 +682,7 @@ export function generateProvenanceReport(data: ReportData): string {
   if (showPipeline) {
     html += `<h2>Pipeline Steps</h2>`;
     if (hasUnresolvedReportConnections(nodes, edges)) {
-      html += `<p>Some saved connections have no retained node definition. All available steps are shown; pipeline order is not fully verified.</p>`;
+      html += `<p>Some saved connections have no saved node definition. All available steps are shown; pipeline order is not fully verified.</p>`;
     }
     for (const node of sorted) {
       const plotImage = plotImages.get(node.nodeId);

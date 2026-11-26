@@ -31,7 +31,7 @@
       <button v-if="!responseIdentity && responses.length > 1" type="button" @click="responses.splice(index, 1)">Remove response</button>
     </fieldset>
     <button v-if="!responseIdentity" type="button" :disabled="responses.length >= 256" @click="responses.push(emptyResponse())">Add response</button>
-    <p v-if="!responseIdentity">Enter the frozen application's exact response names and units. The server checks them against the fitted model before assessment.</p>
+    <p v-if="!responseIdentity">Enter the frozen application's response names and units. The server checks them against the fitted model before assessment.</p>
     <fieldset><legend>Chronology and independence declarations</legend>
       <p>Leave a statement unchecked unless you can support it. Missing declarations remain visible and may prevent qualification; checking them does not prove independence.</p>
       <label><input v-model="policyFrozen" type="checkbox" /> The policy was frozen before examining validation results.</label>

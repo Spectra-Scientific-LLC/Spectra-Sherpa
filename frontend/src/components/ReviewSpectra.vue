@@ -12,7 +12,7 @@
       >
     </p>
     <p v-if="spectra.missing_ids?.length">
-      {{ spectra.missing_ids.length }} observations have no retained curves in this space; use the
+      {{ spectra.missing_ids.length }} observations have no saved curves in this space; use the
       table to inspect them.
     </p>
     <label

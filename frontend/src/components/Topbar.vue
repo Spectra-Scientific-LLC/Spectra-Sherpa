@@ -44,54 +44,21 @@
       <details class="connection-status">
         <summary>{{ connectionLabel }}</summary>
         <div class="connection-details">
-      <!-- Basic availability; detailed provenance is shown separately. -->
-      <div class="provenance-indicators" aria-label="Current project availability">
-        <button
-          v-for="record in provenanceLights"
-          :key="record.kind"
-          type="button"
-          class="status-light"
-          :class="`status-${availabilityState(record) === 'healthy' ? 'green' : availabilityState(record) === 'faulty' ? 'red' : 'gray'}`"
-          :aria-label="provenanceTooltip(record)"
-          :title="provenanceTooltip(record)"
-          @click="router.push('/project/provenance')"
-        >
-          <span class="status-tooltip">{{ provenanceTooltip(record) }}</span>
-        </button>
-      </div>
-      <!-- System readiness is separate from project evidence. -->
-      <div class="status-indicators" aria-label="System readiness">
-        <div
-          class="status-light"
-          :class="backendStatus.class"
-          role="img"
-          tabindex="0"
-          :aria-label="backendStatus.tooltip"
-          :title="backendStatus.tooltip"
-        >
-          <span class="status-tooltip">{{ backendStatus.tooltip }}</span>
-        </div>
-        <div
-          class="status-light"
-          :class="llmStatus.class"
-          role="img"
-          tabindex="0"
-          :aria-label="llmStatus.tooltip"
-          :title="llmStatus.tooltip"
-        >
-          <span class="status-tooltip">{{ llmStatus.tooltip }}</span>
-        </div>
-        <div
-          class="status-light"
-          :class="computeStatus.class"
-          role="img"
-          tabindex="0"
-          :aria-label="computeStatus.tooltip"
-          :title="computeStatus.tooltip"
-        >
-          <span class="status-tooltip">{{ computeStatus.tooltip }}</span>
-        </div>
-      </div>
+      <!-- Each status is a line of text with its colour dot, not a bare dot with a hover tooltip. -->
+      <ul class="status-list" aria-label="Current project availability">
+        <li v-for="record in provenanceLights" :key="record.kind">
+          <button type="button" class="status-row" @click="router.push('/project/provenance')">
+            <span class="status-dot" :class="`status-${availabilityState(record) === 'healthy' ? 'green' : availabilityState(record) === 'faulty' ? 'red' : 'gray'}`" aria-hidden="true" />
+            {{ provenanceTooltip(record) }}
+          </button>
+        </li>
+      </ul>
+      <ul class="status-list" aria-label="System readiness">
+        <li v-for="item in [backendStatus, llmStatus, computeStatus]" :key="item.tooltip" class="status-row">
+          <span class="status-dot" :class="item.class" aria-hidden="true" />
+          {{ item.tooltip }}
+        </li>
+      </ul>
         </div>
       </details>
     </div>
@@ -389,16 +356,8 @@ const onProjectChange = async () => {
         return;
       }
     }
+    // The project selector already shows the new project; no toast repeats it.
     await projectStore.selectProject(selectedProjectId.value);
-    const project = projectStore.currentProject;
-    if (project) {
-      toast.add({
-        severity: "info",
-        summary: "Project Loaded",
-        detail: `Switched to "${project.name}"`,
-        life: 2000,
-      });
-    }
   }
 };
 </script>
@@ -728,4 +687,9 @@ const onProjectChange = async () => {
     display: none;
   }
 }
+.status-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; min-width: 22rem; }
+.status-row { display: flex; align-items: baseline; gap: .5rem; padding: 0; border: 0; background: none; color: var(--text-color); font: inherit; font-size: .85rem; text-align: left; cursor: default; }
+button.status-row { cursor: pointer; }
+button.status-row:hover { text-decoration: underline; }
+.status-dot { flex: 0 0 .6rem; height: .6rem; border-radius: 50%; }
 </style>

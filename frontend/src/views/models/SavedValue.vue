@@ -11,7 +11,7 @@
         </td>
       </tr></tbody>
     </table>
-    <p v-if="tableRows.length > displayPreferences.maxRows">Showing {{ displayPreferences.maxRows }} of {{ tableRows.length }} retained rows.</p>
+    <p v-if="tableRows.length > displayPreferences.maxRows">Showing {{ displayPreferences.maxRows }} of {{ tableRows.length }} saved rows.</p>
   </div>
   <dl v-if="scientificEntries.length" class="saved-value">
     <template v-for="[key, item] in scientificEntries" :key="key">

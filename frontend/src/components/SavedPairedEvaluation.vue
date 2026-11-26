@@ -10,7 +10,7 @@
         <select v-model.number="repetition" @change="load"><option v-for="(_, index) in record.paired_rmsecv_differences" :key="index" :value="index">{{ index + 1 }}</option></select>
       </label>
       <ScientificComparison v-if="comparison" :evidence="comparison" />
-      <p v-else>Row-level plots are unavailable for this retained evaluation.</p>
+      <p v-else>Row-level plots are unavailable for this saved evaluation.</p>
     </template>
   </section>
 </template>

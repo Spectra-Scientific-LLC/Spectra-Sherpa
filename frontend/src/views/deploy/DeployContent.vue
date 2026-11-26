@@ -271,12 +271,8 @@
 
             <Column style="width: 60px">
               <template #body="{ data }">
-                <Button
-                  icon="pi pi-trash"
-                  class="p-button-text p-button-sm p-button-danger"
-                  title="Delete watch"
-                  @click="confirmDeleteWatch(data)"
-                />
+                <RowActions :subject="data.name || 'watch'"
+                  :actions="[{ label: 'Delete watch…', icon: 'pi pi-trash', danger: true, command: () => confirmDeleteWatch(data) }]" />
               </template>
             </Column>
           </DataTable>
@@ -379,7 +375,7 @@
                 >
                   {{ data.source_metadata.instrument_qc.status }}
                 </button>
-                <span v-else>Not retained</span>
+                <span v-else>Not saved</span>
               </template>
             </Column>
             <Column field="executed_at" header="Date" sortable style="width: 130px">
@@ -465,7 +461,7 @@
       <template v-if="selectedPrediction">
         <p>
           Saved per-file values. Original input labels and complete node evidence may not be
-          retained.
+          saved.
         </p>
         <p>Model: {{ selectedPrediction.model_id || "Not recorded" }}</p>
         <SavedValue :value="selectedPrediction.results" />
@@ -496,7 +492,7 @@
     </Dialog>
     <Dialog
       :visible="qcSnapshot !== null"
-      header="Retained QC at run start"
+      header="Saved QC at run start"
       modal
       :style="{ width: '800px', maxWidth: '95vw' }"
       @update:visible="qcSnapshot = null"
@@ -594,7 +590,7 @@
             placeholder="Required only for multi-asset files (for example, a)"
             class="w-full"
           />
-          <small>One exact asset identity is applied to every file in this watch.</small>
+          <small>One asset identity is applied to every file in this watch.</small>
         </div>
       </div>
       <template #footer>
@@ -656,6 +652,7 @@ import TabPanel from "primevue/tabpanel";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import Button from "primevue/button";
+import RowActions from "@/components/RowActions.vue";
 import Tag from "primevue/tag";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";

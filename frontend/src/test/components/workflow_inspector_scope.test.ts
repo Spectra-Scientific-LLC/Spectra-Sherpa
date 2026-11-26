@@ -154,7 +154,7 @@ describe("Inspector retained evidence request ownership", () => {
     apiGet.mockRejectedValueOnce(new Error("Retained evidence missing"));
     await vm.openToRunTrials();
     expect(wrapper.emitted("open-trial")).toBeUndefined();
-    expect(vm.quickPlotEvidenceError).toContain("exact retained output is unavailable");
+    expect(vm.quickPlotEvidenceError).toContain("saved output is unavailable");
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: "Data unavailable" }));
   });
 

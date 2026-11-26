@@ -1,6 +1,6 @@
 /** Render the server's retained proposal contract, never current editor state. */
 export function summarizeProposalReceipt(value: unknown): string {
-  if (!value || typeof value !== "object") return "Proposal authority is unavailable; inspect the saved workflow before running.";
+  if (!value || typeof value !== "object") return "The proposal could not be verified; inspect the saved workflow before running.";
   const receipt = value as Record<string, unknown>;
   if (receipt.schema_version !== "spectrasherpa-scientific-proposal/1" ||
       !Array.isArray(receipt.changes) ||
@@ -8,7 +8,7 @@ export function summarizeProposalReceipt(value: unknown): string {
       !Array.isArray(receipt.qualifications) ||
       !receipt.execution || typeof receipt.execution !== "object" ||
       typeof receipt.receipt_digest !== "string") {
-    return "Proposal authority is unavailable; inspect the saved workflow before running.";
+    return "The proposal could not be verified; inspect the saved workflow before running.";
   }
   const changes = receipt.changes.map((change: Record<string, unknown>) => {
     const label = `${change.node_id ?? "Connections"}: ${change.change}`;

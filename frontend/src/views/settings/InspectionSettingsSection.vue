@@ -15,7 +15,7 @@
           </select>
         </label>
         <label><input v-model="projectSummaries" name="project_summaries" type="checkbox" :disabled="busy" /> Also allow existing dataset and workflow summaries for this project, subject to my privacy settings.</label>
-        <label><input v-model="retainedResults" name="retained_results" type="checkbox" :disabled="busy" /> Also allow retained run facts, diagnostics and comparisons, excluding raw values and sample identities, subject to my privacy settings.</label>
+        <label><input v-model="retainedResults" name="retained_results" type="checkbox" :disabled="busy" /> Also allow saved run facts, diagnostics and comparisons, excluding raw values and sample identities, subject to my privacy settings.</label>
         <label class="consent"><input v-model="confirmed" name="confirm_external_provider" type="checkbox" :disabled="busy" /> I understand the external client may send inspection results to its AI provider.</label>
         <button type="submit" :disabled="busy || !confirmed || !label.trim()">Create connection</button>
       </form>
@@ -31,7 +31,7 @@
       <button type="button" :disabled="busy" @click="refresh">Refresh connections and history</button>
       <ul aria-label="Inspection connections">
         <li v-for="connection in connections" :key="connection.client_id">
-          {{ connection.client_label }} — Catalog{{ connection.project_summaries ? ', project summaries' : '' }}{{ connection.retained_results ? ', retained results' : '' }} — {{ connection.revoked_at ? 'Revoked' : `Expires ${new Date(connection.expires_at).toLocaleString()}` }}
+          {{ connection.client_label }} — Catalog{{ connection.project_summaries ? ', project summaries' : '' }}{{ connection.retained_results ? ', saved results' : '' }} — {{ connection.revoked_at ? 'Revoked' : `Expires ${new Date(connection.expires_at).toLocaleString()}` }}
           <button v-if="!connection.revoked_at" type="button" :disabled="busy" @click="revoke(connection.client_id)">Revoke {{ connection.client_label }}</button>
         </li>
       </ul>

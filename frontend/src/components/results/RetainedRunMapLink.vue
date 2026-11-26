@@ -1,7 +1,7 @@
 <template>
   <RouterLink v-if="destination" :to="destination" class="retained-map-link"
     :title="`Observation exclusions recorded in run #${runId}`"
-    :aria-label="`Inspect retained exclusions for run #${runId}`" @click.stop>Run #{{ runId }} exclusions</RouterLink>
+    :aria-label="`Inspect saved exclusions for run #${runId}`" @click.stop>Run #{{ runId }} exclusions</RouterLink>
 </template>
 
 <script setup lang="ts">

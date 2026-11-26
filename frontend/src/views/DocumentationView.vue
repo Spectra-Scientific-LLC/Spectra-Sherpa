@@ -150,7 +150,7 @@ const sections: DocSection[] = [
     items: [
       {
         title: "Node Overview",
-        desc: "Inputs, outputs, and node contract vocabulary",
+        desc: "Inputs, outputs, and node definition vocabulary",
         path: "/nodes/",
       },
       {

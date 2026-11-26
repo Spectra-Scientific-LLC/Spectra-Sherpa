@@ -6,12 +6,12 @@
     <p v-else-if="!detail" role="status">
       {{
         unavailable ||
-        "This saved run has no retained PLS applicability evidence. Rerun to enable scores and screening."
+        "This saved run has no saved PLS applicability evidence. Rerun to enable scores and screening."
       }}
     </p>
     <template v-else>
       <p>
-        Reference: {{ detail.reference_count }} retained calibration observations ·
+        Reference: {{ detail.reference_count }} saved calibration observations ·
         {{ detail.components }} latent variables · score covariance rank
         {{ detail.score_covariance_rank }} of {{ detail.components }}. {{ detail.space }}. Score
         units: {{ detail.score_units }}. Q units: {{ detail.q_units }}. Preprocessing:
@@ -162,12 +162,12 @@
           {{
             observation?.projection_error ||
             observation?.applicability_unavailable_reason ||
-            "No exact variable explanation was retained for this observation."
+            "No variable explanation was saved for this observation."
           }}
         </p>
       </details>
       <details>
-        <summary>Applicability methods and retained evidence</summary>
+        <summary>Applicability methods and saved evidence</summary>
         <p>
           Calibration T²: {{ detail.calibration_t2_limit_method }}. Application T²:
           {{ detail.application_t2_limit_method }}. Q: {{ detail.q_limit_method }}.
@@ -367,8 +367,8 @@ const scoreLayout = computed(() => ({
 }));
 const diagnosticLayout = computed(() => ({
   ...baseLayout,
-  title: qOnly.value ? "Q by retained observation (T² unavailable)" : "PLS T² / Q global screening",
-  xaxis: { title: qOnly.value ? "Retained observation order" : "Predictor T²" },
+  title: qOnly.value ? "Q by saved observation (T² unavailable)" : "PLS T² / Q global screening",
+  xaxis: { title: qOnly.value ? "Saved observation order" : "Predictor T²" },
   yaxis: {
     title: `Predictor Q / SPE · ${detail.value?.q_units || "fitted predictor units squared"}`,
   },

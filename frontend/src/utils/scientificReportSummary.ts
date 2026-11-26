@@ -240,7 +240,7 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
         ]),
       },
       notices: [
-        "A dash (—) denotes an unavailable or undefined value, not zero. Reference mean and sample SD describe the full retained population, not a preview. RMSE uses n observations; calibration RMSE is RMSEC, not degrees-of-freedom-adjusted SEC. SEP is bias-corrected residual SD (n−1).",
+        "A dash (—) denotes an unavailable or undefined value, not zero. Reference mean and sample SD describe the full saved population, not a preview. RMSE uses n observations; calibration RMSE is RMSEC, not degrees-of-freedom-adjusted SEC. SEP is bias-corrected residual SD (n−1).",
         "Bias = predicted − reference; slope/intercept fit predicted against reference. Units apply to range, SD, RMSE, bias, SEP and intercept; R² and slope are dimensionless.",
         "SEC and its effective degrees of freedom, reference-method precision/replicate weighting, bias significance, 95% agreement coverage and outlier/extrapolation qualification are not established by this table. It is not an ASTM E1655 compliance assessment.",
       ],
@@ -252,7 +252,7 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
         rows: [],
         table: { headers: ["Sample / population row", "Reference", "Predicted"],
           rows: result.observations.map(row => [row.sample, String(row.reference), String(row.predicted)]) },
-        notices: [`${result.observations.length} of ${result.metrics.n_samples} observations; target ${displayTarget}${sharedUnits ? "" : `; units ${result.units}`}. Labels are retained comparison labels, not necessarily original file row IDs.`],
+        notices: [`${result.observations.length} of ${result.metrics.n_samples} observations; target ${displayTarget}${sharedUnits ? "" : `; units ${result.units}`}. Labels are saved comparison labels, not necessarily original file row IDs.`],
       });
     }
   }
@@ -295,7 +295,7 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     }
   }
   if (!recordedCv && nodes.some(node => modelTypes.test(node.node_type))) {
-    context.push(["CV configuration", "No executed CV design retained"]);
+    context.push(["CV configuration", "No executed CV design saved"]);
   }
   const preprocessing = nodes.filter(node => /^(?:preprocess|baseline|normalize|smooth|transfer)\./.test(node.node_type));
   if (preprocessing.length) context.push(["Preprocessing (saved operations)", preprocessing.map(node => {
@@ -368,7 +368,7 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     if (run.node_statuses?.[id] && run.node_statuses[id] !== "completed") warnings.push(`Node outcome: ${run.node_statuses[id]}`);
     groups.push({ title: `${run.name} — ${node?.label || id}`, rows: unique, notices: warnings });
   }
-  if (groups.length === 1) groups[0].notices.push("No supported key results retained. Select Detailed report to inspect other outputs.");
+  if (groups.length === 1) groups[0].notices.push("No supported key results saved. Select Detailed report to inspect other outputs.");
   return groups;
 }
 

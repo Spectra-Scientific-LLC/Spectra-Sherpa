@@ -3,7 +3,7 @@
     <!-- Header -->
     <header class="detail-header">
       <div class="header-left">
-        <span class="node-icon">{{ nodeIcon }}</span>
+        <span class="node-icon">{{ nodeIconText }}</span>
         <div class="header-info">
           <h1>{{ nodeLabel }}</h1>
           <details>
@@ -150,6 +150,7 @@
 import PeakExecutionDetails from "@/components/common/PeakExecutionDetails.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- node outputs and plot payloads vary widely across node families in this inspection view. */
 import { ref, computed, watch, onMounted, provide, nextTick, useId } from "vue";
+import { nodeIcon } from "@/utils/nodeIcons";
 import { PLOT_SURFACE } from "@/theme/plotTheme";
 
 import DisabledReason from "@/components/DisabledReason.vue";
@@ -263,30 +264,13 @@ const originalParams = ref<Record<string, any>>({});
 const workflowStore = useWorkflowStore();
 const projectStore = useProjectStore();
 
-const NODE_ICONS: Record<string, string> = {
-  "data.file_load": "📂",
-  "preprocess.normalize": "📏",
-  "preprocess.scale": "📏",
-  "baseline.penalized_ls": "📉",
-  "preprocess.smooth": "〰️",
-  "model.pca": "🔀",
-  "model.fitted_pls": "📈",
-  "model.apply_fitted_pls": "🎯",
-  "model.mcr_als": "🧩",
-  "stats.summary": "📊",
-  "analysis.peak_finding": "⛰️",
-  "analysis.compare_library": "📚",
-  "output.plot": "📈",
-  "output.contour": "🗺️",
-  "output.export": "💾",
-};
 
 const embedded = computed(() => props.embedded);
 const nodeId = computed(() => String(props.initialNodeData?.id ?? route.params.nodeId ?? ""));
 const nodeType = computed(() => nodeData.value?.type || "Unknown");
 const nodeTypeKey = computed(() => nodeType.value);
 const nodeLabel = computed(() => nodeData.value?.label || `Node ${nodeId.value}`);
-const nodeIcon = computed(() => NODE_ICONS[nodeType.value] || "📦");
+const nodeIconText = computed(() => nodeIcon(nodeType.value));
 const nodeMetadata = computed(() => workflowStore.getNodeMetadata(nodeType.value));
 const rawNodeOutput = computed<NodeOutput | null>(() => {
   const output = (nodeData.value?.output as NodeOutput | null | undefined) ?? null;

@@ -94,7 +94,7 @@ export function metadataGroupingState(yAxis: unknown, rows: number): MetadataGro
   if (axis.labels != null && !labels) {
     return {
       kind: "invalid",
-      message: "Metadata grouping refused: aligned exact sample labels are required.",
+      message: "Metadata grouping refused: aligned sample labels are required.",
     };
   }
   // These vectors belong to the same typed observation axis: no cross-source

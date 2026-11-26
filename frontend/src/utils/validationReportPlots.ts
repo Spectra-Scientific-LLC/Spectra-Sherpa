@@ -62,7 +62,7 @@ export function validationFigureSvg(figure: ValidationFigure): string {
     );
   };
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 305" role="img" aria-label="Retained CV predictions and residuals">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 305" role="img" aria-label="Saved CV predictions and residuals">` +
     `<rect width="760" height="305" fill="${PRINT_PLOT_THEME.paper}"/><g font-size="11" fill="${PRINT_PLOT_THEME.text}">` +
     panel(predicted, 0, "Predicted versus reference") +
     panel(residual, 380, "Residual (prediction minus reference)") +
@@ -72,7 +72,7 @@ export function validationFigureSvg(figure: ValidationFigure): string {
 
 export function validationFigureCaption(figure: ValidationFigure): string {
   if (figure.state === "available" && !validationFigureSvg(figure)) {
-    return `${figure.node_id}/${figure.source_port}: Figure unavailable because retained rows are nonfinite, inconsistent, or exceed the display limit. No rows were silently dropped.`;
+    return `${figure.node_id}/${figure.source_port}: Figure unavailable because saved rows are nonfinite, inconsistent, or exceed the display limit. No rows were silently dropped.`;
   }
   return (
     `${figure.node_id}/${figure.source_port}; repeat ${figure.repeat_id ?? "single"}; ` +

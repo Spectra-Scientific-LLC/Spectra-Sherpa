@@ -1,5 +1,5 @@
 <template>
-  <section aria-label="Retained source exclusion map">
+  <section aria-label="Saved source exclusion map">
     <h3 :title="population ? `Source SHA-256 ${population.source_digest}` : undefined">Exclusions · {{ nodeLabel || nodeId }}
       <MethodHelp topic="workflowExclusions" label="Recorded exclusion map"
         context="Recorded when this run executed. Used means included in the Load Data result, before any branch filter; current workflow edits are not shown." /></h3>
@@ -7,7 +7,7 @@
     <template v-else>
       <div class="retained-map-scroll">
         <table>
-          <thead><tr><th>Row</th><th>Sample ID</th><th>Label</th><th title="Included in My Dataset">Dataset</th><th title="Workflow exclusion at execution">Workflow</th><th title="Used in the retained source result">Used</th><th title="Row in the retained source result">Result row</th></tr></thead>
+          <thead><tr><th>Row</th><th>Sample ID</th><th>Label</th><th title="Included in My Dataset">Dataset</th><th title="Workflow exclusion at execution">Workflow</th><th title="Used in the saved source result">Used</th><th title="Row in the saved source result">Result row</th></tr></thead>
           <tbody><tr v-for="row in pageRows" :key="row.observation_ref">
             <td>{{ row.source_row }}</td><td>{{ row.sample_id ?? '—' }}</td><td>{{ row.sample_label ?? '—' }}</td>
             <td>{{ row.source_included ? 'Included' : 'Excluded' }}</td><td>{{ row.workflow_excluded ? 'Excluded' : '—' }}</td>

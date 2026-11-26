@@ -5,7 +5,7 @@
     <p v-if="error" role="alert">{{ error }}</p>
     <button v-if="error" type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy" @click="loadHistory">Retry</button>
     <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="!records.length || busy" @click="download">Export complete evidence history</button>
-    <p v-if="!records.length && !busy">No qualification assessment is retained for this workflow.</p>
+    <p v-if="!records.length && !busy">No qualification assessment is saved for this workflow.</p>
     <article v-for="record in records" :key="record.record_digest">
       <h4>{{ record.kind === 'assessment' ? record.payload.assessment : record.payload.decision }}</h4>
 
@@ -18,7 +18,7 @@
         Sampling independence: {{ record.payload.calculation.independence.sampling_independence_status }}.
         {{ record.payload.calculation.independence.limitation }}
       </p>
-      <details><summary>Exact retained evidence and assumptions</summary><p>{{ record.record_digest }}</p><pre>{{ JSON.stringify(record.payload, null, 2) }}</pre></details>
+      <details><summary>Saved evidence and assumptions</summary><p>{{ record.record_digest }}</p><pre>{{ JSON.stringify(record.payload, null, 2) }}</pre></details>
       <button v-if="record.kind === 'assessment'" type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy" @click="selectReview(record)">Review this assessment</button>
     </article>
     <fieldset v-if="review">
@@ -26,7 +26,7 @@
       <p>Intended use: {{ review.payload.context.intended_use }}</p>
       <p>Population: {{ review.payload.context.intended_population }}</p>
       <p>Instrument: {{ review.payload.context.instrument_id || 'Unavailable' }}</p>
-      <label><input v-model="acceptContext" type="checkbox" /> I reviewed this exact policy, intended use, reference method and instrument assumptions.</label>
+      <label><input v-model="acceptContext" type="checkbox" /> I reviewed this policy, intended use, reference method and instrument assumptions.</label>
       <label>Review reason <textarea v-model="reason" /></label>
       <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy || !acceptContext || !reason.trim() || review.payload.assessment !== 'criteria_met'" @click="decide('accepted_under_declared_policy')">Accept under declared policy</button>
       <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy || !reason.trim()" @click="decide('rejected')">Reject</button>

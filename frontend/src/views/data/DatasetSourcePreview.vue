@@ -13,7 +13,7 @@
         <div>
           <strong>Provider file required</strong>
           <span>
-            Import the downloaded provider ZIP to inspect its exact files, matrix, metadata, and
+            Import the downloaded provider ZIP to inspect its files, matrix, metadata, and
             plots.
           </span>
         </div>

@@ -19,7 +19,7 @@
     </div>
 
     <template v-else>
-      <nav aria-label="Compared runs' retained exclusion maps">
+      <nav aria-label="Compared runs' saved exclusion maps">
         <div v-for="run in runs" :key="run.id">
           <RetainedRunMapLink :run-id="run.id" :project-id="run.project_id" />
         </div>

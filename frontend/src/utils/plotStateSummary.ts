@@ -82,7 +82,7 @@ const axisSummary = (value: unknown): PlotAxisSummary | null => {
   };
 };
 const viewNote =
-  "Retained evidence projected with default view selection; this is not the current open plot or live axis selection. The contract digest is a retained receipt, not independently reverified here. Trace counts are not sample counts. Population and units are unknown unless declared; do not infer them from array shape.";
+  "Saved evidence projected with default view selection; this is not the current open plot or live axis selection. The contract digest is a saved receipt, not independently reverified here. Trace counts are not sample counts. Population and units are unknown unless declared; do not infer them from array shape.";
 const unavailable = (reason: string): PlotStateSummary[] => [
   {
     plot: "Scientific plots unavailable",
@@ -114,7 +114,7 @@ export function summarizeNodePlots(
     execution.contract?.schema_version !== "spectrasherpa-node-presentation/1" ||
     !Array.isArray(execution.presentations)
   )
-    return unavailable("The retained execution presentation record is invalid.");
+    return unavailable("The saved execution presentation record is invalid.");
   const scope = effectScope();
   try {
     return scope.run(() => {
@@ -166,7 +166,7 @@ export function summarizeNodePlots(
             ? "The projection refused this result; inspect the local plot for details."
             : data.length
               ? null
-              : "No renderable traces are retained for this presentation.";
+              : "No renderable traces are saved for this presentation.";
           const claim =
             resolved.presentation.kind === "out_of_fold_evidence" &&
             meta.claim_scope === "out_of_fold"
@@ -219,7 +219,7 @@ export function summarizeNodePlots(
     })!;
   } catch {
     return unavailable(
-      "The retained presentation cannot be projected; its contract or source values are invalid.",
+      "The saved presentation cannot be projected; its contract or source values are invalid.",
     );
   } finally {
     scope.stop();

@@ -84,7 +84,7 @@ export async function captureReportPlots(run: RunReportData, projectId: number, 
   if (!run.saved_definition) return unavailable("Saved workflow definition unavailable; current canvas plots were not substituted.");
   let outputs: Record<string, Record<string, any>>;
   try { outputs = (await api.get(`/runs/${run.id}/evidence`, { params: { project_id: projectId } })).data.evidence.outputs; }
-  catch { return unavailable("Retained plot evidence could not be loaded. Inspect the saved run for recovery details."); }
+  catch { return unavailable("Saved plot evidence could not be loaded. Inspect the saved run for recovery details."); }
   const cache = new Map<string, Promise<any>>();
   let bytes = 0;
   let images = 0;
@@ -93,7 +93,7 @@ export async function captureReportPlots(run: RunReportData, projectId: number, 
     const key = `${node}/${port}`;
     if (cache.has(key)) return cache.get(key)!;
     const item = outputs[node]?.[port];
-    if (item?.state !== "exact" || !item.storage) throw new Error(`${key}: exact retained output unavailable.`);
+    if (item?.state !== "exact" || !item.storage) throw new Error(`${key}: saved output unavailable.`);
     if (!Number.isFinite(item.byte_count) || bytes + item.byte_count > 32 * 1024 * 1024) throw new Error(`${key}: exceeds the 32 MiB per-run plot read budget.`);
     bytes += item.byte_count;
     const promise = api.get(`/runs/${run.id}/outputs/${encodeURIComponent(node)}/${encodeURIComponent(port)}`, { params: { project_id: projectId } }).then(response => response.data.value);
@@ -128,7 +128,7 @@ export async function captureReportPlots(run: RunReportData, projectId: number, 
     const choices = availableScientificPresentations(undefined, raw).filter(item => item.presentation.modes.includes("plot"));
     for (const declared of contract?.payload.presentations ?? []) {
       if (declared.modes.includes("plot") && !choices.some(item => item.presentation.presentation_id === declared.presentation_id)) {
-        section.notices.push(`${declared.label}: required retained output is unavailable.`);
+        section.notices.push(`${declared.label}: required saved output is unavailable.`);
       }
     }
     const projections = contract ? choices.map(item => ({ label: item.presentation.label, output: projectScientificPresentation(raw, item) })) : [{ label: "", output: raw }];
@@ -147,14 +147,14 @@ export async function captureReportPlots(run: RunReportData, projectId: number, 
             await nextTick();
             const title = [projection.label, option.label, target.label].filter(Boolean).join(" — ");
             const refusal = scientificPlotRefusal(plots.plotLayout.value);
-            if (refusal || !plots.plotData.value.length) { section.plots.push({ title, notice: refusal || "No plottable retained data for this view." }); continue; }
+            if (refusal || !plots.plotData.value.length) { section.plots.push({ title, notice: refusal || "No plottable saved data for this view." }); continue; }
             if (images >= 200) { section.plots.push({ title, notice: "200-image per-run export limit reached; view remaining plots in Runs." }); continue; }
             images++;
             const meta = plots.plotLayout.value.meta ?? {};
             const displayed = displayPlot(plots.plotData.value, plots.plotLayout.value, useDisplayPreferences());
             const groupKey = reportGroupKey(displayed.data, displayed.layout);
             const notice = ["Saved-run projection; default displayed axes. No fitting or validation is rerun.",
-              displayed.omitted ? `${displayed.omissionDescription} omitted from this report plot by the visual display limit (not a count of unique samples); retained data are unchanged.` : "",
+              displayed.omitted ? `${displayed.omissionDescription} omitted from this report plot by the visual display limit (not a count of unique samples); saved data are unchanged.` : "",
               groupKey,
               ...(meta.comparison_populations ? reportComparisonCaptions(meta) : [reportPopulationCaption(meta.display_population)]),
               ...(!meta.comparison_populations ? [plotContext({ meta: { color_encoding_notice: meta.color_encoding_notice } })] : []),
@@ -168,7 +168,7 @@ export async function captureReportPlots(run: RunReportData, projectId: number, 
       } catch (error) { section.notices.push(`Plot unavailable: ${String(error)}`); }
       finally { scope.stop(); }
     }
-    if (!section.plots.length) section.notices.push("No plottable presentation retained for this node; tabular results remain in the report.");
+    if (!section.plots.length) section.notices.push("No plottable presentation saved for this node; tabular results remain in the report.");
     } catch (error) {
       section.notices.push(`Node plots unavailable: ${String(error)}`);
     }

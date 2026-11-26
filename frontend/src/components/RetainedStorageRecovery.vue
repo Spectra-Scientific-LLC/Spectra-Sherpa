@@ -35,7 +35,7 @@ async function reclaimStorage(): Promise<void> {
     const mib = (bytes: number) => (bytes / 1024 / 1024).toFixed(2);
     storageMessage.value =
       `Removed ${result.removed_files} unreferenced files. ` +
-      `Retained output storage: ${mib(result.used_bytes)} MiB of ${mib(result.quota_bytes)} MiB. ` +
+      `Saved output storage: ${mib(result.used_bytes)} MiB of ${mib(result.quota_bytes)} MiB. ` +
       `Files written within the last ${result.grace_seconds / 3600} hours remain protected.`;
   } catch (_err: unknown) {
     storageMessage.value = "Storage reclamation failed. No success was confirmed; retry.";

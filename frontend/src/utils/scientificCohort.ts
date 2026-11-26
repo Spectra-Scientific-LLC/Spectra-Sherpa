@@ -21,16 +21,16 @@ export function projectActiveSpectralCohort(output: any): {
     !matrix[0].length ||
     matrix.some((row) => !Array.isArray(row) || row.length !== matrix[0].length)
   )
-    return refuse("Spectral projection requires a nonempty rectangular retained matrix.");
+    return refuse("Spectral projection requires a nonempty rectangular saved matrix.");
   const validMask = (mask: unknown, size: number) =>
     mask == null ||
     (Array.isArray(mask) &&
       mask.length === size &&
       mask.every((item) => typeof item === "boolean"));
   if (!validMask(rowAxis.include_mask, matrix.length))
-    return refuse("Sample inclusion mask does not match the retained result rows.");
+    return refuse("Sample inclusion mask does not match the saved result rows.");
   if (!validMask(colAxis.include_mask, matrix[0].length))
-    return refuse("Feature inclusion mask does not match the retained result columns.");
+    return refuse("Feature inclusion mask does not match the saved result columns.");
   const rows = matrix
     .map((_: unknown, index: number) => index)
     .filter((index: number) => rowAxis.include_mask?.[index] !== false);
@@ -38,9 +38,9 @@ export function projectActiveSpectralCohort(output: any): {
     .map((_: unknown, index: number) => index)
     .filter((index: number) => colAxis.include_mask?.[index] !== false);
   if (!rows.length)
-    return refuse("All retained observations are excluded by the sample inclusion mask.");
+    return refuse("All saved observations are excluded by the sample inclusion mask.");
   if (!cols.length)
-    return refuse("All retained features are excluded by the feature inclusion mask.");
+    return refuse("All saved features are excluded by the feature inclusion mask.");
   const population = {
     shown: rows.length,
     total: rows.length,
@@ -57,7 +57,7 @@ export function projectActiveSpectralCohort(output: any): {
   const axisView = (axis: any, indices: number[], count: number) => {
     const aligned = (items: unknown) => {
       if (!Array.isArray(items) || items.length !== count)
-        throw new Error("Axis aligned metadata does not match the retained matrix dimensions.");
+        throw new Error("Axis aligned metadata does not match the saved matrix dimensions.");
       return indices.map((i) => items[i]);
     };
     const view = { ...axis, include_mask: indices.map(() => true) };
@@ -97,7 +97,7 @@ export function projectActiveSpectralCohort(output: any): {
         if (Array.isArray(metadata[key])) {
           if (metadata[key].length !== count)
             return refuse(
-              "Metadata labels or coordinates do not match the retained matrix dimensions.",
+              "Metadata labels or coordinates do not match the saved matrix dimensions.",
             );
           metadata[key] = indices.map((i: number) => metadata[key][i]);
         }
@@ -106,14 +106,14 @@ export function projectActiveSpectralCohort(output: any): {
       projectedRows.labels ??
       metadata.sample_labels ??
       metadata.labels ??
-      rows.map((i: number) => `Retained row ${i + 1}`);
+      rows.map((i: number) => `Saved row ${i + 1}`);
     if (
       !projectedCols.labels &&
       !projectedCols.data &&
       !projectedCols.values &&
       !metadata.feature_names
     )
-      metadata.feature_names = cols.map((i: number) => `Retained feature ${i + 1}`);
+      metadata.feature_names = cols.map((i: number) => `Saved feature ${i + 1}`);
     if (projectedCols.data ?? projectedCols.values)
       metadata.wavenumbers = projectedCols.data ?? projectedCols.values;
     if (projectedCols.labels) metadata.feature_names = projectedCols.labels;

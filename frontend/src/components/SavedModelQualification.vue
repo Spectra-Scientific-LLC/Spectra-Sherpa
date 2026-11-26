@@ -3,7 +3,7 @@
     <summary>Saved-model analytical qualification</summary>
     <MethodHelp topic="qualification" label="Saved-model qualification" />
     <p v-if="error" role="alert">{{ error }}</p>
-    <p v-if="history">Current status: <strong>{{ history.status.state }}</strong> · {{ history.status.reason || history.status.intended_population || 'Review the retained evidence.' }}</p>
+    <p v-if="history">Current status: <strong>{{ history.status.state }}</strong> · {{ history.status.reason || history.status.intended_population || 'Review the saved evidence.' }}</p>
     <p v-if="history?.status.state === 'stale_for_selected_dataset'" role="note">This assessment concerns its named validation view. A decision here will not qualify the dataset currently selected in My Dataset.</p>
     <button type="button" :disabled="busy" @click="load">Refresh evidence</button>
     <button type="button" :disabled="!history?.records.length" @click="exportEvidence">Export full history</button>
@@ -11,7 +11,7 @@
       <select v-model.number="advisorResponseIndex"><option v-for="(_unit, index) in responseIdentity.units" :key="index" :value="index">{{ responseIdentity.names?.[index] || `Response ${index + 1}` }}</option></select>
     </label>
     <button v-if="advisorAvailable" type="button" :disabled="!canAskAdvisor" @click="askAdvisor">Ask Sherpa about this qualification</button>
-    <p v-if="advisorAvailable && history?.records.length && !canAskAdvisor" role="note">Refresh the exact model and named validation view before asking Sherpa about qualification.</p>
+    <p v-if="advisorAvailable && history?.records.length && !canAskAdvisor" role="note">Refresh the model and named validation view before asking Sherpa about qualification.</p>
     <section v-if="history?.records.length" aria-label="Saved model qualification history">
       <article v-for="record in history.records" :key="record.record_digest">
         <h4>{{ record.kind === 'assessment' ? record.payload.assessment : record.payload.decision }}</h4>
@@ -31,16 +31,16 @@
         <p>Identity separation: {{ record.payload.calculation?.independence?.identity_separation_status || 'unavailable' }}.
           Sampling independence: {{ record.payload.calculation?.independence?.sampling_independence_status || 'unavailable' }}.</p>
         <ul><li v-for="criterion in record.payload.criteria || []" :key="criterion.name">{{ criterion.name }}: {{ criterion.state }} — {{ criterion.detail }}</li></ul>
-        <p>Limits: {{ record.payload.limitations?.join('; ') || 'See exact evidence.' }}</p>
+        <p>Limits: {{ record.payload.limitations?.join('; ') || 'See evidence.' }}</p>
       </template>
-        <details><summary>Exact evidence and assumptions</summary><pre>{{ JSON.stringify(record.payload, null, 2) }}</pre></details>
+        <details><summary>Evidence and assumptions</summary><pre>{{ JSON.stringify(record.payload, null, 2) }}</pre></details>
         <button v-if="canReview && record.kind === 'assessment' && record.record_digest === latestAssessment?.record_digest" type="button" @click="review = record; reason = ''; acceptedContext = false">Review current assessment</button>
       </article>
     </section>
     <fieldset v-if="review && canReview">
       <legend>Human decision for {{ review.record_digest }}</legend>
       <p>Intended use: {{ review.payload.context?.intended_use }}. Population: {{ review.payload.context?.intended_population }}.</p>
-      <label><input v-model="acceptedContext" type="checkbox" /> I reviewed this exact intended use, population, policy, reference method, instrument and evidence.</label>
+      <label><input v-model="acceptedContext" type="checkbox" /> I reviewed this intended use, population, policy, reference method, instrument and evidence.</label>
       <label>Reason <textarea v-model="reason" rows="3" /></label>
       <button type="button" :disabled="busy || !acceptedContext || !reason.trim() || review.payload.assessment !== 'criteria_met'" @click="decide('accepted_under_declared_policy')">Accept under declared policy</button>
       <button type="button" :disabled="busy || !reason.trim()" @click="decide('rejected')">Reject</button>
@@ -205,7 +205,7 @@ async function decide(decision: 'accepted_under_declared_policy' | 'rejected' | 
 function exportEvidence(): void {
   if (!history.value) return;
   downloadJson({schema_version: 'spectrasherpa.saved-model-qualification-history/1', artifact_uid: props.artifactUid,
-    claim_scope: 'Server-retained declared-use evidence and operator assertions; no regulatory certification implied.',
+    claim_scope: 'Server-saved declared-use evidence and operator assertions; no regulatory certification implied.',
     ...history.value}, `saved-model-${props.artifactUid}-qualification.json`);
 }
 watch(() => [props.artifactUid, props.projectId], async () => {

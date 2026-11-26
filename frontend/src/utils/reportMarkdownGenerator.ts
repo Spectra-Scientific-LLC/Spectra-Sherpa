@@ -193,7 +193,7 @@ function buildRunsSection(runs: RunReportEntry[], nodes: ReportNode[]): string {
             .join(", ");
           lines.push(`- **${lineage.node_id || receipt.node_id}**: ${ranges || "All input rows"}`);
           lines.push(`  - Rule: \`${JSON.stringify(lineage.parameters)}\``);
-          lines.push(`  - Exact row receipt: \`${lineage.selected_indices_sha256}\``);
+          lines.push(`  - Row receipt: \`${lineage.selected_indices_sha256}\``);
         }
       }
     }
@@ -347,7 +347,7 @@ export function generateMarkdownReport(data: ReportData): string {
   if (showPipeline) {
     if (hasUnresolvedReportConnections(data.nodes, data.edges)) {
       parts.push(
-        "Some saved connections have no retained node definition. All available steps are shown; pipeline order is not fully verified.\n",
+        "Some saved connections have no saved node definition. All available steps are shown; pipeline order is not fully verified.\n",
       );
     }
     parts.push(buildPipelineSection(data.nodes, data.edges));

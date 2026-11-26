@@ -531,7 +531,7 @@ describe("Workflow Store execution state restoration on loadWorkflow", () => {
     const store = useWorkflowStore();
     await store.loadWorkflow(42);
     expect(store.restoredRunId).toBe(19);
-    expect(store.restoredEvidenceNotice).toContain('1 retained outputs are incomplete');
+    expect(store.restoredEvidenceNotice).toContain('1 saved outputs are incomplete');
     expect(store.restoredEvidenceGaps[0]).toMatchObject({ node_id: 'pca', output: 'scores' });
     await store.loadWorkflow(43);
     expect(store.restoredRunId).toBeNull();
@@ -866,7 +866,7 @@ describe("Workflow Store execution state restoration on loadWorkflow", () => {
 
     expect(store.isWorkflowStale).toBe(true);
     expect(store.workflowWarnings).toContain(
-      "Current graph and retained run identity are different or unverified — results may be stale.",
+      "Current graph and saved run identity are different or unverified — results may be stale.",
     );
     store.workflowWarnings.push("Server says this edge is incompatible.");
     store.clearWorkflowStale();

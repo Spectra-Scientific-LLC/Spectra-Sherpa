@@ -3,8 +3,9 @@
     <WorkspaceHeader title="Runs" :actions="headerActionItems">
       <span v-show="activeTab === TAB_INSPECT" ref="inspectActionsTarget" />
       <Button
+        v-if="exportApplies"
         :label="activeTab === TAB_MODELS ? 'Copy model metadata' : 'Export'" :icon="activeTab === TAB_MODELS ? 'pi pi-copy' : 'pi pi-download'" class="p-button-text p-button-sm"
-        :title="activeTab === TAB_MODELS ? selectedModel ? 'Copy metadata as text; use Project export to transfer the fitted model.' : 'Select a model to copy its metadata.' : undefined"
+        :title="activeTab === TAB_MODELS ? selectedModel ? 'Copy metadata as text; use Project export to transfer the fitted model.' : 'Select a model to copy its metadata.' : canExportActiveTab ? undefined : 'No saved runs to export yet.'"
         :disabled="!canExportActiveTab" @click="exportActiveTab" />
     </WorkspaceHeader>
 
@@ -21,21 +22,6 @@
     <template v-else>
       <WorkspaceContext label="Runs context">
         <WorkspaceContextItem :label="activeSubtabLabel" :value="activeSubtabValue">{{ activeSubtabDetail }}</WorkspaceContextItem>
-        <WorkspaceContextItem
-          v-if="inspectedIdentity"
-          label="Run identity"
-          :value="`Workflow SHA ${inspectedIdentity.workflowSha?.slice(0, 12) || 'Not recorded'}`"
-          :detail="`Workflow SHA-256: ${inspectedIdentity.workflowSha || 'Not recorded'}`"
-          :aria-label="`Run #${inspectedIdentity.runId}; Workflow SHA-256: ${inspectedIdentity.workflowSha || 'Not recorded'}; Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`"
-        >
-          <span class="run-identity-build">
-            <span :title="`Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`" :aria-label="`Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`">Build SHA {{ inspectedIdentity.buildSha?.slice(0, 12) || 'Not recorded' }}</span>
-            <Button
-              icon="pi pi-copy" class="p-button-text p-button-sm" title="Copy run identity"
-              :aria-label="`Copy run identity for Run #${inspectedIdentity.runId}`"
-              :disabled="!inspectedIdentity.workflowSha && !inspectedIdentity.buildSha" @click="copyRunIdentity" />
-          </span>
-        </WorkspaceContextItem>
       </WorkspaceContext>
       <label class="runs-section-picker">
         Runs section
@@ -188,12 +174,8 @@
 
               <Column style="width: 60px">
                 <template #body="{ data }">
-                  <Button
-                    icon="pi pi-trash"
-                    class="p-button-text p-button-sm p-button-danger"
-                    title="Delete run"
-                    @click="confirmDelete(data)"
-                  />
+                  <RowActions :subject="data.display_name || data.name || `Run #${data.id}`"
+                    :actions="[{ label: 'Delete run…', icon: 'pi pi-trash', danger: true, command: () => confirmDelete(data) }]" />
                 </template>
               </Column>
             </DataTable>
@@ -202,13 +184,25 @@
 
         <TabPanel header="Inspect">
           <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" ref="inspectContent" :actions-target="inspectActionsTarget" @renamed="refreshRuns" />
+          <!-- Fingerprints identify the exact workflow and software; they are provenance, not results. -->
+          <details v-if="activeTab === TAB_INSPECT && inspectedIdentity" class="run-provenance">
+            <summary>Provenance</summary>
+            <dl :aria-label="`Run #${inspectedIdentity.runId}; Workflow SHA-256: ${inspectedIdentity.workflowSha || 'Not recorded'}; Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`">
+              <dt>Workflow SHA-256</dt><dd>{{ inspectedIdentity.workflowSha || 'Not recorded' }}</dd>
+              <dt>Build SHA-1</dt><dd>{{ inspectedIdentity.buildSha || 'Not recorded' }}</dd>
+            </dl>
+            <Button
+              icon="pi pi-copy" label="Copy run identity" class="p-button-text p-button-sm"
+              :aria-label="`Copy run identity for Run #${inspectedIdentity.runId}`"
+              :disabled="!inspectedIdentity.workflowSha && !inspectedIdentity.buildSha" @click="copyRunIdentity" />
+          </details>
           <WorkspaceState v-else-if="latestInspectionLoading" kind="loading" variant="page" message="Opening the latest run…" />
           <WorkspaceState v-else :kind="latestInspectionError ? 'error' : 'empty'" variant="page" :message="latestInspectionError || 'Choose a run in History.'">
             <Button label="Open History" icon="pi pi-arrow-left" class="p-button-text" @click="activeTabId = 'run_history'" />
           </WorkspaceState>
         </TabPanel>
         <TabPanel header="Compare">
-          <WorkspaceState v-if="runsStore.comparisonLoading" kind="loading" variant="page" message="Reading retained runs and checking comparable samples, validation roles and units…" />
+          <WorkspaceState v-if="runsStore.comparisonLoading" kind="loading" variant="page" message="Reading saved runs and checking comparable samples, validation roles and units…" />
           <EvidenceComparisonView v-else-if="typeof route.query.evidence === 'string' && projectStore.currentProjectId" :project-id="projectStore.currentProjectId" :encoded-references="route.query.evidence" />
           <ComparisonPanel
             v-else-if="runsStore.comparison"
@@ -219,15 +213,31 @@
             :scientific-comparison="runsStore.comparison.scientific_comparison"
             @back="activeTab = TAB_RUN_HISTORY"
           />
-          <WorkspaceState v-else kind="empty" variant="page" message="Select 2–10 runs in History to compare.">
-            <Button label="Open History" icon="pi pi-arrow-left" class="p-button-text" @click="activeTab = TAB_RUN_HISTORY" />
-          </WorkspaceState>
+          <!-- Choose the runs here; comparing needs no trip back to History. -->
+          <section v-else class="compare-picker" aria-label="Choose runs to compare">
+            <p v-if="!runsStore.runs.length">No saved runs in this project yet.</p>
+            <template v-else>
+              <p>Choose 2–10 runs to compare.</p>
+              <ul>
+                <li v-for="run in runsStore.runs" :key="run.id">
+                  <label>
+                    <input type="checkbox" :checked="runsStore.selectedRunIds.has(run.id)" @change="runsStore.toggleRunSelection(run.id)" />
+                    <span>{{ run.display_name || run.name || `Run #${run.id}` }}</span>
+                    <small>Run #{{ run.id }}</small>
+                  </label>
+                </li>
+              </ul>
+              <Button :label="`Compare ${runsStore.selectedCount} runs`" icon="pi pi-chart-bar"
+                :disabled="runsStore.selectedCount < 2 || runsStore.selectedCount > 10"
+                :loading="runsStore.comparisonLoading" @click="handleCompareRuns" />
+            </template>
+          </section>
         </TabPanel>
 
         <TabPanel header="Models">
           <WorkspaceState v-if="loading" kind="loading" message="Loading models…" />
           <WorkspaceState v-if="error" kind="error" :message="error"><Button label="Retry" @click="loadModels" /></WorkspaceState>
-          <Panel v-model:collapsed="localModelsCollapsed" header="Local Model History" toggleable class="model-section">
+          <Panel v-model:collapsed="localModelsCollapsed" header="Model history" toggleable class="model-section">
           <div class="artifact-toolbar">
             <InputText
               v-model="artifactSearch"
@@ -384,7 +394,7 @@
             <section v-if="artifactComponentSummary" aria-label="Saved model component evidence">
               <ModelSummaryCard :summary="artifactComponentSummary" :can-edit-selection="Boolean(selectedModel.workflow_id)" evidence-subset
                 @edit-selection="openSelectedModelWorkflow" />
-              <p class="detail-note">Exact component evidence retained by source run #{{ selectedModel.source_run_id }}.</p>
+              <p class="detail-note">Component evidence saved by source run #{{ selectedModel.source_run_id }}.</p>
             </section>
             <p v-else-if="artifactComponentMessage" class="detail-note" role="note">{{ artifactComponentMessage }}</p>
 
@@ -533,6 +543,8 @@ import { regressionMetricPresentation, regressionMetricQualification } from "@/u
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
+import RowActions from "@/components/RowActions.vue";
+import { modelShape, runKindLabel } from "@/utils/modelLabels";
 import Column from "primevue/column";
 import DataTable from "primevue/datatable";
 import Dialog from "primevue/dialog";
@@ -649,12 +661,13 @@ async function copyRunIdentity() {
 }
 const headerActionItems = computed(() => [
   ...(activeTab.value === TAB_INSPECT ? inspectContent.value?.headerActions || [] : []),
-  {
+  // Export applies to the run list and a selected model only; elsewhere it is not offered.
+  ...(exportApplies.value ? [{
     label: activeTab.value === TAB_MODELS ? "Copy model metadata" : "Export",
     icon: activeTab.value === TAB_MODELS ? "pi pi-copy" : "pi pi-download",
     disabled: !canExportActiveTab.value,
     command: exportActiveTab,
-  },
+  }] : []),
 ]);
 
 const models = ref<ModelSummary[]>([]);
@@ -711,7 +724,7 @@ watch(
       if (request !== artifactEvidenceRequest) return;
       const entry = run.data.evidence.outputs[model.node_id]?.component_curve;
       if (entry?.state !== "exact" || !entry.storage) {
-        artifactComponentMessage.value = "This model predates retained component-selection evidence; inspect or rerun its source workflow.";
+        artifactComponentMessage.value = "This model predates saved component-selection evidence; inspect or rerun its source workflow.";
         return;
       }
       const curvePort = "component_curve";
@@ -732,7 +745,7 @@ watch(
         [{ source: { nodeId: model.node_id, port: "component_curve", kind: "component_selection" }, value }],
       );
       if (!built.componentSelection && !built.pcaComponentSelection && !built.plsdaComponentSelection) {
-        throw new Error("Retained component evidence is malformed");
+        throw new Error("Saved component evidence is malformed");
       }
       artifactComponentSummary.value = built;
     } catch {
@@ -882,8 +895,8 @@ const applicationActions = useScopedRequest(
 
 const runKindOptions = [
   { label: "All", value: "all" },
-  { label: "Training", value: "training" },
-  { label: "Batch inference", value: "batch_inference" },
+  { label: "Model fit", value: "training" },
+  { label: "Prediction", value: "batch_inference" },
   { label: "Data", value: "data" },
   { label: "Other", value: "other" },
 ];
@@ -897,6 +910,7 @@ const filteredModels = computed(() => {
   return models.value;
 });
 
+const exportApplies = computed(() => activeTab.value === TAB_RUN_HISTORY || activeTab.value === TAB_MODELS);
 const canExportActiveTab = computed(() => {
   if (activeTab.value === TAB_RUN_HISTORY) return runsStore.runs.length > 0;
   if (activeTab.value === TAB_MODELS) return selectedModel.value != null;
@@ -1017,13 +1031,20 @@ function clearRouteQueryParam(name: string): void {
   void router.replace({ query });
 }
 
+/** Tab index for a `tab` query value, accepting the short and legacy names. */
+function linkedTabIndex(value: unknown): number {
+  const aliases: Record<string, typeof MODEL_SUBSCOPES[number]> = { history: "run_history", artifacts: "models" };
+  const name = typeof value === "string" ? aliases[value] ?? value : "";
+  return MODEL_SUBSCOPES.indexOf(name as typeof MODEL_SUBSCOPES[number]);
+}
+
 function applyRunDeepLink(): void {
   if (route.params?.runId) {
     inspectedRunId.value = String(route.params.runId);
     activeTab.value = TAB_INSPECT;
     return;
   }
-  const linkedTab = MODEL_SUBSCOPES.indexOf(route.query.tab as typeof MODEL_SUBSCOPES[number]);
+  const linkedTab = linkedTabIndex(route.query.tab);
   if (linkedTab >= 0) activeTab.value = linkedTab;
   // Back from a run lands on a run-free address, which cannot show Inspect
   // content. Return to the workspace tab instead of an empty Inspect page.
@@ -1048,10 +1069,9 @@ onMounted(async () => {
   }
   projectContextReady = true;
   restoreActiveRunsTab();
-  if (route.query.tab === "models" || route.query.tab === "artifacts") activeTab.value = TAB_MODELS;
-  if (route.query.tab === "compare") activeTab.value = TAB_COMPARE;
-  if (route.query.tab === "batch") activeTab.value = TAB_BATCH;
-  if (route.query.tab === "run_history") activeTab.value = TAB_RUN_HISTORY;
+  // An address that names a tab always wins over the remembered tab.
+  const linked = linkedTabIndex(route.query.tab);
+  if (linked >= 0 && linked !== TAB_INSPECT) activeTab.value = linked;
   const kind = String(route.query.kind || "all");
   if (runKindOptions.some(option => option.value === kind)) runKindFilter.value = kind;
   const offset = Number(route.query.offset);
@@ -1631,14 +1651,9 @@ async function promotionConfirmed(): Promise<void> {
 }
 
 function modelSubtitle(model: ModelSummary): string {
-  const parts: string[] = [model.model_type, `${model.n_features} feat`];
-  if (model.n_components != null) {
-    parts.push(`${model.n_components} LV`);
-  }
+  const parts = modelShape(model);
   const metric = modelMetricSummary(model.metrics ?? null);
   if (metric) parts.push(metric);
-  if (model.node_id) parts.push(`node ${model.node_id}`);
-  if (model.workflow_id != null) parts.push(`wf #${model.workflow_id}`);
   return parts.join(" · ");
 }
 
@@ -1647,24 +1662,24 @@ function modelSubtitle(model: ModelSummary): string {
 // scores. Anything not in this list is hidden from the subtitle (it remains
 // available in the detail panel).
 const METRIC_PRIORITY: Array<{ key: string; label: string }> = [
-  { key: "cv_balanced_accuracy", label: "cv_bal_acc" },
-  { key: "cv_accuracy", label: "cv_acc" },
-  { key: "cv_f1_macro", label: "cv_f1" },
-  { key: "cv_sensitivity_macro", label: "cv_sens" },
-  { key: "cv_specificity_macro", label: "cv_spec" },
-  { key: "f1_macro", label: "f1" },
-  { key: "balanced_accuracy", label: "bal_acc" },
-  { key: "accuracy_test", label: "acc_test" },
-  { key: "accuracy", label: "acc" },
-  { key: "train_balanced_accuracy", label: "train_bal_acc" },
-  { key: "f1", label: "f1" },
-  { key: "r2_cv", label: "r2_cv" },
-  { key: "r2_test", label: "r2_test" },
-  { key: "r2", label: "r2" },
-  { key: "rmsecv", label: "rmsecv" },
-  { key: "rmse_test", label: "rmse_test" },
-  { key: "rmse", label: "rmse" },
-  { key: "mae", label: "mae" },
+  { key: "cv_balanced_accuracy", label: "Balanced accuracy (CV)" },
+  { key: "cv_accuracy", label: "Accuracy (CV)" },
+  { key: "cv_f1_macro", label: "Macro F1 (CV)" },
+  { key: "cv_sensitivity_macro", label: "Sensitivity (CV)" },
+  { key: "cv_specificity_macro", label: "Specificity (CV)" },
+  { key: "f1_macro", label: "Macro F1" },
+  { key: "balanced_accuracy", label: "Balanced accuracy" },
+  { key: "accuracy_test", label: "Accuracy (test)" },
+  { key: "accuracy", label: "Accuracy" },
+  { key: "train_balanced_accuracy", label: "Balanced accuracy (training)" },
+  { key: "f1", label: "Macro F1" },
+  { key: "Q²", label: "Q²" },
+  { key: "R² (test)", label: "R² (test)" },
+  { key: "r2", label: "R²" },
+  { key: "RMSECV", label: "RMSECV" },
+  { key: "RMSEP", label: "RMSEP" },
+  { key: "rmse", label: "RMSE" },
+  { key: "mae", label: "MAE" },
 ];
 
 function modelMetricSummary(
@@ -2122,18 +2137,7 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 }
 
 function formatRunKind(kind: string | null | undefined): string {
-  switch (kind) {
-    case "training":
-      return "Training";
-    case "batch_inference":
-      return "Batch";
-    case "data":
-      return "Data";
-    case "other":
-      return "Other";
-    default:
-      return "Other";
-  }
+  return runKindLabel(kind);
 }
 
 function hasInvalidModelNumber(model: ModelSummary): boolean {
@@ -2521,8 +2525,7 @@ function safeFilename(value: string): string {
 .status-tag,
 .kind-tag,
 .artifact-produced-tag {
-  font-size: 0.68rem;
-  text-transform: uppercase;
+  font-size: 0.75rem;
 }
 
 .muted-dash {
@@ -2918,6 +2921,14 @@ function safeFilename(value: string): string {
     align-items: flex-start;
   }
 }
+
+.run-provenance { margin-top: 1rem; color: var(--text-color-secondary); font-size: 0.875rem; }
+.run-provenance dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.5rem 0; }
+.run-provenance dd { margin: 0; font-family: var(--font-mono, monospace); overflow-wrap: anywhere; }
+.compare-picker { padding: 1rem 1.5rem; }
+.compare-picker ul { list-style: none; margin: 0.5rem 0 1rem; padding: 0; display: grid; gap: 0.25rem; }
+.compare-picker label { display: flex; align-items: baseline; gap: 0.5rem; }
+.compare-picker small { color: var(--text-color-secondary); }
 
 .runs-section-picker {
   display: none;

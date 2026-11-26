@@ -230,7 +230,7 @@ v-model:scale-value="selectedFeatureScale"
           <p :role="plotRefusal ? 'alert' : undefined">{{ plotRefusal || "No data to display" }}</p>
           <small v-if="!plotRefusal">{{
             embedded
-              ? "No retained table is available for this output."
+              ? "No saved table is available for this output."
               : "Execute the node first to see results"
           }}</small>
         </div>
@@ -287,7 +287,7 @@ v-model:scale-value="selectedFeatureScale"
           <p :role="plotRefusal ? 'alert' : undefined">{{ plotRefusal || "No data to display" }}</p>
           <small v-if="!plotRefusal">{{
             embedded
-              ? "No retained table is available for this output."
+              ? "No saved table is available for this output."
               : "Execute the node first to see results"
           }}</small>
         </div>
@@ -1052,7 +1052,7 @@ const dataPreviewColumns = computed(() => {
         ? `${label} (plot coordinate)` : label;
     };
     const multiAxis = dataPreview.value.some(row => "x_quantity" in row);
-    const labels: Record<string, string> = { _index: "#", series: "Series", point_id: "Retained point ID", point_label: "Retained point label", x_quantity: "X quantity", y_quantity: "Y quantity", x: multiAxis ? "X coordinate" : title(plotLayout.value?.xaxis, "X"), y: multiAxis ? "Y coordinate" : title(plotLayout.value?.yaxis, "Y"), value: "Value" };
+    const labels: Record<string, string> = { _index: "#", series: "Series", point_id: "Saved point ID", point_label: "Saved point label", x_quantity: "X quantity", y_quantity: "Y quantity", x: multiAxis ? "X coordinate" : title(plotLayout.value?.xaxis, "X"), y: multiAxis ? "Y coordinate" : title(plotLayout.value?.yaxis, "Y"), value: "Value" };
     return [...new Set(dataPreview.value.flatMap(row => Object.keys(row)))].filter(field => !["_observation_ref", "_usedInResult"].includes(field)).map(field => ({ field, header: labels[field] || field }));
   }
   if (isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics")) {

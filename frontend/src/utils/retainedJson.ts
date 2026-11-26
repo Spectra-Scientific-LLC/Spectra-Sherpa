@@ -2,7 +2,7 @@
 export const RETAINED_DISPLAY_CHAR_LIMIT = 64 * 1024;
 
 export function retainedJsonForDisplay(source: string): unknown {
-  if (source.length > RETAINED_DISPLAY_CHAR_LIMIT) throw new Error("Retained value exceeds display limits");
+  if (source.length > RETAINED_DISPLAY_CHAR_LIMIT) throw new Error("Saved value exceeds display limits");
   const projected = source.replace(
     /"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
     token => token.startsWith('"') ? token : JSON.stringify(token),

@@ -12,7 +12,7 @@
         <td>{{ value.per_repeat.map(number).join(', ') }}</td>
       </tr></tbody>
     </table>
-    <p>Root seed: {{ record.root_seed }}. Exact repeat seeds and folds are retained in Separate Repeat Evidence.</p>
+    <p>Root seed: {{ record.root_seed }}. Repeat seeds and folds are saved in Separate Repeat Evidence.</p>
   </section>
 </template>
 <script setup lang="ts">

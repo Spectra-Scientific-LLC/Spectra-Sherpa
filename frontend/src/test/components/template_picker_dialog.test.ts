@@ -369,7 +369,7 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
       return;
     }
     expect(wrapper.text()).toContain("Suggested");
-    expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toBe("Data Portfolio: Lavender");
+    expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toBe("Data Selection: Lavender");
     expect(wrapper.emitted("sheet-opened")).toBeUndefined();
     await wrapper.findAll("button").find(button => button.text() === "Use Current Data")!.trigger("click");
     await flushPromises();
@@ -857,7 +857,7 @@ it("late closed-picker failure cannot overwrite reopened portfolio", async () =>
     resolveChoice({ data: { dataset: projectDataset } });
     await flushPromises();
 
-    expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toContain("Data Portfolio: Corn MP6 · Moisture");
+    expect(wrapper.get('[data-testid="starter-data-portfolio"]').text()).toContain("Data Selection: Corn MP6 · Moisture");
     expect(mocks.apiPost).toHaveBeenCalledWith(
       "/workflow-templates/binding-compatibility-preview",
       expect.objectContaining({ use_saved_analysis_selection: true, binding: expect.objectContaining({ file_ids: [11], dataset_view_id: 7 }) }),

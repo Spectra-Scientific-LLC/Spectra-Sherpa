@@ -72,7 +72,7 @@ describe("reopened outlier curation", () => {
     const f = fixture(view, true);
     try {
       await (view === "plot" ? f.inspection.openQuickPlot() : f.inspection.openDataTable()); await flushPromises();
-      expect(f.inspection.quickPlotEvidenceError.value).toContain("exact retained output is unavailable");
+      expect(f.inspection.quickPlotEvidenceError.value).toContain("saved output is unavailable");
       expect(f.inspection.quickPlotNodeOutput.value).toBeNull();
       expect(f.change).not.toHaveBeenCalled();
     } finally { f.wrapper.unmount(); }

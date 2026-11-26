@@ -813,7 +813,7 @@
             />
           </div>
           <WorkspaceState v-if="presentationError" kind="unavailable" :message="presentationError" />
-          <WorkspaceState v-if="quickPlotLoading" kind="loading" message="Loading retained output…" />
+          <WorkspaceState v-if="quickPlotLoading" kind="loading" message="Loading saved output…" />
           <WorkspaceState v-else-if="quickPlotEvidenceError && !showQuickPlotModal" kind="unavailable" :message="quickPlotEvidenceError" />
           <div
             v-if="executedGroupedSplit"
@@ -833,7 +833,7 @@
             <span
               v-if="executedGroupedSplit.digest"
               class="group-split-digest"
-              :title="`Exact split-plan SHA-256: ${executedGroupedSplit.digest}`"
+              :title="`Split-plan SHA-256: ${executedGroupedSplit.digest}`"
             >
               Verified split plan
             </span>
@@ -1763,7 +1763,7 @@ const selectedOutputPreviewNotice = computed(() => {
   ) {
     return null;
   }
-  return "History preview. Result views load exact retained data when available.";
+  return "History preview. Result views load saved data when available.";
 });
 const selectedOutputSupportsTable = computed(() =>
   selectedPresentation.value

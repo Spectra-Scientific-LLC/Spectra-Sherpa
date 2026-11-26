@@ -45,7 +45,7 @@ describe("workflow Data Portfolio picker", () => {
       props: { projectId: 2, workflowId: 8, nodeId: "source_1" },
     });
     await flushPromises();
-    expect(wrapper.text().includes("Exact source, target, and groups are bound")).toBe(recorded);
+    expect(wrapper.text().includes("Source, target, and groups are bound")).toBe(recorded);
     expect(wrapper.find("button").exists()).toBe(!recorded);
     if (!recorded) {
       await wrapper.get("button").trigger("click");
@@ -92,8 +92,8 @@ describe("workflow Data Portfolio picker", () => {
     });
     await flushPromises();
     expect(wrapper.find("button").exists()).toBe(false);
-    expect(wrapper.text()).toContain("Choose an available portfolio");
-    expect(wrapper.text()).not.toContain("Exact source, target, and groups are bound");
+    expect(wrapper.text()).toContain("Choose an available selection");
+    expect(wrapper.text()).not.toContain("Source, target, and groups are bound");
     await wrapper.get("select").setValue("view:12");
     await flushPromises();
     expect(put).toHaveBeenCalledOnce();

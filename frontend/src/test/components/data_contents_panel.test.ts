@@ -455,7 +455,7 @@ describe("DataContentsPanel", () => {
     });
     const table = wrapper.get("[aria-label='Collection sample table']");
     expect(table.findAll('input[type="checkbox"]')).toHaveLength(0);
-    expect(wrapper.text()).toContain("Loading exact sample inclusion");
+    expect(wrapper.text()).toContain("Loading sample inclusion");
     await wrapper.setProps({
       sampleInclusion: {
         loading: false,
@@ -489,7 +489,7 @@ describe("DataContentsPanel", () => {
       })) },
     } });
     const table = wrapper.get("[aria-label='Collection sample table']");
-    expect(wrapper.text()).not.toContain("Sample identities do not match this portfolio");
+    expect(wrapper.text()).not.toContain("Sample identities do not match this selection");
     expect(table.findAll('input[type="checkbox"]')).toHaveLength(150);
     expect((table.get('input[aria-label="Include sample iris-row-2"]').element as HTMLInputElement).checked)
       .toBe(false);
@@ -894,7 +894,7 @@ describe("DataContentsPanel", () => {
     wrapper.vm.$forceUpdate();
     await flushPromises();
     expect(wrapper.get("[data-testid='sample-review']").element).toBe(review);
-    expect(wrapper.text()).toContain("Refreshing the exact dataset selection");
+    expect(wrapper.text()).toContain("Refreshing the dataset selection");
     mocks.dataStore.fileInfoLoading = false;
     wrapper.vm.$forceUpdate();
     await flushPromises();
@@ -1130,7 +1130,7 @@ describe("DataContentsPanel", () => {
 
     const wrapper = mount(DataContentsPanel);
     expect(wrapper.get("[aria-label='Collection identity']").text()).toContain(
-      "4 exact source files",
+      "4 source files",
     );
     expect(wrapper.get("[aria-label='Collection identity']").text()).toContain(manifestDigest);
     expect(wrapper.get("[aria-label='Collection sample table']").text()).toContain(
@@ -1996,7 +1996,7 @@ describe("DataContentsPanel", () => {
     const wrapper = mount(DataContentsPanel);
 
     expect(wrapper.text()).toContain(
-      "Sample-table identity at row 1 does not match its retained spectrum label",
+      "Sample-table identity at row 1 does not match its saved spectrum label",
     );
   });
 
@@ -2161,7 +2161,7 @@ describe("DataContentsPanel", () => {
     };
 
     const wrapper = mount(DataContentsPanel);
-    expect(wrapper.text()).toContain("3-D dataset retained");
+    expect(wrapper.text()).toContain("3-D dataset saved");
     expect(wrapper.text()).toContain("selection.dimension_project");
     expect(wrapper.get("[aria-label='Dataset dimensions and axis sets']").text()).toContain(
       "Dimension 1 · Inner mode 1",
@@ -2190,7 +2190,7 @@ describe("DataContentsPanel", () => {
     const wrapper = mount(DataContentsPanel);
 
     expect(wrapper.text()).toContain(
-      "Sample-table column specimen_id does not match the 2 retained spectra",
+      "Sample-table column specimen_id does not match the 2 saved spectra",
     );
   });
 
@@ -2335,7 +2335,7 @@ describe("DataContentsPanel", () => {
     };
     const wrapper = mount(DataContentsPanel);
     await flushPromises();
-    expect(wrapper.text()).toContain("dataset handle was not retained");
+    expect(wrapper.text()).toContain("dataset link was not saved");
     expect(wrapper.text()).not.toContain("Only an aligned API preview");
     expect(mocks.apiGet).not.toHaveBeenCalled();
   });

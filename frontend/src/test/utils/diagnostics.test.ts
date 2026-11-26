@@ -64,9 +64,9 @@ describe("diagnostics formatting", () => {
       worker_execution: { worker_pid: 123, execution_id: "private-runtime-id" },
     });
     expect(entries.map((entry) => entry.key)).toEqual(["n_selected", "n_resamples"]);
-    expect(entries[0].displayValue).toBe("All 5,401 variables retained; none excluded");
+    expect(entries[0].displayValue).toBe("All 5,401 variables saved; none excluded");
     expect(buildDiagnosticEntries({ n_selected: 20, n_total: 100 })[0].displayValue)
-      .toBe("20 of 100 variables retained");
+      .toBe("20 of 100 variables saved");
   });
 
   it("summarizes short objects and arrays without rendering blank strings", () => {

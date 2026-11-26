@@ -84,7 +84,7 @@ export function diagnosticReference(
     (selected.length > 1024 ||
       selected.reduce((n, id) => n + new TextEncoder().encode(id).length, 0) > 4096)
   )
-    throw new Error("Narrow the selection or select the whole retained cohort for a summary.");
+    throw new Error("Narrow the selection or select the whole saved cohort for a summary.");
   return {
     workflow_id: workflowId,
     run_id: review.run_id,

@@ -142,8 +142,8 @@ export const buildDiagnosticEntries = (diagnostics: Record<string, unknown> | nu
     total > 0 && selected >= 0 && selected <= total;
   const displayDiagnostics = hasSelectionCount
     ? { ...diagnostics, n_selected: selected === total
-      ? `All ${total.toLocaleString("en-US")} variables retained; none excluded`
-      : `${selected.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} variables retained` }
+      ? `All ${total.toLocaleString("en-US")} variables saved; none excluded`
+      : `${selected.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} variables saved` }
     : diagnostics;
   return Object.entries(displayDiagnostics)
     .filter(([key]) => !(hasSelectionCount && key === "n_total") && !DEFINITION_KEYS.has(key))

@@ -11,9 +11,14 @@ it('keeps a large ledger bounded on screen without discarding population or smal
     props: { rows: source }, global: { stubs: { Button: true } },
   });
   expect(wrapper.findAll('tbody tr')).toHaveLength(200);
-  expect(wrapper.text()).toContain('30000 sample-level predictions');
+  expect(wrapper.text()).toMatch(/30000 samples · \S/);
+  // One target and one population: named once, not on every row.
+  expect(wrapper.find('thead').text()).toContain('Reference (response)');
+  expect(wrapper.find('tbody tr').text()).not.toContain('response');
   expect(wrapper.text()).toContain('Showing the first 200 rows');
-  expect(wrapper.find('tbody tr').text()).toContain('1.000e-5');
+  // Too small for the residual precision: "< 0.0…" instead of an exponent or a false zero.
+  expect(wrapper.find('tbody tr').text()).toMatch(/< 0\.0+1/);
+  expect(wrapper.find('tbody tr').text()).not.toContain('e-5');
   expect(source[0].residual).toBe(0.00001);
   wrapper.unmount();
 });

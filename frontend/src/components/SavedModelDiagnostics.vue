@@ -1,11 +1,11 @@
 <template>
   <section class="saved-diagnostics" aria-label="Saved model diagnostics">
     <h3>Diagnostic workbench <MethodHelp topic="diagnostics" label="Reviewing model diagnostics" /></h3>
-    <p v-if="loading" role="status">Loading exact saved-run evidence…</p>
+    <p v-if="loading" role="status">Loading saved-run evidence…</p>
     <p v-else-if="error" role="status">{{ error }}</p>
     <template v-else-if="review">
       <p>
-        Run #{{ review.run_id }} · {{ review.n_calibration }} retained calibration samples ·
+        Run #{{ review.run_id }} · {{ review.n_calibration }} saved calibration samples ·
         {{ review.n_components }} components. ○ Calibration · □ Held-out · ◇ Marked outlier · ×
         Excluded.
       </p>
@@ -88,7 +88,7 @@
           :data="loadingTraces"
           :layout="loadingLayout"
           :config="config"
-          empty-message="No exact fitted loadings were retained."
+          empty-message="No fitted loadings were saved."
         />
       </div>
       <p v-if="!loadingRows" role="status">Fitted loadings are unavailable for this saved model.</p>
@@ -198,14 +198,14 @@
         :stale="false"
       />
       <p v-else-if="decisionUnavailable" role="note">
-        Ask Sherpa for this selection is unavailable until the exact fit-time review state can be
+        Ask Sherpa for this selection is unavailable until the fit-time review state can be
         verified.
       </p>
       <details v-if="curationSource && selected.length">
         <summary>Exclude selected observations from My Dataset</summary>
         <DatasetCurationPanel :source="curationSource" :seed-ids="selected" />
       </details>
-      <p v-else-if="selected.length">Dataset correction requires retained source-row identity.</p>
+      <p v-else-if="selected.length">Dataset correction requires saved source-row identity.</p>
       <button v-if="workflowId" type="button" @click="emit('open-workflow')">
         Open source workflow to mark, exclude or restore and refit
       </button>
@@ -325,7 +325,7 @@ watch(
       if (request.isCurrent())
         error.value =
           (cause as { response?: { data?: { detail?: string } } }).response?.data?.detail ||
-          "Exact saved diagnostics are unavailable for this model.";
+          "Saved diagnostics are unavailable for this model.";
     } finally {
       if (request.isCurrent()) loading.value = false;
     }

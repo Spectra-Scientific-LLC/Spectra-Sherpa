@@ -266,7 +266,7 @@ watch(
       if (request.isCurrent())
         error.value =
           (cause as { response?: { data?: { detail?: string } } }).response?.data?.detail ||
-          "Exact PLS-DA sample diagnostics are unavailable for this model.";
+          "PLS-DA sample diagnostics are unavailable for this model.";
     } finally {
       if (request.isCurrent()) loading.value = false;
     }
@@ -306,7 +306,7 @@ function askAdvisor(kind: "samples" | "terms" | "next") {
       throw new Error("Narrow the selection before asking Sherpa.");
     const prompts = {
       samples:
-        "Explain these selected saved PLS-DA calibration samples using their exact T-squared and Q evidence. Distinguish global screening from classification validity.",
+        "Explain these selected saved PLS-DA calibration samples using their T-squared and Q evidence. Distinguish global screening from classification validity.",
       terms:
         "Explain this saved PLS-DA sample's Q and signed T-squared variable terms. Distinguish them from component loadings and chemical causes; include omitted mass.",
       next: "What should I inspect next for these saved PLS-DA calibration samples, without treating screening as a class probability or automatic exclusion?",

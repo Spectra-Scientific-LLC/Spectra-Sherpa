@@ -1,12 +1,16 @@
 <template>
-  <Button
-    label="Import Project"
-    icon="pi pi-upload"
-    class="p-button-outlined p-button-sm"
-    :disabled="disabled"
-    :loading="projectStore.isImporting"
-    @click="triggerImport"
-  />
+  <!-- A disabled button gives no hover feedback, so the wrapper carries the reason. -->
+  <span class="project-import-action" :title="uploadDisabledMessage || undefined">
+    <Button
+      label="Import Project"
+      icon="pi pi-upload"
+      class="p-button-outlined p-button-sm"
+      :disabled="disabled"
+      :loading="projectStore.isImporting"
+      :aria-description="uploadDisabledMessage || undefined"
+      @click="triggerImport"
+    />
+  </span>
 
   <input ref="fileInput" type="file" accept=".sherpa,.spectrapy,.zip" class="hidden-file-input" @change="onFileSelected" />
   <input ref="referenceFileInput" type="file" multiple class="hidden-file-input" @change="onReferenceFilesSelected" />
@@ -39,8 +43,8 @@
         </li>
       </ul>
       <p class="reference-rebind__note">
-        Filenames and folders do not matter. Sherpa verifies the exact file size and SHA-256,
-        then restores the new project atomically. A file that does not match is refused and not retained.
+        Filenames and folders do not matter. Sherpa verifies the file size and SHA-256,
+        then restores the new project atomically. A file that does not match is refused and not saved.
       </p>
       <p v-if="referenceRebindError" class="reference-rebind__error" role="alert">{{ referenceRebindError }}</p>
     </div>

@@ -302,7 +302,7 @@ describe("PLS linked review", () => {
     await flushPromises();
     expect(charts[0].props("selectedPointIds")).toEqual(["c"]);
     expect(charts[3].props("selectedPointIds")).toEqual(["c"]);
-    expect(wrapper.text()).toContain("fit on 2 retained calibration observations");
+    expect(wrapper.text()).toContain("fit on 2 saved calibration observations");
     expect(wrapper.text()).toContain('parameters: method="auto"');
     expect(wrapper.text()).toContain("Linked model-input spectra");
     expect(

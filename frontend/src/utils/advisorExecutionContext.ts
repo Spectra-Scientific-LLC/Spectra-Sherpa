@@ -38,7 +38,7 @@ export function bindAdvisorExecutionContext<T extends { nodes: Array<Record<stri
     Number.isInteger(runId) &&
     Number(runId) > 0;
   const notice = allowed
-    ? "Results belong to the displayed execution. Effective parameters are included only when retained; missing parameters are unknown."
+    ? "Results belong to the displayed execution. Effective parameters are included only when saved; missing parameters are unknown."
     : "Draft workflow only. Execution results are unavailable for interpretation because the draft changed or its producing run identity is missing. Inspect the saved run or execute the current draft.";
   return {
     ...context,

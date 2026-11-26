@@ -2242,7 +2242,7 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     expect(wrapper.text()).toContain(
       "Machine sensors (1 row), Optical emission spectra (2 rows), RF-monitor variables (3 rows)",
     );
-    expect(wrapper.text()).toContain("different feature spaces");
+    expect(wrapper.text()).toContain("different variables (feature spaces)");
     expect(wrapper.text()).toContain("Provider row roles: normal (2), fault (1)");
     expect(wrapper.text()).toContain("remain descriptive metadata");
 
@@ -2252,7 +2252,7 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
 
     expect(mocks.dataStore.inspectExperimentRawFiles).toHaveBeenCalledWith(11, null, [oes.id]);
     expect(wrapper.text()).toContain("Optical emission spectra");
-    expect(wrapper.text()).toContain("single view used for preview and workflow modeling");
+    expect(wrapper.text()).toContain("Workflow → loads this view");
   });
 
   it.each(["saved", "changed", "unverified", "failed"])(
@@ -2360,7 +2360,7 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     await vm.countOriginalSourceSamples(11, files, vm.originalSourceFilesKey);
     await flushPromises();
     expect(vm.originalSourceSampleCount).toBe(33);
-    expect(vm.inspectedDatasetShape).toBe("33 source samples × 1868 features");
+    expect(vm.inspectedDatasetShape).toBe("33 spectra × 1868 variables");
     wrapper.unmount();
   });
 
@@ -2396,7 +2396,7 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     await vm.countOriginalSourceSamples(11, [file], vm.originalSourceFilesKey);
     await flushPromises();
     expect(vm.originalSourceSampleCount).toBe(33);
-    expect(vm.inspectedDatasetShape).toBe("33 source samples × 1868 features");
+    expect(vm.inspectedDatasetShape).toBe("33 spectra × 1868 variables");
     wrapper.unmount();
   });
 

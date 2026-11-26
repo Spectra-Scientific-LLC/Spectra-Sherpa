@@ -81,7 +81,7 @@ import type {
 import type { NodeExecutionState } from "@/types";
 
 const RETAINED_RUN_STALE_WARNING =
-  "Current graph and retained run identity are different or unverified — results may be stale.";
+  "Current graph and saved run identity are different or unverified — results may be stale.";
 
 export const useWorkflowStore = defineStore("workflow", () => {
   // State
@@ -798,8 +798,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
           restoredEvidenceNotice.value = evidence?.qualification !== 'qualified'
             ? 'Restored summary. Historical evidence completeness is unverified.'
             : restoredEvidenceGaps.value.length
-              ? `Restored summary. ${restoredEvidenceGaps.value.length} retained outputs are incomplete.`
-              : 'Restored summary. Full retained results are available in the saved run.';
+              ? `Restored summary. ${restoredEvidenceGaps.value.length} saved outputs are incomplete.`
+              : 'Restored summary. Full saved results are available in the saved run.';
           lastExecutionResults.value = runResp.data.results_summary;
           lastExecutionDiagnostics.value = runResp.data.diagnostics || {};
           lastExecutionResultDescriptors.value = runResp.data.diagnostics?._scientific_values ?? {};
@@ -1071,7 +1071,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const preparingExecution = ref(false);
   function requireEditableWorkflow(): void {
     if (retainedInspection.value?.read_only) {
-      throw new Error("This retained workflow is read-only because its recorded operations are unavailable. Saved results remain readable in Runs.");
+      throw new Error("This saved workflow is read-only because its recorded operations are unavailable. Saved results remain readable in Runs.");
     }
   }
   const pendingExecutions = ref(new Map<string, symbol>());
@@ -1352,7 +1352,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     const retained = await api.get<components["schemas"]["WorkflowDetail"]>(`/workflows/${targetWorkflowId}`);
     if (!ownership.isCurrent()) throw new Error("Active workspace changed before running the saved workflow.");
     if (retained.data.retained_inspection?.read_only) {
-      throw new Error("This retained workflow is read-only because its recorded operations are unavailable.");
+      throw new Error("This saved workflow is read-only because its recorded operations are unavailable.");
     }
     // Trial tabs mirror the source workflow's run state — see executeWorkflow.
     const trialMirrors = workbookStore.sheets.filter(
@@ -2105,7 +2105,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
         if (current) lastExecutionResults.value[node.id] = { ...current, exclusions: response.data.value };
       } catch (error) {
         if (request.isCurrent() && !isRequestCanceled(error))
-          console.warn("Exact workflow population unavailable; plot curation stays disabled.");
+          console.warn("Workflow population unavailable; plot curation stays disabled.");
       }
     }));
   }

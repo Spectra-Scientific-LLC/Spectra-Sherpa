@@ -22,7 +22,7 @@
         </select>
       </label>
       <p>
-        Reference: {{ detail.reference_count }} retained calibration observations. Fitted Y mean for
+        Reference: {{ detail.reference_count }} saved calibration observations. Fitted Y mean for
         {{ responseNames[target] }}: {{ format(detail.baseline[target]) }} {{ units }}.
         Preprocessing:
         {{ detail.preprocessing.map(preprocessorLabel).join(" → ") || "none before PLS" }}. Internal
@@ -88,7 +88,7 @@
       </template>
       <p v-else-if="sample" role="status">
         Explanation unavailable for {{ reviewRowLabel(rows.find((row) => row.id === sample), sample) }}:
-        {{ observation?.projection_error || "No exact projected observation was retained." }}
+        {{ observation?.projection_error || "No projected observation was saved." }}
       </p>
       <p v-else role="status">Select an observation to see its prediction contributions.</p>
       <p aria-live="polite">

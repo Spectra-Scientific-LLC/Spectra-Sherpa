@@ -292,7 +292,7 @@
             v-if="presets.length"
             :options="presets"
             option-label="name"
-            placeholder="Apply retained preset"
+            placeholder="Apply saved preset"
             @update:model-value="applyPreset"
           />
         </div>
@@ -326,7 +326,7 @@
           </div>
         </div>
         <div class="match-summary">
-          <Tag :value="`${draft.matching.matches?.length ?? 0} retained matches`" severity="info" />
+          <Tag :value="`${draft.matching.matches?.length ?? 0} saved matches`" severity="info" />
           <details><summary>Matching order</summary>Saved matches take precedence; unmatched measured rows use planned plate order.</details>
         </div>
       </section>

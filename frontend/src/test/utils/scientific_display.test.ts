@@ -108,15 +108,15 @@ describe("sample prediction ledger", () => {
     const wrapper = mount(ValidationLedger, { props: { rows } });
     const text = wrapper.text();
     expect(text).toContain("99.83");
-    expect(text).toContain("-0.74");
+    expect(text).toContain("-0.745");
     expect(text).not.toContain("99.82868069410324");
     expect(wrapper.find('[title="99.82868069410324"]').exists()).toBe(true);
-    expect(text).toContain("Calibration fit");
-    expect(text).toContain("2 calibration fit");
+    expect(text).toContain("Reference (CO2)");
+    expect(text).toContain("2 samples");
   });
 
   it("warns that calibration-only rows are fitted values, not validation", () => {
-    expect(mount(ValidationLedger, { props: { rows } }).find('[role="note"]').text()).toContain("Calibration fitted values");
+    expect(mount(ValidationLedger, { props: { rows } }).find('[role="note"]').text()).toContain("Calibration fitted values, not validation predictions");
     const mixed = [...rows, { ...rows[0], sample: "3", role: "held_out_test" }];
     expect(mount(ValidationLedger, { props: { rows: mixed } }).find('[role="note"]').exists()).toBe(false);
   });
@@ -166,7 +166,7 @@ it("removes nested worker metadata while preserving scientific values", async ()
 });
 
 
-it("explains retained nested SIMCA calibration and DBSCAN populations without inferring missing declarations", () => {
+it("explains saved nested SIMCA calibration and DBSCAN populations without inferring missing declarations", () => {
   expect(scientificMetricNotes({ diagnostics: { metrics: {
     schema_version: 1, task_type: "classification", method: "simca",
     evidence_scope: "calibration_fit_diagnostics_not_validation_evidence",

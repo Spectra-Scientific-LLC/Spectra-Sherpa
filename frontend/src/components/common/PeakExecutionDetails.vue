@@ -23,7 +23,7 @@
       </p>
     </template>
     <p v-else>
-      Exact SciPy arguments were not retained with this result. Run the updated node to capture
+      SciPy arguments were not saved with this result. Run the updated node to capture
       them; current settings cannot establish historical inputs.
     </p>
   </details>

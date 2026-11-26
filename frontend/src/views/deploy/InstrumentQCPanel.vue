@@ -11,11 +11,11 @@
       <ul><li v-for="reason in history.snapshot.reasons" :key="reason">{{ reason }}</li></ul>
       <p v-if="history.snapshot.calculation.due_at">Next control due: {{ history.snapshot.calculation.due_at }}</p>
       <p v-if="history.snapshot.policy">Instrument: {{ history.snapshot.policy.instrument_id }} · Material: {{ history.snapshot.policy.control_material_id }} · Lot: {{ history.snapshot.policy.control_material_lot }} · Policy: {{ history.snapshot.policy.policy_version }}</p>
-      <details><summary>Exact evaluated policy, residuals and evidence</summary><pre>{{ JSON.stringify(history.snapshot, null, 2) }}</pre></details>
+      <details><summary>Evaluated policy, residuals and evidence</summary><pre>{{ JSON.stringify(history.snapshot, null, 2) }}</pre></details>
       <article v-for="event in history.events" :key="event.event_id">
         <strong>{{ event.kind }} — {{ event.event_id }}</strong>
         <p>Observed: {{ event.occurred_at }} · Recorded: {{ event.recorded_at }}</p>
-        <details><summary>Retained event</summary><pre>{{ JSON.stringify(event, null, 2) }}</pre></details>
+        <details><summary>Saved event</summary><pre>{{ JSON.stringify(event, null, 2) }}</pre></details>
       </article>
       <details>
         <summary>Append a control, maintenance or review record</summary>
@@ -71,7 +71,7 @@ async function submit() {
 }
 function download() {
   const url = URL.createObjectURL(new Blob([JSON.stringify({schema_version: "spectrasherpa.instrument-qc-history/1", watch_id: props.watchId,
-    scope: "Retained report-only evidence; imported approval and instrument identity are assertions", ...history.value}, null, 2)], {type: "application/json"}));
+    scope: "Saved report-only evidence; imported approval and instrument identity are assertions", ...history.value}, null, 2)], {type: "application/json"}));
   const a = document.createElement("a"); a.href = url; a.download = `qc-watch-${props.watchId}.json`; a.click(); URL.revokeObjectURL(url);
 }
 watch(() => props.watchId, () => { generation += 1; request += 1; history.value = null; error.value = ""; busy.value = false;

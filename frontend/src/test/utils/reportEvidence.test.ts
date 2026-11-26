@@ -241,7 +241,7 @@ describe("Saved report evidence", () => {
     expect(html).toContain("1-2, 5-6");
     expect(html).toContain("f".repeat(64));
     expect(markdown).toContain("Exclude failed scans");
-    expect(markdown).toContain("Exact row receipt");
+    expect(markdown).toContain("Row receipt");
     expect(markdown).toContain("1-2, 5-6");
   });
 });

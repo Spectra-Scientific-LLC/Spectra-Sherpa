@@ -48,9 +48,9 @@ describe("model summary from retained records", () => {
     }]);
     expect(summary.regression[0].target_units).toBe(units);
     const wrapper = mount(ModelSummaryCard, { props: { summary } });
-    expect(wrapper.text()).toContain(`RMSEP (${units ?? "units not declared"})`);
-    expect(wrapper.text()).toContain("Protocol: Held-out test");
-    expect(wrapper.text()).not.toContain("Protocol: Cross-validation");
+    expect(wrapper.text()).toContain(`RMSE (${units ?? "units not recorded"})`);
+    expect(wrapper.get('[aria-label="Headline statistics"]').text()).toContain("RMSEP 0.3975");
+    expect(wrapper.findAll("thead th").map((cell) => cell.text())).toEqual(["Statistic", "Held-out test"]);
   });
   it("reads only model and evaluator comparison and metric records", () => {
     const sources = summarySources(plsDefinition, contracts, "model_1");
@@ -86,7 +86,10 @@ describe("model summary from retained records", () => {
   it("reports fitted components rather than the inactive automatic-mode parameter", () => {
     const effective = { model_1: { component_fit_mode: "one_standard_error", n_components: 3 } };
     const pending = buildModelSummary(plsDefinition, effective, []);
-    expect(pending.model?.settings).toEqual([["Components", "Automatic · fitted count not retained"]]);
+    expect(pending.model?.settings).toEqual([["Components", "Automatic · fitted count not saved"]]);
+    // A held-out refit keeps no curve, but its fitted model records the count it kept.
+    const recorded = buildModelSummary(plsDefinition, effective, [], 9);
+    expect(recorded.model?.settings).toEqual([["Components", "9 latent variables"]]);
     const summary = buildModelSummary(plsDefinition, effective, [{
       source: { nodeId: "model_1", port: "component_curve", kind: "component_selection" },
       value: { schema_version: "spectrasherpa-pls-component-curve/1", selected_components: 5,
@@ -163,7 +166,7 @@ describe("model summary from retained records", () => {
     expect(summary.regression).toEqual([]);
     const compact = mount(ModelSummaryCard, { props: { summary, compact: true } });
     expect(compact.get(".model-summary__populations").text()).toContain("24 fitted samples");
-    expect(compact.text()).not.toContain("Held-out evaluation: Not retained.");
+    expect(compact.text()).not.toContain("Held-out evaluation: Not saved.");
     expect(compact.find('.model-summary__pretreatment').exists()).toBe(false);
     expect(compact.get(".model-summary__populations").element.closest("details")).toBeNull();
     expect(compact.get(".model-summary__details").attributes("open")).toBeUndefined();
@@ -242,9 +245,10 @@ describe("model summary card", () => {
     expect(text).toContain("5 latent variables");
     expect(text).toContain("Autoscaled");
     expect(text).toContain("SNV → Savitzky-Golay 1st derivative");
-    expect(wrapper.findAll("thead th").map((cell) => cell.text())).toEqual(["Statistic", "Protocol: Calibration fit", "Protocol: Held-out test"]);
-    expect(text).toContain("RMSEC (units not declared) 0.2894");
-    expect(text).toContain("RMSEP (units not declared) 0.3975");
+    expect(wrapper.findAll("thead th").map((cell) => cell.text())).toEqual(["Statistic", "Calibration fit", "Held-out test"]);
+    expect(wrapper.get('[aria-label="Headline statistics"]').text()).toMatch(/RMSEC 0\.2894.*RMSEP 0\.3975/);
+    // Units are stated once per statistic row, not in every cell.
+    expect(text.match(/units not recorded/g)?.length).toBe(3);
     expect(text).toContain("30 calibration fit");
     expect(text).not.toContain("Only calibration-fit statistics");
   });
@@ -257,20 +261,20 @@ describe("model summary card", () => {
     const details = card.get(".model-summary__details");
     expect(details.attributes("open")).toBeUndefined();
     expect(card.get(".model-summary__populations").text()).toContain("30 calibration");
-    expect(card.get('[role="note"]').text()).toContain("no retained CV or test predictions");
+    expect(card.get('[role="note"]').text()).toContain("no saved CV or test predictions");
     expect(card.get('[role="note"]').element.closest("details")).toBeNull();
     expect(card.get("table").element.closest("details")).toBe(details.element);
   });
   it('separates compact context from detailed metrics without hiding limitations', () => {
     const summary = buildModelSummary(plsDefinition, null, [{ source: { nodeId: 'model_1', port: 'calibration_comparison', kind: 'regression_comparison' }, value: calibration }]);
     const context = mount(ModelSummaryCard, { props: { summary, compact: true, display: 'context' } });
-    expect(context.text()).toContain('Calibration fit only; no retained CV or test predictions.');
+    expect(context.text()).toContain('Calibration fit only; no saved CV or test predictions.');
     expect(context.find('details').exists()).toBe(false);
     expect(context.find('table').exists()).toBe(false);
     const details = mount(ModelSummaryCard, { props: { summary, display: 'details' } });
     expect(details.find('.model-summary__header').exists()).toBe(false);
     expect(details.find('details').exists()).toBe(false);
-    expect(details.text()).toContain('RMSEC (units not declared) 0.2894');
+    expect(details.text()).toContain('RMSE (units not recorded)0.2894');
     expect(details.find('table').exists()).toBe(true);
   });
 
@@ -296,7 +300,7 @@ describe("model summary card", () => {
     const summary = buildModelSummary(plsDefinition, null, [
       { source: { nodeId: "model_1", port: "calibration_comparison", kind: "regression_comparison" }, value: calibration },
     ]);
-    expect(mount(ModelSummaryCard, { props: { summary } }).get('[role="note"]').text()).toContain("no retained CV or test predictions");
+    expect(mount(ModelSummaryCard, { props: { summary } }).get('[role="note"]').text()).toContain("no saved CV or test predictions");
   });
 
   it("shows the most independent confusion matrix and marks misclassifications", () => {

@@ -7,8 +7,8 @@
     <p>{{ record.interpretation }}</p>
     <p>Right meaningfully better: {{ record.summary.right_meaningfully_better }}; left: {{ record.summary.left_meaningfully_better }}; within declared margin: {{ record.summary.within_margin }}.</p>
     <p>Summary uses training CV only.</p>
-    <details><summary>Exact protocol and provenance</summary><p>Protocol: {{ record.protocol_digest }}</p><p v-for="(split, index) in record.splits" :key="index">Partition {{ index + 1 }}: {{ split.digest }}</p></details>
-    <button type="button" @click="downloadJson(record, `paired-evaluation-${runId}.json`)">Download exact evaluation record</button>
+    <details><summary>Protocol and provenance</summary><p>Protocol: {{ record.protocol_digest }}</p><p v-for="(split, index) in record.splits" :key="index">Partition {{ index + 1 }}: {{ split.digest }}</p></details>
+    <button type="button" @click="downloadJson(record, `paired-evaluation-${runId}.json`)">Download evaluation record</button>
   </section>
 </template>
 <script setup lang="ts">

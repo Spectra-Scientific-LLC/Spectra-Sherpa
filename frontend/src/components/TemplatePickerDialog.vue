@@ -29,7 +29,7 @@
       </div>
       <p v-if="currentPortfolioName" class="tp-portfolio" data-testid="starter-data-portfolio">
         <i class="pi pi-database" aria-hidden="true" />
-        Data Portfolio: {{ currentPortfolioName }}
+        Data Selection: {{ currentPortfolioName }}
       </p>
       <p v-if="projectDatasetChoiceError" class="tp-status tp-status-warning" role="alert">
         {{ projectDatasetChoiceError }}
@@ -98,7 +98,7 @@
                 </label>
                 <label v-if="crossBlockRequested" class="tp-block-label">
                   Held-out block
-                  <input v-model.trim="heldOutBlock" type="text" placeholder="Exact block value" />
+                  <input v-model.trim="heldOutBlock" type="text" placeholder="Block value" />
                 </label>
               </div>
             </div>
@@ -687,7 +687,7 @@ const managedCandidateSelectionWarning = (tpl: TemplateOut): string | null => {
   );
   return collectionSelected
     ? canOptimize.value
-      ? "This selection starts an analysis workflow. After a successful run, choose Optimize; its exact data and fold-safe recipe will be checked there. No companion workflow is required."
+      ? "This selection starts an analysis workflow. After a successful run, choose Optimize; its data and fold-safe recipe will be checked there. No companion workflow is required."
       : "This selection starts an analysis workflow. Save successful runs and compare them manually in Runs using the same data and evaluation protocol. No companion workflow is required."
     : null;
 };

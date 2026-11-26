@@ -30,7 +30,7 @@
       <WorkspaceContextItem :label="sectionTitle" :value="contextTitle">
         {{
           reportStore.reportData
-            ? `${reportStore.reportData.runs?.length || 0} retained runs`
+            ? `${reportStore.reportData.runs?.length || 0} saved runs`
             : ""
         }}
       </WorkspaceContextItem>
@@ -122,7 +122,7 @@
             </button>
           </div>
           <div class="report-options">
-            <MethodHelp topic="shortSummary" label="Report length" :context="reportStore.reportMode === 'summary' ? 'Key retained results and context, without AI.' : 'All retained results, settings, diagnostics, and execution evidence.'" />
+            <MethodHelp topic="shortSummary" label="Report length" :context="reportStore.reportMode === 'summary' ? 'Key saved results and context, without AI.' : 'All saved results, settings, diagnostics, and execution evidence.'" />
             <label class="row-level-option">
               <input type="checkbox" v-model="reportStore.includeRowLevelPlots" />
               <span>Include figures and individual reference/prediction values</span>
@@ -712,7 +712,7 @@ onMounted(async () => {
     && Number.isSafeInteger(runId) && runId > 0;
   if (!hasRunLink && (route.query.run != null || route.query.workflow != null)) {
     toast.add({ severity: "error", summary: "Report unavailable",
-      detail: "This report link needs a valid retained workflow and run.", life: 5000 });
+      detail: "This report link needs a valid saved workflow and run.", life: 5000 });
     return;
   }
   if (hasRunLink) {
@@ -727,7 +727,7 @@ onMounted(async () => {
       if (run.id !== runId || run.workflow_id !== workflowId
         || !Number.isSafeInteger(projectId) || Number(projectId) < 1
         || (route.query.project != null && Number(route.query.project) !== projectId)) {
-        throw new Error("The report link does not match this retained run's project.");
+        throw new Error("The report link does not match this saved run's project.");
       }
       if (projectId !== projectStore.currentProjectId) {
         const handoff = reportLinkRequests.begin();
@@ -736,7 +736,7 @@ onMounted(async () => {
         });
         if (!handoff.isCurrent()) return;
         if (!selected || projectStore.currentProjectId !== projectId) {
-          throw new Error("The retained run's project is unavailable.");
+          throw new Error("The saved run's project is unavailable.");
         }
         request = reportProjectRequests.begin();
       }
@@ -744,7 +744,7 @@ onMounted(async () => {
       // A refused or stale link must not generate a report for the active project.
       if (!isCurrent()) return;
       toast.add({ severity: "error", summary: "Report unavailable",
-        detail: "This retained run could not be opened in its owning project.", life: 5000 });
+        detail: "This saved run could not be opened in its owning project.", life: 5000 });
       return;
     }
   } else {

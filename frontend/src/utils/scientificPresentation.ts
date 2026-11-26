@@ -149,7 +149,7 @@ export const presentationResolutionError = (
     contract.payload.presentations.find(
       (item) => item.presentation_id === (presentationId || contract.payload.default_presentation),
     ) ?? null;
-  if (!requested) return "Requested scientific presentation is not declared by the node contract.";
+  if (!requested) return "Requested scientific presentation is not declared by the node definition.";
   const missing = requested.source_ports.filter((sourcePort) => !output.ports?.[sourcePort]);
   return missing.length
     ? `Scientific presentation is missing declared source port${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}.`

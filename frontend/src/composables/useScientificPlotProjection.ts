@@ -525,7 +525,7 @@ function buildSpectraOverlayPlot(output: any) {
     layout: { ...layout, meta: { refusal_reason: reason } },
   });
   if (!Array.isArray(matrix) || !Array.isArray(matrix[0]))
-    return refuse("No retained spectral rows are available.");
+    return refuse("No saved spectral rows are available.");
   const axis = output.presentation_value?.sample_axis ?? output.presentation_value?.y_axis;
   const mask = axis?.include_mask;
   if (
@@ -534,14 +534,14 @@ function buildSpectraOverlayPlot(output: any) {
       mask.length !== matrix.length ||
       mask.some((v: unknown) => typeof v !== "boolean"))
   ) {
-    return refuse("Sample inclusion mask does not match the retained result rows.");
+    return refuse("Sample inclusion mask does not match the saved result rows.");
   }
   const active = matrix
     .map((_: unknown, index: number) => index)
     .filter((index: number) => !mask || mask[index]);
   const chosen = active.slice(0, 50);
   if (!chosen.length)
-    return refuse("All retained observations are excluded by the sample inclusion mask.");
+    return refuse("All saved observations are excluded by the sample inclusion mask.");
   const nFeatures = matrix[0].length;
   const featureNames = metadata.feature_names;
   const wn = metadata.wavenumbers;
@@ -557,7 +557,7 @@ function buildSpectraOverlayPlot(output: any) {
     sourceLabels != null &&
     (!Array.isArray(sourceLabels) || sourceLabels.length !== matrix.length)
   ) {
-    return refuse("Sample labels do not match the retained result rows.");
+    return refuse("Sample labels do not match the saved result rows.");
   }
   const labels = getLabelArray(sourceLabels, matrix.length, "Spectrum");
   const plottedSeries = (values: number[]) => {
@@ -924,7 +924,7 @@ function preprocessingComparison(input: any, output: any, heatmap: boolean, colo
       (typeof primary === "string" ? resolvePortPayload(source?.ports?.[primary]) : null) ??
       resolvePortPayload(source);
     const data = value?.data ?? source?.data;
-    if (!Array.isArray(data?.[0])) return { data: [], layout: {}, notice: `Comparison unavailable: ${sourceLabel} was not retained or is not available.` };
+    if (!Array.isArray(data?.[0])) return { data: [], layout: {}, notice: `Comparison unavailable: ${sourceLabel} was not saved or is not available.` };
     const projected = projectActiveSpectralCohort({
       data, presentation_value: value,
       metadata: { ...portMetadata(source), ...portMetadata(value),
@@ -1626,11 +1626,11 @@ export function useQuickPlotProjection(
         const record = output.presentation_value as any;
         const frequency = record?.per_variable_frequency;
         if (!Array.isArray(frequency) || !frequency.length || frequency.some(v => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1)) {
-          return refusedScientificPlot("Exact per-variable selection frequencies are unavailable.", BASE_PLOT_LAYOUT);
+          return refusedScientificPlot("Per-variable selection frequencies are unavailable.", BASE_PLOT_LAYOUT);
         }
         const coordinates = scientificFeatureCoordinates(metadata, frequency.length);
         const x = coordinates ?? frequency.map((_: number, i: number) => i + 1);
-        const title = coordinates ? `${metadata.x_title || "Feature coordinate"}${metadata.x_units ? ` (${metadata.x_units})` : ""}` : "Variable index (source coordinates not retained)";
+        const title = coordinates ? `${metadata.x_title || "Feature coordinate"}${metadata.x_units ? ` (${metadata.x_units})` : ""}` : "Variable index (source coordinates not saved)";
         return { data: [{ type: "scatter", mode: "lines+markers", name: "Selection frequency", x, y: frequency }],
           layout: { ...BASE_PLOT_LAYOUT, showlegend: false, xaxis: { title }, yaxis: { title: "Selection frequency across outer folds", range: [0, 1.05] },
             title: { text: `Selection stability${typeof record.mean_jaccard === "number" ? ` · mean Jaccard ${record.mean_jaccard.toPrecision(4)}` : ""}` } } };

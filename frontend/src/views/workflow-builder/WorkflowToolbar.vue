@@ -158,6 +158,7 @@
 import MethodHelp from "@/components/MethodHelp.vue";
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useViewport } from "@/composables/useViewport";
+import { nodeIcon, paletteLabel } from "@/utils/nodeIcons";
 import { useWorkflowStore } from '@/stores/workflow';
 import {
   NODE_CATEGORY_LABELS,
@@ -254,89 +255,6 @@ onMounted(async () => {
 });
 
 // Icon mappings by canonical node_type
-const NODE_ICONS: Record<string, string> = {
-  // Data
-  'data.file_load': '📂',
-  'data.load_group': '🗂️',
-  'data.nist_library': '📚',
-  'data.filter_samples': '🔎',
-  'data.train_test_split': '✂️',
-  'data.attach_target': '🎯',
-  // Synthesis
-  'data.synthetic_curve': '📈',
-  'synthesis.species': '🧬',
-  'synthesis.blend': '🔀',
-  'synthesis.merge': '📚',
-  // Preprocessing
-  'preprocess.smooth': '〰️',
-  'preprocess.derivative': '∂',
-  'preprocess.normalize': '⚖️',
-  'preprocess.scale': '📏',
-  'baseline.penalized_ls': '📉',
-  'baseline.rubberband': '📉',
-  'preprocess.cosmic_ray': '✨',
-  'preprocess.clip_range': '✂️',
-  'preprocess.clip_floor': '⬆️',
-  'preprocess.wavenumber_align': '⚙️',
-  'preprocess.osc': '⊥',
-  'preprocess.emsc': '📐',
-  'transfer.pds': '🔄',
-  'transfer.sws': '📐',
-  'transfer.ds': '🔁',
-  'transfer.apply_fitted': '🧰',
-  'time_series.moving_window': '🕒',
-  'time_series.trend_removal': '📉',
-  // Exploratory
-  'model.pca': '🔀',
-  'model.pca_transform': '⚙️',
-  'model.mcr_als': '🧩',
-  'model.simplisma': '🔎',
-  'model.efa': '🔬',
-  'model.nmf': '📊',
-  'model.ica': '⚡',
-  'analysis.peak_finding': '⛰️',
-  // Regression
-  'model.fitted_pls': '📈',
-  'model.apply_fitted_pls': '🎯',
-  'model.pcr': '🧮',
-  'model.svr': '🧲',
-  'model.linear_regression': '📉',
-  'model.load_apply': '📦',
-  'analysis.compare_library': '📚',
-  // Clustering
-  'model.kmeans': '🧭',
-  'model.dbscan': '🫧',
-  'model.hca': '🌳',
-  // Validation
-  'diagnostics.cross_validation': '🔄',
-  'diagnostics.outliers': '🚨',
-  'stats.summary': '📊',
-  // Classification
-  'classification.plsda': '🎯',
-  'classification.knn': '👥',
-  'classification.simca': '🎲',
-  'classification.apply_knn': '🔮',
-  'classification.apply_plsda': '🔮',
-  'classification.apply_simca': '🔮',
-  // Output
-  'output.plot': '📈',
-  'output.contour': '🗺️',
-  'output.data_table': '📋',
-  'output.export': '💾',
-  // Selection & Design
-  'selection.variable_select': '🔬',
-  'selection.ipls': '📊',
-  'selection.cars': '🏎️',
-  'selection.spa': '📐',
-  'selection.mcuve': '🧹',
-  'selection.stability': '🔒',
-  'selection.nested_cv': '🔄',
-  'selection.audit': '📋',
-  'selection.compare': '⚖️',
-  // Deploy
-  'deploy.input': '📥',
-  'deploy.output': '📤',
-};
 
 /**
  * Normalize whitespace on a node description and return the full text.
@@ -351,8 +269,8 @@ const summarizePurpose = (description: string): string => {
 // Convert backend metadata to NodeConfig
 const metadataToConfig = (metadata: NodeTypeMetadata): NodeConfig => {
   return {
-    label: metadata.label,
-    icon: NODE_ICONS[metadata.node_type] || '📦',
+    label: paletteLabel(metadata.label),
+    icon: nodeIcon(metadata.node_type, metadata.category),
     colorClass: getNodeVisualColorClass(metadata.node_type, metadata),
     description: summarizePurpose(metadata.description),
   };

@@ -1128,7 +1128,7 @@ export function buildSalientFeaturesPlot(value: unknown): ScientificPlot {
     raw && typeof raw === "object" && !Array.isArray(raw)
       ? (raw as { features?: unknown }).features
       : null;
-  if (!Array.isArray(rows)) return refusedScientificPlot("Salient features require a retained feature list.", SCIENTIFIC_PLOT_LAYOUT);
+  if (!Array.isArray(rows)) return refusedScientificPlot("Salient features require a saved feature list.", SCIENTIFIC_PLOT_LAYOUT);
   const features = rows.flatMap((row, index) => {
     if (!row || typeof row !== "object" || Array.isArray(row)) return [];
     const feature = row as Record<string, unknown>;
@@ -1166,7 +1166,7 @@ export function buildSalientFeaturesPlot(value: unknown): ScientificPlot {
 export function buildOutOfFoldEvidencePlot(value: unknown): ScientificPlot {
   const raw = projectedValue(value);
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return refusedScientificPlot("Out-of-fold evidence requires a retained evidence record.", SCIENTIFIC_PLOT_LAYOUT);
+    return refusedScientificPlot("Out-of-fold evidence requires a saved evidence record.", SCIENTIFIC_PLOT_LAYOUT);
   }
   const record = raw as Record<string, unknown>;
   const refuse = (reason: string): ScientificPlot => ({
@@ -1239,7 +1239,7 @@ export function buildOutOfFoldEvidencePlot(value: unknown): ScientificPlot {
     }
     for (const index of fold.test) {
       if (assigned.has(index) || folds[index] !== foldIndex)
-        return refuse("fold assignments do not match the retained split plan");
+        return refuse("fold assignments do not match the saved split plan");
       assigned.add(index);
     }
   }
@@ -1251,7 +1251,7 @@ export function buildOutOfFoldEvidencePlot(value: unknown): ScientificPlot {
     ...plot.data[0],
     customdata: folds.map((fold, index) => [index, fold, hasLabels ? String(labels[index]) : "Unavailable"]),
     hovertemplate:
-      "Sample: %{customdata[2]}<br>Retained row (0-based): %{customdata[0]}<br>Validation fold (0-based): %{customdata[1]}<br>Actual: %{x:.15g}<br>OOF prediction: %{y:.15g}<extra></extra>",
+      "Sample: %{customdata[2]}<br>Saved row (0-based): %{customdata[0]}<br>Validation fold (0-based): %{customdata[1]}<br>Actual: %{x:.15g}<br>OOF prediction: %{y:.15g}<extra></extra>",
   };
   plot.layout = {
     ...plot.layout,
@@ -1272,7 +1272,7 @@ export function buildOutOfFoldEvidencePlot(value: unknown): ScientificPlot {
 export function buildDeclaredVisualizationPlot(value: unknown, plotKey?: string): ScientificPlot {
   const raw = projectedValue(value);
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return refusedScientificPlot("Declared visualization requires a retained visualization record.", SCIENTIFIC_PLOT_LAYOUT);
+    return refusedScientificPlot("Declared visualization requires a saved visualization record.", SCIENTIFIC_PLOT_LAYOUT);
   }
   const record = raw as Record<string, unknown>;
   const selected = plotKey ? record[plotKey] : record;
@@ -1280,11 +1280,11 @@ export function buildDeclaredVisualizationPlot(value: unknown, plotKey?: string)
     return refusedScientificPlot("The selected declared visualization is unavailable.", SCIENTIFIC_PLOT_LAYOUT);
   }
   const plot = selected as Record<string, unknown>;
-  if (!Array.isArray(plot.data)) return refusedScientificPlot("Declared visualization requires a retained trace array.", SCIENTIFIC_PLOT_LAYOUT);
+  if (!Array.isArray(plot.data)) return refusedScientificPlot("Declared visualization requires a saved trace array.", SCIENTIFIC_PLOT_LAYOUT);
   const declaredLayout =
     plot.layout && typeof plot.layout === "object" ? (plot.layout as PlotRecord) : {};
   if (plot.data.length === 0) {
-    return refusedScientificPlot(scientificPlotRefusal(declaredLayout) ?? "Declared visualization has no retained traces.", { ...SCIENTIFIC_PLOT_LAYOUT, ...declaredLayout });
+    return refusedScientificPlot(scientificPlotRefusal(declaredLayout) ?? "Declared visualization has no saved traces.", { ...SCIENTIFIC_PLOT_LAYOUT, ...declaredLayout });
   }
   return {
     data: plot.data as PlotRecord[],
@@ -1308,14 +1308,14 @@ export function buildPlsComponentCurvePlot(value: unknown, responseIndex = 0): S
     const rows = Array.isArray(record.calibration) ? record.calibration as Record<string, unknown>[] : [];
     const cv = record.cross_validation && typeof record.cross_validation === "object"
       ? record.cross_validation as Record<string, unknown> : {};
-    if (!rows.length) return unavailable(String(cv.reason ?? "Component evidence was not retained."));
+    if (!rows.length) return unavailable(String(cv.reason ?? "Component evidence was not saved."));
     const metric = classification ? "balanced_accuracy" : "reconstruction_rmse";
     const cvMetric = classification ? metric : "pooled_reconstruction_rmse";
     const valid = (row: Record<string, unknown> | undefined, key: string) => {
       const v = row?.[key];
       return row?.status !== "unavailable_rank" && typeof v === "number" && Number.isFinite(v) && v >= 0 && (!classification || v <= 1) ? v : null;
     };
-    if (rows.some((row, i) => !row || row.components !== i + 1)) return unavailable("Component counts do not align with the retained evidence.");
+    if (rows.some((row, i) => !row || row.components !== i + 1)) return unavailable("Component counts do not align with the saved evidence.");
     const x = rows.map(row => row.components);
     const cvRows = cv.status === "available" && Array.isArray(cv.rows) ? cv.rows as Record<string, unknown>[] : [];
     const held = rows.map(row => valid(cvRows.find(item => item.components === row.components), cvMetric));
@@ -1342,13 +1342,13 @@ export function buildPlsComponentCurvePlot(value: unknown, responseIndex = 0): S
     || !Array.isArray(record.response_names) || !Array.isArray(record.response_units)
     || !Array.isArray(record.calibration) || !record.calibration.length
     || !record.cross_validation || typeof record.cross_validation !== "object") {
-    return unavailable("The retained PLS component curve has an unrecognized scientific contract.");
+    return unavailable("The saved PLS component curve has an unrecognized scientific contract.");
   }
   const names = record.response_names as unknown[];
   const units = record.response_units as unknown[];
   if (!Number.isSafeInteger(responseIndex) || responseIndex < 0 || responseIndex >= names.length
     || names.length !== units.length || typeof names[responseIndex] !== "string") {
-    return unavailable("The selected PLS response is not retained in the component curve.");
+    return unavailable("The selected PLS response is not saved in the component curve.");
   }
   const calibration = record.calibration as unknown[];
   const points = calibration.map((raw, index) => {
@@ -1358,7 +1358,7 @@ export function buildPlsComponentCurvePlot(value: unknown, responseIndex = 0): S
     return row.components === index + 1 && typeof error === "number" && Number.isFinite(error) && error >= 0
       ? error : null;
   });
-  if (points.every((point) => point === null)) return unavailable("No exact calibration errors were retained for this response.");
+  if (points.every((point) => point === null)) return unavailable("No calibration errors were saved for this response.");
   const cv = record.cross_validation as Record<string, unknown>;
   const cvRows = cv.status === "available" && Array.isArray(cv.rows) ? cv.rows as unknown[] : [];
   const cvPoints = calibration.map((raw, index) => {

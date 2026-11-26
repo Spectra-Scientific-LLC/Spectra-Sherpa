@@ -208,6 +208,9 @@
         </div>
 
         <div class="chat-main">
+          <p v-if="realtimeLost" class="chat-connection" role="status">
+            Chat streaming is reconnecting{{ store.lastError ? `: ${store.lastError}` : "." }}
+          </p>
           <div class="chat-layout">
             <div ref="messageContainer" class="chat-messages">
               <!-- LLM messages -->
@@ -343,7 +346,7 @@
                     <code>{{ productProposalOperations.join(" → ") }}</code>
                   </div>
                   <details class="product-proposal-card__details">
-                    <summary>Review exact workflow and parameters</summary>
+                    <summary>Review workflow and parameters</summary>
                     <pre>{{ productProposalDag }}</pre>
                   </details>
                   <p class="product-proposal-card__notice">
@@ -606,7 +609,7 @@ const diagnosticScopeLabel = computed(() => {
     return `Diagnostic discussion · Saved model ${scope.reference.artifact_uid} · External qualification dossier ${scope.reference.dossier_digest.slice(0, 12)}`;
   const count = scope.reference.selected_ids.length;
   const selection = scope.reference.select_all
-    ? "All retained observations"
+    ? "All saved observations"
     : `${count} selected observation${count === 1 ? "" : "s"}`;
   if ("kind" in scope.reference)
     return `Diagnostic discussion · Saved PLS-DA model ${scope.reference.artifact_uid} · Run ${scope.reference.run_id} · ${selection} · calibration only`;
@@ -966,28 +969,15 @@ watch(
   { immediate: true },
 );
 
-// ── Connection status toasts ─────────────────────────────────
+// ── Connection state (page text, not a toast: nothing the user did) ──
 
+const realtimeLost = ref(false);
 watch(
   () => store.connectionStatus,
   (status, prev) => {
-    if (prev === "connected" && status === "disconnected" && hadRealtime.value) {
-      toast.add({
-        severity: "warn",
-        summary: "Realtime disconnected",
-        detail: store.lastError || "Trying to reconnect...",
-        life: 4000,
-      });
-    }
+    if (prev === "connected" && status === "disconnected" && hadRealtime.value) realtimeLost.value = true;
     if (status === "connected") {
-      if (hadRealtime.value && prev === "disconnected") {
-        toast.add({
-          severity: "success",
-          summary: "Realtime restored",
-          detail: "Chat streaming is back online.",
-          life: 2500,
-        });
-      }
+      realtimeLost.value = false;
       hadRealtime.value = true;
     }
   },
@@ -1333,7 +1323,7 @@ const deleteConversation = async (conversationId: string) => {
     toast.add({
       severity: "success",
       summary: archives ? "Conversation Archived" : "Conversation Deleted",
-      detail: archives ? "Conversation archived; messages are retained." : "Conversation removed",
+      detail: archives ? "Conversation archived; messages are saved." : "Conversation removed",
       life: 2000,
     });
   } catch (error: unknown) {
@@ -2289,5 +2279,10 @@ const collapsed = computed(() => props.collapsed);
   .chat-close-btn-narrow {
     display: inline-flex !important;
   }
+}
+.chat-connection {
+  margin: 0 0 0.5rem;
+  color: var(--ss-warning-strong, var(--text-color-secondary));
+  font-size: 0.85rem;
 }
 </style>

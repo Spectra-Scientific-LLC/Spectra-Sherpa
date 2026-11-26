@@ -153,7 +153,7 @@ describe("portable sample table", () => {
   it("refuses ambiguous acquisition-plan assignment", () => {
     const rows = createSampleTableRows(2, 9);
     expect(() => applyAcquisitionPlan(rows, ["A01"])).toThrow(
-      "Exact assignment requires one planned well for each measured row",
+      "Assignment requires one planned well for each measured row",
     );
     expect(rows.every((row) => row.well === "")).toBe(true);
   });

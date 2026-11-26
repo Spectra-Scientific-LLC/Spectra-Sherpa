@@ -43,7 +43,7 @@
           :title-options="[]"
         />
         <SampleMetadataStyleControls
-          v-if="metadataGrouping.kind === 'valid'"
+          v-if="metadataGrouping.kind === 'valid' || numericColumns.length"
           v-model:color-value="sampleColorField"
           v-model:style-value="sampleLineField"
           :color-options="sampleColorOptions"
@@ -161,6 +161,7 @@ import {
 import { buildMetadataLineTraces, metadataGroupingState, subsetMetadataGrouping } from "@/utils/sampleMetadataGrouping";
 import SampleMetadataStyleControls from "@/views/workflow-builder/node-detail/panels/SampleMetadataStyleControls.vue";
 import { shouldReverseFeatureAxis } from "@/utils/plotLabels";
+import { CONTINUOUS_COLORSCALE, continuousColor, numericSampleColumns } from "@/utils/continuousColor";
 
 const props = withDefaults(
   defineProps<{
@@ -171,6 +172,8 @@ const props = withDefaults(
     plotDatasetsError?: string | null;
     activeExperimentId?: number | null;
     activeFileName?: string | null;
+    /** The response chosen for modelling; spectra are coloured by it when it is numeric. */
+    targetName?: string | null;
   }>(),
   {
     plotDatasets: () => [],
@@ -180,6 +183,7 @@ const props = withDefaults(
     plotDatasetsError: null,
     activeExperimentId: null,
     activeFileName: null,
+    targetName: null,
   },
 );
 const emit = defineEmits<{ harmonize: [] }>();
@@ -214,6 +218,8 @@ const selectedFeatureLabels = ref(PRIMARY_AXIS_SET);
 const selectedFeatureTitle = ref(PRIMARY_AXIS_SET);
 const selectedSampleLabels = ref(PRIMARY_AXIS_SET);
 const sampleColorField = ref("__none__");
+let colorChosenByUser = false;
+watch(sampleColorField, (_value, previous) => { if (previous !== undefined) colorChosenByUser = true; }, { flush: "sync" });
 const sampleLineField = ref("__none__");
 const FEATURE_TABLE_ROW_LIMIT = computed(() => displayPreferences.maxRows);
 const FEATURE_TABLE_COLUMN_LIMIT = 32;
@@ -444,11 +450,18 @@ const sampleAxisDisplay = computed(() =>
 const metadataGrouping = computed(() =>
   metadataGroupingState(singleDataset.value?.y_axis, singleDataset.value?.data.length ?? 0),
 );
-const sampleColorOptions = computed(() =>
-  metadataGrouping.value.kind === "valid"
-    ? [{ label: "None", value: "__none__" }, ...metadataGrouping.value.colorOptions]
-    : [],
-);
+const numericColumns = computed(() => {
+  const dataset = singleDataset.value;
+  const table = (dataset?.y_axis as { sample_table?: unknown } | undefined)?.sample_table;
+  return numericSampleColumns(table, dataset?.data.length ?? 0);
+});
+const GRADIENT = "gradient:";
+const sampleColorOptions = computed(() => {
+  const gradients = numericColumns.value.map(({ name }) => ({ label: `${name} (gradient)`, value: `${GRADIENT}${name}` }));
+  if (metadataGrouping.value.kind !== "valid") return gradients.length ? [{ label: "None", value: "__none__" }, ...gradients] : [];
+  const categorical = metadataGrouping.value.colorOptions.filter((option) => option.value !== "__none__");
+  return [{ label: "None", value: "__none__" }, ...gradients, ...categorical];
+});
 const sampleLineOptions = computed(() =>
   metadataGrouping.value.kind === "valid" ? metadataGrouping.value.symbolOptions : [],
 );
@@ -469,6 +482,11 @@ watch(
     }
     if (sample.kind === "valid") preserveChoice(selectedSampleLabels, sample.labelOptions);
     preserveChoice(sampleColorField, colors);
+    // Colour by the modelling target by default, so the spectra show how the response varies.
+    if (sampleColorField.value === "__none__" && !colorChosenByUser && props.targetName
+      && colors.some((option) => option.value === `${GRADIENT}${props.targetName}`)) {
+      sampleColorField.value = `${GRADIENT}${props.targetName}`;
+    }
     preserveChoice(sampleLineField, lines);
   },
   { immediate: true },
@@ -496,6 +514,33 @@ const singlePlotData = computed(() => {
   const isActive = (index: number) =>
     props.activeExperimentId === singleSource.value?.experimentId &&
     props.activeFileName === fileNames[index];
+  const gradient = sampleColorField.value.startsWith(GRADIENT)
+    ? numericColumns.value.find(({ name }) => `${GRADIENT}${name}` === sampleColorField.value) : undefined;
+  if (gradient) {
+    const values = selectedRows(gradient.values);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const shown = rows.slice(0, displayPreferences.maxRows);
+    const lines = shown.map((row, index) => ({
+      type: "scatter",
+      mode: "lines",
+      x,
+      y: row,
+      name: labels[index] || `Spectrum ${index + 1}`,
+      showlegend: false,
+      line: { width: isActive(index) ? 3.2 : 1.4, color: continuousColor(values[index], min, max) },
+      customdata: x.map(() => [labels[index] || `Spectrum ${index + 1}`, fileNames[index], values[index]]),
+      hovertemplate:
+        `<b>%{customdata[0]}</b><br>${gradient.name}: %{customdata[2]}<br>Filename: %{customdata[1]}<br>` +
+        "X: %{x}<br>Value: %{y:.4f}<extra></extra>",
+    }));
+    // An invisible marker trace carries the colour bar that keys the gradient.
+    return [...lines, {
+      type: "scatter", mode: "markers", x: [x[0]], y: [null], hoverinfo: "skip", showlegend: false,
+      marker: { color: [min], cmin: min, cmax: max, colorscale: CONTINUOUS_COLORSCALE, showscale: true,
+        colorbar: { title: { text: gradient.name, side: "right" }, thickness: 12 } },
+    }];
+  }
   if (
     metadataGrouping.value.kind === "valid" &&
     sampleColorField.value !== "__none__" &&

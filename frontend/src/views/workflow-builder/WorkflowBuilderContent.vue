@@ -176,7 +176,7 @@
       <div>
         <strong>The incoming data selection is unavailable</strong>
         <span>
-          Its navigation receipt is missing, expired, or belongs to another browser tab. Return to
+          Its link is missing, expired, or belongs to another browser tab. Return to
           My Dataset and choose Next: Workflow again.
         </span>
       </div>
@@ -240,7 +240,7 @@
     <WorkspaceContext label="Workflow workspace context" layout="workflow">
       <WorkspaceContextItem label="Active Sheet" :value="activeSheetName" :title="`Created ${sheetCreationTime}`" wrap />
       <WorkspaceContextItem label="Canvas" :value="canvasSummaryLabel" />
-      <WorkspaceContextItem label="Data Portfolio" :value="portfolioName" wrap>
+      <WorkspaceContextItem label="Data selection" :value="portfolioName" wrap>
         {{ portfolioSummary }}
       </WorkspaceContextItem>
     </WorkspaceContext>
@@ -318,7 +318,7 @@
             'trial-container': isTrialTabActive,
           }"
         >
-          <section v-if="retainedReadOnly && workflowStore.retainedInspection" class="retained-workspace" aria-label="Read-only retained workflow">
+          <section v-if="retainedReadOnly && workflowStore.retainedInspection" class="retained-workspace" aria-label="Read-only saved workflow">
             <p role="status">Some analysis steps are unavailable. You can still review the saved settings and results.</p>
             <Button label="Open saved runs" icon="pi pi-history" @click="router.push({ path: '/runs', query: { project: projectStore.currentProjectId, tab: 'run_history' } })" />
             <RetainedGraphView :graph="workflowStore.retainedInspection.graph" />
@@ -1327,7 +1327,7 @@ onMounted(async () => {
       severity: "info",
       summary: "Wavenumber Align added",
       detail:
-        "Connect the spectra to align and the reference spectrum whose grid should be retained.",
+        "Connect the spectra to align and the reference spectrum whose grid should be kept.",
       life: 6000,
     });
   }
@@ -1571,7 +1571,7 @@ const canvasSummaryLabel = computed(() => {
 });
 
 const runButtonTitle = computed(() => {
-  if (retainedReadOnly.value) return "Read-only retained workflow: recorded operations are unavailable";
+  if (retainedReadOnly.value) return "Read-only saved workflow: recorded operations are unavailable";
   if (pendingDataSelection.value) {
     return "Choose an Analysis Starter to bind the incoming My Dataset selection before running";
   }
@@ -1891,12 +1891,6 @@ const initializeWorkbook = async (respectDeepLink = true) => {
     resetCanvasUi();
     restoreNodeOutputsForActiveSheet();
 
-    toast.add({
-      severity: "info",
-      summary: "Workbook Loaded",
-      detail: `Loaded "${workbookStore.activeSheet?.name || workflowStore.workflowName}"`,
-      life: 3000,
-    });
   } catch (err: unknown) {
     const message = getErrorMessage(err, "Unable to load workflow sheets");
     workbookLoadError.value = message;
@@ -1957,12 +1951,6 @@ watch(
       projectSelectionUnavailable.value = false;
       restoreWorkflowDraftSnapshot();
       restoreNodeOutputsForActiveSheet();
-      toast.add({
-        severity: "info",
-        summary: "Workbook Loaded",
-        detail: `Loaded "${workbookStore.activeSheet?.name || workflowStore.workflowName}"`,
-        life: 3000,
-      });
     } catch (err: unknown) {
       if (!request.isCurrent()) return;
       const message = getErrorMessage(err, "Unable to load workflow sheets");

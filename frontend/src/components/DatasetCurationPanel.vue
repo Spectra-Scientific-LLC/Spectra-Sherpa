@@ -3,7 +3,7 @@
     <h4 v-if="!embedded">Exclude from My Dataset</h4>
     <p v-if="!embedded">
       Use this for defective acquisitions. Save a new definition, then explicitly choose which
-      analyses use it. Original files, saved runs and optimization seeds are retained.
+      analyses use it. Original files, saved runs and optimization seeds are saved.
     </p>
     <button
       v-if="!controlsOnly || error"
@@ -40,7 +40,7 @@
       >
       <table v-if="!controlsOnly && (!embedded || !matrix || !fileName)">
         <caption>
-          Exact source observations —
+          Source observations —
           {{
             selected.length
           }}
@@ -88,25 +88,25 @@
           Next observations
         </button>
       </div>
-      <label v-if="!embedded">New portfolio name <input v-model="name" maxlength="120" /></label>
+      <label v-if="!embedded">New selection name <input v-model="name" maxlength="120" /></label>
       <label v-if="!embedded"
         >Reason for dataset correction <textarea v-model="reason" maxlength="2000" rows="2" />
       </label>
       <div v-if="!embedded" class="actions">
         <button type="button" :disabled="!canExclude" @click="save('exclude')">
-          Save portfolio with exclusions
+          Save selection with exclusions
         </button>
         <button type="button" :disabled="!canRestore" @click="save('restore')">
-          Save portfolio with restored samples
+          Save selection with restored samples
         </button>
       </div>
       <p v-else-if="selected.length" role="status">
         {{
           selectionAction === "exclude"
-            ? "Selected samples will be excluded when you save the portfolio below."
+            ? "Selected samples will be excluded when you save the selection below."
             : selectionAction === "restore"
-              ? "Selected samples will be restored when you save the portfolio below."
-              : "Select only included or only previously curated samples per portfolio."
+              ? "Selected samples will be restored when you save the selection below."
+              : "Select only included or only previously curated samples per selection."
         }}
       </p>
       <p v-if="!embedded">
@@ -114,7 +114,7 @@
       </p>
     </template>
     <p v-if="!controlsOnly && embedded && context && matrix && !matrixSelections" role="status">
-      Exact sample rows cannot be matched to this source matrix. Select the source file again.
+      Sample rows cannot be matched to this source matrix. Select the source file again.
     </p>
     <DataMatrixGrid
       v-if="!controlsOnly && embedded && matrix"

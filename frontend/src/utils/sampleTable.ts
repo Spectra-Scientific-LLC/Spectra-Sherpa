@@ -205,7 +205,7 @@ export function applyAcquisitionPlan(
 ): void {
   if (plannedWells.length !== rows.length) {
     throw new Error(
-      `Exact assignment requires one planned well for each measured row (${plannedWells.length} planned, ${rows.length} measured).`,
+      `Assignment requires one planned well for each measured row (${plannedWells.length} planned, ${rows.length} measured).`,
     );
   }
   const format = getPlateFormat(plateFormatId);

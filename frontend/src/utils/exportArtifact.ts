@@ -47,7 +47,7 @@ export function exportFilenameForFormat(filename: unknown, format: unknown): str
 export function exportDownloadReason(value: unknown, params: Record<string, unknown>): string {
   if (!isRecord(value)) return "Run this node to prepare a file.";
   if (params.format === "plain_csv" && typeof value.content === "string" && value.content.startsWith("#spectrasherpa-portable-csv/")) {
-    return "Run this node to prepare plain CSV. The retained file uses the older portable CSV format.";
+    return "Run this node to prepare plain CSV. The saved file uses the older portable CSV format.";
   }
   const filename = value.schema_version === ZIP_EXPORT_ARTIFACT_SCHEMA && params.format === "jdx"
     ? (typeof params.filename === "string" && /\.(zip|jdx)$/i.test(params.filename)

@@ -343,6 +343,13 @@ const mountTopbar = (chatCollapsed = true) =>
     },
   });
 
+/** The colour dot beside the status line that starts with `text` (lines are plain text now). */
+function statusDot(wrapper: ReturnType<typeof mount>, list: string, text: string) {
+  const row = wrapper.findAll(`[aria-label="${list}"] .status-row`).find((item) => item.text().startsWith(text));
+  if (!row) throw new Error(`No status line starting with ${text}`);
+  return row.get(".status-dot");
+}
+
 describe("MainLayout chat panel defaults", () => {
   beforeEach(() => {
     mocks.isNarrow.value = false;
@@ -574,7 +581,7 @@ describe("Topbar action hover labels", () => {
     mocks.appMode.value = mode as string;
     mocks.siteProfile.value = profile;
     const wrapper = mountTopbar(true);
-    expect(wrapper.get(`[aria-label="Compute: ${label}"]`).classes()).toContain("status-blue");
+    expect(statusDot(wrapper, "System readiness", `Compute: ${label}`).classes()).toContain("status-blue");
   });
 
   it("loads selector choices for a cold deep link and preserves the loaded project name", async () => {
@@ -668,8 +675,8 @@ describe("Topbar action hover labels", () => {
 
     const wrapper = mountTopbar(true);
 
-    expect(wrapper.get(`.provenance-indicators [aria-label^="${label}: Available in project."]`).classes()).toContain("status-green");
-    expect(wrapper.get('.status-indicators [aria-label="Backend: Connected"]').classes()).toContain("status-green");
+    expect(statusDot(wrapper, "Current project availability", `${label}: Available in project.`).classes()).toContain("status-green");
+    expect(statusDot(wrapper, "System readiness", "Backend: Connected").classes()).toContain("status-green");
   });
 
   it("shows unavailable model files red even with healthy provenance", () => {
@@ -680,7 +687,7 @@ describe("Topbar action hover labels", () => {
         availability: { state: "faulty", detail: "Model files missing." } }],
     };
     const wrapper = mountTopbar(true);
-    expect(wrapper.get('.provenance-indicators [aria-label^="Calibrated model: Model files missing."]').classes()).toContain("status-red");
+    expect(statusDot(wrapper, "Current project availability", "Calibrated model: Model files missing.").classes()).toContain("status-red");
   });
 });
 

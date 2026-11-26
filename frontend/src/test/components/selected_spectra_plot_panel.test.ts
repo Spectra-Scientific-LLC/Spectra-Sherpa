@@ -275,7 +275,7 @@ describe("SelectedSpectraPlotPanel", () => {
       props: { plotDatasetCount: 1, plotDatasets: [selected] },
     });
     expect(wrapper.findComponent({ name: "PlotlyChart" }).exists()).toBe(false);
-    expect(wrapper.get("[role='alert']").text()).toContain("no exact row-to-file projection");
+    expect(wrapper.get("[role='alert']").text()).toContain("no row-to-file projection");
   });
 
   it("filters feature-table rows, sample labels, and targets together", () => {

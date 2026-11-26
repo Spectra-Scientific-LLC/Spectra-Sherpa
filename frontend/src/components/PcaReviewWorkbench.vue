@@ -188,7 +188,7 @@
               {{ step.operation }} · parameters: {{ displayParameters(step.parameters) }} ·
               {{
                 step.fitting_population === "retained_calibration"
-                  ? `fit on ${step.fitting_count} retained calibration observations`
+                  ? `fit on ${step.fitting_count} saved calibration observations`
                   : "applied per observation"
               }}.
               <span v-if="step.fitted_state_sha256">
@@ -316,7 +316,7 @@
           />
         </details>
         <p v-else>
-          Dataset correction requires retained source-row identity. Rerun to enable Exclude from My
+          Dataset correction requires saved source-row identity. Rerun to enable Exclude from My
           Dataset.
         </p>
         <label>Find sample <input v-model="query" type="search" /></label>
@@ -781,7 +781,7 @@ async function apply(
     });
     if (store.workflowId !== workflowId || props.nodeId !== nodeId) return;
     if (action === "exclude" || action === "restore") {
-      progress.value = "Refitting on the retained cohort; projecting excluded samples…";
+      progress.value = "Refitting on the saved cohort; projecting excluded samples…";
       await store.loadWorkflow(workflowId!);
       await store.executeWorkflow();
     }

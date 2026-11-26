@@ -69,7 +69,7 @@
       />
       <WorkspaceContextItem
         v-if="activeTab === TAB_MY_DATASET"
-        label="Data Portfolio"
+        label="Data selection"
         :value="dataPortfolioName"
         wrap
         >{{ dataPortfolioDetail }}</WorkspaceContextItem
@@ -167,7 +167,7 @@
       <TabPanel header="Import">
         <WorkspaceState v-if="importing" kind="loading" message="Importing and verifying the selected data…" />
         <p v-if="qualified" role="status">
-          Import a local catalog reference or select an exact registered file you have acquired.
+          Import a local catalog reference or select a registered file you have acquired.
           Automatic provider downloads are unavailable.
         </p>
         <div class="source-side-layout">
@@ -692,7 +692,7 @@
                     :options="selectedUploadMember.assets"
                     optionLabel="title"
                     optionValue="asset_id"
-                    placeholder="Select the exact result"
+                    placeholder="Select the result"
                     class="w-full"
                   >
                     <template #option="{ option }">
@@ -1135,20 +1135,10 @@
                 <Column header="" style="width: 86px">
                   <template #body="{ data }">
                     <div class="dataset-row-actions">
-                      <Button
-                        icon="pi pi-pencil"
-                        class="p-button-text p-button-sm p-button-rounded"
-                        title="Rename dataset"
-                        aria-label="Rename dataset"
-                        @click.stop="openEditDatasetDialog(data)"
-                      />
-                      <Button
-                        icon="pi pi-trash"
-                        class="p-button-text p-button-sm p-button-rounded p-button-danger"
-                        title="Delete dataset"
-                        aria-label="Delete dataset"
-                        @click.stop="confirmDeleteExperiment(data)"
-                      />
+                      <RowActions :subject="data.name" :actions="[
+                        { label: 'Rename dataset…', icon: 'pi pi-pencil', command: () => openEditDatasetDialog(data) },
+                        { label: 'Delete dataset…', icon: 'pi pi-trash', danger: true, command: () => confirmDeleteExperiment(data) },
+                      ]" />
                     </div>
                   </template>
                 </Column>
@@ -1248,20 +1238,10 @@
                             :title="`Use only ${dataViewLabel(file)} for preview and workflow modeling`"
                             @click.stop="useOnlyDataView(file)"
                           />
-                          <Button
-                            icon="pi pi-download"
-                            class="p-button-text p-button-sm p-button-rounded"
-                            title="Download"
-                            @click.stop="
-                              dataStore.downloadFile(file.id, extractFileName(file.file_path))
-                            "
-                          />
-                          <Button
-                            icon="pi pi-trash"
-                            class="p-button-text p-button-sm p-button-rounded p-button-danger"
-                            title="Delete"
-                            @click.stop="confirmDeleteFile(file)"
-                          />
+                          <RowActions :subject="dataViewLabel(file)" :actions="[
+                            { label: 'Download file', icon: 'pi pi-download', command: () => dataStore.downloadFile(file.id, extractFileName(file.file_path)) },
+                            { label: 'Delete file…', icon: 'pi pi-trash', danger: true, command: () => confirmDeleteFile(file) },
+                          ]" />
                         </div>
                       </div>
                     </div>
@@ -1275,13 +1255,12 @@
               >
                 <strong>Workflow view set:</strong>
                 <span>{{ activePackageViewSummary }}</span>
-                <small v-if="activePackageViewNames.length > 1">
-                  These package views have different feature spaces and cannot be combined as one
-                  ordinary workflow source. Choose <b>Use only</b> beside one view.
-                </small>
+                <!-- Ticking previews a view and also makes it the data the next workflow loads. -->
+                <small v-if="activePackageViewNames.length > 1">{{ combinedViewsWarning }}</small>
                 <small v-else>
-                  This is the single view used for preview and workflow modeling. Clicking a file
-                  name changes inspection focus only.
+                  Workflow → loads this view. Ticking another view changes what the next workflow
+                  loads; saved workflows and runs are not changed. Clicking a file name only changes
+                  which file is inspected.
                 </small>
                 <small v-if="activeProviderRoleSummary">
                   {{ activeProviderRoleSummary }} These source roles remain descriptive metadata; no
@@ -1290,8 +1269,11 @@
               </aside>
             </div>
           </div>
+          <!-- The next decision for this data sits above its plot, not below the fold. -->
+          <ContextualActions v-if="datasetActionContext" :context="datasetActionContext" />
           <div class="dataset-preview-shell">
             <SelectedSpectraPlotPanel
+              :target-name="analysisChoice.target || null"
               :plot-datasets="plotDatasetSources"
               :plot-dataset-count="plottedExperimentIds.length"
               :plot-file-count="plottedFileCount"
@@ -1305,7 +1287,6 @@
             />
             <div v-once id="active-dataset-display-settings" class="dataset-display-settings-target" />
           </div>
-          <ContextualActions v-if="datasetActionContext" :context="datasetActionContext" />
           <DataContentsPanel
             :focus-target="route.query.focus === 'target'"
             :scope-key="JSON.stringify(dataScopeIdentity())"
@@ -1363,7 +1344,7 @@
                 <div v-if="datasetViewError" role="alert">{{ datasetViewError }}</div>
                 <div class="dataset-view-actions">
                   <Button
-                    label="Show Default"
+                    label="Reset to default selection"
                     class="p-button-sm p-button-outlined"
                     :disabled="datasetViewBusy"
                     @click="showDefaultDatasetView"
@@ -1371,7 +1352,7 @@
                   <InputText
                     v-model="newDatasetViewName"
                     aria-label="New dataset name"
-                    placeholder="Portfolio name"
+                    placeholder="Selection name"
                     maxlength="120"
                   />
                   <textarea
@@ -1383,7 +1364,7 @@
                     rows="2"
                   />
                   <Button
-                    label="Save portfolio"
+                    label="Save selection"
                     class="p-button-sm"
                     :loading="datasetViewBusy"
                     :disabled="
@@ -1460,7 +1441,7 @@
               :options="inspectionAssets"
               optionLabel="title"
               optionValue="asset_id"
-              placeholder="Select the exact result to inspect"
+              placeholder="Select the result to inspect"
               class="w-full"
               @change="onInspectionAssetChange"
             >
@@ -1602,6 +1583,8 @@ import { readRememberedTab, writeRememberedTab } from "@/utils/rememberedTab";
 import { useRoute, useRouter } from "vue-router";
 import TabPanel from "primevue/tabpanel";
 import Button from "primevue/button";
+import RowActions from "@/components/RowActions.vue";
+import { combinedViewsExplanation } from "@/utils/packageViewRelations";
 import Checkbox from "primevue/checkbox";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
@@ -1993,7 +1976,7 @@ async function savePortfolio(): Promise<void> {
   if (sourcePortfolioView.value?.selection.schema_version === "spectrasherpa-dataset-view/2" ||
       sampleInclusion.value.rows.some((row) => !row.included && row.editable)) {
     datasetViewError.value =
-      "Sample exclusions cannot be discarded by a plain portfolio save. Restore the saved selection or review the sample changes first.";
+      "Sample exclusions cannot be discarded by a plain selection save. Restore the saved selection or review the sample changes first.";
     return;
   }
   await saveDatasetView();
@@ -2110,7 +2093,7 @@ async function saveDatasetView(): Promise<void> {
     if (contextIsCurrent()) {
       datasetViewError.value = getErrorMessage(
         error,
-        "Could not save the exact dataset definition.",
+        "Could not save the dataset definition.",
       );
     }
   } finally {
@@ -3252,7 +3235,7 @@ function completeSourceScope(): string {
 const dataStoryUnavailableReason = computed(() => {
   if (!dataStore.fileInfo || dataStore.fileInfoLoading || plotDatasetsLoading.value ||
       dataStoryInspectedSource.value) return null;
-  return "A complete, unfiltered source inspection is unavailable for this view.";
+  return "Select files under Data Views, then generate a story for them.";
 });
 const activeSelectedFileNames = computed(() =>
   activeSelectedFiles.value.map((file) => extractFileName(file.file_path)),
@@ -3286,6 +3269,10 @@ const activePackageViewNames = computed(() =>
     .map((file) => registeredPackageView(file.file_path))
     .filter((value): value is string => value !== null),
 );
+const combinedViewsWarning = computed(() => combinedViewsExplanation(
+  activeSelectedFiles.value.map((file) => packageViewStem(file.file_path)),
+  activePackageViewNames.value,
+));
 const activePackageViewSummary = computed(() => {
   const views = activeSelectedFiles.value.flatMap((file) => {
     const label = registeredPackageView(file.file_path);
@@ -3509,11 +3496,11 @@ const inspectedDatasetShape = computed(() => {
   if (dataStore.fileInfo) {
     const count = originalSourceSampleCount.value;
     return count == null
-      ? `Source sample count unavailable · ${dataStore.fileInfo.n_features} features`
-      : `${count.toLocaleString()} source samples × ${dataStore.fileInfo.n_features} features`;
+      ? `Spectrum count unavailable · ${dataStore.fileInfo.n_features} variables`
+      : `${count.toLocaleString()} spectra × ${dataStore.fileInfo.n_features} variables`;
   }
   if (dataStore.catalogDatasetInfo?.n_samples || dataStore.catalogDatasetInfo?.n_features) {
-    return `${dataStore.catalogDatasetInfo.n_samples ?? "?"} samples × ${dataStore.catalogDatasetInfo.n_features ?? "?"} features`;
+    return `${dataStore.catalogDatasetInfo.n_samples ?? "?"} samples × ${dataStore.catalogDatasetInfo.n_features ?? "?"} variables`;
   }
   return `${selectedExperimentFileCount.value} file${selectedExperimentFileCount.value === 1 ? "" : "s"}`;
 });
@@ -3584,7 +3571,7 @@ const activeSubtabDetail = computed(() => {
   switch (activeTab.value) {
     case TAB_IMPORT:
       return qualified.value
-        ? "Local catalog references and exact registered uploads"
+        ? "Local catalog references and registered uploads"
         : "";
     case TAB_SYNTHESIS:
       return synthesisStateDetail.value;
@@ -4220,7 +4207,7 @@ const allReferenceDatasets = computed<ReferenceDatasetOption[]>(() => {
 
 function legacySourceRequirement(dataset: ReferenceDatasetOption): string {
   if (dataset.requires_runtime_download) {
-    return "Provider file required. Download it outside Sherpa, upload the exact local file, then choose its dataset view. This catalog card does not select a view for you.";
+    return "Provider file required. Download it outside Sherpa, upload the local file, then choose its dataset view. This catalog card does not select a view for you.";
   }
   return "Bundled with this deployment and available without network egress.";
 }
@@ -4529,7 +4516,7 @@ async function onRegisteredReferenceSelection(event: Event): Promise<void> {
     const message = getErrorMessage(
       error,
       `This file does not match the registered ${dataset.label} reference file. ` +
-        "Download it again from the Eigenvector dataset catalog. No data from the refused file was retained.",
+        "Download it again from the Eigenvector dataset catalog. No data from the refused file was saved.",
     );
     registeredImportState[dataset.name] = { status: "error", message };
     toast.add({ severity: "error", summary: "Reference Refused", detail: message, life: 7000 });
@@ -5582,8 +5569,8 @@ async function goToWorkflow(addNode?: string) {
   if (sourcePortfolioView.value && !currentPortfolioView.value) {
     toast.add({
       severity: "warn",
-      summary: "Save the updated portfolio",
-      detail: "Save the current target and grouping choices before creating a workflow from this portfolio.",
+      summary: "Save the updated selection",
+      detail: "Save the current target and grouping choices before creating a workflow from this selection.",
       life: 6000,
     });
     return;
@@ -5753,10 +5740,11 @@ onMounted(async () => {
   // Restore My Dataset when the Pinia store still has an active contents
   // exploration (i.e. the user left the Data page after inspecting a
   // reference or file). Route-driven state takes precedence.
+  // A project that already holds data opens on that data, not on Import.
   if (
     !sourceTabRequested &&
     [TAB_IMPORT, TAB_SYNTHESIS].includes(activeTab.value) &&
-    (dataStore.catalogDatasetInfo !== null || dataStore.fileInfo !== null)
+    (dataStore.catalogDatasetInfo !== null || dataStore.fileInfo !== null || dataStore.experiments.length > 0)
   ) {
     activeTab.value = TAB_MY_DATASET;
   }
@@ -7016,10 +7004,12 @@ function extractFileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() || filePath;
 }
 
+function packageViewStem(filePath: string): string {
+  return extractFileName(filePath).replace(/\.[^.]+$/, "").toLowerCase();
+}
+
 function registeredPackageView(filePath: string): string | null {
-  const stem = extractFileName(filePath)
-    .replace(/\.[^.]+$/, "")
-    .toLowerCase();
+  const stem = packageViewStem(filePath);
   const labels: Record<string, string> = {
     "cgl-spectra": "Complete spectra",
     "corn-m5": "M5",

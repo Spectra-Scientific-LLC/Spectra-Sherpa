@@ -66,7 +66,7 @@ describe('saved-model project comparison', () => {
     const wrapper = mount(Table, {props: {projectId: 4}});
     await flushPromises();
     expect(wrapper.text()).toContain('Within-dataset held-out RMSE 0.42 (n=9)');
-    expect(wrapper.findAll('tbody td').find(cell => cell.attributes('title')?.includes('No exact external validation evaluation') && cell.text() === '—')?.exists()).toBe(true);
+    expect(wrapper.findAll('tbody td').find(cell => cell.attributes('title')?.includes('No external validation evaluation') && cell.text() === '—')?.exists()).toBe(true);
   });
 
   it('presents PLS-DA target and held-out class evidence without regression claims or internal step IDs', async () => {

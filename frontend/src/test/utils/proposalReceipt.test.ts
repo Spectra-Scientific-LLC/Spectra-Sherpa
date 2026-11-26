@@ -14,8 +14,8 @@ describe("server proposal presentation", () => {
     expect(result).toContain("Execution was not requested");
   });
   it("does not invent authority for legacy or unknown receipts", () => {
-    expect(summarizeProposalReceipt(null)).toContain("authority is unavailable");
-    expect(summarizeProposalReceipt({ schema_version: "future" })).toContain("authority is unavailable");
-    expect(summarizeProposalReceipt({ schema_version: "spectrasherpa-scientific-proposal/1", changes: [null] })).toContain("authority is unavailable");
+    expect(summarizeProposalReceipt(null)).toContain("could not be verified");
+    expect(summarizeProposalReceipt({ schema_version: "future" })).toContain("could not be verified");
+    expect(summarizeProposalReceipt({ schema_version: "spectrasherpa-scientific-proposal/1", changes: [null] })).toContain("could not be verified");
   });
 });

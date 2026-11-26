@@ -47,48 +47,46 @@ describe("Runs workspace", () => {
     const identity = ref(value);
     return { view: mountView(false, identity), identity };
   }
-  it('shows retained hashes in the second context item with full accessible values and copies complete identity', async () => {
+  it('keeps run fingerprints in a collapsed Provenance section with full values and copies complete identity', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     const { view } = inspectionContext(); await flushPromises();
     const items = view.findAll('.workspace-context-item');
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(1);
     expect(items[0].text()).toContain('Run #42');
-    const item = items[1];
-    expect(item.text()).toContain(`Workflow SHA ${'a'.repeat(12)}`);
-    expect(item.text()).toContain(`Build SHA ${recordedBuild.slice(0, 12)}`);
-    expect(item.get('strong').attributes('title')).toBe(`Workflow SHA-256: ${'a'.repeat(64)}`);
-    expect(item.attributes('aria-label')).toContain(recordedBuild);
-    expect(item.get('.run-identity-build > span').attributes('title')).toBe(`Build SHA-1: ${recordedBuild}`);
-    await item.get('button[aria-label="Copy run identity for Run #42"]').trigger('click'); await flushPromises();
+    const provenance = view.get('details.run-provenance');
+    expect(provenance.attributes('open')).toBeUndefined();
+    expect(provenance.text()).toContain('a'.repeat(64));
+    expect(provenance.text()).toContain(recordedBuild);
+    await provenance.get('button[aria-label="Copy run identity for Run #42"]').trigger('click'); await flushPromises();
     expect(writeText).toHaveBeenCalledExactlyOnceWith(`Run #42\nWorkflow SHA-256: ${'a'.repeat(64)}\nBuild SHA-1: ${recordedBuild}`);
     expect(m.toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
     view.unmount();
   });
-  it('hides stale context on route/project changes and when Inspect is left', async () => {
+  it('hides stale provenance on route/project changes and when Inspect is left', async () => {
     const { view, identity } = inspectionContext(); await flushPromises();
-    expect(view.findAll('.workspace-context-item')).toHaveLength(2);
+    expect(view.find('details.run-provenance').exists()).toBe(true);
     m.query.project = '2'; await flushPromises();
-    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    expect(view.find('details.run-provenance').exists()).toBe(false);
     m.query.project = '1'; await flushPromises();
     m.params.runId = '43'; await flushPromises();
-    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    expect(view.find('details.run-provenance').exists()).toBe(false);
     identity.value = { runId: 43, projectId: 1, workflowSha: 'b'.repeat(64), buildSha: recordedBuild };
-    await flushPromises(); expect(view.findAll('.workspace-context-item')).toHaveLength(2);
+    await flushPromises(); expect(view.find('details.run-provenance').exists()).toBe(true);
     m.project.currentProjectId = 2; await flushPromises();
-    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    expect(view.find('details.run-provenance').exists()).toBe(false);
     m.project.currentProjectId = 1; delete m.params.runId; m.query.tab = 'run_history'; await flushPromises();
-    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    expect(view.find('details.run-provenance').exists()).toBe(false);
     view.unmount();
   });
-  it('shows missing recorded hashes without substitution and disables copy', async () => {
+  it('shows missing recorded fingerprints without substitution and disables copy', async () => {
     const { view } = inspectionContext({ runId: 42, projectId: 1, workflowSha: null, buildSha: null });
     await flushPromises();
-    const item = view.findAll('.workspace-context-item')[1];
-    expect(item.text()).toContain('Workflow SHA Not recorded');
-    expect(item.text()).toContain('Build SHA Not recorded');
-    expect(item.get('button').attributes('disabled')).toBeDefined();
-    expect(item.attributes('aria-label')).not.toContain(recordedBuild);
+    const provenance = view.get('details.run-provenance');
+    expect(provenance.text()).toContain('Workflow SHA-256Not recorded');
+    expect(provenance.text()).toContain('Build SHA-1Not recorded');
+    expect(provenance.get('button').attributes('disabled')).toBeDefined();
+    expect(provenance.text()).not.toContain(recordedBuild);
     view.unmount();
   });
   it('reports clipboard failure without claiming success', async () => {
@@ -280,11 +278,15 @@ describe("Runs workspace", () => {
     expect(view.findComponent({ name: "RunDetailContent" }).exists()).toBe(false);
     view.unmount();
   });
-  it("uses the same canonical empty-state presentation for Inspect and Compare", async () => {
-    for (const tab of ["inspect", "compare"]) {
+  it("offers run choice in place on Compare and the canonical empty state on Inspect", async () => {
+    m.query = { tab: "compare" };
+    const compare = mountView(); await flushPromises();
+    expect(compare.find('[aria-label="Choose runs to compare"]').exists()).toBe(true);
+    compare.unmount();
+    for (const tab of ["inspect"]) {
       m.query = { tab };
       const view = mountView(); await flushPromises();
-      const message = tab === "inspect" ? "Choose a run in History." : "Select 2–10 runs in History to compare.";
+      const message = "Choose a run in History.";
       const state = view.findAllComponents({ name: "WorkspaceState" })
         .find(component => component.props("message") === message)!;
       expect(state.props("kind")).toBe("empty");
@@ -297,7 +299,7 @@ describe("Runs workspace", () => {
     m.query = { tab: "models" };
     const view = mountView(); await flushPromises();
     const panels = view.findAllComponents({ name: "Panel" });
-    expect(panels.map(panel => panel.props("header"))).toEqual(["Local Model History", "Saved Models"]);
+    expect(panels.map(panel => panel.props("header"))).toEqual(["Model history", "Saved Models"]);
     expect(panels.every(panel => panel.props("toggleable"))).toBe(true);
     expect(panels.map(panel => panel.props("collapsed"))).toEqual([false, true]);
     expect(view.getComponent({ name: "QualificationApplications" }).exists()).toBe(true);

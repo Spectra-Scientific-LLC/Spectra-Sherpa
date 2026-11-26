@@ -8,24 +8,25 @@
       <Button label="Download CSV" icon="pi pi-download" class="p-button-sm p-button-text" @click="download" />
     </header>
     <p v-if="calibrationOnly" class="validation-ledger__note validation-ledger__note--caution" role="note">
-      Calibration fitted values.
+      Calibration fitted values, not validation predictions.
     </p>
     <div class="validation-ledger__table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Sample</th><th v-if="hasTarget">Target</th><th class="num">Reference</th><th class="num">Predicted</th>
-            <th v-if="hasResidual" class="num" title="Reference minus predicted. Bias is predicted minus reference.">Residual (ref − pred)</th><th v-if="hasCorrect">Correct</th><th v-if="hasRole">Set</th>
+            <!-- A value shared by every row (one target, one population) is said once, in the header or summary. -->
+            <th>Sample</th><th v-if="multipleTargets">Target</th><th class="num">Reference{{ singleTarget }}</th><th class="num">Predicted{{ singleTarget }}</th>
+            <th v-if="hasResidual" class="num" title="Reference minus predicted. Bias is predicted minus reference.">Residual (ref − pred)</th><th v-if="hasCorrect">Correct</th><th v-if="multipleRoles">Set</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="row in visibleRows" :key="row.sample + '-' + (row.target || '')">
-            <td>{{ row.sample }}</td><td v-if="hasTarget">{{ row.target }}</td>
+            <td>{{ row.sample }}</td><td v-if="multipleTargets">{{ row.target }}</td>
             <td class="num" :title="fullPrecisionTitle(row.reference)">{{ cell(row, row.reference) }}</td>
             <td class="num" :title="fullPrecisionTitle(row.predicted)">{{ cell(row, row.predicted) }}</td>
-            <td v-if="hasResidual" class="num" :title="fullPrecisionTitle(row.residual)">{{ cell(row, row.residual) }}</td>
+            <td v-if="hasResidual" class="num" :title="fullPrecisionTitle(row.residual)">{{ residualCell(row) }}</td>
             <td v-if="hasCorrect">{{ row.correct == null ? "Not evaluated" : row.correct ? "Yes" : "No" }}</td>
-            <td v-if="hasRole" :title="row.role">{{ row.role ? evaluationRoleLabel(row.role) : "" }}</td>
+            <td v-if="multipleRoles" :title="row.role">{{ row.role ? evaluationRoleLabel(row.role) : "" }}</td>
           </tr>
         </tbody>
       </table>
@@ -45,11 +46,13 @@ import { columnDecimals, evaluationRoleLabel, formatMeasurement, fullPrecisionTi
 
 const props = defineProps<{ rows: ValidationLedgerRow[]; title?: string }>();
 const visibleRows = computed(() => props.rows.slice(0, 200));
-const hasTarget = computed(() => props.rows.some((row) => row.target != null));
+const targets = computed(() => [...new Set(props.rows.map((row) => row.target).filter((target) => target != null))]);
+const multipleTargets = computed(() => targets.value.length > 1);
+const singleTarget = computed(() => (targets.value.length === 1 ? ` (${targets.value[0]})` : ""));
 const hasResidual = computed(() => props.rows.some((row) => row.residual != null));
 const hasCorrect = computed(() => props.rows.some((row) => row.correct != null));
-const hasRole = computed(() => props.rows.some((row) => row.role != null));
 const calibrationOnly = computed(() => props.rows.length > 0 && props.rows.every((row) => row.role === "calibration"));
+const multipleRoles = computed(() => new Set(props.rows.map((row) => row.role).filter((role) => role != null)).size > 1);
 
 // One precision per target: reference, prediction and residual share the
 // response's scale, so they read in the same units and decimals.
@@ -65,17 +68,33 @@ const decimalsByTarget = computed(() => {
 });
 const cell = (row: ValidationLedgerRow, value: unknown): string =>
   formatMeasurement(value, decimalsByTarget.value.get(row.target ?? "") ?? 0);
+/**
+ * Residuals carry one more decimal than the response. One too small for that
+ * precision reads "< 0.001" (never an exponent, never a false zero); the cell
+ * title keeps the full value.
+ */
+function residualCell(row: ValidationLedgerRow): string {
+  const value = row.residual;
+  if (typeof value !== "number" || !Number.isFinite(value)) return formatMeasurement(value, 0);
+  const decimals = (decimalsByTarget.value.get(row.target ?? "") ?? 0) + 1;
+  const step = 10 ** -decimals;
+  if (value !== 0 && Math.abs(value) < step / 2) return `< ${step.toFixed(decimals)}`;
+  return formatMeasurement(value, decimals);
+}
 
+// "60 samples · calibration fit" for one population; counts per population otherwise.
 const roleSummary = computed(() => {
   const counts = new Map<string, number>();
   for (const row of props.rows) {
-    const label = row.role ? evaluationRoleLabel(row.role) : "Unlabelled";
+    if (!row.role) continue;
+    const label = evaluationRoleLabel(row.role).toLowerCase();
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
-  const total = `${props.rows.length} sample-level prediction${props.rows.length === 1 ? "" : "s"}`;
-  return counts.size && hasRole.value
-    ? `${total} · ${[...counts].map(([label, count]) => `${count} ${label.toLowerCase()}`).join(", ")}`
-    : total;
+  const total = `${props.rows.length} sample${props.rows.length === 1 ? "" : "s"}`;
+  // A calibration-only ledger says so once, in its caution note.
+  if (calibrationOnly.value) return total;
+  if (counts.size === 1) return `${total} · ${[...counts.keys()][0]}`;
+  return counts.size ? `${total} · ${[...counts].map(([label, count]) => `${count} ${label}`).join(", ")}` : total;
 });
 
 function download(): void {

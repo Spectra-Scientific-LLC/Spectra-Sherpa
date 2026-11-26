@@ -16,11 +16,11 @@
         Use selected
       </button>
     </div>
-    <small v-if="busy" role="status">Checking portfolio…</small>
+    <small v-if="busy" role="status">Checking selection…</small>
     <small v-else-if="!options.length">Save or choose a dataset in My Dataset first.</small>
-    <small v-else-if="!bound && selectedKey === 'sheet'">Choose an available portfolio to bind it to the sheet.</small>
-    <small v-else-if="!bound">Choose this portfolio to bind it to the sheet.</small>
-    <small v-else>Exact source, target, and groups are bound to this sheet.</small>
+    <small v-else-if="!bound && selectedKey === 'sheet'">Choose an available selection to bind it to the sheet.</small>
+    <small v-else-if="!bound">Choose this selection to bind it to the sheet.</small>
+    <small v-else>Source, target, and groups are bound to this sheet.</small>
     <small v-if="error" class="picker-error" role="alert">{{ error }}</small>
   </div>
 </template>
@@ -145,7 +145,7 @@ async function applySelection(): Promise<void> {
       ? await workflowStore.saveWorkflow({ createVersion: false, projectId })
       : props.workflowId;
     if (workflowStore.hasUnsavedChanges) {
-      throw new Error("The sheet changed while saving. Save it, then choose the portfolio again.");
+      throw new Error("The sheet changed while saving. Save it, then choose the selection again.");
     }
     const context = (await api.get<SelectionContext>(
       `/workflows/${workflowId}/data-selections/${encodeURIComponent(nodeId)}`,
@@ -166,7 +166,7 @@ async function applySelection(): Promise<void> {
     };
     if (ticket !== generation || props.projectId !== projectId || props.nodeId !== nodeId) return;
     if (workflowStore.hasUnsavedChanges) {
-      throw new Error("The canvas changed while preparing the portfolio. Save it and choose the portfolio again.");
+      throw new Error("The canvas changed while preparing the selection. Save it and choose the selection again.");
     }
     await api.put(`/workflows/${workflowId}/data-selections/${encodeURIComponent(nodeId)}`, {
       expected_revision: context.current_revision?.revision_number ?? null,
@@ -181,18 +181,18 @@ async function applySelection(): Promise<void> {
       // be discarded by loadWorkflow. A retry saves that edit then reapplies
       // the chosen portfolio to the resulting graph revision.
       bound.value = false;
-      error.value = "The portfolio was recorded, but the canvas changed during the request. Your edits remain here; choose the portfolio again to save and combine them.";
+      error.value = "The selection was recorded, but the canvas changed during the request. Your edits remain here; choose the selection again to save and combine them.";
       return;
     }
     bound.value = true;
     await workflowStore.loadWorkflow(workflowId, undefined, () => !workflowStore.hasUnsavedChanges);
     if (workflowStore.hasUnsavedChanges) {
       bound.value = false;
-      error.value = "The portfolio was recorded, but the canvas changed while reloading. Your edits remain here; save them and choose the portfolio again.";
+      error.value = "The selection was recorded, but the canvas changed while reloading. Your edits remain here; save them and choose the selection again.";
     }
   } catch (failure) {
     if (ticket === generation) {
-      const message = getErrorMessage(failure, "This portfolio could not be bound. Review it in My Dataset.");
+      const message = getErrorMessage(failure, "This selection could not be bound. Review it in My Dataset.");
       await load();
       error.value = message;
     }

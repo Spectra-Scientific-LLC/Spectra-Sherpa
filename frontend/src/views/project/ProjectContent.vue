@@ -163,7 +163,7 @@
               />
             </label>
             <label>
-              <span>Exact file</span>
+              <span>File</span>
               <Dropdown
                 v-model="canonicalFileId"
                 :options="canonicalFileOptions"
@@ -183,7 +183,7 @@
                 optionLabel="label"
                 optionValue="value"
                 :loading="canonicalAssetsLoading"
-                placeholder="Choose an exact asset"
+                placeholder="Choose an asset"
                 class="canonical-binding-form__select"
               />
             </label>
@@ -286,7 +286,7 @@
           >
             <span class="dot" :class="workflowStageTone(workflow)"></span>
             <div class="object-row__main">
-              <strong>{{ workflow.name }}</strong>
+              <strong>{{ workflow.name }}<span v-if="duplicateWorkflowNames.has(workflow.name)" class="object-row__id"> #{{ workflow.id }}</span></strong>
               <small>
                 <span v-if="workflow.created_from_template_name && workflow.created_from_template_name !== workflow.name"
                   >from {{ workflow.created_from_template_name }}</span
@@ -294,12 +294,7 @@
                 <span v-else-if="workflow.created_from_workflow_name"
                   >copied from {{ workflow.created_from_workflow_name }}</span
                 >
-                <span
-                  >{{ workflow.node_count ?? 0 }} node{{ workflow.node_count === 1 ? "" : "s" }} ·
-                  {{ workflow.edge_count ?? 0 }} edge{{
-                    workflow.edge_count === 1 ? "" : "s"
-                  }}</span
-                >
+
               </small>
             </div>
             <span class="object-row__time" :title="absoluteTimestamp(workflow.updated_at)">
@@ -320,8 +315,8 @@
         </div>
         <div v-for="run in runs" :key="run.id" class="object-row" role="button" tabindex="0"
           @click="openRun(run.id)" @keydown.enter.prevent="openRun(run.id)" @keydown.space.prevent="openRun(run.id)">
-          <div class="object-row__main"><strong>{{ run.name || 'Saved run' }}</strong><small>{{ run.run_kind }}</small></div>
-          <span class="object-row__time"><RelativeTime :value="run.executed_at" /></span><span>{{ run.status }}</span>
+          <div class="object-row__main"><strong>{{ run.name || 'Saved run' }}</strong><small>{{ runKindLabel(run.run_kind) }}</small></div>
+          <span class="object-row__time"><RelativeTime :value="run.executed_at" /></span><span>{{ runStatusLabel(run.status) }}</span>
         </div>
         <p v-if="!runs.length" class="object-empty">{{ objectsLoading ? "Loading runs…" : runTotal === null ? "Runs unavailable." : "No saved runs in this project." }}</p>
         <small v-if="runTotal !== null && runTotal > runs.length">Showing {{ runs.length }} of {{ runTotal }} runs.</small>
@@ -385,7 +380,7 @@
     </template>
 
     <Dialog v-model:visible="removeDialog" header="Remove project" modal>
-      <p>This removes the project from your catalog. Its data, history and commercial records are retained.</p>
+      <p>This removes the project from your catalog. Its data, history and commercial records are saved.</p>
       <label for="remove-project-name">Type {{ activeProject?.name }} to confirm</label>
       <input id="remove-project-name" v-model="removeName" />
       <template #footer><Button label="Cancel" @click="removeDialog = false" />
@@ -404,6 +399,7 @@
 
 <script setup lang="ts">
 import RelativeTime from "@/components/RelativeTime.vue";
+import { modelShape, runKindLabel } from "@/utils/modelLabels";
 import { formatMetricValue, formatTimestamp } from "@/utils/format";
 import { regressionMetricPresentation, regressionMetricQualification } from "@/utils/regressionMetricPresentation";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
@@ -509,6 +505,13 @@ const experiments = ref<ExperimentSummary[]>([]);
 const workflows = ref<WorkflowListItem[]>([]);
 const models = ref<ModelRow[]>([]);
 const runs = ref<RunListItem[]>([]);
+// Two workflows with the same name are told apart by their number.
+const duplicateWorkflowNames = computed(() => {
+  const seen = new Set<string>();
+  const repeated = new Set<string>();
+  for (const workflow of workflows.value) (seen.has(workflow.name) ? repeated : seen).add(workflow.name);
+  return repeated;
+});
 const runTotal = ref<number | null>(null);
 const collections = ref<ProjectCollection[]>([]);
 const objectErrors = ref<string[]>([]);
@@ -655,20 +658,25 @@ function workflowStageTone(wf: WorkflowListItem): Tone {
   return "neutral";
 }
 
+/** A workflow's state as its latest saved run reports it; "Not run yet" before any run. */
 function workflowStageLabel(wf: WorkflowListItem): string {
   const status = (wf.status || "").toLowerCase();
   if (["error", "failed"].includes(status)) return "Failed";
-  if (["completed", "ready", "active", "success"].includes(status)) return "Completed";
   if (status === "running") return "Running";
+  const latest = runs.value.find((run) => run.workflow_id === wf.id);
+  if (latest) return `Last run ${runStatusLabel(latest.status).toLowerCase()}`;
+  if (["completed", "ready", "active", "success"].includes(status)) return "Completed";
   if ((wf.node_count ?? 0) === 0) return "Empty";
-  return "Draft";
+  return "Not run yet";
+}
+
+function runStatusLabel(status: string | null | undefined): string {
+  const value = String(status ?? "");
+  return value ? value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, " ") : "Unknown";
 }
 
 function modelSubtitle(model: ModelRow): string {
-  const parts: string[] = [model.model_type, `${model.n_features} features`];
-  if (model.n_components != null) {
-    parts.push(`${model.n_components} components`);
-  }
+  const parts = modelShape(model);
   const metric = modelMetricSummary(model.metrics ?? null);
   if (metric) parts.push(metric);
   return parts.join(" · ");
@@ -682,7 +690,7 @@ function modelMetricSummary(metrics: Record<string, unknown> | null): string | n
   for (const key of ["r2", "rmse", "accuracy", "f1", "mae"]) {
     const value = metrics[key];
     if (typeof value === "number" && Number.isFinite(value)) {
-      return `${key.toUpperCase()} ${formatMetric(value)}`;
+      return `${key === "r2" ? "R²" : key === "f1" ? "Macro F1" : key === "accuracy" ? "Accuracy" : key.toUpperCase()} ${formatMetric(value)}`;
     }
   }
   return null;
@@ -1380,4 +1388,5 @@ function absoluteTimestamp(dateStr: string): string {
     margin-left: 1.25rem;
   }
 }
+.object-row__id { color: var(--text-color-secondary); font-weight: 400; }
 </style>

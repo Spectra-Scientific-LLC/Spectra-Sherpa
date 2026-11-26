@@ -118,6 +118,6 @@ export function validationLedgerUnavailableReason(value: unknown, rows: Validati
       return record && ("reference" in record || "predicted" in record);
     }));
   return comparison
-    ? "Validation ledger unavailable: complete, aligned sample identities and prediction rows were not retained."
+    ? "Validation ledger unavailable: complete, aligned sample identities and prediction rows were not saved."
     : null;
 }

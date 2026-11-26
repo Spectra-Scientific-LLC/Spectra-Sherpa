@@ -89,7 +89,7 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
       exactQuickPlotOutput.value = null;
       exactQuickPlotInputs.value = null;
       quickPlotLoading.value = false;
-      quickPlotEvidenceError.value = "The retained output has no complete run, project, and node identity. Reopen the run to inspect it.";
+      quickPlotEvidenceError.value = "The saved output has no complete run, project, and node identity. Reopen the run to inspect it.";
       if (view === "plot") show();
       else options.unavailable(quickPlotEvidenceError.value);
       return null;
@@ -113,7 +113,7 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
         const { value, evidence } = response.data;
         if (evidence?.state !== "exact" || evidence.storage !== "file" ||
           !value || typeof value !== "object" || Array.isArray(value)) {
-          throw new Error("Exact retained metadata is unavailable");
+          throw new Error("Saved metadata is unavailable");
         }
       }
       return response.data.value;
@@ -168,7 +168,7 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
             // Optional display evidence cannot invalidate exact active scores
             // or thresholds. Never fall back to its bounded preview coordinates.
             return [port, { sources: (source?.metadata.workflow_population as { sources?: unknown })?.sources ?? {},
-              availability: "unavailable", outputs: {}, reason: "Excluded overlay was not retained; active results remain available." }] as const;
+              availability: "unavailable", outputs: {}, reason: "Excluded overlay was not saved; active results remain available." }] as const;
           }
         })),
         Promise.all(connections.map(async connection => {
@@ -229,7 +229,7 @@ export function useInspectorRetainedEvidence(options: RetainedEvidenceOptions) {
       return evidence();
     } catch {
       if (!ticket.isCurrent()) return null;
-      quickPlotEvidenceError.value = "The exact retained output is unavailable. The compact history summary cannot be used as full evidence.";
+      quickPlotEvidenceError.value = "The saved output is unavailable. The compact history summary cannot be used as full evidence.";
       if (view !== "plot") options.unavailable(quickPlotEvidenceError.value);
       return null;
     } finally {

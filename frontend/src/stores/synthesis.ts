@@ -365,7 +365,7 @@ export const useSynthesisStore = defineStore("synthesis", () => {
         persistenceWarning.value =
           index === 0
             ? null
-            : "The synthesis recipe was retained, but large preview/search data was trimmed for browser storage.";
+            : "The synthesis recipe was saved, but large preview/search data was trimmed for browser storage.";
         return;
       } catch {
         if (index < variants.length - 1) {

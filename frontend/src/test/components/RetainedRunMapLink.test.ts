@@ -15,7 +15,7 @@ it('links exact run/project identities without requesting any retained evidence'
   const { wrapper } = render({ runId: 42, projectId: 7 });
   expect(wrapper.get('a').attributes('href')).toBe('/runs/42?project=7&tab=inspect&view=Summary#retained-observation-exclusions');
   expect(wrapper.text()).toBe('Run #42 exclusions');
-  expect(wrapper.get('a').attributes('aria-label')).toBe('Inspect retained exclusions for run #42');
+  expect(wrapper.get('a').attributes('aria-label')).toBe('Inspect saved exclusions for run #42');
 });
 
 it('uses router navigation without a document reload or parent selection click', async () => {

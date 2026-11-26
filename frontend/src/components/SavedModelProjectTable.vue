@@ -38,7 +38,7 @@
             <td>{{ classificationAccuracy(row) }}</td>
             <td>{{ !row.regression_metrics_applicable ? 'n/a' : metric(row.metrics?.rmsec) }}</td>
             <td>{{ !row.regression_metrics_applicable ? 'n/a' : metric(row.metrics?.rmsecv) }}</td>
-            <td :title="!row.regression_metrics_applicable ? undefined : row.metrics?.rmsep == null ? 'No exact external validation evaluation is retained for this model.' : `Executed external validation on ${row.independent_test_count} complete specimens in view #${row.qualification?.validation_view_id}.`">{{ !row.regression_metrics_applicable ? 'n/a' : metric(row.metrics?.rmsep) }}</td>
+            <td :title="!row.regression_metrics_applicable ? undefined : row.metrics?.rmsep == null ? 'No external validation evaluation is saved for this model.' : `Executed external validation on ${row.independent_test_count} complete specimens in view #${row.qualification?.validation_view_id}.`">{{ !row.regression_metrics_applicable ? 'n/a' : metric(row.metrics?.rmsep) }}</td>
             <td>{{ !row.regression_metrics_applicable ? 'n/a' : `${metric(row.metrics?.r2_calibration)} / ${metric(row.metrics?.q2_cv)}` }}</td>
             <td>{{ row.independent_test_count ?? '—' }}<small v-if="row.model_type !== 'plsda' && row.independent_test_count != null">External view #{{ row.qualification?.validation_view_id }}<span v-if="row.qualification?.state === 'stale_for_selected_dataset'"> · differs from selected dataset</span></small></td>
             <td :title="row.reference_quality?.reason || undefined">
@@ -66,8 +66,8 @@
       </table>
     </div>
     <p v-if="rows.length" class="model-overview__scope">
-      {{ comparableGroups.length }} exact comparison group{{ comparableGroups.length === 1 ? '' : 's' }} on this page.
-      Rows outside a named group cannot be ranked. Open PCA, PLS, or PLS-DA models for retained diagnostics and Ask Sherpa where available.
+      {{ comparableGroups.length }} comparison group{{ comparableGroups.length === 1 ? '' : 's' }} on this page.
+      Rows outside a named group cannot be ranked. Open PCA, PLS, or PLS-DA models for saved diagnostics and Ask Sherpa where available.
     </p>
     <div v-if="rows.length || offset > 0" class="model-overview__paging">
       <Button label="Previous" class="p-button-text p-button-sm" :disabled="offset === 0 || loading" @click="offset = Math.max(0, offset - pageSize)" />
@@ -159,7 +159,7 @@ function preprocessing(row: Row): string {
 function groupLabel(row: Row): string {
   const index = comparableGroups.value.findIndex(group => group.includes(row.artifact_uid));
   if (index >= 0) return `Group ${index + 1}`;
-  return row.comparison_key ? 'No matching model on this page' : row.model_type === 'plsda' ? 'Not ranked' : 'Incomparable: missing exact cohort or validation receipt';
+  return row.comparison_key ? 'No matching model on this page' : row.model_type === 'plsda' ? 'Not ranked' : 'Incomparable: missing cohort or validation receipt';
 }
 function validation(row: Row): string {
   const cv = row.validation?.method ? `${row.validation.method}${row.validation.folds ? ` · ${row.validation.folds} folds` : ''} (development)` : null;
@@ -190,7 +190,7 @@ function exportModel(row: Row): void {
   downloadJson({
     schema_version: 'spectrasherpa.saved-model-evidence-dossier/1',
     project_id: props.projectId,
-    claim_scope: 'Exact retained evidence and declared-use qualification status only when current model and source verification pass; no regulatory certification implied.',
+    claim_scope: 'Saved evidence and declared-use qualification status only when current model and source verification pass; no regulatory certification implied.',
     model: row,
   }, `saved-model-${row.artifact_uid}-evidence.json`);
 }

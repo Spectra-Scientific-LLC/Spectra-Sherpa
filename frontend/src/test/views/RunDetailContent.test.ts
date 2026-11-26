@@ -19,6 +19,8 @@ vi.mock('plotly.js-cartesian-dist-min', () => ({ default: {
 } }));
 vi.mock("@/utils/download", () => ({ downloadJson, downloadCsv }));
 vi.mock('@/api/client', () => ({ default: { get, patch } }));
+const toastAdd = vi.hoisted(() => vi.fn());
+vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: toastAdd, remove: vi.fn() }) }));
 vi.mock('@/stores/advisor', () => ({ useAdvisorStore: () => ({ switchScope }) }));
 const project = reactive({
   currentProjectId: 1 as number | null,
@@ -179,15 +181,15 @@ describe('retained workflow exclusions across run sections', () => {
       return normal(url, config);
     });
     const { wrapper, router } = await open(`?project=1&view=${view}&node=pca`);
-    expect(wrapper.get('[aria-label="Retained workflow observation exclusions"]').text()).toContain('used 4');
-    expect(wrapper.find('[aria-label="Retained source exclusion map"]').exists()).toBe(false);
-    await wrapper.get('[aria-label="Download retained row map load"]').trigger('click');
+    expect(wrapper.get('[aria-label="Samples used in this run"]').text()).toContain('4 used');
+    expect(wrapper.find('[aria-label="Saved source exclusion map"]').exists()).toBe(false);
+    await wrapper.get('[aria-label="Download the sample map for load"]').trigger('click');
     await flushPromises();
     expect(downloadJson).toHaveBeenCalledWith(expect.objectContaining({ run_id: 42, node_id: 'load', port: 'exclusions', value }), 'run-42-load-exclusions.json');
-    await wrapper.get('[aria-label="Inspect retained source map load"]').trigger('click');
+    await wrapper.get('[aria-label="Review excluded samples for load"]').trigger('click');
     await flushPromises();
     expect(router.currentRoute.value.query).toMatchObject({ view: 'Results', node: 'load', output: 'exclusions' });
-    const map = wrapper.get('[aria-label="Retained source exclusion map"]');
+    const map = wrapper.get('[aria-label="Saved source exclusion map"]');
     expect(map.text()).toContain('typed-1');
     expect(map.text()).toContain('Result row');
     expect(map.get('.method-context-text').text()).toContain('current workflow edits are not shown');
@@ -203,11 +205,11 @@ describe('retained workflow exclusions across run sections', () => {
       return normal(url, config);
     });
     const { wrapper, router } = await open('?project=1&view=Summary');
-    await wrapper.get('[aria-label="Download retained row map load"]').trigger('click');
+    await wrapper.get('[aria-label="Download the sample map for load"]').trigger('click');
     await router.replace('/runs/43?project=1&view=Summary'); await flushPromises();
     pending.resolve({ data: { value: { rows: [] } } }); await flushPromises();
     expect(downloadJson).not.toHaveBeenCalled();
-    expect(wrapper.text()).toContain('Exclusions unavailable');
+    expect(wrapper.get('[aria-label="Samples used in this run"]').text()).toBe('');
   });
 });
 
@@ -443,20 +445,70 @@ describe("Persistent run inspection", () => {
       return original(url);
     });
     const { wrapper } = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
-    expect(wrapper.get('[aria-label="Retained prediction trust"]').text()).toContain('Outside global screen');
-    expect(wrapper.get('[aria-label="Retained prediction trust"]').text()).toContain('File dataset position');
-    expect(wrapper.get('[aria-label="Retained prediction trust"]').text()).toContain('Class B');
-    expect(wrapper.get('[aria-label="Retained prediction trust"]').text()).toContain('saved-plsda');
+    expect(wrapper.get('[aria-label="Saved prediction trust"]').text()).toContain('Outside global screen');
+    expect(wrapper.get('[aria-label="Saved prediction trust"]').text()).toContain('File dataset position');
+    expect(wrapper.get('[aria-label="Saved prediction trust"]').text()).toContain('Class B');
+    expect(wrapper.get('[aria-label="Saved prediction trust"]').text()).toContain('saved-plsda');
     wrapper.unmount();
     const inspected = await open('?project=1&view=Results&node=file_0%3A%3Aexit&trust=1');
     expect(inspected.router.currentRoute.value.query.node).toBe('file_0::model');
-    expect(inspected.wrapper.get('[aria-label="Retained prediction trust"]').text()).toContain('Class B');
+    expect(inspected.wrapper.get('[aria-label="Saved prediction trust"]').text()).toContain('Class B');
     inspected.wrapper.unmount();
     reduced = true;
     const unavailable = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
-    expect(unavailable.wrapper.find('[aria-label="Retained prediction trust"]').exists()).toBe(false);
-    expect(unavailable.wrapper.text()).toContain('Applicability unavailable: no matching, exact fitted row-level screen');
+    expect(unavailable.wrapper.find('[aria-label="Saved prediction trust"]').exists()).toBe(false);
+    expect(unavailable.wrapper.text()).toContain('Sample-level applicability (Hotelling T² and Q residuals) was not computed');
     unavailable.wrapper.unmount();
+  });
+  it('lists applied predictions by the sample IDs of the input saved with the run, and names trust rows by them too', async () => {
+    const original = get.getMockImplementation()!;
+    let withTrust = false;
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture), run: { ...fixture.run, run_kind: 'batch_inference' }, evidence: { qualification: 'qualified', outputs: {
+        __workflow__: { definition: { state: 'exact', storage: 'file' } },
+        'file_0::input': { default: { state: 'exact', storage: 'file' } },
+        'file_0::model': {
+          result: { state: 'exact', storage: 'file' },
+          model_id: { state: 'exact', storage: 'file' },
+          ...(withTrust ? { labels: { state: 'exact', storage: 'file' }, applicability: { state: 'exact', storage: 'file', sha256: 'd'.repeat(64) } } : {}),
+        },
+      } }, node_statuses: { 'file_0::model': 'completed' } } };
+      if (url.endsWith('/__workflow__/definition')) return { data: { value: {
+        schema_version: 1, nodes: [
+          { node_id: 'file_0::input', node_type: 'deploy.input', label: 'Deploy Input', parameters: {} },
+          { node_id: 'file_0::model', node_type: 'model.load_apply', label: 'Saved model', parameters: {} },
+        ], edges: [{ from_node_id: 'file_0::input', from_output: 'default', to_node_id: 'file_0::model', to_input: 'X_new' }],
+      } } };
+      if (url.endsWith('/file_0%3A%3Amodel/result')) return { data: { value: [[8.61], [8.9], [9.25]] } };
+      // The input saved with the run declares its rows' sample IDs.
+      if (url.endsWith('/file_0%3A%3Ainput/default')) return { data: { value: {
+        type: 'SherpaDataset', data: [[0.1], [0.2], [0.3]],
+        y_axis: { labels: ['a', 'b', 'c'], sample_table: { sample_id: ['corn-mp5-001', 'corn-mp5-002', 'corn-mp5-003'] } },
+      } } };
+      if (url.endsWith('/file_0%3A%3Amodel/model_id')) return { data: { value: 'saved-pls' } };
+      if (url.endsWith('/file_0%3A%3Amodel/labels')) return { data: { value: ['Pass', 'Pass', 'Fail'] } };
+      if (url.endsWith('/file_0%3A%3Amodel/applicability')) return { data: { value: {
+        claim_scope: 'provisional_calibration_screening', method: 'prediction_f_and_residual_spectrum_0.95_strict_greater',
+        reference_samples: 12, t2_limit: 4, q_limit: 1,
+        rows: [0, 1, 2].map(row_index => ({ row_index, screening_status: 'within_global_screen', t2: 1, q: .1 })),
+      } } };
+      return original(url);
+    });
+    const plain = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
+    const table = plain.wrapper.get('[aria-label="Predictions by sample"]');
+    expect(table.findAll('tbody tr').map(row => row.text())).toEqual(['corn-mp5-0018.610', 'corn-mp5-0028.900', 'corn-mp5-0039.250']);
+    await table.get('button').trigger('click');
+    expect(downloadCsv).toHaveBeenCalledWith(
+      [['Sample', 'Predicted'], ['corn-mp5-001', 8.61], ['corn-mp5-002', 8.9], ['corn-mp5-003', 9.25]], expect.any(String));
+    plain.wrapper.unmount();
+    withTrust = true;
+    const trusted = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
+    const trust = trusted.wrapper.get('[aria-label="Saved prediction trust"]');
+    expect(trust.get('thead').text()).toContain('Sample');
+    expect(trust.text()).toContain('corn-mp5-002');
+    // The trust table lists the predictions; no second list repeats them.
+    expect(trusted.wrapper.find('[aria-label="Predictions by sample"]').exists()).toBe(false);
+    trusted.wrapper.unmount();
   });
   it('shows retained PLS-DA trust rows in batch history and exports safe assembled positions', async () => {
     const original = get.getMockImplementation()!;
@@ -497,7 +549,7 @@ describe("Persistent run inspection", () => {
     reducedSelection = true;
     const unavailable = await open('?project=1&view=Summary');
     expect(unavailable.wrapper.find('[aria-label="Prediction trust for model-1"]').exists()).toBe(false);
-    expect(unavailable.wrapper.text()).toContain('Application context unavailable: exact selection evidence was not retained.');
+    expect(unavailable.wrapper.text()).toContain('Application context unavailable: selection evidence was not saved.');
     unavailable.wrapper.unmount();
   });
   it('saves the editable run name on blur and keeps retained results unchanged', async () => {
@@ -606,10 +658,9 @@ describe("Persistent run inspection", () => {
     expect(card.text()).not.toContain('7 latent');
     expect(card.text()).toContain('SNV');
     const statistics = wrapper.get('.summary [aria-label="Model summary"]');
-    expect(statistics.text()).toContain('RMSEC (units not declared) 0.2894');
-    expect(statistics.text()).toContain('RMSEP (units not declared) 0.3975');
-    expect(statistics.text()).toContain('Protocol: Calibration fit');
-    expect(statistics.text()).toContain('Protocol: Held-out test');
+    expect(statistics.text()).toContain('RMSE (units not recorded)0.28940.3975');
+    expect(statistics.text()).toContain('Calibration fit');
+    expect(statistics.text()).toContain('Held-out test');
     const curveReads = get.mock.calls.filter(([url]) => url.endsWith('/model_1/component_curve'));
     expect(curveReads).toHaveLength(curve === 'unreadable' ? 1 : 0);
     if (curve === 'omitted') {
@@ -657,7 +708,7 @@ describe("Persistent run inspection", () => {
     wrapper.unmount();
   });
   it.each(['', '&view=Validation', '&node=source&view=Results'])(
-    'opens retained evaluation evidence by default, preserving explicit node links: %s', async (selection) => {
+    'opens the Summary by default and keeps explicit step links: %s', async (selection) => {
       get.mockImplementation(async (url: string) => {
         if (url.endsWith('/evidence')) return { data: {
           ...structuredClone(fixture), node_statuses: { source: 'completed', model: 'completed', evaluation: 'completed' },
@@ -679,9 +730,13 @@ describe("Persistent run inspection", () => {
       const { wrapper, router } = await open('?project=1' + selection);
       expect(router.currentRoute.value.query.node).toBe(selection.includes('node=source') ? 'source' : 'evaluation');
       expect(wrapper.find('.inspection').exists()).toBe(true);
-      if (!selection || selection.includes('Validation')) {
+      if (selection.includes('Validation')) {
         expect(wrapper.text()).toContain('4.5');
-        expect(wrapper.text()).not.toContain('No scientific output was retained');
+        expect(wrapper.text()).not.toContain('No scientific output was saved');
+      }
+      if (!selection) {
+        // A run opens on its Summary; step results load only when opened.
+        expect(get.mock.calls.some(([url]) => String(url).endsWith('/__diagnostics__/evaluation'))).toBe(false);
       }
       expect(get.mock.calls.some(([url]) => String(url).includes('/workflows/'))).toBe(false);
       wrapper.unmount();
@@ -778,7 +833,7 @@ describe("Persistent run inspection", () => {
     });
     const { wrapper } = await open();
     expect(wrapper.get('[role="alert"]').text()).toBe('Input file layout is ambiguous.');
-    expect(wrapper.text()).toContain('No scientific output was retained for this node.');
+    expect(wrapper.text()).toContain('No scientific output was saved for this node.');
     expect(wrapper.text()).not.toContain('No saved node definition');
     wrapper.unmount();
   });
@@ -953,7 +1008,7 @@ describe("Persistent run inspection", () => {
       return fallback(url);
     });
     const { wrapper, router } = await open();
-    expect(wrapper.text()).toContain('Showing retained Evaluation Metrics');
+    expect(wrapper.text()).toContain('Showing saved Evaluation Metrics');
     // Rounded for reading; the exact saved value stays in the tooltip.
     expect(wrapper.text()).toContain('1.2949');
     expect(wrapper.text()).not.toContain('1.2949488617445029');
@@ -1029,33 +1084,37 @@ describe("Persistent run inspection", () => {
 
 
 describe('Inspect contributed header actions', () => {
-  it('keeps Optimize in the header and responsive menu with the same scoped executor', async () => {
+  it('keeps the run decision on the page, out of the Actions menu, and answers a refusal with a toast', async () => {
     installIdentifiedRuns();
     const execute = vi.fn().mockRejectedValue(new Error('Review is unavailable'));
     registerContextualActions('inspect-header-test', [{
       id: 'optimize', label: 'Optimize', icon: 'pi pi-chart-line',
+      step: { index: 2, total: 4, title: 'Held-out evaluation', detail: 'Scores the held-out samples once.' },
       available: context => context.surface === 'run' && context.runId === 42,
       execute,
     }], () => true);
     try {
+      toastAdd.mockClear();
       const { wrapper } = await open('?project=1&view=Summary', true);
-      const action = wrapper.get('[aria-label="Run actions"]').findAll('button').find(button => button.text() === 'Optimize');
-      expect(action).toBeDefined();
-      const menu = (wrapper.vm as unknown as { headerActions: { label: string; command: () => void }[] }).headerActions;
-      menu.find(item => item.label === 'Optimize')!.command();
+      const menu = (wrapper.vm as unknown as { headerActions: { label: string }[] }).headerActions;
+      expect(menu.some(item => item.label === 'Optimize')).toBe(false);
+      const step = wrapper.get('[aria-label="Next step: Held-out evaluation"]');
+      expect(step.text()).toContain('Step 2 of 4 · Held-out evaluation');
+      expect(step.element.closest('[aria-label="Run actions"]')).toBeNull();
+      await step.get('button').trigger('click');
       await flushPromises();
       expect(execute).toHaveBeenCalledWith({ surface: 'run', projectId: 1, runId: 42 }, expect.any(AbortSignal));
-      expect(wrapper.get('[role="alert"]').text()).toBe('Review is unavailable');
-      expect(wrapper.get('[role="alert"]').element.closest('[aria-label="Run actions"]')).toBeNull();
+      expect(toastAdd).toHaveBeenCalledWith({ severity: 'error', detail: 'Review is unavailable' });
+      expect(wrapper.text()).not.toContain('Review is unavailable');
       project.currentProjectId = 2;
       await flushPromises();
-      expect((wrapper.vm as unknown as { headerActions: { label: string }[] }).headerActions.some(item => item.label === 'Optimize')).toBe(false);
+      expect(wrapper.find('[aria-label="Next step: Held-out evaluation"]').exists()).toBe(false);
     } finally {
       removeContextualActions('inspect-header-test');
     }
   });
 
-  it('marks a started menu action as working until it settles', async () => {
+  it('marks a started decision as working until it settles', async () => {
     installIdentifiedRuns();
     let finish!: () => void;
     const execute = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
@@ -1066,15 +1125,14 @@ describe('Inspect contributed header actions', () => {
     }], () => true);
     try {
       const { wrapper } = await open('?project=1&view=Summary', true);
-      const menu = () => (wrapper.vm as unknown as { headerActions: { label: string; loading?: boolean; command: () => void }[] })
-        .headerActions.find(item => item.label === 'Freeze and evaluate')!;
-      expect(menu().loading).toBe(false);
-      menu().command();
+      const button = () => wrapper.get('[aria-label="Freeze and evaluate"] button');
+      expect(button().attributes('disabled')).toBeUndefined();
+      await button().trigger('click');
       await flushPromises();
-      expect(menu().loading).toBe(true);
+      expect(button().attributes('disabled')).toBeDefined();
       finish();
       await flushPromises();
-      expect(menu().loading).toBe(false);
+      expect(button().attributes('disabled')).toBeUndefined();
     } finally {
       removeContextualActions('inspect-busy-test');
     }
@@ -1138,7 +1196,7 @@ it('renders retained Peak Table through the real RunDetail and embedded QuickPlo
   expect(vm().displayPlotData).toHaveLength(2);
   expect(vm().dataPreview).toHaveLength(vm().previewRowLimit);
   expect(vm().previewTotalRows).toBe(3736);
-  expect(plot().text()).not.toContain('No retained table');
+  expect(plot().text()).not.toContain('No saved table');
   expect(saved).toEqual(before);
 });
 
@@ -1268,7 +1326,7 @@ it('keeps producer-shaped 27 × 1868 retained peak overlays available above 50,0
     expect(vm.dataPreview).toHaveLength(vm.previewRowLimit);
     expect(plot.findAll('tbody tr')).toHaveLength(vm.previewRowLimit);
     expect(plot.text()).toContain('Plot coordinates');
-    expect(plot.text()).not.toContain('No retained table');
+    expect(plot.text()).not.toContain('No saved table');
     expect(saved).toEqual(before);
   } finally {
     preferences.maxRows = originalLimit;

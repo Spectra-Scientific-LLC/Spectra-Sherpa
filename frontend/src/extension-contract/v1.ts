@@ -84,10 +84,22 @@ export type HostActionContext =
       applicationHandle: string;
     };
 
+/** Where an action sits in a multi-step journey, shown beside its button. */
+export interface HostActionStep {
+  /** 1-based position of this step. */
+  index: number;
+  total: number;
+  /** The step in the user's words, e.g. "Held-out evaluation". */
+  title: string;
+  /** One sentence on what the button does and what it changes. */
+  detail?: string;
+}
+
 export interface HostContextualAction {
   id: string;
   label: string;
   icon?: string;
+  step?: HostActionStep;
   surfaces?: readonly HostActionContext["surface"][];
   available(context: Readonly<HostActionContext>): boolean;
   execute(context: Readonly<HostActionContext>, signal: AbortSignal): void | Promise<void>;

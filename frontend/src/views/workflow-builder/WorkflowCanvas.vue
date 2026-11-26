@@ -368,6 +368,7 @@
 <script setup lang="ts">
 import { themeToken } from "@/theme/interfaceTheme";
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
+import { nodeIcon } from "@/utils/nodeIcons";
 import { routeEdges } from "@/utils/edgeRouting";
 import { saveCanvasPng } from "@/utils/canvasPng";
 import { useWorkflowStore } from "@/stores/workflow";
@@ -468,29 +469,8 @@ const getNodeOutputPorts = (nodeType: string): NodePortMetadata[] => {
   ];
 };
 
-const NODE_ICONS: Record<string, string> = {
-  "data.file_load": "📂",
-  "preprocess.normalize": "⚖️",
-  "preprocess.scale": "📏",
-  "baseline.penalized_ls": "📉",
-  "preprocess.smooth": "〰️",
-  "model.pca": "🔀",
-  "model.fitted_pls": "📈",
-  "model.apply_fitted_pls": "🎯",
-  "model.mcr_als": "🧩",
-  "model.efa": "🔍",
-  "model.simplisma": "🎯",
-  "analysis.peak_finding": "⛰️",
-  "analysis.compare_library": "📚",
-  "stats.summary": "📊",
-  "output.plot": "📈",
-  "output.contour": "🗺️",
-  "output.export": "💾",
-};
 
-const getNodeIcon = (type: string): string => {
-  return NODE_ICONS[type] || "📦";
-};
+const getNodeIcon = (type: string): string => nodeIcon(type);
 
 const getNodeLabel = (type: string): string => {
   const metadata = workflowStore.getNodeMetadata(type);

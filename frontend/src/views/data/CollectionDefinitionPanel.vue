@@ -163,7 +163,7 @@
           class="preview-actions"
         >
           <p>
-            Review this receipt, then attach the exact file. Previewing does not change the dataset.
+            Review this summary, then attach the file. Previewing does not change the dataset.
           </p>
           <Button
             label="Attach verified definition"

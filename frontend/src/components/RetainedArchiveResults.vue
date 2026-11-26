@@ -118,7 +118,7 @@ watch(() => props.file, async () => {
       selectedRun.value = data.runs[0]?.source_run_id ?? null;
     }
   } catch {
-    if (request.isCurrent()) error.value = "This archive has no readable retained-result inventory.";
+    if (request.isCurrent()) error.value = "This archive has no readable saved-result inventory.";
   } finally {
     if (request.isCurrent()) loading.value = false;
   }

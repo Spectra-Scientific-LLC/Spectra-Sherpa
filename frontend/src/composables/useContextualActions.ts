@@ -60,7 +60,8 @@ export function registerContextualActions(owner: string, actions: ContextualActi
   const ids = new Set<string>();
   for (const action of actions) {
     if (!/^[a-z][a-z0-9-]{0,63}$/.test(action.id) || !action.label.trim()
-      || typeof action.available !== "function" || typeof action.execute !== "function" || ids.has(action.id)) {
+      || typeof action.available !== "function" || typeof action.execute !== "function" || ids.has(action.id)
+      || (action.step !== undefined && !validStep(action.step))) {
       throw new Error("Invalid contextual action contribution");
     }
     ids.add(action.id);
@@ -69,6 +70,13 @@ export function registerContextualActions(owner: string, actions: ContextualActi
   contributions.value = [...contributions.value, ...actions.map((action) => ({
     key: `${owner}:${action.id}`, owner, action, current,
   }))];
+}
+
+function validStep(step: ContextualAction["step"]): boolean {
+  return !!step && Number.isSafeInteger(step.index) && Number.isSafeInteger(step.total)
+    && step.index >= 1 && step.index <= step.total && step.total <= 12
+    && typeof step.title === "string" && !!step.title.trim()
+    && (step.detail === undefined || typeof step.detail === "string");
 }
 
 function available(item: Contribution): boolean {
@@ -82,7 +90,7 @@ function available(item: Contribution): boolean {
 }
 
 const actions = computed(() => contributions.value.filter(available).map(({ key, action }) => ({
-  key, label: action.label, icon: action.icon,
+  key, label: action.label, icon: action.icon, step: action.step,
 })));
 
 async function execute(key: string): Promise<void> {
