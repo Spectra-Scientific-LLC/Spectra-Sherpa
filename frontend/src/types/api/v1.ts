@@ -11733,7 +11733,36 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    max_paragraphs?: number;
+                    max_tokens?: number | null;
+                    message: string;
+                    metadata?: {
+                        [key: string]: unknown;
+                    } | null;
+                    verbose?: boolean;
+                    workbench_view?: {
+                        /** Dataset Id */
+                        dataset_id?: string | null;
+                        /** Project Id */
+                        project_id: number;
+                        /** Run Id */
+                        run_id?: number | null;
+                        /** Run Ids */
+                        run_ids?: number[] | null;
+                        /**
+                         * Screen
+                         * @enum {string}
+                         */
+                        screen: "dataset" | "workflow" | "results" | "compare";
+                        /** Workflow Id */
+                        workflow_id?: number | null;
+                    } | null;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

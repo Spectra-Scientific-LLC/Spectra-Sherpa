@@ -30,6 +30,7 @@ class ChatRequest:
     metadata: dict | None
     system_prompt: str | None = None
     max_tokens: int | None = None
+    bounded_explanation: bool = False
 
 
 class ChatProvider(Protocol):

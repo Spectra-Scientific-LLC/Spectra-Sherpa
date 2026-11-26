@@ -14,11 +14,19 @@ suggestions against the measurements and your experimental design.
 ## Local basic chat
 
 In local OSS, configure your own provider in Settings, then ask a question.
-OpenAI-compatible providers, Anthropic and Ollama are supported. This is basic
-scientific chat: include the observations or values you want to discuss in your
-question. Do not assume the assistant has inspected your spectra or fitted model.
-The provider receives the information you send; its data-handling terms apply.
-If the provider is unavailable, scientific analysis still works.
+OpenAI-compatible providers, Anthropic and Ollama are supported. With AI context
+allowed in **Settings → Data & Privacy**, chat can explain the dataset, workflow,
+or retained run you are viewing. To compare runs, select two saved runs on the
+Runs page and open **Compare**. Sherpa shows the sources and retained facts above
+the explanation from your configured model. Diagnostics and evidence search are
+available through the local MCP connector.
+
+Each contextual request sends the current question and the permitted facts for
+that view. Provider data-handling terms apply. Earlier turns are excluded. If the
+facts do not fit, chat displays them without a model explanation. The advanced
+`SPECTRA_BYOK_CONTEXT_TOKENS` setting specifies the endpoint's effective context
+limit. The default budget is 2,048 tokens. Scientific analysis remains available
+if the provider is unavailable.
 
 Open **Logs → Local AI exchanges** to inspect a basic chat request, the actual
 instructions sent, the provider's response and any reported token usage. Save

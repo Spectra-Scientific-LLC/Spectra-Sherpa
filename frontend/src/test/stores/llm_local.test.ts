@@ -103,6 +103,28 @@ describe("LLM Store local BYO chat", () => {
     expect(headers.get("X-API-Key")).toBe(hasBearer ? null : "bob-key");
   });
 
+  it("keeps fixed facts and the selected view separate from model text", async () => {
+    const llm = useLlmStore();
+    fetchMock.mockResolvedValueOnce(makeSseResponse(
+      { type: "facts", lines: ["Based on Run #42"], provider: "ollama", model: "fixture" },
+      { type: "chunk", text: "The other run is better." },
+      { type: "done" },
+    ));
+    await llm.sendMessage("Explain this run", { previous: "private" }, {
+      screen: "results", project_id: 10, run_id: 42,
+    });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      message: "Explain this run",
+      metadata: null,
+      workbench_view: { screen: "results", project_id: 10, run_id: 42 },
+    });
+    expect(llm.messages.at(-1)).toMatchObject({
+      content: "The other run is better.",
+      workbenchFacts: ["Based on Run #42"],
+      modelAttribution: "Model explanation · ollama · fixture",
+    });
+  });
+
   it("streams local chat over /chat/stream and persists browser-local history", async () => {
     mocks.featureFlags.chatAssistant = true;
     fetchMock.mockResolvedValue(

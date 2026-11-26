@@ -1,4 +1,4 @@
-import type { components } from "./api/v1";
+import type { components, paths } from "./api/v1";
 
 export type ExperimentStage = "raw" | "preprocessed" | "synthetic";
 
@@ -312,10 +312,16 @@ export interface NistLibraryEntry {
 
 export type JobInfo = components["schemas"]["JobInfo"];
 
+export type ByokView = NonNullable<
+  paths["/api/v1/chat/stream"]["post"]["requestBody"]["content"]["application/json"]["workbench_view"]
+>;
+
 export interface LlmMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  workbenchFacts?: string[];
+  modelAttribution?: string;
 }
 
 export interface ConversationSummary {

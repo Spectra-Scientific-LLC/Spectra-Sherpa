@@ -240,6 +240,9 @@ async def stream_chat(
     metadata: dict | None = None,
     exchange_owner: int | None = None,
     max_tokens: int | None = None,
+    evidence_prompt: str | None = None,
+    expected_config: ChatEndpointConfig | None = None,
+    before_disclosure=None,
 ) -> AsyncIterator[str]:
     """Stream a single-turn chat completion from the configured endpoint.
 
@@ -252,6 +255,10 @@ async def stream_chat(
         raise ValueError("Chat message is too long.")
 
     config = get_config()
+    if expected_config is not None and config != expected_config:
+        from spectra_sherpa.app.services.byok_evidence import InspectionRefused
+
+        raise InspectionRefused("configuration_changed")
     ok, reason, request_url = validated_chat_completions_url(
         config.url,
         provider=config.provider,
@@ -272,9 +279,10 @@ async def stream_chat(
         message=message,
         verbose=verbose,
         max_paragraphs=max_paragraphs,
-        metadata=metadata,
-        system_prompt=scoped_prompt(attention_prompt),
+        metadata=metadata if evidence_prompt is None else None,
+        system_prompt=evidence_prompt or scoped_prompt(attention_prompt),
         max_tokens=max_tokens,
+        bounded_explanation=evidence_prompt is not None,
     )
     from spectra_sherpa.app.core.mode_policy import is_local
     from spectra_sherpa.app.services.chat_exchange import Exchange, _active
@@ -288,6 +296,12 @@ async def stream_chat(
     completion = "interrupted"
     output = RefusalStream()
     try:
+        if before_disclosure is not None:
+            await before_disclosure()
+            if get_config() != expected_config:
+                from spectra_sherpa.app.services.byok_evidence import InspectionRefused
+
+                raise InspectionRefused("configuration_changed")
         async for chunk in chat_provider.stream(config, request, request_url):
             if exchange:
                 exchange.append(chunk)
