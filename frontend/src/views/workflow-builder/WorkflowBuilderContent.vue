@@ -88,7 +88,7 @@
         <Menu ref="exportMenuRef" :model="exportMenuItems" :popup="true" />
 
         <template #after>
-          <ContextualActions :context="savedWorkflowActionContext" />
+          <ContextualActions :context="savedWorkflowActionContext" :show-error="false" />
           <span v-if="pendingRecoveryDraft" role="status">
             Unsaved browser draft found. The saved workflow is shown.
             <Button label="Restore draft" class="p-button-text p-button-sm" @click="applyRecoveryDraft" />
@@ -404,6 +404,7 @@ import { useExperimentStore } from "@/stores/experiment";
 import { useProjectStore } from "@/stores/project";
 import { useWorkbookStore } from "@/stores/workbook";
 import { useAuthStore } from "@/stores/auth";
+import { useContextualActions } from "@/composables/useContextualActions";
 import { useScopedRequest } from "@/composables/useScopedRequest";
 import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
@@ -1436,6 +1437,13 @@ const selectedNodeOutput = computed(() => {
 });
 
 const isTrialTabActive = computed(() => workbookStore.activeSheet?.kind === "trial");
+const { error: contextualError } = useContextualActions();
+watch(contextualError, (detail, _, onCleanup) => {
+  if (!detail) return;
+  const message = { severity: "error" as const, detail };
+  toast.add(message);
+  onCleanup(() => toast.remove(message));
+});
 const savedWorkflowActionContext = computed<HostActionContext | null>(() => {
   const projectId = projectStore.currentProjectId;
   const workflowId = workflowStore.workflowId;
