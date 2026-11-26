@@ -84,7 +84,20 @@ describe("Data Story card", () => {
     expect(wrapper.text()).toContain("unavailable for this deployment");
     expect(mocks.store.generateDataStory).not.toHaveBeenCalled();
     expect(wrapper.find("button").exists()).toBe(false);
-    expect(wrapper.classes()).toContain("data-story-card--unavailable");
+    expect(wrapper.find(".data-story-setup").exists()).toBe(true);
+    expect(wrapper.find(".data-story-card").exists()).toBe(false);
+  });
+
+  it("links an unconfigured local installation to Settings without opening a card", () => {
+    mocks.enabled = false;
+    mocks.mode.value = "local";
+    const wrapper = mount(DataStoryCard, {
+      props: { sourceKey: "corn-m5", ready: true },
+      global: { stubs: { RouterLink: { props: ["to"], template: '<a :href="to"><slot /></a>' } } },
+    });
+    expect(wrapper.get("a").attributes("href")).toBe("/settings");
+    expect(wrapper.find(".data-story-card").exists()).toBe(false);
+    expect(mocks.store.generateDataStory).not.toHaveBeenCalled();
   });
 
   it("uses a configured local BYO chat endpoint without claiming managed entitlement", async () => {

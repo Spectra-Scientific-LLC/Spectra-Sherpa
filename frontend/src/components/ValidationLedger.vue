@@ -85,7 +85,7 @@ function download(): void {
 
 <style scoped>
 .validation-ledger { margin: 1rem 0; border: 1px solid var(--surface-border); border-radius: 8px; padding: 0.75rem; }
-.validation-ledger__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.validation-ledger__header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem; }
 .validation-ledger h3 { margin: 0; }
 .validation-ledger__table-wrap { max-height: 22rem; overflow: auto; margin-top: 0.5rem; }
 .validation-ledger table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }

@@ -17,16 +17,18 @@
       <p v-if="runNameError" role="alert">{{ runNameError }}</p>
     </header>
     <Teleport :to="actionsTarget || 'body'" :disabled="!actionsTarget">
-    <div class="run-detail__actions" role="group" aria-label="Run actions">
-      <template v-for="action in headerActions" :key="action.label">
-        <select v-if="action.items?.length" v-model="producedArtifactUid" class="p-inputtext p-inputtext-sm" aria-label="Fitted model to open">
-          <option value="">Choose a fitted model</option><option v-for="item in action.items" :key="item.label" :value="item.label">{{ item.label }}</option>
-        </select>
-        <Button :label="action.label" :icon="action.icon" :title="action.title" :aria-label="action.ariaLabel || action.label" class="p-button-text p-button-sm" :disabled="action.disabled" @click="action.command?.()" />
-      </template>
-      <ContextualActions :show-error="false" :context="!loading && !error && detail && detail.run.project_id === project.currentProjectId && project.currentProjectId != null
-        ? { surface: 'run', projectId: project.currentProjectId, runId: detail.run.id } : null" />
-    </div>
+      <div class="run-detail__actions" role="group" aria-label="Run actions">
+        <template v-for="action in headerActions" :key="action.label">
+          <select v-if="action.items?.length" v-model="producedArtifactUid" class="p-inputtext p-inputtext-sm" aria-label="Fitted model to open">
+            <option value="">Choose a fitted model</option><option v-for="item in action.items" :key="item.label" :value="item.label">{{ item.label }}</option>
+          </select>
+          <Button :label="action.label" :icon="action.icon" :title="action.title" :aria-label="action.ariaLabel || action.label" class="p-button-text p-button-sm" :disabled="action.disabled" @click="action.command?.()" />
+        </template>
+        <Teleport :to="primaryActionsTarget || 'body'" :disabled="!primaryActionsTarget">
+          <ContextualActions :show-error="false" :context="!loading && !error && detail && detail.run.project_id === project.currentProjectId && project.currentProjectId != null
+            ? { surface: 'run', projectId: project.currentProjectId, runId: detail.run.id } : null" />
+        </Teleport>
+      </div>
     </Teleport>
     <p v-if="contextualError" role="alert">{{ contextualError }}</p>
     <WorkspaceState v-if="error" kind="error" variant="page" :message="error">
@@ -351,7 +353,7 @@ const applicationAdvisorAvailable = computed(() => appMode.value !== 'local' &&
   appConfig.value?.advisorContextPolicy !== 'receipt' &&
   (isFeatureEnabled('sherpaAdvisor') || appConfig.value?.siteProfile === 'pro'));
 const emit = defineEmits<{ (event: 'renamed'): void }>();
-defineProps<{ actionsTarget?: HTMLElement | null }>();
+const props = defineProps<{ actionsTarget?: HTMLElement | null; primaryActionsTarget?: HTMLElement | null }>();
 const detail = ref<Detail | null>(null);
 const retainedSummaryAnchor = ref<InstanceType<typeof RetainedPopulationSummary> | null>(null);
 const producedArtifactUid = ref('');
@@ -383,7 +385,7 @@ const headerMenuActions = computed(() => [...headerActions.value.map(action => {
   // Opening a submenu is navigation between choices, not an artifact choice.
   const { command: _command, ...submenu } = action;
   return { ...submenu, disabled: !detail.value?.run.project_id };
-}), ...contextualActions.value.map(action => ({
+}), ...(props.primaryActionsTarget ? [] : contextualActions.value).map(action => ({
   label: action.label, icon: action.icon, disabled: contextualRunning.value !== null,
   loading: contextualRunning.value === action.key,
   command: () => { void executeContextualAction(action.key); },
@@ -944,7 +946,7 @@ onBeforeUnmount(() => { runRequests.dispose(); nodeRequests.dispose(); nameReque
 </script>
 
 <style scoped>
-.run-detail { min-width: 0; }
+.run-detail { min-width: 0; container-type: inline-size; overflow-wrap: anywhere; }
 .run-detail__heading { margin-bottom: 1rem; }
 .run-detail__heading h2 { margin: 0 0 .75rem; font-size: 1.25rem; }
 .run-detail__heading p { color: var(--text-color-secondary); margin: .5rem 0 0; }
@@ -978,7 +980,7 @@ details { border-top: 1px solid var(--surface-border); padding: .75rem 0; }
 .application-trust__scroll { max-height: 28rem; overflow: auto; margin-top: .75rem; }
 .application-trust table { border-collapse: collapse; min-width: 100%; text-align: left; }
 .application-trust th, .application-trust td { padding: .45rem .6rem; border-bottom: 1px solid var(--surface-border); vertical-align: top; }
-@media (max-width: 640px) {
+@container (max-width: 40rem) {
   .inspection { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
   .evidence-gaps li { grid-template-columns: minmax(0, 1fr); }
   dl { grid-template-columns: minmax(0, 1fr); gap: .4rem; }

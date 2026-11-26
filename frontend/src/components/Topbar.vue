@@ -102,6 +102,8 @@
         icon="pi pi-comments"
         class="p-button-text topbar-bare-icon"
         aria-label="Toggle chat panel"
+        data-chat-toggle
+        :aria-expanded="!chatCollapsed"
         :title="chatToggleTitle"
         @click="emit('toggle-chat')"
       />

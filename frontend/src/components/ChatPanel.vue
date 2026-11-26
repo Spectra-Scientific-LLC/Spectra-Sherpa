@@ -176,6 +176,7 @@
             icon="pi pi-times"
             class="p-button-text p-button-sm chat-close-btn-narrow"
             aria-label="Close chat panel"
+            data-chat-close
             @click="emit('toggle')"
             v-tooltip.bottom="'Close'"
           />
@@ -246,15 +247,21 @@
                     <div
                       v-else-if="message.role === 'assistant'"
                       class="chat-bubble chat-bubble--md"
+                      :class="{ 'byok-turn': message.workbenchFacts?.length || message.workbenchNotice }"
                     >
-                      <div v-if="message.workbenchFacts?.length" class="byok-facts">
+                      <section v-if="message.workbenchFacts?.length" class="byok-facts" aria-label="Workbench evidence">
+                        <strong>Workbench evidence</strong>
                         <p v-for="(line, index) in message.workbenchFacts" :key="index">{{ line }}</p>
-                      </div>
+                      </section>
                       <template v-if="message.content">
                         <strong v-if="message.modelAttribution">{{ message.modelAttribution }}</strong>
                         <ChatMarkdown :source="message.content" :supplier="llmSupplier" />
                         <FollowUpChips v-if="!message.workbenchFacts" :suggestions="splitFollowUps(message.content).suggestions" @select="sendLlmFollowUp" />
                       </template>
+                      <div v-if="message.workbenchNotice" class="byok-notice" role="status">
+                        <strong>Notice</strong>
+                        <p>{{ message.workbenchNotice }}</p>
+                      </div>
                     </div>
                     <div v-else class="chat-bubble">{{ message.content }}</div>
                   </div>
@@ -1892,11 +1899,14 @@ const collapsed = computed(() => props.collapsed);
   color: var(--ss-warning);
 }
 
-.byok-facts {
-  margin-bottom: 0.5rem;
+.byok-facts,
+.byok-notice {
+  border-block-start: 1px solid var(--surface-border);
+  padding-block: 0.5rem;
 }
 
-.byok-facts p {
+.byok-facts p,
+.byok-notice p {
   margin: 0.25rem 0;
 }
 
@@ -1935,10 +1945,18 @@ const collapsed = computed(() => props.collapsed);
 
 .chat-bubble {
   max-width: 70%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 8px 12px;
   border-radius: 12px;
   background: var(--ss-border);
   white-space: pre-wrap;
+}
+
+.chat-bubble.byok-turn {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .chat-message.user .chat-bubble {
@@ -2184,7 +2202,8 @@ const collapsed = computed(() => props.collapsed);
 }
 
 .chat-panel.compact .chat-view {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   min-height: 0;
 }
 
@@ -2285,7 +2304,7 @@ const collapsed = computed(() => props.collapsed);
 .chat-close-btn-narrow {
   display: none !important;
 }
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .chat-close-btn-narrow {
     display: inline-flex !important;
   }

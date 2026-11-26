@@ -39,6 +39,7 @@ function normalizeLlmMessages(raw: unknown): LlmMessage[] {
       content: typeof msg.content === "string" ? msg.content : "",
       ...(Array.isArray(msg.workbenchFacts) && msg.workbenchFacts.every(line => typeof line === "string")
         ? { workbenchFacts: msg.workbenchFacts } : {}),
+      ...(typeof msg.workbenchNotice === "string" ? { workbenchNotice: msg.workbenchNotice } : {}),
       ...(typeof msg.modelAttribution === "string" ? { modelAttribution: msg.modelAttribution } : {}),
     };
   });
@@ -856,7 +857,7 @@ export const useLlmStore = defineStore("llm", () => {
             const lastMessage = messages.value[messages.value.length - 1];
             if (lastMessage?.role !== "assistant") continue;
             if (payload.type === "notice" && typeof payload.text === "string") {
-              lastMessage.workbenchFacts = [...(lastMessage.workbenchFacts ?? []), payload.text];
+              lastMessage.workbenchNotice = payload.text;
             } else if (Array.isArray(payload.lines) && payload.lines.every(line => typeof line === "string")) {
               lastMessage.workbenchFacts = payload.lines;
               if (typeof payload.provider === "string" && typeof payload.model === "string") {
@@ -885,12 +886,8 @@ export const useLlmStore = defineStore("llm", () => {
             ? error.message
             : "Unable to reach the configured chat endpoint.";
         const lastMessage = messages.value[messages.value.length - 1];
-        if (lastMessage?.role === "assistant" && lastMessage.workbenchFacts) {
-          lastMessage.workbenchFacts.push(detail);
-        } else if (lastMessage?.role === "assistant") {
-          lastMessage.content = detail;
-        } else {
-          messages.value.push(createLlmMessage("assistant", detail));
+        if (lastMessage?.role === "assistant") {
+          lastMessage.workbenchNotice = detail;
         }
       } finally {
         if (activeChatRequestId === requestId) {

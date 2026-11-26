@@ -4,6 +4,10 @@
     class="header-actions responsive-header-actions"
     :class="{ 'is-collapsed': collapsed }"
   >
+    <div v-if="$slots.primary" ref="primaryRef" class="responsive-header-actions__primary">
+      <slot name="primary" />
+    </div>
+
     <div ref="fullRef" class="responsive-header-actions__full">
       <slot />
     </div>
@@ -53,6 +57,7 @@ const props = withDefaults(
 
 const rootRef = ref<HTMLElement | null>(null);
 const fullRef = ref<HTMLElement | null>(null);
+const primaryRef = ref<HTMLElement | null>(null);
 const afterRef = ref<HTMLElement | null>(null);
 const menuRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const collapsed = ref(false);
@@ -84,9 +89,9 @@ function measure(): void {
       return total + Math.max(width, props.minTitleWidth);
     }, 0);
 
-  const afterWidth = afterRef.value?.offsetWidth ?? 0;
-  const gapAllowance = 24;
-  const available = Math.max(0, parent.clientWidth - siblingWidth - afterWidth - gapAllowance);
+  const pinnedWidth = (primaryRef.value?.offsetWidth ?? 0) + (afterRef.value?.offsetWidth ?? 0);
+  const gapAllowance = primaryRef.value ? 32 : 24;
+  const available = Math.max(0, parent.clientWidth - siblingWidth - pinnedWidth - gapAllowance);
   const required = full.scrollWidth;
 
   collapsed.value = required > available;
@@ -106,6 +111,7 @@ onMounted(() => {
     if (root) resizeObserver.observe(root);
     if (parent) resizeObserver.observe(parent);
     if (full) resizeObserver.observe(full);
+    if (primaryRef.value) resizeObserver.observe(primaryRef.value);
     if (afterRef.value) resizeObserver.observe(afterRef.value);
   }
 
@@ -144,6 +150,7 @@ watch(
   align-items: center;
   gap: 0.5rem;
   justify-content: flex-end;
+  flex-wrap: wrap;
   max-width: 100%;
   min-width: 0;
   overflow: visible;
@@ -160,11 +167,16 @@ watch(
   max-width: none;
 }
 
+.responsive-header-actions__primary,
 .responsive-header-actions__after {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .responsive-header-actions__trigger {

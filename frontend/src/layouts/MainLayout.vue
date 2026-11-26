@@ -48,7 +48,7 @@
     </div>
 
     <Sidebar :collapsed="effectiveNavCollapsed" @expand="toggleNav" />
-    <div class="workspace">
+    <div ref="workspaceElement" class="workspace">
       <div class="main">
         <Topbar
           :nav-collapsed="effectiveNavCollapsed"
@@ -69,10 +69,11 @@
         @mousedown="startResize"
       ></div>
       <ChatPanel
-        v-show="!isNarrow || !chatCollapsed"
+        v-show="!chatCollapsed"
         :compact="true"
         :collapsed="chatCollapsed"
         @toggle="toggleChat"
+        @keydown.esc="closeCompactChat"
       />
     </div>
 
@@ -91,7 +92,7 @@
 
 <script setup lang="ts">
 import { readBrowserSession, readBrowserToken, sameBrowserSession } from '@/extension-contract/session-v1';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { setAttentionWindow } from "@/lib/sherpaAttention";
 import { useRoute } from "vue-router";
 import ChatPanel from "@/components/ChatPanel.vue";
@@ -216,10 +217,23 @@ watch(isNarrow, (narrow) => {
   if (!narrow && navDrawerOpen.value) navDrawerOpen.value = false;
 });
 
-const toggleChat = () => {
+const workspaceElement = ref<HTMLElement | null>(null);
+const { isNarrow: fullWidthChat } = useViewport("(max-width: 900px)");
+
+const toggleChat = async () => {
   chatCollapsed.value = !chatCollapsed.value;
   localStorage.setItem("chatCollapsed", String(chatCollapsed.value));
+  if (!fullWidthChat.value) return;
+  await nextTick();
+  const target = chatCollapsed.value ? "[data-chat-toggle]" : "[data-chat-close]";
+  workspaceElement.value?.querySelector<HTMLElement>(target)?.focus();
 };
+
+function closeCompactChat(event: KeyboardEvent): void {
+  if (fullWidthChat.value && !chatCollapsed.value && !event.defaultPrevented) {
+    void toggleChat();
+  }
+}
 
 const startResize = (event: MouseEvent) => {
   if (chatCollapsed.value) {

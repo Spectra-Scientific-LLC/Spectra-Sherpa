@@ -1,6 +1,9 @@
 <template>
   <section class="models-content">
     <WorkspaceHeader title="Runs" :actions="headerActionItems">
+      <template v-if="activeTab === TAB_INSPECT" #primary>
+        <div ref="inspectPrimaryActionsTarget" />
+      </template>
       <span v-show="activeTab === TAB_INSPECT" ref="inspectActionsTarget" />
       <Button
         :label="activeTab === TAB_MODELS ? 'Copy model metadata' : 'Export'" :icon="activeTab === TAB_MODELS ? 'pi pi-copy' : 'pi pi-download'" class="p-button-text p-button-sm"
@@ -201,7 +204,7 @@
         </TabPanel>
 
         <TabPanel header="Inspect">
-          <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" ref="inspectContent" :actions-target="inspectActionsTarget" @renamed="refreshRuns" />
+          <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" ref="inspectContent" :actions-target="inspectActionsTarget" :primary-actions-target="inspectPrimaryActionsTarget" @renamed="refreshRuns" />
           <WorkspaceState v-else-if="latestInspectionLoading" kind="loading" variant="page" message="Opening the latest run…" />
           <WorkspaceState v-else :kind="latestInspectionError ? 'error' : 'empty'" variant="page" :message="latestInspectionError || 'Choose a run in History.'">
             <Button label="Open History" icon="pi pi-arrow-left" class="p-button-text" @click="activeTabId = 'run_history'" />
@@ -623,6 +626,7 @@ watch(
   },
   { immediate: true },
 );
+const inspectPrimaryActionsTarget = ref<HTMLElement | null>(null);
 const inspectActionsTarget = ref<HTMLElement | null>(null);
 const inspectContent = ref<InstanceType<typeof RunDetailContent> | null>(null);
 const inspectedIdentity = computed(() => {

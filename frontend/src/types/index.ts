@@ -321,6 +321,7 @@ export interface LlmMessage {
   role: "user" | "assistant" | "system";
   content: string;
   workbenchFacts?: string[];
+  workbenchNotice?: string;
   modelAttribution?: string;
 }
 

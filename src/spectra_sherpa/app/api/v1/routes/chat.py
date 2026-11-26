@@ -133,7 +133,7 @@ async def chat_stream(
                 if (view.screen == "results" and byok_reply.needs_pair(message)) or (
                     view.screen == "compare" and view.run_ids is None
                 ):
-                    yield _event("facts", lines=[byok_reply.CHOOSE_PAIR])
+                    yield _event("notice", text=byok_reply.CHOOSE_PAIR)
                     yield _event("done")
                     return
                 if view.screen == "dataset" and view.dataset_id is None:
@@ -149,7 +149,8 @@ async def chat_stream(
                     )
                     prompt = byok_reply.explanation_prompt(evidence, facts, message, output_tokens)
                     if prompt is None:
-                        yield _event("facts", lines=[*facts, byok_reply.CONTEXT_TOO_SMALL])
+                        yield _event("facts", lines=facts)
+                        yield _event("notice", text=byok_reply.CONTEXT_TOO_SMALL)
                         yield _event("done")
                         return
                     assert config is not None

@@ -4,7 +4,8 @@
       <h1>{{ title }}</h1>
       <slot name="badge" />
     </div>
-    <ResponsiveHeaderActions v-if="$slots.default || $slots.after" :items="actions">
+    <ResponsiveHeaderActions v-if="$slots.default || $slots.primary || $slots.after" :items="actions">
+      <template v-if="$slots.primary" #primary><slot name="primary" /></template>
       <slot />
       <template v-if="$slots.after" #after><slot name="after" /></template>
     </ResponsiveHeaderActions>
@@ -40,6 +41,7 @@ h1 {
   color: var(--text-color);
   font-size: 1.5rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 .workspace-header :deep(.p-button) {
   min-height: 2.25rem;

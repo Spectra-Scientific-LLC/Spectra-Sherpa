@@ -39,6 +39,7 @@ a {
 .app-shell {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: var(--ss-surface-page);
 }
@@ -399,7 +400,8 @@ select {
 
 .chat-panel {
   width: var(--chat-width, 360px);
-  height: 100vh;
+  height: 100%;
+  min-width: 0;
   border-left: 1px solid var(--ss-border);
   transition: width 0.2s ease;
   background: var(--ss-surface);
@@ -467,33 +469,21 @@ body.chat-resizing {
   gap: 24px;
 }
 
-/*
- * Narrow viewport (smartphone / portrait tablet).
- *
- * Keep the row layout — sidebar | main | chat — at all widths. The
- * sidebar is forced to its 72px icon rail by JS via --nav-width, and
- * a PrimeVue drawer renders an expanded copy on demand. When the chat
- * panel is open it takes over the workspace and main is hidden
- * (binary toggle, no resize handle).
- */
+/* At compact widths, chat uses the workspace without squeezing the page. */
+@media (max-width: 900px) {
+  .app-shell.chat-open > .sidebar,
+  .app-shell.chat-open .main,
+  .app-shell .chat-resize-handle {
+    display: none;
+  }
+
+  .app-shell.chat-open .chat-panel {
+    width: 100%;
+    border-left: none;
+  }
+}
+
 @media (max-width: 768px) {
-  /* Chat takes all the workspace width when open; specificity bump
-     overrides the row-mode rule .chat-panel { width: var(--chat-width) }. */
-  .app-shell .chat-panel {
-    width: auto;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .chat-resize-handle {
-    display: none;
-  }
-
-  /* Binary main-or-chat: when chat is open, hide main entirely. */
-  .app-shell.chat-open .main {
-    display: none;
-  }
-
   .two-column {
     grid-template-columns: 1fr;
   }

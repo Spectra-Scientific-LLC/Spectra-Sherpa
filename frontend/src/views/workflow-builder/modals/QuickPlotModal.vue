@@ -1183,6 +1183,17 @@ async function downloadPlot() {
   min-width: 180px;
 }
 
+.embedded-plot .control-group {
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.embedded-plot .control-group :deep(.p-dropdown) {
+  min-width: min(9rem, 100%);
+  max-width: 100%;
+}
+
 .quick-plot-modal:not(.embedded-plot) .plot-controls :deep(.p-dropdown-label),
 .quick-plot-modal:not(.embedded-plot) .plot-controls :deep(.p-dropdown-trigger) {
   color: var(--ss-panel-text);
