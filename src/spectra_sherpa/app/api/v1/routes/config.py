@@ -131,6 +131,21 @@ async def _check_provider_availability(
     return False
 
 
+def _byo_chat_placement(url: str) -> str:
+    try:
+        hostname = urlsplit(url).hostname or ""
+    except ValueError:
+        return "hosted"
+    if hostname.rstrip(".") == "localhost":
+        return "local"
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        return "hosted"
+    mapped = getattr(address, "ipv4_mapped", None)
+    return "local" if (mapped or address).is_loopback else "hosted"
+
+
 @router.get("")
 async def get_config(
     session: AsyncSession = Depends(get_session),
@@ -160,12 +175,15 @@ async def get_config(
     if app_config.mode == "local":
         # In OSS local mode, the chat surface is the BYO endpoint proxy only.
         # Legacy provider-key presence no longer enables the chat assistant.
-        from spectra_sherpa.app.services.basic_chat import is_configured as byo_chat_configured
+        from spectra_sherpa.app.services import basic_chat
 
         for provider_config in config["llms"].values():
             provider_config["enabled"] = False
 
-        config["features"][CHAT_ASSISTANT] = byo_chat_configured()
+        byo_chat = basic_chat.get_config()
+        config["features"][CHAT_ASSISTANT] = basic_chat.is_configured(byo_chat)
+        if config["features"][CHAT_ASSISTANT]:
+            config["byoChatPlacement"] = _byo_chat_placement(byo_chat.url)
     else:
         # Server-backed modes use subscription entitlements, not local BYOK keys.
         for provider_config in config["llms"].values():

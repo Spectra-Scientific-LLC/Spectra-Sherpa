@@ -37,6 +37,12 @@
           </span>
         </WorkspaceContextItem>
       </WorkspaceContext>
+      <label class="runs-section-picker">
+        Runs section
+        <select v-model="activeTabId">
+          <option v-for="id in MODEL_SUBSCOPES" :key="id" :value="id">{{ MODEL_SUBSCOPE_TITLES[id] }}</option>
+        </select>
+      </label>
       <WorkspaceTabs v-model="activeTabId" :tab-ids="MODEL_SUBSCOPES">
         <TabPanel header="History">
           <WorkspaceState v-if="runsStore.loadError" kind="error" :message="runsStore.loadError">
@@ -2910,6 +2916,29 @@ function safeFilename(value: string): string {
   .context-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+.runs-section-picker {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .runs-section-picker {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .runs-section-picker select {
+    color: var(--text-color);
+    background: var(--surface-card);
+    border: 1px solid var(--ss-border-strong);
+    border-radius: 6px;
+    font: inherit;
+    padding: 0.375rem 0.5rem;
   }
 }
 </style>

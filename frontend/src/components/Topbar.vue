@@ -20,11 +20,12 @@
           optionLabel="name"
           optionValue="id"
           placeholder="Select Project"
+          aria-label="Select Project"
           class="project-dropdown"
           @change="onProjectChange"
         >
           <template #value="slotProps">
-            <span v-if="slotProps.value" class="project-value">
+            <span v-if="slotProps.value" class="project-value" :title="getProjectName(slotProps.value)">
               {{ getProjectName(slotProps.value) }}
             </span>
             <span v-else class="project-placeholder">No Project</span>
@@ -670,24 +671,59 @@ const onProjectChange = async () => {
   }
 }
 
-/*
- * At narrow widths the topbar drops the project selector first
- * (hamburger stays in topbar-left to open the nav drawer; status
- * lights and the right-side actions stay). If even that overflows,
- * the status indicators drop next.
- */
+/* Keep project identity and switching available at narrow widths. */
 @media (max-width: 768px) {
   .topbar {
     padding: 8px 12px;
     gap: 8px;
   }
 
+  .topbar-left {
+    gap: 6px;
+  }
+
   .project-selector {
+    padding: 2px;
+  }
+
+  .project-icon {
     display: none;
+  }
+
+  .project-dropdown :deep(.p-dropdown-label) {
+    padding-inline: 4px;
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 540px) {
+  .topbar {
+    display: grid;
+    height: auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 8px;
+  }
+
+  .topbar-left {
+    display: contents;
+  }
+
+  .nav-collapse-toggle {
+    grid-area: 1 / 1;
+  }
+
+  .topbar-right {
+    grid-area: 1 / 2;
+  }
+
+  .project-selector {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+
+  .project-dropdown {
+    width: 100%;
+  }
+
   .topbar-center {
     display: none;
   }

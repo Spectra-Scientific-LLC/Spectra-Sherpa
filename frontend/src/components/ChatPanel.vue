@@ -1238,7 +1238,9 @@ function captureByokView(): ByokView | undefined {
   if (project_id == null) return;
   if (route.path === "/data" && route.query.tab === "my-dataset") {
     const data = useDataStore();
-    const dataset_id = data.fileInfoLoading ? undefined : data.fileInfo?.dataset_id;
+    const experiment = data.experiments.find((item) => item.id === data.activeExperimentId);
+    const dataset_id = experiment?.project_id === project_id && !data.fileInfoLoading && !data.fileInfoError
+      ? data.fileInfo?.dataset_id : undefined;
     return { screen: "dataset", project_id, dataset_id };
   }
   if (route.path === "/workflow") {

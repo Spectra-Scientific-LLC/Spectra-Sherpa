@@ -215,8 +215,9 @@ async def test_builder_bounded_preview_retains_collection_identity_and_recovers_
     async def _loaded(*args, **kwargs):
         return dataset, [object()] * source["file_count"], "Large collection", "raw", source
 
+    experiment = (await auth_client.post("/api/v1/experiments", json={"name": "Large collection"})).json()
     monkeypatch.setattr(builder_route, "_experiment_contents_as_sherpa", _loaded)
-    response = await auth_client.post("/api/v1/builder/file-info", json={"experiment_id": 42})
+    response = await auth_client.post("/api/v1/builder/file-info", json={"experiment_id": experiment["id"]})
 
     assert response.status_code == 200
     preview = response.json()
@@ -276,6 +277,7 @@ async def test_builder_full_preview_refuses_sample_table_values_that_cannot_cros
         ),
     ]
 
+    experiment = (await auth_client.post("/api/v1/experiments", json={"name": "Invalid collection"})).json()
     for dataset, expected in mutations:
         source = dataset.meta["source_collection"]
 
@@ -283,7 +285,7 @@ async def test_builder_full_preview_refuses_sample_table_values_that_cannot_cros
             return _dataset, [object()] * _source["file_count"], "Invalid collection", "raw", _source
 
         monkeypatch.setattr(builder_route, "_experiment_contents_as_sherpa", _loaded)
-        response = await auth_client.post("/api/v1/builder/file-info", json={"experiment_id": 42})
+        response = await auth_client.post("/api/v1/builder/file-info", json={"experiment_id": experiment["id"]})
         assert response.status_code == 400
         assert expected in response.json()["detail"]
 

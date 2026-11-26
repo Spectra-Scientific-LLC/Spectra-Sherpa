@@ -84,7 +84,7 @@ async def test_collection_inspection_authority_survives_workflow_admission(
     )
 
     inspected, _, _, _, manifest = await builder._experiment_contents_as_sherpa(
-        experiment.id,
+        experiment,
         test_session,
         test_user,
         asset_id=asset_id,

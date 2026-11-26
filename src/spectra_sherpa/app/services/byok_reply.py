@@ -3,6 +3,7 @@
 import json
 import os
 import re
+from collections import Counter
 
 from spectra_sherpa.app.contracts.scientific_query import scoped_prompt
 from spectra_sherpa.app.services.byok_evidence import WorkbenchEvidence
@@ -10,8 +11,12 @@ from spectra_sherpa.app.services.byok_evidence import WorkbenchEvidence
 CHOOSE_PAIR = "Select two saved runs on the Runs page, open Compare, then ask again."
 PRIVACY_BLOCKED = "To ask about this view, allow AI context in Settings › Data & Privacy. No project evidence was sent."
 SCOPE_UNAVAILABLE = "The selected Workbench evidence is unavailable. No project evidence was sent."
+DATASET_NOT_READY = "Open a file or dataset in My Dataset, wait for its contents to load, then ask again."
 CONFIG_CHANGED = "BYO Chat settings changed. Send your message again. No project evidence was sent."
-CONTEXT_TOO_SMALL = "These facts exceed the model's context budget. No model explanation was requested."
+CONTEXT_TOO_SMALL = (
+    "The model's context budget is too small to add an explanation. "
+    "For a model with a larger context window, set SPECTRA_BYOK_CONTEXT_TOKENS to its effective limit."
+)
 _COMPARISON_REQUEST = re.compile(
     r"(?i)\b(?:compar\w*|rank\w*|better|worse|improv\w*|versus|vs\.?)\b"
     r"[^\n]{0,160}\b(?:previous|prior|earlier|last|another|old|baseline|run)\b"
@@ -36,7 +41,7 @@ ROLE_LABELS = {
     "unqualified_evaluation": "Unqualified evaluation",
 }
 MAX_EXPLANATION_TOKENS = 256
-_CONTEXT_DEFAULT = 2048
+_CONTEXT_DEFAULT = 4096
 _CONTEXT_OVERHEAD = 128
 
 
@@ -44,8 +49,14 @@ def needs_pair(message: str) -> bool:
     return _COMPARISON_REQUEST.search(message) is not None
 
 
+def _metric_value(value: float | int | None) -> str:
+    # Match the four significant digits used in the retained scientific summaries.
+    return "—" if value is None else format(value, ".4g")
+
+
 def _run_metrics(results: dict) -> list[str]:
     lines = []
+    counts = Counter((row["role"], row["target"]) for row in results["regression_results"])
     for row in results["regression_results"]:
         metrics = []
         for key in ("rmse", "sep", "r2", "mae", "bias"):
@@ -54,13 +65,18 @@ def _run_metrics(results: dict) -> list[str]:
                 continue
             unit = row["unit_context"]
             units = f" {unit['value']}" if key != "r2" and unit["state"] == "recorded" and unit["value"] else ""
-            metrics.append(f"{key.upper()} {value}{units}")
+            label = "R²" if key == "r2" else key.upper()
+            metrics.append(f"{label} {_metric_value(value)}{units}")
         if metrics:
-            lines.append(f"{ROLE_LABELS[row['role']]} · {row['target']} · {row['node_id']} · " + ", ".join(metrics))
+            role, target = row["role"], row["target"]
+            source = f" · {row['node_id']}" if counts[(role, target)] > 1 else ""
+            lines.append(f"{ROLE_LABELS[role]} · {target}{source} · " + ", ".join(metrics))
     for row in results["classification_results"]:
         for split, values in row["splits"].items():
             metrics = [
-                f"{name} {values[name]}" for name in ("accuracy", "balanced_accuracy", "macro_f1") if name in values
+                f"{name.replace('_', ' ')} {_metric_value(values[name])}"
+                for name in ("accuracy", "balanced_accuracy", "macro_f1")
+                if name in values
             ]
             if metrics:
                 lines.append(f"{ROLE_LABELS.get(split, split)} · {row['node_id']} · " + ", ".join(metrics))
@@ -80,7 +96,11 @@ def reply_facts(evidence: WorkbenchEvidence) -> list[str]:
             role = ROLE_LABELS.get(section["role"], section["role"])
             lines.append(f"{role} · {COMPARISON_LINES[section['state']]}")
             for metric, values in section["metric_values"].items():
-                lines.append(f"{metric.upper()} · Run #{left} {values['left']} · Run #{right} {values['right']}")
+                label = "R²" if metric == "r2" else metric.upper()
+                lines.append(
+                    f"{label} · Run #{left} {_metric_value(values['left'])}"
+                    f" · Run #{right} {_metric_value(values['right'])}"
+                )
     else:
         lines = [f"Based on Run #{view.run_id}"]
         lines.extend(_run_metrics(evidence.facts["get_results"]))

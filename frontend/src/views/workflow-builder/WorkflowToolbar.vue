@@ -5,12 +5,14 @@
       <button
         type="button"
         class="collapse-toggle"
-        :aria-label="isCollapsed ? 'Expand toolbar' : 'Collapse toolbar'"
+        :aria-label="isNarrow ? 'Nodes' : isCollapsed ? 'Expand toolbar' : 'Collapse toolbar'"
+        :aria-expanded="!isCollapsed"
         :title="isCollapsed ? 'Expand' : 'Collapse'"
         data-testid="toolbar-collapse-toggle"
         @click="toggleCollapsed"
       >
-        <i class="pi" :class="isCollapsed ? 'pi-chevron-right' : 'pi-chevron-left'"></i>
+        <span v-if="isNarrow && isCollapsed">Nodes</span>
+        <i class="pi" :class="collapseIcon" aria-hidden="true"></i>
       </button>
     </div>
 
@@ -154,7 +156,8 @@
 
 <script setup lang="ts">
 import MethodHelp from "@/components/MethodHelp.vue";
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted, nextTick, watch } from 'vue';
+import { useViewport } from "@/composables/useViewport";
 import { useWorkflowStore } from '@/stores/workflow';
 import {
   NODE_CATEGORY_LABELS,
@@ -200,8 +203,14 @@ const openSections = ref<Set<string>>(new Set());
 // Live search query - filters nodes across all categories as the user types.
 const searchQuery = ref<string>('');
 
-// Whole-toolbar collapse state (persisted in localStorage).
-const isCollapsed = ref<boolean>(false);
+const { isNarrow } = useViewport();
+const desktopCollapsed = ref(false);
+const narrowCollapsed = ref(true);
+const isCollapsed = computed(() => isNarrow.value ? narrowCollapsed.value : desktopCollapsed.value);
+const collapseIcon = computed(() => isNarrow.value
+  ? (isCollapsed.value ? 'pi-chevron-down' : 'pi-chevron-up')
+  : (isCollapsed.value ? 'pi-chevron-right' : 'pi-chevron-left'));
+watch(isCollapsed, (collapsed) => emit('toggle-collapsed', collapsed));
 
 const searchInputRef = ref<HTMLInputElement | null>(null);
 const viewMode = ref<'add' | 'catalog'>('add');
@@ -225,7 +234,7 @@ const TOOLTIP_MAX_WIDTH_PX = 320;
 try {
   const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(COLLAPSED_STORAGE_KEY) : null;
   if (stored === '1') {
-    isCollapsed.value = true;
+    desktopCollapsed.value = true;
   }
 } catch {
   // localStorage may be unavailable (private mode, tests) — fall back to expanded.
@@ -511,15 +520,16 @@ const onNodeLeave = () => {
 };
 
 const toggleCollapsed = async () => {
-  isCollapsed.value = !isCollapsed.value;
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(COLLAPSED_STORAGE_KEY, isCollapsed.value ? '1' : '0');
+  if (isNarrow.value) {
+    narrowCollapsed.value = !narrowCollapsed.value;
+  } else {
+    desktopCollapsed.value = !desktopCollapsed.value;
+    try {
+      localStorage.setItem(COLLAPSED_STORAGE_KEY, desktopCollapsed.value ? '1' : '0');
+    } catch {
+      // Keep the in-memory preference if localStorage is unavailable.
     }
-  } catch {
-    // Ignore storage failures — state still lives in memory for the session.
   }
-  emit('toggle-collapsed', isCollapsed.value);
   if (!isCollapsed.value) {
     await nextTick();
     searchInputRef.value?.focus();
@@ -922,5 +932,23 @@ defineExpose({ summarizePurpose });
 
 .toolbar-help li {
   margin-bottom: 4px;
+}
+
+@media (max-width: 768px) {
+  .workflow-toolbar.collapsed .toolbar-header {
+    justify-content: start;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .workflow-toolbar.collapsed .collapse-toggle {
+    width: auto;
+    min-height: 2rem;
+    padding-inline: 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .toolbar-content {
+    max-height: min(37vh, 20rem);
+  }
 }
 </style>

@@ -979,22 +979,13 @@ async def _experiment_file_as_sherpa(
 
 
 async def _experiment_contents_as_sherpa(
-    experiment_id: int,
+    experiment: Experiment,
     session: AsyncSession,
     current_user: User,
     *,
     asset_id: str | None = None,
 ) -> tuple[SherpaDataset, list[ExperimentFile], str, str, dict[str, Any]]:
-    result = await session.execute(
-        select(Experiment).where(
-            Experiment.id == experiment_id,
-            Experiment.user_id == current_user.id,
-        )
-    )
-    experiment = result.scalar_one_or_none()
-    if experiment is None:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-
+    experiment_id = experiment.id
     files: list[ExperimentFile] = []
     stage = "raw"
     for candidate_stage in ("raw", "synthetic"):
@@ -1915,6 +1906,19 @@ async def _saved_view_file_info(payload: FileInfoRequest, session: AsyncSession,
     return await _finalize_file_info(result, dataset=loaded.dataset, session=session)
 
 
+async def _owned_file_info_experiment(
+    experiment_id: int | None, session: AsyncSession, user_id: int
+) -> Experiment | None:
+    if experiment_id is None:
+        return None
+    experiment = await session.scalar(
+        select(Experiment).where(Experiment.id == experiment_id, Experiment.user_id == user_id)
+    )
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    return experiment
+
+
 @router.post("/file-info")
 async def get_file_info(
     payload: FileInfoRequest,
@@ -2048,8 +2052,10 @@ async def get_file_info(
         _project_single_member_metadata(metadata, contents_file_count=contents_file_count)
         return await _finalize_file_info(result, dataset=loaded.dataset, session=session)
 
+    experiment = await _owned_file_info_experiment(payload.experiment_id, session, current_user.id)
+
     if file_path is None:
-        if payload.experiment_id is None:
+        if experiment is None:
             raise HTTPException(status_code=400, detail="Provide file_path or experiment_id")
         try:
             if payload.file_ids is not None:
@@ -2058,11 +2064,8 @@ async def get_file_info(
                 selected_files = list(
                     (
                         await session.execute(
-                            select(ExperimentFile)
-                            .join(Experiment, Experiment.id == ExperimentFile.experiment_id)
-                            .where(
-                                Experiment.user_id == current_user.id,
-                                ExperimentFile.experiment_id == payload.experiment_id,
+                            select(ExperimentFile).where(
+                                ExperimentFile.experiment_id == experiment.id,
                                 ExperimentFile.id.in_(payload.file_ids),
                             )
                         )
@@ -2078,7 +2081,7 @@ async def get_file_info(
                 loaded = await load_project_dataset(
                     session,
                     user_id=current_user.id,
-                    experiment_id=payload.experiment_id,
+                    experiment_id=experiment.id,
                     stage=stages.pop(),
                     file_ids=payload.file_ids,
                     asset_id=payload.asset_id,
@@ -2090,7 +2093,7 @@ async def get_file_info(
                 source_collection = sd.meta.get("source_collection")
             else:
                 sd, files, contents_title, contents_stage, source_collection = await _experiment_contents_as_sherpa(
-                    payload.experiment_id,
+                    experiment,
                     session,
                     current_user,
                     asset_id=payload.asset_id,
@@ -2102,7 +2105,7 @@ async def get_file_info(
                 source_file=selected_files[0] if len(selected_files) == 1 else None,
                 session=session,
             )
-            result = serialize_result(sd, owner_user_id=current_user.id)
+            result = serialize_result(sd, owner_user_id=current_user.id, project_id=experiment.project_id)
             if not isinstance(result, dict):
                 raise ValueError("dataset inspection did not produce a typed response")
             metadata = result.setdefault("metadata", {})
@@ -2121,13 +2124,10 @@ async def get_file_info(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if payload.experiment_id is not None:
+    if experiment is not None:
         selected_file = await session.scalar(
-            select(ExperimentFile)
-            .join(Experiment, Experiment.id == ExperimentFile.experiment_id)
-            .where(
-                Experiment.user_id == current_user.id,
-                ExperimentFile.experiment_id == payload.experiment_id,
+            select(ExperimentFile).where(
+                ExperimentFile.experiment_id == experiment.id,
                 ExperimentFile.file_path == file_path,
             )
         )
@@ -2136,7 +2136,7 @@ async def get_file_info(
         stage_hint = Path(file_path).parts[0] if file_path else ""
         if stage_hint in ALLOWED_STAGES:
             contents_stage = stage_hint
-        exp_dir = experiment_dir(payload.experiment_id)
+        exp_dir = experiment_dir(experiment.id)
         full_path = (exp_dir / file_path).resolve()
         file_path = str(full_path.relative_to(settings.data_dir))
 
@@ -2158,7 +2158,9 @@ async def get_file_info(
             session=session,
         )
 
-        result = serialize_result(sd, owner_user_id=current_user.id)
+        result = serialize_result(
+            sd, owner_user_id=current_user.id, project_id=experiment.project_id if experiment is not None else None
+        )
         if not isinstance(result, dict):
             raise ValueError("dataset inspection did not produce a typed response")
 

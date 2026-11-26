@@ -25,7 +25,8 @@ Each contextual request sends the current question and the permitted facts for
 that view. Provider data-handling terms apply. Earlier turns are excluded. If the
 facts do not fit, chat displays them without a model explanation. The advanced
 `SPECTRA_BYOK_CONTEXT_TOKENS` setting specifies the endpoint's effective context
-limit. The default budget is 2,048 tokens. Scientific analysis remains available
+limit. The default budget is 4,096 tokens. Set it to a lower value when the
+endpoint has a smaller configured context window. Scientific analysis remains available
 if the provider is unavailable.
 
 Open **Logs → Local AI exchanges** to inspect a basic chat request, the actual

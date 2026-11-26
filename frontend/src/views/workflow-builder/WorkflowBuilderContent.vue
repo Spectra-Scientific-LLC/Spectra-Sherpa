@@ -3237,6 +3237,18 @@ const onDeleteNode = (nodeId: string) => {
   }
 }
 
+@media (max-width: 768px) {
+  .workflow-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .workflow-workspace :deep(.inspector-resize-handle) {
+    display: none;
+  }
+}
+
 /* Template drawer header (Sidebar renders outside scoped context) */
 .drawer-header {
   display: flex;

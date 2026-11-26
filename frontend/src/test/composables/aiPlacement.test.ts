@@ -24,6 +24,12 @@ describe('AI placement light', () => {
     } })).toBe('hosted')
   })
 
+  it('uses the configured BYO destination when the legacy provider list is empty', async () => {
+    const byo = { ...base, features: { chatAssistant: true } }
+    expect(await placement({ ...byo, byoChatPlacement: 'local' })).toBe('local')
+    expect(await placement({ ...byo, byoChatPlacement: 'hosted' })).toBe('hosted')
+  })
+
   it('is Hosted for a deployment-managed AI and Off when nothing is configured', async () => {
     expect(await placement({ ...base, mode: 'enterprise', capabilities: { managedLlm: true } })).toBe('hosted')
     expect(await placement(base)).toBe('off')
