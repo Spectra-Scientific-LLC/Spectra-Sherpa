@@ -172,6 +172,7 @@ export interface DemoBlockedDetail {
 export interface AppConfig {
   implicitIdentity?: boolean;
   advisorContextPolicy?: "receipt";
+  byoChatPlacement?: "local" | "hosted";
   uiExtensions?: Array<{ id: string; url: string; contractVersion: number; bootstrap?: boolean; required?: boolean }>;
   mode: AppMode;
   siteProfile?: SiteProfile | null;

@@ -7,7 +7,12 @@
     <nav class="nav-list" aria-label="Workspace navigation">
       <template v-for="group in navigationGroups" :key="group.id">
         <div v-if="group.id === 'secondary'" class="nav-separator"></div>
-        <div v-for="item in group.items" :key="item.to" class="nav-group">
+        <div
+          v-for="item in group.items"
+          :key="item.to"
+          class="nav-group"
+          :class="{ 'nav-group--sections': hasSections(item.to) }"
+        >
           <RouterLink
             class="nav-link"
             :class="{ secondary: group.id === 'secondary', 'nav-dimmed': item.dimInDemo && isDemoMode }"
@@ -177,12 +182,12 @@ const navigationGroups = computed(() => [
 
 .nav-group { position: relative; }
 /* Keep the section disclosure out of the page link's pointer target. */
-.collapsed .nav-group {
+.collapsed .nav-group--sections {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 24px;
   align-items: center;
 }
-.collapsed .nav-link { grid-column: 1; }
+.collapsed .nav-group--sections .nav-link { grid-column: 1; }
 .nav-children {
   list-style: none;
   padding: 0 0 0.5rem 2.5rem;

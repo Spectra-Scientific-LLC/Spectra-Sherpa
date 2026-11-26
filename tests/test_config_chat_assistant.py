@@ -22,16 +22,26 @@ async def test_local_config_chat_assistant_depends_only_on_byo_endpoint(monkeypa
         "_check_provider_availability",
         _provider_available,
     )
-    monkeypatch.setattr(basic_chat, "is_configured", lambda: False)
+    monkeypatch.setattr(basic_chat, "is_configured", lambda _config: False)
 
     response = await config_routes.get_config(session=MagicMock(), current_user=None)
 
     assert response["features"]["chatAssistant"] is False
     assert all(not entry["enabled"] for entry in response["llms"].values())
+    assert "byoChatPlacement" not in response
 
 
 @pytest.mark.asyncio
-async def test_local_config_enables_chat_assistant_when_byo_endpoint_is_configured(monkeypatch):
+@pytest.mark.parametrize(
+    ("url", "placement"),
+    [
+        ("http://127.0.0.1:11434/v1", "local"),
+        ("http://localhost:11434/v1", "local"),
+        ("http://[::1]:11434/v1", "local"),
+        ("https://provider.example/v1", "hosted"),
+    ],
+)
+async def test_local_config_reports_effective_byo_endpoint_placement(monkeypatch, url, placement):
     from spectra_sherpa.app.api.v1.routes import config as config_routes
     from spectra_sherpa.app.services import basic_chat
 
@@ -45,9 +55,12 @@ async def test_local_config_enables_chat_assistant_when_byo_endpoint_is_configur
         "_check_provider_availability",
         _provider_unavailable,
     )
-    monkeypatch.setattr(basic_chat, "is_configured", lambda: True)
+    from spectra_sherpa.app.services.chat_providers import ChatEndpointConfig
+
+    monkeypatch.setattr(basic_chat, "get_config", lambda: ChatEndpointConfig("ollama", url, "", "fixture", True))
 
     response = await config_routes.get_config(session=MagicMock(), current_user=None)
 
     assert response["features"]["chatAssistant"] is True
+    assert response["byoChatPlacement"] == placement
     assert all(not entry["enabled"] for entry in response["llms"].values())

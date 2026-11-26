@@ -760,7 +760,7 @@ async def test_import_hitran_library_dataset_uses_loaded_spectra_fast_path(auth_
 
 
 @pytest.mark.anyio
-async def test_axis_column_csv_file_lists_report_sherpa_shape(auth_client: AsyncClient):
+async def test_axis_column_csv_file_lists_report_sherpa_shape(auth_client: AsyncClient, test_user):
     project = (await auth_client.post("/api/v1/projects", json={"name": "Raman CSV Project"})).json()
     experiment = (
         await auth_client.post(
@@ -800,6 +800,16 @@ async def test_axis_column_csv_file_lists_report_sherpa_shape(auth_client: Async
     available_file = available_response.json()["experiments"][0]["stages"]["raw"][0]
     assert available_file["shape"] == [2, 3]
     assert available_file["data_role"] == "X_spectra"
+
+    from spectra_sherpa.app.services.dataset_registry import dataset_registry
+
+    for selection in ({}, {"file_ids": [uploaded["id"]]}, {"file_path": uploaded["file_path"]}):
+        preview = await auth_client.post(
+            "/api/v1/builder/file-info",
+            json={"experiment_id": experiment["id"], **selection},
+        )
+        assert preview.status_code == 200, preview.text
+        assert dataset_registry.project_for_owner(preview.json()["dataset_id"], user_id=test_user.id) == project["id"]
 
 
 @pytest.mark.anyio

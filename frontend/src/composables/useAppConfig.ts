@@ -80,6 +80,7 @@ const hasLLMConfigured = computed(() => {
  */
 const aiPlacement = computed<'local' | 'hosted' | 'off'>(() => {
   if (config.value?.capabilities?.managedLlm) return 'hosted'
+  if (config.value?.mode === 'local' && config.value.byoChatPlacement) return config.value.byoChatPlacement
   if (configuredLLMs.value.length > 0) {
     return configuredLLMs.value.every((llm) => llm.local === true) ? 'local' : 'hosted'
   }

@@ -107,6 +107,8 @@
 .p-datatable .p-datatable-tbody > tr.p-highlight {
   color: var(--ss-action-hover); background: var(--ss-action-tint);
 }
+.p-toast.p-toast-top-right { max-width: calc(100vw - 2.5rem); }
+.p-toast .p-toast-message-text { min-width: 0; overflow-wrap: anywhere; }
 .p-toast .p-toast-message.p-toast-message-info {
   color: var(--ss-info-strong); background: var(--ss-info-surface); border-color: var(--ss-info);
 }

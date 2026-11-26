@@ -3,6 +3,7 @@ import { defineComponent, h, nextTick, onUnmounted, reactive } from "vue";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { enableGuiTrace, flushGuiTrace, resetGuiTrace } from "@/lib/guiTrace";
 import { WorkflowValidationError } from "@/utils/errors";
+import { registerContextualActions, removeContextualActions } from "@/composables/useContextualActions";
 import {
   dataSelectionReceiptStorageKey,
   storeDataSelectionReceipt,
@@ -161,8 +162,9 @@ const confirmAction = vi.hoisted(() => vi.fn(async () => false));
 vi.mock("@/composables/useConfirmAction", () => ({ useConfirmAction: () => confirmAction }));
 
 const toastAdd = vi.hoisted(() => vi.fn());
+const toastRemove = vi.hoisted(() => vi.fn());
 vi.mock("primevue/usetoast", () => ({
-  useToast: () => ({ add: toastAdd }),
+  useToast: () => ({ add: toastAdd, remove: toastRemove }),
 }));
 
 vi.mock("@/stores/workbook", () => ({
@@ -336,6 +338,34 @@ async function mountBuilder() {
 }
 
 describe("WorkflowBuilderContent trial/detail layout", () => {
+  it("shows a contextual refusal in one dismissible toast without changing the page content", async () => {
+    const message = "These held-out samples have already been evaluated or observed. " +
+      "Another design cannot score them again in this project.";
+    registerContextualActions("test-refusal", [{
+      id: "review-calibration",
+      label: "Review calibration",
+      surfaces: ["workflow"],
+      available: () => true,
+      execute: async () => { throw new Error(message); },
+    }], () => true);
+    workbookStore.activeIndex = 0;
+    try {
+      const wrapper = await mountBuilder();
+      await flushPromises();
+      toastAdd.mockClear();
+      await wrapper.get(".contextual-actions button").trigger("click");
+      await flushPromises();
+
+      expect(toastAdd).toHaveBeenCalledTimes(1);
+      expect(toastAdd).toHaveBeenCalledWith({ severity: "error", detail: message });
+      expect(wrapper.text()).not.toContain(message);
+      wrapper.unmount();
+      expect(toastRemove).toHaveBeenCalledWith({ severity: "error", detail: message });
+    } finally {
+      removeContextualActions("test-refusal");
+    }
+  });
+
   it("notifies a preflight refusal once, without a second Execution Failed toast", async () => {
     workbookStore.activeIndex = 0;
     const wrapper = await mountBuilder();

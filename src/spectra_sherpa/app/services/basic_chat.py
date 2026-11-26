@@ -222,9 +222,9 @@ def protect_plaintext_endpoint_key(env_paths) -> bool:
     return migrated
 
 
-def is_configured() -> bool:
+def is_configured(config: ChatEndpointConfig | None = None) -> bool:
     """Return whether the selected local-assistance transport has its required configuration."""
-    config = get_config()
+    config = config if config is not None else get_config()
     try:
         chat_provider = get_chat_provider(config.provider)
     except ValueError:

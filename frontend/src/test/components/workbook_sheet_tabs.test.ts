@@ -35,6 +35,15 @@ const mountTabs = (
   });
 
 describe("WorkbookSheetTabs", () => {
+  it("makes the scope visible and distinguishes two sheets with the same name", () => {
+    const name = "PLS Regression Calibration — development";
+    const wrapper = mountTabs({ sheets: sheets.map((sheet) => ({ ...sheet, name })) });
+    const tabs = wrapper.findAll(".sheet-tab");
+    expect(tabs.map((tab) => tab.attributes("aria-label"))).toEqual([`${name} (#1)`, `${name} (#2)`]);
+    expect(tabs.map((tab) => tab.find(".sheet-name-start").text())).toEqual(["development", "development"]);
+    expect(tabs[0].attributes("aria-current")).toBe("true");
+  });
+
   it("resets the active sheet portfolio color from the plus menu below Analysis Starter", () => {
     const wrapper = mountTabs({ activeIndex: 1 });
     const actions = wrapper.findComponent({ name: "Menu" }).props("model");

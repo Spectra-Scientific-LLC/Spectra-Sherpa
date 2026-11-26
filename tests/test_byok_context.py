@@ -21,7 +21,7 @@ def local(monkeypatch):
     config = ChatEndpointConfig("ollama", "http://127.0.0.1:11434/v1", "", "fixture", True)
     monkeypatch.setattr(basic_chat, "get_config", lambda: config)
     monkeypatch.setattr(chat._chat_limiter, "allow", lambda *_: True)
-    monkeypatch.setenv("SPECTRA_BYOK_CONTEXT_TOKENS", "4096")
+    monkeypatch.delenv("SPECTRA_BYOK_CONTEXT_TOKENS", raising=False)
     return config
 
 
@@ -46,6 +46,8 @@ async def test_missing_pair_and_privacy_refuse_without_provider(local, monkeypat
         {"message": "Can I compare this with my previous run?", "workbench_view": reading("results", run_id=42)}
     )
     assert missing[0] == {"type": "facts", "lines": [byok_reply.CHOOSE_PAIR]}
+    unselected = await events({"message": "Explain the dataset", "workbench_view": reading("dataset")})
+    assert unselected[0] == {"type": "notice", "text": byok_reply.DATASET_NOT_READY}
     read.assert_not_awaited()
     blocked = await events(
         {"message": "Compare absorbance and transmittance", "workbench_view": reading("dataset", dataset_id="data")}
@@ -93,7 +95,7 @@ async def test_facts_sources_and_provider_body_are_separate(local, monkeypatch):
         "history": [{"role": "user", "content": "This must not be forwarded"}],
     }
     reply = await events(body)
-    assert reply[0]["lines"] == ["Based on Run #42", "Held-out test · protein · eval · RMSE 0.42 %, R2 0.93"]
+    assert reply[0]["lines"] == ["Based on Run #42", "Held-out test · protein · RMSE 0.42 %, R² 0.93"]
     assert reply[0]["provider"] == "ollama" and reply[0]["model"] == "fixture"
     assert reply[1] == {"type": "chunk", "text": "The other run is better."}
     assert len(captured) == 1

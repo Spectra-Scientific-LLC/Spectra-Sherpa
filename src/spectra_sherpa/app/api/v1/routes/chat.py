@@ -136,6 +136,10 @@ async def chat_stream(
                     yield _event("facts", lines=[byok_reply.CHOOSE_PAIR])
                     yield _event("done")
                     return
+                if view.screen == "dataset" and view.dataset_id is None:
+                    yield _event("notice", text=byok_reply.DATASET_NOT_READY)
+                    yield _event("done")
+                    return
                 evidence = await read_workbench_evidence(async_session, user.id, view)
                 if evidence.facts:
                     await evidence.revalidate(async_session)

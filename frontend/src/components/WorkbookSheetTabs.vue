@@ -27,8 +27,9 @@
             type="button"
             class="sheet-tab"
             :class="{ active: index === activeIndex, trial: sheet.kind === 'trial' }"
-            :title="sheet.name"
-            :aria-label="sheet.name"
+            :title="tabLabels[index].full"
+            :aria-label="tabLabels[index].full"
+            :aria-current="index === activeIndex ? 'true' : undefined"
             :style="tabStyle(sheet, index === activeIndex)"
             :draggable="sheet.kind !== 'trial' && !hasTrialSheets"
             @click="emit('switch', index)"
@@ -70,7 +71,9 @@
                 style="color: var(--ss-panel-accent); font-size: 0.7rem; margin-right: 4px"
                 aria-hidden="true"
               ></i>
-              <span class="sheet-name-start">{{ sheetTabLabel(sheet.name).split('…')[0] }}</span><span v-if="sheetTabLabel(sheet.name).includes('…')" class="sheet-name-end">…{{ sheetTabLabel(sheet.name).split('…').slice(1).join('…') }}</span>
+              <span class="sheet-name-start">{{ tabLabels[index].start }}</span>
+              <span v-if="tabLabels[index].end" class="sheet-name-end">{{ tabLabels[index].end }}</span>
+              <span v-if="tabLabels[index].disambiguator" class="sheet-disambiguator">{{ tabLabels[index].disambiguator }}</span>
             </span>
           </button>
         </template>
@@ -202,6 +205,24 @@ const menu = reactive({
   index: null as number | null,
   x: 0,
   y: 0,
+});
+
+const tabLabels = computed(() => {
+  const displayNames = props.sheets.map(({ name }) => {
+    const separator = name.lastIndexOf(" — ");
+    const shortened = sheetTabLabel(name);
+    // Show the distinguishing part of an explicitly suffixed title first.
+    return shortened !== name && separator >= 0 ? name.slice(separator + 3) : shortened;
+  });
+  const counts = new Map<string, number>();
+  for (const name of displayNames) counts.set(name, (counts.get(name) ?? 0) + 1);
+  return props.sheets.map(({ name, workflowId }, index) => {
+    const displayName = displayNames[index];
+    const disambiguator = (counts.get(displayName) ?? 0) > 1 ? `#${workflowId}` : "";
+    const full = disambiguator ? `${name} (${disambiguator})` : name;
+    const [start, ...tail] = displayName.split("…");
+    return { full, start, end: tail.length ? `…${tail.join("…")}` : "", disambiguator };
+  });
 });
 
 const pendingDeleteSheet = computed(() =>
@@ -461,6 +482,7 @@ watch(
 .sheet-tab-label { display: flex; min-width: 0; }
 .sheet-name-start { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .sheet-name-end { flex-shrink: 0; max-width: 75%; overflow: hidden; text-overflow: ellipsis; }
+.sheet-disambiguator { flex-shrink: 0; margin-inline-start: 0.25rem; }
 
 .sheet-tabs-shell {
   align-items: flex-end;
