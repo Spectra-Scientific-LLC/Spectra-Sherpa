@@ -45,7 +45,7 @@ async def test_missing_pair_and_privacy_refuse_without_provider(local, monkeypat
     missing = await events(
         {"message": "Can I compare this with my previous run?", "workbench_view": reading("results", run_id=42)}
     )
-    assert missing[0] == {"type": "facts", "lines": [byok_reply.CHOOSE_PAIR]}
+    assert missing[0] == {"type": "notice", "text": byok_reply.CHOOSE_PAIR}
     unselected = await events({"message": "Explain the dataset", "workbench_view": reading("dataset")})
     assert unselected[0] == {"type": "notice", "text": byok_reply.DATASET_NOT_READY}
     read.assert_not_awaited()
@@ -108,7 +108,7 @@ async def test_facts_sources_and_provider_body_are_separate(local, monkeypatch):
     monkeypatch.setenv("SPECTRA_BYOK_CONTEXT_TOKENS", "256")
     captured.clear()
     reply = await events(body)
-    assert reply[0]["lines"][-1] == byok_reply.CONTEXT_TOO_SMALL
+    assert reply[1] == {"type": "notice", "text": byok_reply.CONTEXT_TOO_SMALL}
     assert not captured
 
 

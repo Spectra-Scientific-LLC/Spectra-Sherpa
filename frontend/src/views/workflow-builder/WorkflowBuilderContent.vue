@@ -15,6 +15,28 @@
           Campaign candidate
         </span>
       </template>
+      <template #primary>
+        <Button
+          :label="isWorkflowStale ? 'Run (Mod)' : 'Run'"
+          icon="pi pi-play"
+          data-action="run_workflow"
+          class="p-button-sm"
+          :loading="isExecuting || isBatchExecuting"
+          :disabled="
+            workflowContextLoading ||
+            isTrialTabActive ||
+            isManagedCandidateAuthority ||
+            retainedReadOnly ||
+            pendingDataSelection ||
+            nodes.length === 0 ||
+            workflowParameterErrors.length > 0 ||
+            isExecuting ||
+            isBatchExecuting
+          "
+          @click="onRunClick"
+          :title="runButtonTitle"
+        />
+      </template>
         <div class="toolbar-action-group">
           <Button v-if="workflowStore.workflowExcludedCount" label="Restore all" icon="pi pi-undo"
             class="p-button-outlined p-button-sm" :disabled="isExecuting || retainedReadOnly"
@@ -37,35 +59,15 @@
             @click="openTemplatePicker"
           />
           <Button
-            :label="isWorkflowStale ? 'Run (Mod)' : 'Run'"
-            icon="pi pi-play"
-            data-action="run_workflow"
-            class="p-button-outlined p-button-sm"
-            :loading="isExecuting || isBatchExecuting"
-            :disabled="
-              workflowContextLoading ||
-              isTrialTabActive ||
-              isManagedCandidateAuthority ||
-              retainedReadOnly ||
-              pendingDataSelection ||
-              nodes.length === 0 ||
-              workflowParameterErrors.length > 0 ||
-              isExecuting ||
-              isBatchExecuting
-            "
-            @click="onRunClick"
-            :title="runButtonTitle"
-          />
-          <Button
             label="Save"
             icon="pi pi-save"
             class="p-button-outlined p-button-sm"
             :loading="autosaveStatus === 'saving'"
-            :disabled="isTrialTabActive || isManagedCandidateAuthority || retainedReadOnly || !hasChanges || workflowParameterErrors.length > 0"
+            :disabled="saveActionDisabled"
             @click="triggerAutosave()"
           />
           <Button label="Compare runs" icon="pi pi-chart-bar" class="p-button-outlined p-button-sm"
-            :disabled="!projectStore.currentProjectId" @click="router.push({ path: '/runs', query: { project: projectStore.currentProjectId, tab: 'run_history' } })"
+            :disabled="!projectStore.currentProjectId" @click="openRunHistory"
             title="Choose saved runs in History; comparison never executes the workflow" />
           <Button
             label="Export"
@@ -320,7 +322,7 @@
         >
           <section v-if="retainedReadOnly && workflowStore.retainedInspection" class="retained-workspace" aria-label="Read-only retained workflow">
             <p role="status">Some analysis steps are unavailable. You can still review the saved settings and results.</p>
-            <Button label="Open saved runs" icon="pi pi-history" @click="router.push({ path: '/runs', query: { project: projectStore.currentProjectId, tab: 'run_history' } })" />
+            <Button label="Open saved runs" icon="pi pi-history" @click="openRunHistory" />
             <RetainedGraphView :graph="workflowStore.retainedInspection.graph" />
           </section>
           <NodeDetailView
@@ -1891,12 +1893,6 @@ const initializeWorkbook = async (respectDeepLink = true) => {
     resetCanvasUi();
     restoreNodeOutputsForActiveSheet();
 
-    toast.add({
-      severity: "info",
-      summary: "Workbook Loaded",
-      detail: `Loaded "${workbookStore.activeSheet?.name || workflowStore.workflowName}"`,
-      life: 3000,
-    });
   } catch (err: unknown) {
     const message = getErrorMessage(err, "Unable to load workflow sheets");
     workbookLoadError.value = message;
@@ -1957,12 +1953,6 @@ watch(
       projectSelectionUnavailable.value = false;
       restoreWorkflowDraftSnapshot();
       restoreNodeOutputsForActiveSheet();
-      toast.add({
-        severity: "info",
-        summary: "Workbook Loaded",
-        detail: `Loaded "${workbookStore.activeSheet?.name || workflowStore.workflowName}"`,
-        life: 3000,
-      });
     } catch (err: unknown) {
       if (!request.isCurrent()) return;
       const message = getErrorMessage(err, "Unable to load workflow sheets");
@@ -2370,9 +2360,18 @@ const exportMenuItems = computed(() => [
   ]),
 ]);
 
+const saveActionDisabled = computed(() =>
+  isTrialTabActive.value || isManagedCandidateAuthority.value || retainedReadOnly.value
+  || !hasChanges.value || workflowParameterErrors.value.length > 0
+);
+
+const openRunHistory = () => {
+  void router.push({ path: "/runs", query: { project: projectStore.currentProjectId, tab: "run_history" } });
+};
+
 const actionMenuItems = computed(() => [
   ...(workflowStore.workflowExcludedCount ? [{ label: `Restore all (${workflowStore.workflowExcludedCount} excluded)`,
-    icon: "pi pi-undo", disabled: isExecuting.value, command: () => workflowStore.restoreWorkflowObservations() }] : []),
+    icon: "pi pi-undo", disabled: isExecuting.value || retainedReadOnly.value, command: () => workflowStore.restoreWorkflowObservations() }] : []),
   {
     label: "Analysis Starter",
     icon: "pi pi-sparkles",
@@ -2381,17 +2380,17 @@ const actionMenuItems = computed(() => [
     command: openTemplatePicker,
   },
   {
-    label: isWorkflowStale.value ? "Run (Mod)" : "Run",
-    icon: "pi pi-play",
-    disabled:
-      isTrialTabActive.value ||
-      isManagedCandidateAuthority.value ||
-      pendingDataSelection.value ||
-      nodes.value.length === 0 ||
-      workflowParameterErrors.value.length > 0 ||
-      isExecuting.value ||
-      isBatchExecuting.value,
-    command: onRunClick,
+    label: "Save",
+    icon: "pi pi-save",
+    disabled: saveActionDisabled.value,
+    loading: autosaveStatus.value === "saving",
+    command: () => triggerAutosave(),
+  },
+  {
+    label: "Compare runs",
+    icon: "pi pi-chart-bar",
+    disabled: !projectStore.currentProjectId,
+    command: openRunHistory,
   },
   {
     label: "Version history…",
@@ -2407,7 +2406,7 @@ const actionMenuItems = computed(() => [
   {
     label: "Export",
     icon: "pi pi-download",
-    disabled: isTrialTabActive.value,
+    disabled: isTrialTabActive.value || retainedReadOnly.value,
     items: exportMenuItems.value,
   },
   ...(!["demo", "pro"].includes(appConfig.value?.siteProfile || "")

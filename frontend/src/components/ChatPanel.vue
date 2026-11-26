@@ -176,6 +176,7 @@
             icon="pi pi-times"
             class="p-button-text p-button-sm chat-close-btn-narrow"
             aria-label="Close chat panel"
+            data-chat-close
             @click="emit('toggle')"
             v-tooltip.bottom="'Close'"
           />
@@ -216,7 +217,7 @@
                 <div v-if="!llmChatAllowed" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
                   <span>Chat access is disabled in Settings &gt; Data &amp; Privacy.</span>
-                  <a class="setup-link" @click="router.push('/settings')">Enable</a>
+                  <button type="button" class="setup-link" @click="openChatPrivacySettings">Enable</button>
                 </div>
                 <div v-else-if="!llmChatEnabled && appMode === 'local'" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
@@ -246,15 +247,21 @@
                     <div
                       v-else-if="message.role === 'assistant'"
                       class="chat-bubble chat-bubble--md"
+                      :class="{ 'byok-turn': message.workbenchFacts?.length || message.workbenchNotice }"
                     >
-                      <div v-if="message.workbenchFacts?.length" class="byok-facts">
+                      <section v-if="message.workbenchFacts?.length" class="byok-facts" :aria-label="message.workbenchFactsVersion === 1 ? 'Workbench evidence' : undefined">
+                        <strong v-if="message.workbenchFactsVersion === 1">Workbench evidence</strong>
                         <p v-for="(line, index) in message.workbenchFacts" :key="index">{{ line }}</p>
-                      </div>
+                      </section>
                       <template v-if="message.content">
                         <strong v-if="message.modelAttribution">{{ message.modelAttribution }}</strong>
                         <ChatMarkdown :source="message.content" :supplier="llmSupplier" />
                         <FollowUpChips v-if="!message.workbenchFacts" :suggestions="splitFollowUps(message.content).suggestions" @select="sendLlmFollowUp" />
                       </template>
+                      <div v-if="message.workbenchNotice" class="byok-notice" role="status">
+                        <strong>Notice</strong>
+                        <p>{{ message.workbenchNotice }}</p>
+                      </div>
                     </div>
                     <div v-else class="chat-bubble">{{ message.content }}</div>
                   </div>
@@ -464,10 +471,18 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (event: "toggle"): void;
+  (event: "reveal-workspace"): void;
 }>();
 
 const router = useRouter();
 const route = useRoute();
+
+async function openChatPrivacySettings(): Promise<void> {
+  if (route.path === "/settings" || !await router.push("/settings")) {
+    emit("reveal-workspace");
+  }
+}
+
 const store = useLlmStore();
 const sherpaStore = useSherpaStore();
 const advisorStore = useAdvisorStore();
@@ -1892,11 +1907,14 @@ const collapsed = computed(() => props.collapsed);
   color: var(--ss-warning);
 }
 
-.byok-facts {
-  margin-bottom: 0.5rem;
+.byok-facts,
+.byok-notice {
+  border-block-start: 1px solid var(--surface-border);
+  padding-block: 0.5rem;
 }
 
-.byok-facts p {
+.byok-facts p,
+.byok-notice p {
   margin: 0.25rem 0;
 }
 
@@ -1935,10 +1953,18 @@ const collapsed = computed(() => props.collapsed);
 
 .chat-bubble {
   max-width: 70%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 8px 12px;
   border-radius: 12px;
   background: var(--ss-border);
   white-space: pre-wrap;
+}
+
+.chat-bubble.byok-turn {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .chat-message.user .chat-bubble {
@@ -2134,6 +2160,15 @@ const collapsed = computed(() => props.collapsed);
   font-weight: 600;
 }
 
+.chat-bubble--md :deep(.chat-markdown) {
+  overflow-x: auto;
+}
+
+.chat-bubble--md :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
 .chat-bubble--md :deep(table) {
   border-collapse: collapse;
   margin: 0.4em 0;
@@ -2184,7 +2219,8 @@ const collapsed = computed(() => props.collapsed);
 }
 
 .chat-panel.compact .chat-view {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   min-height: 0;
 }
 
@@ -2257,6 +2293,10 @@ const collapsed = computed(() => props.collapsed);
 }
 
 .setup-link {
+  background: none;
+  border: 0;
+  font: inherit;
+  padding: 0;
   color: var(--primary-color);
   cursor: pointer;
   font-weight: 500;
@@ -2285,7 +2325,7 @@ const collapsed = computed(() => props.collapsed);
 .chat-close-btn-narrow {
   display: none !important;
 }
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .chat-close-btn-narrow {
     display: inline-flex !important;
   }

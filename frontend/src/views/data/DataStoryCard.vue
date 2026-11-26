@@ -1,19 +1,22 @@
 <template>
-  <section class="data-story-card" :class="{ 'data-story-card--unavailable': !available }" aria-label="Data Story">
+  <RouterLink v-if="!available && isLocal" to="/settings" class="data-story-setup">
+    Set up BYO Chat for Data Story
+  </RouterLink>
+  <span v-else-if="!available" class="data-story-setup">Data Story is unavailable for this deployment.</span>
+  <section v-else class="data-story-card" aria-label="Data Story">
     <div class="data-story-heading">
       <div>
         <h3>Data Story <span class="ai-label">AI-assisted</span></h3>
       </div>
-      <span v-if="available && loading" role="status">Generating…</span>
+      <span v-if="loading" role="status">Generating…</span>
     </div>
     <div class="data-story-body" aria-live="polite">
-      <p v-if="!available">{{ unavailableMessage }}</p>
-      <p v-else-if="!ready">{{ unavailableReason || (sourceKey ? "Finishing dataset details…" : "Choose a dataset to review its story.") }}</p>
+      <p v-if="!ready">{{ unavailableReason || (sourceKey ? "Finishing dataset details…" : "Choose a dataset to review its story.") }}</p>
       <ChatMarkdown v-else-if="dataStore.dataStoryText" :source="dataStore.dataStoryText" />
       <p v-else-if="loading">Reviewing the selected data and sample metadata…</p>
       <p v-else>Generate a story for this dataset.</p>
     </div>
-    <div v-if="available" class="data-story-question">
+    <div class="data-story-question">
       <InputText
         v-model="dataStore.dataStoryContext"
         aria-label="Specific Data Story question"
@@ -50,11 +53,9 @@ const props = defineProps<{
 }>();
 const dataStore = useDataStore();
 const { appMode, isFeatureEnabled } = useAppConfig();
+const isLocal = computed(() => appMode.value === "local");
 const available = computed(() => isFeatureEnabled("sherpaDataStory") ||
-  (appMode.value === "local" && isFeatureEnabled("chatAssistant")));
-const unavailableMessage = computed(() => appMode.value === "local"
-  ? "Configure a local chat endpoint in Settings to generate a Data Story."
-  : "Data Story is unavailable for this deployment.");
+  (isLocal.value && isFeatureEnabled("chatAssistant")));
 const loading = computed(() => dataStore.dataStoryLoading);
 let displayedKey: string | null = null;
 
@@ -88,8 +89,7 @@ function regenerate(): void {
   margin-bottom: 16px;
   padding: 16px;
 }
-.data-story-card--unavailable { height: auto; }
-.data-story-card--unavailable .data-story-body p { margin-bottom: 0; }
+.data-story-setup { display: inline-block; margin-bottom: .75rem; font-size: .875rem; }
 .data-story-heading,
 .data-story-question {
   align-items: center;
@@ -104,5 +104,6 @@ function regenerate(): void {
 .data-story-question input { flex: 1; min-width: 0; }
 @media (max-width: 640px) {
   .data-story-card { max-height: none; }
+  .data-story-question { flex-wrap: wrap; }
 }
 </style>

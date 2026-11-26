@@ -121,7 +121,27 @@ describe("LLM Store local BYO chat", () => {
     expect(llm.messages.at(-1)).toMatchObject({
       content: "The other run is better.",
       workbenchFacts: ["Based on Run #42"],
+      workbenchFactsVersion: 1,
       modelAttribution: "Model explanation · ollama · fixture",
+    });
+  });
+
+  it.each([
+    { type: "notice", text: "Context window is too small" },
+    { type: "error", detail: "Provider request failed" },
+  ])("keeps a $type event separate from the saved workbench facts", async (event) => {
+    const llm = useLlmStore();
+    fetchMock.mockResolvedValueOnce(makeSseResponse(
+      { type: "facts", lines: ["Based on Run #42"] },
+      event,
+      { type: "done" },
+    ));
+    await llm.sendMessage("Explain this run");
+    expect(llm.messages.at(-1)).toMatchObject({
+      content: "",
+      workbenchFacts: ["Based on Run #42"],
+      workbenchFactsVersion: 1,
+      workbenchNotice: event.text ?? event.detail,
     });
   });
 
