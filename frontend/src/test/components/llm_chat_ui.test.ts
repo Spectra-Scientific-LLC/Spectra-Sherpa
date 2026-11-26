@@ -418,6 +418,18 @@ describe("ChatPanel", () => {
     },
   );
 
+  it("reveals Settings from the chat privacy notice", async () => {
+    mocks.apiGet.mockImplementation((url: string) => Promise.resolve({
+      data: url === "/egress/defaults" ? { allow_llm_chat: false } : [],
+    }));
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+    await wrapper.get("button.setup-link").trigger("click");
+    await flushPromises();
+    expect(mocks.routerPush).toHaveBeenCalledWith("/settings");
+    expect(wrapper.emitted("reveal-workspace")).toHaveLength(1);
+  });
+
   it("shows local BYO endpoint setup copy in local mode", async () => {
     const wrapper = mountWithUiStubs(ChatPanel);
     await flushPromises();

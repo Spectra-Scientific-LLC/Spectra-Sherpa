@@ -121,6 +121,7 @@ describe("LLM Store local BYO chat", () => {
     expect(llm.messages.at(-1)).toMatchObject({
       content: "The other run is better.",
       workbenchFacts: ["Based on Run #42"],
+      workbenchFactsVersion: 1,
       modelAttribution: "Model explanation · ollama · fixture",
     });
   });
@@ -139,6 +140,7 @@ describe("LLM Store local BYO chat", () => {
     expect(llm.messages.at(-1)).toMatchObject({
       content: "",
       workbenchFacts: ["Based on Run #42"],
+      workbenchFactsVersion: 1,
       workbenchNotice: event.text ?? event.detail,
     });
   });

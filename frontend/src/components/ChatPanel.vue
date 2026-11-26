@@ -217,7 +217,7 @@
                 <div v-if="!llmChatAllowed" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
                   <span>Chat access is disabled in Settings &gt; Data &amp; Privacy.</span>
-                  <a class="setup-link" @click="router.push('/settings')">Enable</a>
+                  <button type="button" class="setup-link" @click="openChatPrivacySettings">Enable</button>
                 </div>
                 <div v-else-if="!llmChatEnabled && appMode === 'local'" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
@@ -249,8 +249,8 @@
                       class="chat-bubble chat-bubble--md"
                       :class="{ 'byok-turn': message.workbenchFacts?.length || message.workbenchNotice }"
                     >
-                      <section v-if="message.workbenchFacts?.length" class="byok-facts" aria-label="Workbench evidence">
-                        <strong>Workbench evidence</strong>
+                      <section v-if="message.workbenchFacts?.length" class="byok-facts" :aria-label="message.workbenchFactsVersion === 1 ? 'Workbench evidence' : undefined">
+                        <strong v-if="message.workbenchFactsVersion === 1">Workbench evidence</strong>
                         <p v-for="(line, index) in message.workbenchFacts" :key="index">{{ line }}</p>
                       </section>
                       <template v-if="message.content">
@@ -471,10 +471,18 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (event: "toggle"): void;
+  (event: "reveal-workspace"): void;
 }>();
 
 const router = useRouter();
 const route = useRoute();
+
+async function openChatPrivacySettings(): Promise<void> {
+  if (route.path === "/settings" || !await router.push("/settings")) {
+    emit("reveal-workspace");
+  }
+}
+
 const store = useLlmStore();
 const sherpaStore = useSherpaStore();
 const advisorStore = useAdvisorStore();
@@ -2152,6 +2160,15 @@ const collapsed = computed(() => props.collapsed);
   font-weight: 600;
 }
 
+.chat-bubble--md :deep(.chat-markdown) {
+  overflow-x: auto;
+}
+
+.chat-bubble--md :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
 .chat-bubble--md :deep(table) {
   border-collapse: collapse;
   margin: 0.4em 0;
@@ -2276,6 +2293,10 @@ const collapsed = computed(() => props.collapsed);
 }
 
 .setup-link {
+  background: none;
+  border: 0;
+  font: inherit;
+  padding: 0;
   color: var(--primary-color);
   cursor: pointer;
   font-weight: 500;

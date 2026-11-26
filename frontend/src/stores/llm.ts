@@ -39,6 +39,7 @@ function normalizeLlmMessages(raw: unknown): LlmMessage[] {
       content: typeof msg.content === "string" ? msg.content : "",
       ...(Array.isArray(msg.workbenchFacts) && msg.workbenchFacts.every(line => typeof line === "string")
         ? { workbenchFacts: msg.workbenchFacts } : {}),
+      ...(msg.workbenchFactsVersion === 1 ? { workbenchFactsVersion: 1 as const } : {}),
       ...(typeof msg.workbenchNotice === "string" ? { workbenchNotice: msg.workbenchNotice } : {}),
       ...(typeof msg.modelAttribution === "string" ? { modelAttribution: msg.modelAttribution } : {}),
     };
@@ -860,6 +861,7 @@ export const useLlmStore = defineStore("llm", () => {
               lastMessage.workbenchNotice = payload.text;
             } else if (Array.isArray(payload.lines) && payload.lines.every(line => typeof line === "string")) {
               lastMessage.workbenchFacts = payload.lines;
+              lastMessage.workbenchFactsVersion = 1;
               if (typeof payload.provider === "string" && typeof payload.model === "string") {
                 lastMessage.modelAttribution = `Model explanation · ${payload.provider} · ${payload.model}`;
               }

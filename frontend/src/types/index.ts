@@ -321,6 +321,8 @@ export interface LlmMessage {
   role: "user" | "assistant" | "system";
   content: string;
   workbenchFacts?: string[];
+  /** v1 records notices separately from evidence. */
+  workbenchFactsVersion?: 1;
   workbenchNotice?: string;
   modelAttribution?: string;
 }

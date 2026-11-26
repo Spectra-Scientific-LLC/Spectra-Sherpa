@@ -74,6 +74,7 @@
         :collapsed="chatCollapsed"
         @toggle="toggleChat"
         @keydown.esc="closeCompactChat"
+        @reveal-workspace="closeCompactChat"
       />
     </div>
 
@@ -229,8 +230,8 @@ const toggleChat = async () => {
   workspaceElement.value?.querySelector<HTMLElement>(target)?.focus();
 };
 
-function closeCompactChat(event: KeyboardEvent): void {
-  if (fullWidthChat.value && !chatCollapsed.value && !event.defaultPrevented) {
+function closeCompactChat(event?: KeyboardEvent): void {
+  if (fullWidthChat.value && !chatCollapsed.value && !event?.defaultPrevented) {
     void toggleChat();
   }
 }

@@ -401,6 +401,15 @@ describe("MainLayout chat panel defaults", () => {
     expect(wrapper.findComponent(ChatPanelStub).props("collapsed")).toBe(false);
   });
 
+  it.each([true, false])("only closes compact chat when it reveals the workspace (%s)", async (isCompact) => {
+    mocks.isNarrow.value = isCompact;
+    localStorage.setItem("chatCollapsed", "false");
+    const wrapper = mount(MainLayout, mainLayoutMountOptions);
+    wrapper.getComponent(ChatPanelStub).vm.$emit("reveal-workspace");
+    await nextTick();
+    expect(wrapper.getComponent(ChatPanelStub).props("collapsed")).toBe(isCompact);
+  });
+
   it("renders standalone routes without the application chrome", () => {
     mocks.routeMeta.standalone = true;
     const wrapper = mount(MainLayout, mainLayoutMountOptions);
