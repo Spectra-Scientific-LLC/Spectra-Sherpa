@@ -59,7 +59,7 @@ import { usePrimaryNavigation } from "@/composables/usePrimaryNavigation";
 import { useAuthStore } from "@/stores/auth";
 import { activeProjectScope } from "@/stores/projectScopeRegistry";
 import {
-  registerContextualActions, removeContextualActions, invalidateActionContext,
+  registerContextualActions, removeContextualActions, invalidateActionContext, getActionContext,
 } from "@/composables/useContextualActions";
 
 export interface ServerModuleShell {
@@ -217,6 +217,7 @@ function buildContext(
         if (!scope) throw new Error("Contextual actions require a versioned extension registration");
         registerContextualActions(contributorId, actions, scope.current);
       },
+      getActionContext: () => scope?.current() ? getActionContext() : null,
       setProjectCollections: (loader) => {
         if (!scope?.current()) return;
         scope.cleanups.push(installProjectCollections(async (projectId) => {

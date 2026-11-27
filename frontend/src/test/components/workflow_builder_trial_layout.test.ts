@@ -863,7 +863,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     expect(context.text()).not.toContain("ProjectIris PCA");
     expect(context.text()).toContain("Data PortfolioSynthetic Atmospheric FTIR");
     expect(context.text()).not.toContain("1 dataset bound");
-    expect(context.findAll(".workspace-context-item")[2]?.get("strong").attributes("title")).toBe(
+    expect(context.get(".workspace-context-item strong").attributes("title")).toBe(
       "Synthetic Atmospheric FTIR",
     );
     wrapper.unmount();

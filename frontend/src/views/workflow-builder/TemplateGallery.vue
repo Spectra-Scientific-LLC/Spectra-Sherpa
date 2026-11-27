@@ -31,8 +31,7 @@ const { isFeatureEnabled } = useAppConfig();
 const isGuided = (template: WorkflowTemplate) =>
   Boolean(template.template_data?.governed_procedure) && isFeatureEnabled("guidedProcedures");
 const GUIDED_TOOLTIP =
-  "Guided on this site: open your dataset in My Dataset and choose Design calibration to design, approve, "
-  + "freeze and evaluate once, with AI assistance.";
+  "Run development on the selected data, then choose final held-out evaluation from the saved model.";
 
 const isTemplateDisabled = (template: WorkflowTemplate): boolean =>
   templateStatus(template) !== "ready" ||

@@ -1,5 +1,7 @@
 """Deployment-profile projection of canonical scientific analysis starters."""
 
+from collections.abc import Awaitable, Callable
+
 from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
 from spectra_sherpa.app.services.dag.node_base import node_registry
 
@@ -54,3 +56,19 @@ def template_admitted_in_profile(template: WorkflowTemplate) -> bool:
         except (KeyError, TypeError, ValueError):
             return False
     return True
+
+
+# The hosted deployment can substitute a governed development sheet after
+# the shared template boundary has admitted and resolved its source bindings.
+_template_launch = None
+
+
+def set_template_launch_handler(handler: Callable[..., Awaitable] | None) -> None:
+    global _template_launch
+    _template_launch = handler
+
+
+async def launch_host_template(**kwargs):
+    if _template_launch is None:
+        return None
+    return await _template_launch(**kwargs)

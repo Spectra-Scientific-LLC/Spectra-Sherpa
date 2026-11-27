@@ -75,20 +75,27 @@ function available(item: Contribution): boolean {
   try {
     const active = context.value;
     const surfaces = item.action.surfaces ?? ["run", "deploy"];
-    return item.current() && active !== null && surfaces.includes(active.surface) && item.action.available(active);
+    return item.current() && active !== null && surfaces.includes(active.surface)
+      && (active.surface !== "workflow" || !active.unsaved || item.action.placement === "workflow-run")
+      && item.action.available(active);
   } catch {
     return false;
   }
 }
 
+export function getActionContext() {
+  return context.value;
+}
+
 const actions = computed(() => contributions.value.filter(available).map(({ key, action }) => ({
-  key, label: action.label, icon: action.icon,
+  key, label: action.label, icon: action.icon, placement: action.placement,
+  disabled: context.value ? action.disabled?.(context.value) === true : true,
 })));
 
 async function execute(key: string): Promise<void> {
   const item = contributions.value.find((entry) => entry.key === key);
   const snapshot = context.value;
-  if (!item || !snapshot || running.value || !available(item)) return;
+  if (!item || !snapshot || running.value || !available(item) || item.action.disabled?.(snapshot)) return;
   const controller = new AbortController();
   const currentLease = lease;
   execution = controller;

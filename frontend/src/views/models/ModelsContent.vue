@@ -300,6 +300,7 @@
                 </div>
               </div>
               <div class="detail-actions">
+                <ContextualActions v-if="activeTab === TAB_MODELS && selectedModelActionContext" :context="selectedModelActionContext" />
                 <Button
                   v-if="!isDemoMode || privatePredictionAllowed"
                   :label="selectedModel.is_deploy_ready ? 'Withdraw deploy-ready' : isLocalApplication ? 'Make Application' : 'Review for promotion'"
@@ -552,6 +553,8 @@ import { useToast } from "primevue/usetoast";
 import api from "@/api/client";
 import LabelChips from "@/components/LabelChips.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
+import ContextualActions from "@/components/ContextualActions.vue";
+import type { HostActionContext } from "@/extension-contract/v1";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import { focusSection } from "@/lib/sherpaAttention";
 import { useAdvisorStore } from "@/stores/advisor";
@@ -664,6 +667,12 @@ const headerActionItems = computed(() => [
 const models = ref<ModelSummary[]>([]);
 const modelOverviewRevision = ref(0);
 const selectedModel = ref<ModelSummary | null>(null);
+const selectedModelActionContext = computed<HostActionContext | null>(() => {
+  const model = selectedModel.value;
+  const projectId = projectStore.currentProjectId;
+  if (!model?.source_run_id || projectId == null) return null;
+  return { surface: "model", projectId, runId: model.source_run_id, artifactUid: model.artifact_uid };
+});
 const localModelsCollapsed = ref(false);
 const selectedReferenceEvidence = ref<ReferenceValueEvidence | null>(null);
 const selectedReferenceFitRows = ref<number | null>(null);

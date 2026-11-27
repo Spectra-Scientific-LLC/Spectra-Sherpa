@@ -80,7 +80,7 @@ from spectra_sherpa.app.services.prepared_data import (
     load_prepared_data_overrides_strict,
 )
 from spectra_sherpa.app.services.starter_validation import preview_starter_validation
-from spectra_sherpa.app.services.template_availability import template_admitted_in_profile
+from spectra_sherpa.app.services.template_availability import launch_host_template, template_admitted_in_profile
 from spectra_sherpa.app.services.template_workflow_persistence import persist_template_workflow
 from spectra_sherpa.app.services.workflow_access import require_experiment_access, require_file_access
 from spectra_sherpa.app.services.workflow_data_selections import selection_from_parameters, validate_selection
@@ -2658,6 +2658,28 @@ async def get_matching_datasets(
     return _compute_dataset_matches(data_roles, catalog, certified_datasets=certified)
 
 
+def _require_bound_template_inputs(required_sources, applied_sources, required_targets, applied_targets):
+    missing_bindings = sorted(required_sources.difference(applied_sources))
+    if missing_bindings:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Missing required data bindings for source node(s): {', '.join(missing_bindings)}. "
+                "Templates no longer instantiate with hidden demo data."
+            ),
+        )
+
+    missing_target_bindings = sorted(required_targets.difference(applied_targets))
+    if missing_target_bindings:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Missing required separate target bindings for source node(s): "
+                f"{', '.join(missing_target_bindings)}."
+            ),
+        )
+
+
 @router.post("/{template_id}/instantiate", response_model=WorkflowDetail, status_code=201)
 async def instantiate_template(
     template_id: int,
@@ -2872,25 +2894,9 @@ async def instantiate_template(
             )
 
         if payload.launch_mode != "draft":
-            missing_bindings = sorted(required_source_bindings.difference(applied_bindings))
-            if missing_bindings:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"Missing required data bindings for source node(s): {', '.join(missing_bindings)}. "
-                        "Templates no longer instantiate with hidden demo data."
-                    ),
-                )
-
-            missing_target_bindings = sorted(required_separate_targets.difference(injected_targets))
-            if missing_target_bindings:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Missing required separate target bindings for source node(s): "
-                        f"{', '.join(missing_target_bindings)}."
-                    ),
-                )
+            _require_bound_template_inputs(
+                required_source_bindings, applied_bindings, required_separate_targets, injected_targets
+            )
 
         if payload.launch_mode != "draft":
             await _require_starter_validation(
@@ -2906,6 +2912,20 @@ async def instantiate_template(
                 nodes=nodes_data,
                 edges=edges_data,
             )
+
+        if payload.launch_mode == "user":
+            hosted = await launch_host_template(
+                session=session,
+                actor=current_user,
+                template=template,
+                project_id=payload.project_id,
+                bindings=applied_bindings,
+                validation_goal=payload.validation_goal,
+            )
+            if hosted is not None:
+                await session.commit()
+                committed = True
+                return hosted
 
         first_sheet_order = 0
         if payload.project_id is not None:

@@ -40,14 +40,22 @@
       </div>
     </div>
 
-    <div class="topbar-center">
+    <nav v-if="projectStore.currentProjectId != null" class="topbar-center" aria-label="Workflow progress">
+      <RouterLink v-for="stage in workflowStages" :key="stage.kind" :to="stage.to"
+        class="workflow-stage" :title="stage.detail" :aria-label="`${stage.label}: ${stage.detail}`">
+        <span v-if="stage.state" class="status-light" :class="`status-${stage.state}`" aria-hidden="true"></span>
+        <span>{{ stage.label }}</span>
+      </RouterLink>
+    </nav>
+
+    <div class="topbar-right">
       <details class="connection-status">
         <summary>{{ connectionLabel }}</summary>
         <div class="connection-details">
       <!-- Basic availability; detailed provenance is shown separately. -->
       <div class="provenance-indicators" aria-label="Current project availability">
         <button
-          v-for="record in provenanceLights"
+          v-for="record in supplementalLights"
           :key="record.kind"
           type="button"
           class="status-light"
@@ -94,9 +102,6 @@
       </div>
         </div>
       </details>
-    </div>
-
-    <div class="topbar-right">
       <Button
         v-if="showChatToggle !== false"
         icon="pi pi-comments"
@@ -188,7 +193,7 @@ const llmStore = useLlmStore();
 const authStore = useAuthStore();
 const router = useRouter();
 const { backendConnected } = useBackendStatus();
-const { appMode, siteProfile, hasLLMConfigured, aiPlacement, reloadConfig } = useAppConfig();
+const { appConfig, appMode, siteProfile, hasLLMConfigured, aiPlacement, reloadConfig } = useAppConfig();
 const notificationDrawerVisible = ref(false);
 const aboutVisible = ref(false);
 
@@ -261,6 +266,33 @@ const provenanceLights = computed<ProjectProvenanceRecord[]>(() => provenanceKin
     destination: "/project/provenance",
   },
 ));
+const workflowStageRoutes = {
+  dataset: { label: "Data", to: "/data?tab=my-dataset" },
+  workflow: { label: "Workflow", to: "/workflow" },
+  run: { label: "Results", to: "/runs?tab=inspect" },
+  model: { label: "Models", to: "/runs?tab=models" },
+} as const;
+const workflowStageKinds = Object.keys(workflowStageRoutes) as Array<keyof typeof workflowStageRoutes>;
+const supplementalLights = computed(() => provenanceLights.value.filter(record => !(record.kind in workflowStageRoutes)));
+const workflowStages = computed(() => {
+  const stages = workflowStageKinds.map<{ kind: string; label: string; to: string; state: string; detail: string }>(kind => {
+    const record = provenanceLights.value.find(entry => entry.kind === kind);
+    const state = record ? availabilityState(record) : "missing";
+    return {
+      kind: String(kind),
+      ...workflowStageRoutes[kind],
+      state: state === "healthy" ? "green" : state === "faulty" ? "red" : "gray",
+      detail: record ? availabilityDetail(record) : "Availability not checked",
+    };
+  });
+  if (appConfig?.value?.features?.guidedProcedures) {
+    stages.push({
+      kind: "evaluation", label: "Evaluate", to: "/runs?tab=models", state: "",
+      detail: "Choose final held-out evaluation from an eligible model.",
+    });
+  }
+  return stages;
+});
 const provenanceTooltip = (record: ProjectProvenanceRecord): string =>
   `${record.label}: ${availabilityDetail(record)}${activeProvenance.value?.verified_at ? ` • checked ${new Date(activeProvenance.value.verified_at).toLocaleTimeString()}` : ""}`;
 
@@ -457,10 +489,28 @@ const onProjectChange = async () => {
 }
 
 .topbar-center {
-  flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  gap: 16px;
+  min-width: 0;
+  gap: .25rem .75rem;
+}
+
+.workflow-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  min-height: 1.75rem;
+  color: var(--text-color);
+  font-size: .8rem;
+  text-decoration: none;
+}
+
+.workflow-stage .status-light {
+  width: .55rem;
+  height: .55rem;
+  min-width: .55rem;
 }
 
 .provenance-indicators {
@@ -727,6 +777,11 @@ const onProjectChange = async () => {
   }
 
   .topbar-center {
+    grid-row: 3;
+    grid-column: 1 / -1;
+  }
+
+  .connection-status {
     display: none;
   }
 }
