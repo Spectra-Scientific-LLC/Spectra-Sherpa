@@ -2920,7 +2920,10 @@ async def instantiate_template(
                 template=template,
                 project_id=payload.project_id,
                 bindings=applied_bindings,
+                nodes=nodes_data,
                 validation_goal=payload.validation_goal,
+                workflow_name=payload.workflow_name,
+                workflow_description=payload.workflow_description,
             )
             if hosted is not None:
                 await session.commit()

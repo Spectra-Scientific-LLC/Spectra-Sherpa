@@ -991,7 +991,10 @@ const latestInspectionScope = useScopedRequest(
   () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId, activeTab.value, route.fullPath],
   () => { latestInspectionLoading.value = false; latestInspectionError.value = null; },
 );
-async function openLatestInspection(query: typeof route.query = { ...route.query, tab: "inspect" }): Promise<void> {
+async function openLatestInspection(
+  query: typeof route.query = { ...route.query, tab: "inspect" },
+  replace = false,
+): Promise<void> {
   const projectId = projectStore.currentProjectId;
   if (projectId == null || route.params?.runId || inspectedRunId.value) return;
   const request = latestInspectionScope.begin();
@@ -1004,8 +1007,10 @@ async function openLatestInspection(query: typeof route.query = { ...route.query
     });
     if (!request.isCurrent()) return;
     const id = data.runs[0]?.id;
+    if (id == null && replace) return;
     if (id != null) inspectedRunId.value = String(id);
-    await router.push({ path: id == null ? "/runs" : `/runs/${id}`, query });
+    const destination = { path: id == null ? "/runs" : `/runs/${id}`, query };
+    await (replace ? router.replace(destination) : router.push(destination));
   } catch {
     if (request.isCurrent()) latestInspectionError.value = "The latest run could not be loaded. Open History to retry.";
   } finally {
@@ -1043,7 +1048,16 @@ function applyRunDeepLink(): void {
   else if (activeTab.value === TAB_INSPECT) restoreActiveRunsTab();
   const target = route.query.run;
   const raw = typeof target === "string" && target.length > 0 ? Number.parseInt(target, 10) : NaN;
-  if (!Number.isFinite(raw)) return;
+  if (!Number.isFinite(raw)) {
+    if (linkedTab === TAB_INSPECT && projectContextReady && !restoringRunList) {
+      if (inspectedRunId.value) {
+        void router.replace({ path: `/runs/${inspectedRunId.value}`, query: route.query });
+      } else {
+        void openLatestInspection(route.query, true);
+      }
+    }
+    return;
+  }
   activeTab.value = TAB_RUN_HISTORY;
   runKindFilter.value = "all";
   void inspectRun(raw);
@@ -1079,7 +1093,6 @@ onMounted(async () => {
   restoringRunList = false;
   applyArtifactDeepLink();
   applyRunDeepLink();
-  if (activeTab.value === TAB_INSPECT && !inspectedRunId.value && !route.query.run) void openLatestInspection();
   void syncAdvisorForModelsTab();
 });
 

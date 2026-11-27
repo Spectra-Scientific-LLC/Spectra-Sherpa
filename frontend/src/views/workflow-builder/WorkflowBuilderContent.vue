@@ -254,9 +254,6 @@
       <ul>
         <li v-for="node in nodes" :key="node.id">
           {{ node.label || getNodeLabel(node.type) }}
-          <span v-if="node.type === 'data.train_test_split' && typeof node.params.test_size === 'number'">
-            · Test fraction {{ node.params.test_size }}
-          </span>
         </li>
       </ul>
     </Dialog>
