@@ -300,6 +300,7 @@
                 </div>
               </div>
               <div class="detail-actions">
+                <ContextualActions v-if="activeTab === TAB_MODELS && selectedModelActionContext" :context="selectedModelActionContext" />
                 <Button
                   v-if="!isDemoMode || privatePredictionAllowed"
                   :label="selectedModel.is_deploy_ready ? 'Withdraw deploy-ready' : isLocalApplication ? 'Make Application' : 'Review for promotion'"
@@ -552,6 +553,8 @@ import { useToast } from "primevue/usetoast";
 import api from "@/api/client";
 import LabelChips from "@/components/LabelChips.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
+import ContextualActions from "@/components/ContextualActions.vue";
+import type { HostActionContext } from "@/extension-contract/v1";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import { focusSection } from "@/lib/sherpaAttention";
 import { useAdvisorStore } from "@/stores/advisor";
@@ -664,6 +667,12 @@ const headerActionItems = computed(() => [
 const models = ref<ModelSummary[]>([]);
 const modelOverviewRevision = ref(0);
 const selectedModel = ref<ModelSummary | null>(null);
+const selectedModelActionContext = computed<HostActionContext | null>(() => {
+  const model = selectedModel.value;
+  const projectId = projectStore.currentProjectId;
+  if (!model?.source_run_id || projectId == null) return null;
+  return { surface: "model", projectId, runId: model.source_run_id, artifactUid: model.artifact_uid };
+});
 const localModelsCollapsed = ref(false);
 const selectedReferenceEvidence = ref<ReferenceValueEvidence | null>(null);
 const selectedReferenceFitRows = ref<number | null>(null);
@@ -982,7 +991,10 @@ const latestInspectionScope = useScopedRequest(
   () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId, activeTab.value, route.fullPath],
   () => { latestInspectionLoading.value = false; latestInspectionError.value = null; },
 );
-async function openLatestInspection(query: typeof route.query = { ...route.query, tab: "inspect" }): Promise<void> {
+async function openLatestInspection(
+  query: typeof route.query = { ...route.query, tab: "inspect" },
+  replace = false,
+): Promise<void> {
   const projectId = projectStore.currentProjectId;
   if (projectId == null || route.params?.runId || inspectedRunId.value) return;
   const request = latestInspectionScope.begin();
@@ -995,8 +1007,10 @@ async function openLatestInspection(query: typeof route.query = { ...route.query
     });
     if (!request.isCurrent()) return;
     const id = data.runs[0]?.id;
+    if (id == null && replace) return;
     if (id != null) inspectedRunId.value = String(id);
-    await router.push({ path: id == null ? "/runs" : `/runs/${id}`, query });
+    const destination = { path: id == null ? "/runs" : `/runs/${id}`, query };
+    await (replace ? router.replace(destination) : router.push(destination));
   } catch {
     if (request.isCurrent()) latestInspectionError.value = "The latest run could not be loaded. Open History to retry.";
   } finally {
@@ -1034,7 +1048,16 @@ function applyRunDeepLink(): void {
   else if (activeTab.value === TAB_INSPECT) restoreActiveRunsTab();
   const target = route.query.run;
   const raw = typeof target === "string" && target.length > 0 ? Number.parseInt(target, 10) : NaN;
-  if (!Number.isFinite(raw)) return;
+  if (!Number.isFinite(raw)) {
+    if (linkedTab === TAB_INSPECT && projectContextReady && !restoringRunList) {
+      if (inspectedRunId.value) {
+        void router.replace({ path: `/runs/${inspectedRunId.value}`, query: route.query });
+      } else {
+        void openLatestInspection(route.query, true);
+      }
+    }
+    return;
+  }
   activeTab.value = TAB_RUN_HISTORY;
   runKindFilter.value = "all";
   void inspectRun(raw);
@@ -1070,7 +1093,6 @@ onMounted(async () => {
   restoringRunList = false;
   applyArtifactDeepLink();
   applyRunDeepLink();
-  if (activeTab.value === TAB_INSPECT && !inspectedRunId.value && !route.query.run) void openLatestInspection();
   void syncAdvisorForModelsTab();
 });
 

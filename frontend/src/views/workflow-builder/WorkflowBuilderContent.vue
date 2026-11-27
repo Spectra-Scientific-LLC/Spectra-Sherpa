@@ -21,8 +21,9 @@
           icon="pi pi-play"
           data-action="run_workflow"
           class="p-button-sm"
-          :loading="isExecuting || isBatchExecuting"
+          :loading="isExecuting || isBatchExecuting || Boolean(contextualRunning)"
           :disabled="
+            workflowRunAction?.disabled ||
             workflowContextLoading ||
             isTrialTabActive ||
             isManagedCandidateAuthority ||
@@ -66,9 +67,8 @@
             :disabled="saveActionDisabled"
             @click="triggerAutosave()"
           />
-          <Button label="Compare runs" icon="pi pi-chart-bar" class="p-button-outlined p-button-sm"
-            :disabled="!projectStore.currentProjectId" @click="openRunHistory"
-            title="Choose saved runs in History; comparison never executes the workflow" />
+          <Button label="Review Workflow" icon="pi pi-list" class="p-button-outlined p-button-sm"
+            :disabled="workflowContextLoading || !nodes.length" @click="workflowReviewVisible = true" />
           <Button
             label="Export"
             icon="pi pi-download"
@@ -138,6 +138,7 @@
                 Modeling and selection workflows require an explicit Run.
               </small>
               <label
+                v-if="!workflowRunAction"
                 class="toolbar-state-control"
                 title="Run all scientist-facing analysis sheets in the workbook sequentially"
               >
@@ -145,7 +146,7 @@
                 <span>Run all analysis sheets</span>
               </label>
               <label
-                v-if="runAllSheets"
+                v-if="runAllSheets && !workflowRunAction"
                 class="toolbar-state-control"
                 title="Continue running remaining sheets if one sheet fails"
               >
@@ -160,6 +161,11 @@
           </OverlayPanel>
         </template>
     </WorkspaceHeader>
+    <WorkspaceContext label="Workflow workspace context" layout="workflow">
+      <WorkspaceContextItem label="Data Portfolio" :value="portfolioName" wrap>
+        {{ portfolioSummary }}
+      </WorkspaceContextItem>
+    </WorkspaceContext>
     <PromotionFitContext v-if="route.query.promotion_artifact && workflowStore.workflowId" :artifact-uid="String(route.query.promotion_artifact)" :workflow-id="workflowStore.workflowId" :source-run-id="Number(route.query.promotion_source_run) || null" />
 
     <p v-if="workflowContextLoading" role="status" aria-label="Loading workflow">Loading workflow…</p>
@@ -237,16 +243,20 @@
       @sheet-opened="onTemplateSheetOpened"
     />
 
-    <details class="workflow-context-details">
-      <summary :title="portfolioSummary">Sheet data · {{ portfolioName }} <span class="workflow-context-summary">— {{ portfolioSummary }}</span></summary>
-    <WorkspaceContext label="Workflow workspace context" layout="workflow">
-      <WorkspaceContextItem label="Active Sheet" :value="activeSheetName" :title="`Created ${sheetCreationTime}`" wrap />
-      <WorkspaceContextItem label="Canvas" :value="canvasSummaryLabel" />
-      <WorkspaceContextItem label="Data Portfolio" :value="portfolioName" wrap>
-        {{ portfolioSummary }}
-      </WorkspaceContextItem>
-    </WorkspaceContext>
-    </details>
+    <Dialog v-model:visible="workflowReviewVisible" header="Review Workflow" modal :style="{ width: 'min(42rem, 92vw)' }">
+      <p><strong>{{ activeSheetName }}</strong></p>
+      <h3>Bound inputs</h3>
+      <p>{{ portfolioName }} — {{ portfolioSummary }}</p>
+      <ul v-if="activeWorkflowDataSourceNames.length">
+        <li v-for="name in activeWorkflowDataSourceNames" :key="name">{{ name }}</li>
+      </ul>
+      <h3>Workflow steps</h3>
+      <ul>
+        <li v-for="node in nodes" :key="node.id">
+          {{ node.label || getNodeLabel(node.type) }}
+        </li>
+      </ul>
+    </Dialog>
 
     <!-- Execution status banner -->
     <div v-if="executionCount > 0" class="execution-banner">
@@ -395,6 +405,7 @@ import { captureGuiTrace } from "@/lib/guiTrace";
 import { useConfirmAction } from "@/composables/useConfirmAction";
 import { storeToRefs } from "pinia";
 import Button from "primevue/button";
+import Dialog from "primevue/dialog";
 import Checkbox from "primevue/checkbox";
 import Menu from "primevue/menu";
 import OverlayPanel from "primevue/overlaypanel";
@@ -413,10 +424,10 @@ import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
 import ProjectUnavailable from "@/views/ProjectUnavailable.vue";
 import RetainedGraphView from "@/components/RetainedGraphView.vue";
-import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
-import PromotionFitContext from "@/components/PromotionFitContext.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
+import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import PromotionFitContext from "@/components/PromotionFitContext.vue";
 import { portfolioDetail } from "@/utils/dataPortfolio";
 import { formatTimestamp } from "@/utils/format";
 import VersionHistoryDialog from "@/components/VersionHistoryDialog.vue";
@@ -1439,7 +1450,10 @@ const selectedNodeOutput = computed(() => {
 });
 
 const isTrialTabActive = computed(() => workbookStore.activeSheet?.kind === "trial");
-const { error: contextualError } = useContextualActions();
+const { actions: contextualActions, error: contextualError, running: contextualRunning, execute: executeContextualAction } = useContextualActions();
+const workflowRunAction = computed(() => contextualActions.value.find(action => action.placement === "workflow-run"));
+const workflowReviewVisible = ref(false);
+watch(() => [projectStore.currentProjectId, workflowStore.workflowId], () => { workflowReviewVisible.value = false; });
 watch(contextualError, (detail, _, onCleanup) => {
   if (!detail) return;
   const message = { severity: "error" as const, detail };
@@ -1451,8 +1465,8 @@ const savedWorkflowActionContext = computed<HostActionContext | null>(() => {
   const workflowId = workflowStore.workflowId;
   if (projectId == null || workflowId == null || workbookStore.projectId !== projectId ||
       workbookStore.activeSheet?.workflowId !== workflowId || workflowContextLoading.value ||
-      workflowStore.hasUnsavedChanges || retainedReadOnly.value || isTrialTabActive.value) return null;
-  return { surface: "workflow", projectId, workflowId, workflowHash: workflowStore.workflowHash };
+      retainedReadOnly.value || isTrialTabActive.value) return null;
+  return { surface: "workflow", projectId, workflowId, workflowHash: workflowStore.workflowHash, unsaved: workflowStore.hasUnsavedChanges };
 });
 const isManagedCandidateAuthority = computed(
   () => workbookStore.activeSheet?.purpose === "managed_candidate_authority",
@@ -1561,17 +1575,6 @@ const portfolioSummary = computed(() => {
     "Inspect source nodes for selection details"
   );
 });
-const sheetCreationTime = computed(() => {
-  const created = workbookStore.activeSheet?.createdAt;
-  return created ? formatTimestamp(created) : "Not recorded";
-});
-
-const canvasSummaryLabel = computed(() => {
-  const nodeCount = nodes.value.length;
-  const edgeCount = edges.value.length;
-  return `${nodeCount} node${nodeCount === 1 ? "" : "s"} · ${edgeCount} link${edgeCount === 1 ? "" : "s"}`;
-});
-
 const runButtonTitle = computed(() => {
   if (retainedReadOnly.value) return "Read-only retained workflow: recorded operations are unavailable";
   if (pendingDataSelection.value) {
@@ -2387,10 +2390,10 @@ const actionMenuItems = computed(() => [
     command: () => triggerAutosave(),
   },
   {
-    label: "Compare runs",
-    icon: "pi pi-chart-bar",
-    disabled: !projectStore.currentProjectId,
-    command: openRunHistory,
+    label: "Review Workflow",
+    icon: "pi pi-list",
+    disabled: workflowContextLoading.value || !nodes.value.length,
+    command: () => { workflowReviewVisible.value = true; },
   },
   {
     label: "Version history…",
@@ -2518,6 +2521,10 @@ const onRunClick = async () => {
     return;
   }
   if (focusFirstWorkflowParameterError()) return;
+  if (workflowRunAction.value) {
+    await executeContextualAction(workflowRunAction.value.key);
+    return;
+  }
   if (runAllSheets.value) {
     await executeWorkbook();
   } else {
@@ -2809,9 +2816,6 @@ const onDeleteNode = (nodeId: string) => {
 <style scoped>
 .retained-workspace { overflow: auto; padding: 1rem; width: 100%; }
 
-.workflow-context-details { margin-bottom: .5rem; }
-.workflow-context-details > summary { cursor: pointer; font-size: .875rem; overflow-wrap: anywhere; }
-.workflow-context-summary { color: var(--text-color-secondary); }
 
 /*
   Page-level chrome adopts the canonical Zen vocabulary used on Project /

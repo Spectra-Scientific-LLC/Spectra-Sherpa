@@ -76,7 +76,8 @@ export interface HostPrimaryNavigation {
 export type HostActionContext =
   | { surface: "run"; projectId: number; runId: number; nodeId?: string }
   | { surface: "dataset"; projectId: number; experimentId: number; fileId: number | null; selectionRevision: number }
-  | { surface: "workflow"; projectId: number; workflowId: number; workflowHash: string | null }
+  | { surface: "model"; projectId: number; runId: number; artifactUid: string }
+  | { surface: "workflow"; projectId: number; workflowId: number; workflowHash: string | null; unsaved?: boolean }
   | {
       surface: "deploy";
       projectId: number;
@@ -89,6 +90,8 @@ export interface HostContextualAction {
   label: string;
   icon?: string;
   surfaces?: readonly HostActionContext["surface"][];
+  placement?: "workflow-run";
+  disabled?(context: Readonly<HostActionContext>): boolean;
   available(context: Readonly<HostActionContext>): boolean;
   execute(context: Readonly<HostActionContext>, signal: AbortSignal): void | Promise<void>;
 }
@@ -134,6 +137,7 @@ export interface HostExtensions {
   isCurrent(): boolean;
   setProjectCollections?(loader: HostProjectCollectionsLoader): void;
   addActions(actions: HostContextualAction[]): void;
+  getActionContext?(): Readonly<HostActionContext> | null;
   onDispose(cleanup: () => void): void;
 }
 

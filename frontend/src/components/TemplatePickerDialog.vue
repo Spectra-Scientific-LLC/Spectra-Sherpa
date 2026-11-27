@@ -56,6 +56,11 @@
                 {{ tpl.name }}
                 <span v-if="tpl.slug === preferredTemplateSlug" class="tp-needs-data">Suggested</span>
                 <span
+                  v-if="appConfig?.features?.guidedProcedures && tpl.template_data.governed_procedure"
+                  class="tp-needs-data" title="Run development first. Final evaluation is available from the saved model.">
+                  Separate held-out evaluation
+                </span>
+                <span
                   v-if="!templateRuntimeReady(tpl)"
                   class="tp-needs-data"
                   title="This analysis starter is unavailable in the current server runtime."

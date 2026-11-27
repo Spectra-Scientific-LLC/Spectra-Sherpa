@@ -339,6 +339,7 @@ const mountTopbar = (chatCollapsed = true) =>
         Button: ButtonStub,
         Dropdown: DropdownStub,
         Menu: MenuStub,
+        RouterLink: { props: ["to"], template: '<a :href="to"><slot /></a>' },
       },
     },
   });
@@ -677,7 +678,10 @@ describe("Topbar action hover labels", () => {
 
     const wrapper = mountTopbar(true);
 
-    expect(wrapper.get(`.provenance-indicators [aria-label^="${label}: Available in project."]`).classes()).toContain("status-green");
+    const light = kind === "source"
+      ? wrapper.get(`.provenance-indicators [aria-label^="${label}: Available in project."]`)
+      : wrapper.get(`[aria-label="Workflow progress"] a[href="${kind === "dataset" ? "/data?tab=my-dataset" : "/runs?tab=models"}"] .status-light`);
+    expect(light.classes()).toContain("status-green");
     expect(wrapper.get('.status-indicators [aria-label="Backend: Connected"]').classes()).toContain("status-green");
   });
 
@@ -689,7 +693,7 @@ describe("Topbar action hover labels", () => {
         availability: { state: "faulty", detail: "Model files missing." } }],
     };
     const wrapper = mountTopbar(true);
-    expect(wrapper.get('.provenance-indicators [aria-label^="Calibrated model: Model files missing."]').classes()).toContain("status-red");
+    expect(wrapper.get('[aria-label="Workflow progress"] [aria-label="Models: Model files missing."] .status-light').classes()).toContain("status-red");
   });
 });
 

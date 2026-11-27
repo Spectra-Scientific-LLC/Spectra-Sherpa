@@ -78,6 +78,35 @@ describe("Runs → retained exclusions → Back", () => {
     },
   );
 
+  it("opens the latest run for the project from a Results link on Models and preserves Back", async () => {
+    m.get.mockImplementation(async (path: string) => ({
+      data: path === "/runs" ? { runs: [{ id: 43 }], total: 1 } : [],
+    }));
+    const { router, view } = await mountAt("/runs?tab=models");
+    await router.push("/runs?tab=inspect");
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe("/runs/43?tab=inspect");
+    expect(selectedTab(view)).toBe("Inspect");
+    expect(m.get).toHaveBeenCalledWith("/runs", expect.objectContaining({
+      params: expect.objectContaining({ project_id: 1, limit: 1 }),
+    }));
+    router.back();
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe("/runs?tab=models");
+    expect(selectedTab(view)).toBe("Models");
+    view.unmount();
+  });
+
+  it("keeps the inspected run when returning to Results from Models", async () => {
+    const { router, view } = await mountAt("/runs/42?tab=inspect");
+    await router.push("/runs?tab=models");
+    await router.push("/runs?tab=inspect");
+    await flushPromises();
+    expect(router.currentRoute.value.fullPath).toBe("/runs/42?tab=inspect");
+    expect(selectedTab(view)).toBe("Inspect");
+    view.unmount();
+  });
+
   it("still clears History/Compare selections when leaving for Models", async () => {
     const { router, view } = await mountAt("/runs?tab=run_history");
     await router.push("/runs?tab=models");

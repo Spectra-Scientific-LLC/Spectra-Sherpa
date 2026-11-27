@@ -239,7 +239,7 @@ describe("TemplateGallery explicit qualification states", () => {
     await flushPromises();
     const labels = wrapper.findAll(".template-guided");
     expect(labels.length).toBe(shown ? 1 : 0);
-    if (shown) expect(labels[0].attributes("title")).toContain("Design calibration");
+    if (shown) expect(labels[0].attributes("title")).toContain("saved model");
     features.guidedProcedures = false;
   });
 });
