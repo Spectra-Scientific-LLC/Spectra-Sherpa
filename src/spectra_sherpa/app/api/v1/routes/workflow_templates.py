@@ -2680,6 +2680,49 @@ def _require_bound_template_inputs(required_sources, applied_sources, required_t
         )
 
 
+async def _require_aligned_transfer_sources(
+    template: WorkflowTemplate,
+    payload: "InstantiateTemplateRequest",
+    bindings: dict[str, "DataBindingSpec"],
+    sources: dict[str, Any],
+) -> None:
+    if payload.launch_mode != "user" or template.slug != "calibration_transfer":
+        return
+    from spectra_sherpa.app.services.dag.nodes.data.split_planner import prepare_split_source
+    from spectra_sherpa.app.services.dag.nodes.transfer._core import admit_paired_spectra, paired_specimen_ids
+
+    primary_source = sources.get("primary_1")
+    secondary_source = sources.get("secondary_1")
+    # Certify both partitions before the template's two identical sequential splits.
+    try:
+        reference_binding, source_binding = (bindings.get(key) for key in ("primary_1", "secondary_1"))
+        if reference_binding is None or source_binding is None:
+            raise ValueError("Choose both reference and secondary instrument views.")
+        if reference_binding.experiment_id == source_binding.experiment_id and (
+            reference_binding.file_ids or [reference_binding.file_id]
+        ) == (source_binding.file_ids or [source_binding.file_id]):
+            raise ValueError("Choose distinct reference and secondary instrument views.")
+        curated = any(
+            getattr(source, "extra", {}).get("reference.package_id") == "eigenvector-corn-v1"
+            for source in (primary_source, secondary_source)
+        )
+        declares_specimen_ids = any(
+            "specimen_id" in (getattr(getattr(source, "sample_axis", None), "sample_table", None) or {})
+            for source in (primary_source, secondary_source)
+        )
+        if not curated and not declares_specimen_ids:
+            # Legacy custom standards continue to use the transfer nodes'
+            # matching-label checks at execution.
+            return
+        primary, *_ = await asyncio.to_thread(prepare_split_source, primary_source, None)
+        secondary, *_ = await asyncio.to_thread(prepare_split_source, secondary_source, None)
+        if curated and (paired_specimen_ids(primary) is None or paired_specimen_ids(secondary) is None):
+            raise ValueError("Both Corn instrument views must declare exact specimen IDs.")
+        await asyncio.to_thread(admit_paired_spectra, primary, secondary, require_common_axis=True)
+    except ValueError as exc:
+        raise HTTPException(400, f"Paired transfer could not start: {exc}") from exc
+
+
 @router.post("/{template_id}/instantiate", response_model=WorkflowDetail, status_code=201)
 async def instantiate_template(
     template_id: int,
@@ -2897,6 +2940,8 @@ async def instantiate_template(
             _require_bound_template_inputs(
                 required_source_bindings, applied_bindings, required_separate_targets, injected_targets
             )
+
+        await _require_aligned_transfer_sources(template, payload, applied_bindings, admitted_sources)
 
         if payload.launch_mode != "draft":
             await _require_starter_validation(

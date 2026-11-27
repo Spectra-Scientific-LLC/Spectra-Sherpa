@@ -154,7 +154,24 @@ def _scientific_axis_identity(axis: Mapping[str, object]) -> dict[str, object]:
     return {key: axis[key] for key in ("values", "labels", "quantity", "units")}
 
 
-def _sample_identity(dataset: Any, *, name: str, samples: int) -> tuple[list[str], str]:
+def paired_specimen_ids(dataset: Any) -> list[str] | None:
+    """Read one exact specimen per row for an instrument-transfer standard set."""
+    axis = getattr(dataset, "sample_axis", None)
+    table = getattr(axis, "sample_table", None)
+    if not isinstance(table, dict) or "specimen_id" not in table:
+        return None
+    values = table["specimen_id"]
+    if (
+        not isinstance(values, (list, tuple))
+        or len(values) != getattr(dataset, "n_samples", None)
+        or any(not isinstance(value, str) or not value or value != value.strip() for value in values)
+        or len(set(values)) != len(values)
+    ):
+        raise ValueError("Paired transfer requires exactly one row per declared specimen on each instrument")
+    return list(values)
+
+
+def _legacy_sample_labels(dataset: Any, *, name: str, samples: int) -> list[str]:
     sample_axis = getattr(dataset, "sample_axis", None)
     labels = None if sample_axis is None else getattr(sample_axis, "labels", None)
     if (
@@ -164,8 +181,7 @@ def _sample_identity(dataset: Any, *, name: str, samples: int) -> tuple[list[str
         or len(set(labels)) != samples
     ):
         raise ValueError(f"{name} requires unique sample labels to prove paired transfer identity")
-    normalized = list(labels)
-    return normalized, sha256_json(normalized)
+    return list(labels)
 
 
 def _signal_units(dataset: Any, *, name: str) -> str | None:
@@ -195,18 +211,14 @@ def admit_paired_spectra(
         raise ValueError("calibration transfer requires at least two exactly paired primary/secondary samples")
     if not np.isfinite(primary_matrix).all() or not np.isfinite(secondary_matrix).all():
         raise ValueError("calibration transfer standards must be finite")
-    primary_labels, primary_sample_digest = _sample_identity(
-        primary,
-        name="X_primary",
-        samples=primary_matrix.shape[0],
-    )
-    secondary_labels, secondary_sample_digest = _sample_identity(
-        secondary,
-        name="X_secondary",
-        samples=secondary_matrix.shape[0],
-    )
-    if primary_labels != secondary_labels or primary_sample_digest != secondary_sample_digest:
+    primary_ids = paired_specimen_ids(primary)
+    secondary_ids = paired_specimen_ids(secondary)
+    if primary_ids is None and secondary_ids is None:
+        primary_ids = _legacy_sample_labels(primary, name="X_primary", samples=primary_matrix.shape[0])
+        secondary_ids = _legacy_sample_labels(secondary, name="X_secondary", samples=secondary_matrix.shape[0])
+    if primary_ids is None or primary_ids != secondary_ids:
         raise ValueError("primary and secondary transfer standards do not have identical ordered sample identities")
+    primary_sample_digest = sha256_json(primary_ids)
     primary_axis = _axis_payload(primary, name="X_primary", features=primary_matrix.shape[1])
     secondary_axis = _axis_payload(secondary, name="X_secondary", features=secondary_matrix.shape[1])
     require_compatible_axis_semantics(

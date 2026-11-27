@@ -1008,6 +1008,7 @@ async def get_retained_run_output(
     node_id: str,
     port: str,
     project_id: int = Query(...),
+    projection: Literal["application_identity"] | None = None,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -1031,6 +1032,19 @@ async def get_retained_run_output(
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail="Retained output failed integrity validation.") from exc
+    if projection == "application_identity":
+        if (node_id, port) != ("__application__", "input") or item.state != "exact" or not isinstance(value, dict):
+            raise HTTPException(410, "Exact application input is required for row identities.")
+        axis = value.get("y_axis") or value.get("sample_axis") or {}
+        sample_table = axis.get("sample_table") or {}
+        return {
+            "evidence": item.model_dump(),
+            "application_identity": {
+                "n_samples": value.get("n_samples"),
+                "specimen_ids": sample_table.get("specimen_id"),
+                "sample_ids": sample_table.get("sample_id"),
+            },
+        }
     response = {"evidence": item.model_dump(), "value": value}
     if node_id == "__workflow__" and port == "definition" and isinstance(value, dict):
         from spectra_sherpa.core.node_identity import canonicalize_serialized_workflow

@@ -24,10 +24,21 @@
           <RetainedRunMapLink :run-id="run.id" :project-id="run.project_id" />
         </div>
       </nav>
-      <component :is="scientificComparison ? ScientificComparison : 'div'" :evidence="scientificComparison">
+      <section v-if="classifierRuns.length" aria-label="Classifier comparison eligibility">
+        <p role="status">Classifier ranking is unavailable here. A like-for-like comparison requires the same class definitions and evaluation specimens.</p>
+        <ul>
+          <li v-for="{ run, evaluator, evaluation } in classifierRuns" :key="run.id">
+            <RouterLink :to="{ path: `/runs/${run.id}`, query: { project: run.project_id, tab: 'inspect', node: evaluator?.node_id, presentation: evaluator ? 'confusion' : undefined } }">
+              {{ run.name }} — {{ evaluator ? 'inspect saved classifier evaluation' : 'inspect saved run' }}
+            </RouterLink>
+            <span v-if="evaluation"> · {{ evaluation.n_samples }} evaluated samples · Observed classes: {{ evaluation.observed_labels.join(', ') }}</span>
+          </li>
+        </ul>
+      </section>
+      <component v-if="showScientificComparison" :is="scientificComparison ? ScientificComparison : 'div'" :evidence="scientificComparison">
         <template #[evaluationSlot]>
           <ScientificBasisHelp v-if="!scientificComparison" />
-          <ComparisonEvaluationControls :runs="runs">
+          <ComparisonEvaluationControls v-if="showPairedEvaluation" :runs="runs">
             <label v-for="run in runs" :key="run.id">{{ run.name }}
               <select v-model="selectedModels[run.id]">
                 <option value="">Choose a PLS output</option>
@@ -38,7 +49,7 @@
           </ComparisonEvaluationControls>
         </template>
       </component>
-      <p v-if="scientificComparison" class="qualification-note" role="status">Additional recorded details below; qualified comparisons are shown by evaluation role above.</p>
+      <p v-if="scientificComparison && showScientificComparison" class="qualification-note" role="status">Additional recorded details below; qualified comparisons are shown by evaluation role above.</p>
       <p v-else-if="!rankableMetrics?.length" class="qualification-note" role="status">
         Differences are arithmetic only; ranking requires matching evaluation evidence.
       </p>
@@ -88,7 +99,7 @@
       </div>
       </Panel>
       <Panel header="Recorded node measures" toggleable :collapsed="true">
-        <p class="qualification-note">Producer records; compare qualified evaluation roles above.</p>
+        <p class="qualification-note">Recorded measures for each run.</p>
         <Panel v-for="(run, index) in runs" :key="run.id" :header="comparisonLabel(run.name, index)" toggleable>
           <table class="comparison-matrix" :aria-label="`Recorded measures for ${run.name}`">
             <thead><tr><th scope="col">Measure</th><th scope="col">Value</th></tr></thead>
@@ -390,9 +401,22 @@ interface SavedGraph {
 
 const savedGraphs = ref<Record<string, SavedGraph | null>>({});
 const selectedModels = ref<Record<number, string>>({});
+const savedClassifierEvaluations = ref<Record<number, { n_samples: number; observed_labels: Array<string | number | boolean> }>>({});
+const classifierRuns = computed(() => props.runs.flatMap(run => {
+  const nodes = savedGraphs.value[String(run.id)]?.nodes ?? [];
+  const evaluator = nodes.find(node => node.node_type === "diagnostics.classification_evaluator");
+  return evaluator || nodes.some(node => node.node_type.startsWith("classification."))
+    ? [{ run, evaluator, evaluation: savedClassifierEvaluations.value[run.id] }]
+    : [];
+}));
 // Serialized compatibility is resolved by the backend's derived projection.
 const modelNodes = (id: number) => (savedGraphs.value[String(id)]?.nodes || []).filter(node =>
   node.node_type === 'model.fitted_pls');
+const showPairedEvaluation = computed(() => !classifierRuns.value.length ||
+  props.runs.every(run => modelNodes(run.id).length > 0));
+const showScientificComparison = computed(() => showPairedEvaluation.value ||
+  props.scientificComparison?.items.some(item =>
+    Object.values(item.sections).some(section => section.state !== "unavailable")));
 const pairedRecipes = computed(() => props.runs.flatMap(run => selectedModels.value[run.id]
   ? [{ run_id: run.id, model_node_id: selectedModels.value[run.id], label: run.name }] : []));
 let graphRequest = 0;
@@ -401,6 +425,7 @@ watch(
   async () => {
     const request = ++graphRequest;
     savedGraphs.value = {};
+    savedClassifierEvaluations.value = {};
     selectedModels.value = {};
     await Promise.all(props.runs.map(async (run) => {
       const evidence = (run as ExecutionRunDetail & { evidence_completeness?: { outputs?: Record<string, Record<string, { state?: string }>> } }).evidence_completeness;
@@ -416,6 +441,18 @@ watch(
           savedGraphs.value = { ...savedGraphs.value, [String(run.id)]: graph as SavedGraph };
           const models = modelNodes(run.id);
           if (models.length === 1) selectedModels.value[run.id] = models[0].node_id;
+          const evaluator = classifierRuns.value.find(item => item.run.id === run.id)?.evaluator;
+          if (evaluator && evidence.outputs?.[evaluator.node_id]?.default?.state === 'exact') {
+            const { data } = await api.get(`/runs/${run.id}/outputs/${encodeURIComponent(evaluator.node_id)}/default`, {
+              params: { project_id: run.project_id },
+            }).catch(() => ({ data: null }));
+            const saved = data?.value;
+            if (request === graphRequest && saved?.schema_version === 'spectrasherpa.classification-evaluation/1' &&
+                Number.isSafeInteger(saved.n_samples) && saved.n_samples > 0 &&
+                Array.isArray(saved.observed_labels) && saved.observed_labels.every((label: unknown) => typeof label === 'string' || typeof label === 'boolean' || (typeof label === 'number' && Number.isFinite(label)))) {
+              savedClassifierEvaluations.value[run.id] = { n_samples: saved.n_samples, observed_labels: saved.observed_labels };
+            }
+          }
         }
       } catch {
         if (request === graphRequest)

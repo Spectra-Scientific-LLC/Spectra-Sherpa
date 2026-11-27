@@ -62,6 +62,11 @@ CHANGED = {
     "synthesis.nist_quant_ir_response": "25d2f9668b94d6a437c915d2b9459f2114554b3c4811ff4cebac371b8fac7751",
     "synthesis.ppm_fraction": "b0b7bf7bc4a90871871ef63dc257248243d9c810876d08eb575d02f54bcb75de",
     "synthesis.species": "82791da8613576d1159ff12421787e95f34b4142e127096f49c44c94d2e214a3",
+    # Calibration transfer now uses exact specimen IDs when declared.
+    "transfer.apply_fitted": "225f72e71dca4d5125c12a8db4f905cb6430619f6f2a90f01d5f165e23173611",
+    "transfer.ds": "3ce03ebf8871958910526e2803f62d1b6d53b236ea45c89e198b4c7f5a9f920e",
+    "transfer.pds": "00e4ce583ed4a0afacfeadf8732a61d94ebac66c2d3f5bbd6e69364189bd501e",
+    "transfer.sws": "43e258bad2abab6c88c798e801e2c1cb3cde30cffe06c07e961fc80bdaa98e59",
 }
 
 

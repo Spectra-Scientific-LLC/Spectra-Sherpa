@@ -613,6 +613,7 @@ async def apply_model_to_dataset(
             "training_reference_fit_context": manifest.get("reference_fit_context"),
             "evaluation_reference_value_evidence": evaluation_reference,
             **target_metadata,
+            "response_identity": {"names": response_names, "units": response_units},
         },
     }
     if legacy_warning is not None:

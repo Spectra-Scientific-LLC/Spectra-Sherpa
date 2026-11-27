@@ -209,7 +209,24 @@
                 :title="`${detail?.run.name || 'run'}-${selectedNode || 'validation'}`"
               />
               <p v-if="ledgerUnavailableReason" role="status">{{ ledgerUnavailableReason }}</p>
-              <section v-if="showRetainedValueFallback" aria-label="Retained values">
+              <section v-if="predictionTable" aria-label="Retained predictions">
+                <p v-if="!predictionTable.identityLabel">Specimen IDs were unavailable. Row numbers refer to the saved input.</p>
+                <div class="prediction-table-scroll">
+                  <table class="prediction-table">
+                    <thead><tr>
+                      <th scope="col">Source row</th>
+                      <th v-if="predictionTable.identityLabel" scope="col">{{ predictionTable.identityLabel }}</th>
+                      <th scope="col">{{ predictionTable.heading }}</th>
+                    </tr></thead>
+                    <tbody><tr v-for="row in predictionTable.rows" :key="row.index">
+                      <td>{{ row.index + 1 }}</td>
+                      <td v-if="predictionTable.identityLabel">{{ row.identity }}</td>
+                      <td>{{ typeof row.value === 'number' ? Number(row.value.toPrecision(8)) : 'Unavailable' }}</td>
+                    </tr></tbody>
+                  </table>
+                </div>
+              </section>
+              <section v-else-if="showRetainedValueFallback" aria-label="Retained values">
                 <p>The saved view is unavailable. These values are shown as recorded.</p>
                 <section v-for="(value, port) in values" :key="port">
                   <h3>{{ port }}</h3>
@@ -407,6 +424,46 @@ const presentations = shallowRef<any>(null);
 const nodeInputs = shallowRef<Record<string, any>>({});
 const application = shallowRef<any>(null);
 const applicationOutputs = shallowRef<unknown[]>([]);
+const applicationIdentity = shallowRef<{
+  n_samples?: number; specimen_ids?: unknown[]; sample_ids?: unknown[];
+} | null>(null);
+const predictionTable = computed(() => {
+  if (detail.value?.prediction_context?.role !== 'prediction_only' ||
+      selectedDefinition.value?.node_type !== 'model.load_apply' ||
+      (selectedPresentation.value && selectedPresentation.value.sourcePort !== 'result')) return null;
+  const uid = values.value.model_id;
+  const output = applicationOutputs.value.find(item =>
+    item && typeof item === 'object' && (item as Record<string, unknown>).artifact_uid === uid,
+  ) as {
+    predictions?: unknown[]; sample_indices?: number[];
+    metadata?: { selected_target?: string; target_names?: string[]; response_identity?: { names?: string[]; units?: Array<string | null> } };
+  } | undefined;
+  if (!Array.isArray(output?.predictions) || !Array.isArray(output.sample_indices) ||
+      output.predictions.length !== output.sample_indices.length || !output.predictions.length) return null;
+  const predictions = output.predictions.map(row => Array.isArray(row) && row.length === 1 ? row[0] : row);
+  if (predictions.some(value => value !== null && (typeof value !== 'number' || !Number.isFinite(value)))) return null;
+  const identity = applicationIdentity.value;
+  const indices = output.sample_indices;
+  if (indices.some(index => !Number.isSafeInteger(index) || index < 0 ||
+      (identity?.n_samples != null && index >= identity.n_samples)) || new Set(indices).size !== indices.length) return null;
+  const aligned = (column: unknown[] | undefined) => Array.isArray(column) &&
+    column.length === identity?.n_samples && indices.every(index => typeof column[index] === 'string' && column[index].trim());
+  const hasSpecimens = aligned(identity?.specimen_ids);
+  const hasSamples = aligned(identity?.sample_ids);
+  const column = hasSpecimens ? identity?.specimen_ids : hasSamples ? identity?.sample_ids : undefined;
+  const metadata = output.metadata;
+  const recorded = metadata?.response_identity;
+  const target = metadata?.selected_target || (metadata?.target_names?.length === 1 ? metadata.target_names[0] : undefined)
+    || (recorded?.names?.length === 1 ? recorded.names[0] : undefined);
+  const responseIndex = target ? recorded?.names?.indexOf(target) ?? -1 : -1;
+  // A destination's reference units alone do not establish the model output's units.
+  const units = responseIndex >= 0 ? recorded?.units?.[responseIndex] : undefined;
+  return {
+    identityLabel: hasSpecimens ? 'Specimen ID' : hasSamples ? 'Sample ID (specimen ID unavailable)' : null,
+    heading: `${target ? `Predicted ${target}` : 'Prediction (response name unavailable)'} (${units?.trim() || 'units not recorded'})`,
+    rows: indices.map((index, i) => ({ index, identity: column?.[index], value: predictions[i] })),
+  };
+});
 const applicationTrust = computed(() => applicationOutputs.value.map(applicationTrustView).filter((value): value is ApplicationTrustView => value !== null));
 function applicationMetadata(artifactUid: string): Record<string, unknown> | null {
   const output = applicationOutputs.value.find(item =>
@@ -587,7 +644,7 @@ function clearRunEvidence() {
   releaseSavedRun();
   cache = new Map();
   detail.value = null; definition.value = null; error.value = ''; definitionError.value = '';
-  application.value = null; applicationOutputs.value = []; applicationError.value = '';
+  application.value = null; applicationOutputs.value = []; applicationIdentity.value = null; applicationError.value = '';
   modelSummary.value = null; summaryError.value = ''; loading.value = false;
   baselineWarnings.value = [];
   runNameDraft.value = '';
@@ -629,20 +686,20 @@ function openWorkflow() {
     workflow_id: detail.value.run.workflow_id,
   } });
 }
-function read(node: string, port: string): Promise<any> {
+function read(node: string, port: string, projection?: "application_identity"): Promise<any> {
   const owner = activeRunTicket;
   if (!owner?.isCurrent()) return Promise.reject(new DOMException('Run scope changed.', 'AbortError'));
   const runId = String(route.params.runId);
   const projectId = project.currentProjectId;
-  const key = `${projectId}/${runId}/${node}/${port}`;
+  const key = `${projectId}/${runId}/${node}/${port}/${projection ?? ""}`;
   const evidence = detail.value?.evidence.outputs[node]?.[port];
   if (!evidence?.storage) return Promise.reject(new Error(evidence?.reason || `No retained output: ${node}/${port}`));
   if (!cache.has(key)) {
     // The cache belongs to the run, not an individual node/view. Node changes
     // reject stale presentation effects without aborting another same-run reader.
     cache.set(key, api.get(`/runs/${runId}/outputs/${encodeURIComponent(node)}/${encodeURIComponent(port)}`, {
-      params: { project_id: projectId }, signal: owner.signal,
-    }).then(response => response.data.value));
+      params: { project_id: projectId, projection }, signal: owner.signal,
+    }).then(response => projection ? response.data[projection] : response.data.value));
   }
   return cache.get(key)!;
 }
@@ -755,6 +812,12 @@ async function loadRun(allowProjectSelection = true) {
           if (!request.isCurrent()) return;
         }
         applicationOutputs.value = outputs;
+        if (response.data.prediction_context?.role === 'prediction_only' &&
+            response.data.evidence.outputs.__application__?.input?.state === 'exact') {
+          const identity = await read('__application__', 'input', 'application_identity').catch(() => null);
+          if (!request.isCurrent()) return;
+          applicationIdentity.value = identity;
+        }
       } catch (err) { if (request.isCurrent()) applicationError.value = failure(err); }
     } else if (detail.value.evidence.outputs.__application__?.selection) {
       applicationError.value = 'Application context unavailable: exact selection evidence was not retained.';
@@ -970,6 +1033,9 @@ small { opacity: .7; }
 .result { min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto; font-size: .8rem; }
 details { border-top: 1px solid var(--surface-border); padding: .75rem 0; }
+.prediction-table-scroll { overflow-x: auto; }
+.prediction-table { border-collapse: collapse; text-align: left; }
+.prediction-table th, .prediction-table td { padding: .375rem .75rem; border-bottom: 1px solid var(--surface-border); }
 .audit-details > summary { cursor: pointer; color: var(--text-color-secondary); font-size: .875rem; }
 .audit-details dl, .audit-details > details { margin-top: .75rem; font-size: .875rem; }
 .evidence-gaps { margin-top: 1.25rem; padding: 1rem; border: 1px solid var(--ss-warning); border-radius: .5rem; }
