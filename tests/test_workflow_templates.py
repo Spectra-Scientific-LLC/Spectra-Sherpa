@@ -4107,6 +4107,9 @@ async def test_paired_instrument_transfer_retains_separate_check_spectra(
     reordered = await upload("mispaired", 1.4 * spectra + 0.15, specimen_ids[:-2] + specimen_ids[-2:][::-1])
     masked_m5 = await upload("masked-M5", spectra, specimen_ids, exclude=-2)
     masked_mp5 = await upload("masked-MP5", 1.4 * spectra + 0.15, specimen_ids, exclude=-1)
+    duplicate_ids = specimen_ids[:-1] + [specimen_ids[-2]]
+    masked_duplicate = await upload("duplicate-MP5", 1.4 * spectra + 0.15, duplicate_ids, exclude=-1)
+    matched_m5 = await upload("matched-M5", spectra, specimen_ids, exclude=-1)
 
     async def launch(mp5, m5=primary):
         return await client.post(
@@ -4130,6 +4133,8 @@ async def test_paired_instrument_transfer_retains_separate_check_spectra(
     assert refused.status_code == 400, refused.text
     assert "ordered sample identities" in refused.text
     await test_session.refresh(test_user)
+    admitted = await launch(masked_duplicate, matched_m5)
+    assert admitted.status_code == 201, admitted.text
     created = await launch(secondary)
     assert created.status_code == 201, created.text
     wid = created.json()["id"]
