@@ -25,9 +25,7 @@
         </div>
       </nav>
       <section v-if="classifierRuns.length" aria-label="Classifier comparison eligibility">
-        <p role="status">{{ classifierRuns.length === runs.length
-          ? 'Classifier ranking is unavailable here. A like-for-like comparison requires the same class definitions and evaluation specimens.'
-          : 'Classification and other model results require separate comparisons.' }}</p>
+        <p role="status">Classifier ranking is unavailable here. A like-for-like comparison requires the same class definitions and evaluation specimens.</p>
         <ul>
           <li v-for="{ run, evaluator, evaluation } in classifierRuns" :key="run.id">
             <RouterLink :to="{ path: `/runs/${run.id}`, query: { project: run.project_id, tab: 'inspect', node: evaluator?.node_id, presentation: evaluator ? 'confusion' : undefined } }">
@@ -37,11 +35,10 @@
           </li>
         </ul>
       </section>
-      <template v-else>
-      <component :is="scientificComparison ? ScientificComparison : 'div'" :evidence="scientificComparison">
+      <component v-if="showScientificComparison" :is="scientificComparison ? ScientificComparison : 'div'" :evidence="scientificComparison">
         <template #[evaluationSlot]>
           <ScientificBasisHelp v-if="!scientificComparison" />
-          <ComparisonEvaluationControls :runs="runs">
+          <ComparisonEvaluationControls v-if="showPairedEvaluation" :runs="runs">
             <label v-for="run in runs" :key="run.id">{{ run.name }}
               <select v-model="selectedModels[run.id]">
                 <option value="">Choose a PLS output</option>
@@ -52,8 +49,8 @@
           </ComparisonEvaluationControls>
         </template>
       </component>
-      <p v-if="scientificComparison" class="qualification-note" role="status">Additional recorded details below; qualified comparisons are shown by evaluation role above.</p>
-      <p v-else-if="!rankableMetrics?.length" class="qualification-note" role="status">
+      <p v-if="scientificComparison && showScientificComparison" class="qualification-note" role="status">Additional recorded details below; qualified comparisons are shown by evaluation role above.</p>
+      <p v-else-if="!classifierRuns.length && !rankableMetrics?.length" class="qualification-note" role="status">
         Differences are arithmetic only; ranking requires matching evaluation evidence.
       </p>
 
@@ -102,7 +99,7 @@
       </div>
       </Panel>
       <Panel header="Recorded node measures" toggleable :collapsed="true">
-        <p class="qualification-note">Producer records; compare qualified evaluation roles above.</p>
+        <p class="qualification-note">Recorded measures for each run.</p>
         <Panel v-for="(run, index) in runs" :key="run.id" :header="comparisonLabel(run.name, index)" toggleable>
           <table class="comparison-matrix" :aria-label="`Recorded measures for ${run.name}`">
             <thead><tr><th scope="col">Measure</th><th scope="col">Value</th></tr></thead>
@@ -112,7 +109,6 @@
           </table>
         </Panel>
       </Panel>
-      </template>
     </template>
   </div>
 </template>
@@ -416,6 +412,11 @@ const classifierRuns = computed(() => props.runs.flatMap(run => {
 // Serialized compatibility is resolved by the backend's derived projection.
 const modelNodes = (id: number) => (savedGraphs.value[String(id)]?.nodes || []).filter(node =>
   node.node_type === 'model.fitted_pls');
+const showPairedEvaluation = computed(() => !classifierRuns.value.length ||
+  props.runs.every(run => modelNodes(run.id).length > 0));
+const showScientificComparison = computed(() => showPairedEvaluation.value ||
+  props.scientificComparison?.items.some(item =>
+    Object.values(item.sections).some(section => section.state !== "unavailable")));
 const pairedRecipes = computed(() => props.runs.flatMap(run => selectedModels.value[run.id]
   ? [{ run_id: run.id, model_node_id: selectedModels.value[run.id], label: run.name }] : []));
 let graphRequest = 0;

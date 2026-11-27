@@ -2689,10 +2689,11 @@ async def _require_aligned_transfer_sources(
     if payload.launch_mode != "user" or template.slug != "calibration_transfer":
         return
     from spectra_sherpa.app.lib.sample_identity import paired_specimen_ids
+    from spectra_sherpa.app.services.dag.nodes.data.split_planner import prepare_split_source
     from spectra_sherpa.app.services.dag.nodes.transfer._core import admit_paired_spectra
 
-    primary = sources.get("primary_1")
-    secondary = sources.get("secondary_1")
+    primary_source = sources.get("primary_1")
+    secondary_source = sources.get("secondary_1")
     # Certify both partitions before the template's two identical sequential splits.
     try:
         reference_binding, source_binding = (bindings.get(key) for key in ("primary_1", "secondary_1"))
@@ -2702,8 +2703,13 @@ async def _require_aligned_transfer_sources(
             reference_binding.file_ids or [reference_binding.file_id]
         ) == (source_binding.file_ids or [source_binding.file_id]):
             raise ValueError("Choose distinct reference and secondary instrument views.")
-        if paired_specimen_ids(primary) is None or paired_specimen_ids(secondary) is None:
-            raise ValueError("Both instrument views must declare exact specimen IDs.")
+        primary, *_ = await asyncio.to_thread(prepare_split_source, primary_source, None)
+        secondary, *_ = await asyncio.to_thread(prepare_split_source, secondary_source, None)
+        curated = any(
+            source.extra.get("reference.package_id") == "eigenvector-corn-v1" for source in (primary, secondary)
+        )
+        if curated and (paired_specimen_ids(primary) is None or paired_specimen_ids(secondary) is None):
+            raise ValueError("Both Corn instrument views must declare exact specimen IDs.")
         await asyncio.to_thread(admit_paired_spectra, primary, secondary, require_common_axis=True)
     except ValueError as exc:
         raise HTTPException(400, f"Paired transfer could not start: {exc}") from exc

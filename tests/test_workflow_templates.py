@@ -4080,13 +4080,17 @@ async def test_paired_instrument_transfer_retains_separate_check_spectra(
     spectra = np.random.default_rng(255).normal(size=(80, 12))
     specimen_ids = [f"specimen-{i}" for i in range(80)]
 
-    async def upload(instrument, X, specimens):
+    async def upload(instrument, X, specimens, exclude=None):
+        include = np.ones(len(X), dtype=bool)
+        if exclude is not None:
+            include[exclude] = False
         dataset = SherpaDataset(
             X,
             feature_axis=SpectralAxis(values=np.arange(1100.0, 1112.0), title="Wavelength", units="nm"),
             sample_axis=SampleAxis(
                 labels=[f"{instrument}-{i}" for i in range(80)],
                 sample_table={"specimen_id": specimens},
+                include_mask=include,
             ),
             data_role="X_spectra",
         )
@@ -4101,15 +4105,17 @@ async def test_paired_instrument_transfer_retains_separate_check_spectra(
     primary = await upload("M5", spectra, specimen_ids)
     secondary = await upload("MP5", 1.4 * spectra + 0.15, specimen_ids)
     reordered = await upload("mispaired", 1.4 * spectra + 0.15, specimen_ids[:-2] + specimen_ids[-2:][::-1])
+    masked_m5 = await upload("masked-M5", spectra, specimen_ids, exclude=-2)
+    masked_mp5 = await upload("masked-MP5", 1.4 * spectra + 0.15, specimen_ids, exclude=-1)
 
-    async def launch(mp5):
+    async def launch(mp5, m5=primary):
         return await client.post(
             f"/api/v1/workflow-templates/{template_id}/instantiate",
             json={
                 "project_id": pid,
                 "workflow_name": "MP5 to M5",
                 "launch_mode": "user",
-                "data_bindings": {"primary_1": primary, "secondary_1": mp5},
+                "data_bindings": {"primary_1": m5, "secondary_1": mp5},
             },
         )
 
@@ -4117,6 +4123,10 @@ async def test_paired_instrument_transfer_retains_separate_check_spectra(
     monkeypatch.setattr(db_session, "async_session", async_sessionmaker(test_session.bind, expire_on_commit=False))
     ensure_type_registry_loaded()
     refused = await launch(reordered)
+    assert refused.status_code == 400, refused.text
+    assert "ordered sample identities" in refused.text
+    await test_session.refresh(test_user)
+    refused = await launch(masked_mp5, masked_m5)
     assert refused.status_code == 400, refused.text
     assert "ordered sample identities" in refused.text
     await test_session.refresh(test_user)

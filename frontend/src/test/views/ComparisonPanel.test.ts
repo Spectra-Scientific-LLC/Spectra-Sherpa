@@ -41,7 +41,7 @@ describe('Comparison evaluation qualification', () => {
       : { nodes: [{ node_id: 'eval_1', node_type: 'diagnostics.classification_evaluator' }], edges: [] },
     } }));
     const wrapper = mount(ComparisonPanel, {
-      props: { runs: candidates, metricKeys: ['accuracy'], diff: { accuracy: { '1': .9, '2': .8 } }, rankableMetrics: ['accuracy'] },
+      props: { runs: candidates, metricKeys: ['accuracy'], diff: { accuracy: { '1': .9, '2': .8 } }, rankableMetrics: [] },
       global: { plugins: [PrimeVue, testRouter()] },
     });
     await flushPromises();
@@ -49,7 +49,33 @@ describe('Comparison evaluation qualification', () => {
     expect(eligibility.text()).toContain('same class definitions and evaluation specimens');
     expect(eligibility.text()).toContain('30 evaluated samples · Observed classes: red, white');
     expect(eligibility.get('a').attributes('href')).toBe('/runs/1?project=4&tab=inspect&node=eval_1&presentation=confusion');
-    expect(wrapper.find('.evaluation-controls, .comparison-matrix').exists()).toBe(false);
+    expect(wrapper.find('.evaluation-controls, .metric-best, .delta-positive, .delta-negative').exists()).toBe(false);
+    expect(wrapper.find('table[aria-label="Recorded measures for Run 1"]').text()).toContain('Accuracy');
+    wrapper.unmount();
+  });
+
+  it('preserves qualified regression evidence when a workflow also has a classifier', async () => {
+    const evidence = { outputs: { __workflow__: { definition: { state: 'exact' } } } };
+    const candidates = [1, 2].map(id => ({ ...run(id), project_id: 4, evidence_completeness: evidence }));
+    get.mockResolvedValue({ data: { value: {
+      nodes: [{ node_id: 'eval_1', node_type: 'diagnostics.classification_evaluator' }], edges: [],
+    } } });
+    const population = { verification: 'verified' as const, limitations: [] };
+    const section = { role: 'training_cv' as const, state: 'verified' as const, population, metrics: { rmse: .2 },
+      sample_ids: [], observations: [], predictions: [], reason: '' };
+    const scientificComparison = {
+      schema_version: 'spectrasherpa-scientific-comparison/1' as const,
+      items: candidates.map(candidate => ({
+        reference: { kind: 'run' as const, id: String(candidate.id), provider: 'local', revision: '1' },
+        label: candidate.name, population,
+        sections: { calibration: section, training_cv: section, held_out: section, outlier_challenge: section },
+      })), pairs: [],
+    };
+    const wrapper = mount(ComparisonPanel, { props: { runs: candidates, metricKeys: [], diff: {}, scientificComparison },
+      global: { plugins: [PrimeVue, testRouter()], stubs: { ScientificComparison: { template: '<section aria-label="Qualified evidence" />' } } } });
+    await flushPromises();
+    expect(wrapper.find('[aria-label="Classifier comparison eligibility"]').exists()).toBe(true);
+    expect(wrapper.find('[aria-label="Qualified evidence"]').exists()).toBe(true);
     wrapper.unmount();
   });
 

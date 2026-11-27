@@ -1288,7 +1288,7 @@
                   calibration, test, normal, or fault role is imposed on a new workflow.
                 </small>
               </aside>
-              <div v-if="cornTransferFiles" class="active-view-set">
+              <div v-if="cornTransferTemplateId !== null" class="active-view-set">
                 <Button
                   label="Start Corn instrument transfer"
                   outlined
@@ -3305,11 +3305,33 @@ const cornTransferFiles = computed(() => {
   return reference && secondary ? { reference, secondary } : null;
 });
 
+const cornTransferTemplateId = ref<number | null>(null);
+const cornTransferCatalog = useScopedRequest(
+  () => [...dataScopeIdentity(), authStore.sessionRevision, cornTransferFiles.value?.reference.id, cornTransferFiles.value?.secondary.id],
+  () => { cornTransferTemplateId.value = null; },
+);
+watch(() => [cornTransferFiles.value, ...dataScopeIdentity(), authStore.sessionRevision] as const, async ([files]) => {
+  cornTransferTemplateId.value = null;
+  if (!files) return;
+  const request = cornTransferCatalog.begin();
+  try {
+    const { data } = await api.get<{ templates: Array<{ id: number; slug: string }> }>("/workflow-templates", {
+      signal: request.signal,
+    });
+    if (request.isCurrent()) {
+      cornTransferTemplateId.value = data.templates.find(candidate => candidate.slug === "calibration_transfer")?.id ?? null;
+    }
+  } catch {
+    // The shortcut requires an admitted starter in the current profile.
+  }
+}, { immediate: true });
+
 async function startCornTransfer() {
   const projectId = projectStore.currentProjectId;
   const experimentId = dataStore.activeExperimentId;
   const files = cornTransferFiles.value;
-  if (projectId == null || experimentId == null || !files || startingCornTransfer.value) return;
+  const templateId = cornTransferTemplateId.value;
+  if (projectId == null || experimentId == null || !files || templateId == null || startingCornTransfer.value) return;
   const userId = authStore.user?.id;
   const sessionRevision = authStore.sessionRevision;
   const current = () => authStore.user?.id === userId && authStore.sessionRevision === sessionRevision &&
@@ -3317,11 +3339,7 @@ async function startCornTransfer() {
     cornTransferFiles.value === files;
   startingCornTransfer.value = true;
   try {
-    const { data } = await api.get<{ templates: Array<{ id: number; slug: string }> }>("/workflow-templates");
-    if (!current()) return;
-    const template = data.templates.find(candidate => candidate.slug === "calibration_transfer");
-    if (!template) throw new Error("The instrument transfer starter is unavailable on this site.");
-    const sheet = await workflowStore.instantiateTemplate(template.id, {
+    const sheet = await workflowStore.instantiateTemplate(templateId, {
       workflowName: "Corn instrument transfer — MP5 to M5",
       projectId,
       launchMode: "user",
