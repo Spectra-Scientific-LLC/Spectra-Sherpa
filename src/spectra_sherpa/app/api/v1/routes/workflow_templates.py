@@ -2702,13 +2702,20 @@ async def _require_aligned_transfer_sources(
             reference_binding.file_ids or [reference_binding.file_id]
         ) == (source_binding.file_ids or [source_binding.file_id]):
             raise ValueError("Choose distinct reference and secondary instrument views.")
+        curated = any(
+            getattr(source, "extra", {}).get("reference.package_id") == "eigenvector-corn-v1"
+            for source in (primary_source, secondary_source)
+        )
+        primary_ids = paired_specimen_ids(primary_source)
+        secondary_ids = paired_specimen_ids(secondary_source)
+        if curated and (primary_ids is None or secondary_ids is None):
+            raise ValueError("Both Corn instrument views must declare exact specimen IDs.")
+        if primary_ids is None and secondary_ids is None:
+            # Legacy custom standards continue to use the transfer nodes'
+            # matching-label checks at execution.
+            return
         primary, *_ = await asyncio.to_thread(prepare_split_source, primary_source, None)
         secondary, *_ = await asyncio.to_thread(prepare_split_source, secondary_source, None)
-        curated = any(
-            source.extra.get("reference.package_id") == "eigenvector-corn-v1" for source in (primary, secondary)
-        )
-        if curated and (paired_specimen_ids(primary) is None or paired_specimen_ids(secondary) is None):
-            raise ValueError("Both Corn instrument views must declare exact specimen IDs.")
         await asyncio.to_thread(admit_paired_spectra, primary, secondary, require_common_axis=True)
     except ValueError as exc:
         raise HTTPException(400, f"Paired transfer could not start: {exc}") from exc
