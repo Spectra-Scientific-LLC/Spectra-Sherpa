@@ -2688,9 +2688,8 @@ async def _require_aligned_transfer_sources(
 ) -> None:
     if payload.launch_mode != "user" or template.slug != "calibration_transfer":
         return
-    from spectra_sherpa.app.lib.sample_identity import paired_specimen_ids
     from spectra_sherpa.app.services.dag.nodes.data.split_planner import prepare_split_source
-    from spectra_sherpa.app.services.dag.nodes.transfer._core import admit_paired_spectra
+    from spectra_sherpa.app.services.dag.nodes.transfer._core import admit_paired_spectra, paired_specimen_ids
 
     primary_source = sources.get("primary_1")
     secondary_source = sources.get("secondary_1")

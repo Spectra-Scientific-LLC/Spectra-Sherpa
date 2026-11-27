@@ -50,7 +50,7 @@
         </template>
       </component>
       <p v-if="scientificComparison && showScientificComparison" class="qualification-note" role="status">Additional recorded details below; qualified comparisons are shown by evaluation role above.</p>
-      <p v-else-if="!classifierRuns.length && !rankableMetrics?.length" class="qualification-note" role="status">
+      <p v-else-if="!rankableMetrics?.length" class="qualification-note" role="status">
         Differences are arithmetic only; ranking requires matching evaluation evidence.
       </p>
 

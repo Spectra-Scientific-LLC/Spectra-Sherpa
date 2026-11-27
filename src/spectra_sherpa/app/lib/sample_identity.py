@@ -27,23 +27,6 @@ def sample_ids(dataset: Any) -> list[str] | None:
     return list(values)
 
 
-def paired_specimen_ids(dataset: Any) -> list[str] | None:
-    """Read one exact specimen per row for an instrument-transfer standard set."""
-    axis = getattr(dataset, "sample_axis", None)
-    table = getattr(axis, "sample_table", None)
-    if not isinstance(table, dict) or "specimen_id" not in table:
-        return None
-    values = table["specimen_id"]
-    if (
-        not isinstance(values, (list, tuple))
-        or len(values) != getattr(dataset, "n_samples", None)
-        or any(not isinstance(value, str) or not value or value != value.strip() for value in values)
-        or len(set(values)) != len(values)
-    ):
-        raise ValueError("Paired transfer requires exactly one row per declared specimen on each instrument")
-    return list(values)
-
-
 def require_matching_sample_identity(left: Any, right: Any) -> bool:
     """Check explicit IDs when both exist; legacy labels are only a fallback.
 
