@@ -28891,6 +28891,23 @@
               "title": "Project Id",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "projection",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "application_identity",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Projection"
+            }
           }
         ],
         "responses": {

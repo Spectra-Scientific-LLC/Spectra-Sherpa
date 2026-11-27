@@ -31,6 +31,28 @@ describe('Comparison evaluation qualification', () => {
     expect(get).not.toHaveBeenCalled();
     wrapper.unmount();
   });
+  it('links classifier evaluations and withholds unsupported rankings', async () => {
+    const evidence = { outputs: { __workflow__: { definition: { state: 'exact' } }, eval_1: { default: { state: 'exact' } } } };
+    const candidates = [1, 2].map(id => ({
+      ...run(id), project_id: 4, evidence_completeness: evidence,
+    }));
+    get.mockImplementation(async (url: string) => ({ data: { value: url.endsWith('/default')
+      ? { schema_version: 'spectrasherpa.classification-evaluation/1', n_samples: 30, observed_labels: ['red', 'white'] }
+      : { nodes: [{ node_id: 'eval_1', node_type: 'diagnostics.classification_evaluator' }], edges: [] },
+    } }));
+    const wrapper = mount(ComparisonPanel, {
+      props: { runs: candidates, metricKeys: ['accuracy'], diff: { accuracy: { '1': .9, '2': .8 } }, rankableMetrics: ['accuracy'] },
+      global: { plugins: [PrimeVue, testRouter()] },
+    });
+    await flushPromises();
+    const eligibility = wrapper.get('[aria-label="Classifier comparison eligibility"]');
+    expect(eligibility.text()).toContain('same class definitions and evaluation specimens');
+    expect(eligibility.text()).toContain('30 evaluated samples · Observed classes: red, white');
+    expect(eligibility.get('a').attributes('href')).toBe('/runs/1?project=4&tab=inspect&node=eval_1&presentation=confusion');
+    expect(wrapper.find('.evaluation-controls, .comparison-matrix').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it('shares the available width equally across candidates and wraps long values', () => {
     const runs = [run(1), run(2), run(3)];
     runs[0].name = 'A very long run name that must remain readable at narrow widths';

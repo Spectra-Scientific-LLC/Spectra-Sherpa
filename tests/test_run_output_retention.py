@@ -405,7 +405,18 @@ async def test_metadata_and_independent_retrieval_are_project_authorized(test_se
     project = Project(user_id=test_user.id, name="Retention")
     test_session.add(project)
     await test_session.flush()
-    evidence = retention.retain_run_outputs(test_user.id, {"center": {"default": [[1, 2], [3, 4]]}}, {})
+    from spectra_sherpa.app.lib.axes import SampleAxis
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+    frozen_input = SherpaDataset(
+        np.array([[1, 2], [3, 4]]),
+        sample_axis=SampleAxis(
+            sample_table={"specimen_id": ["corn-001", "corn-002"], "sample_id": ["mp5-001", "mp5-002"]}
+        ),
+    )
+    evidence = retention.retain_run_outputs(
+        test_user.id, {"center": {"default": [[1, 2], [3, 4]]}, "__application__": {"input": frozen_input}}, {}
+    )
     row = ExecutionRun(
         user_id=test_user.id,
         project_id=project.id,
@@ -426,6 +437,21 @@ async def test_metadata_and_independent_retrieval_are_project_authorized(test_se
         row.id, "center", "default", project_id=project.id, session=test_session, current_user=test_user
     )
     assert output["value"] == [[1, 2], [3, 4]]
+    identity = await get_retained_run_output(
+        row.id,
+        "__application__",
+        "input",
+        project_id=project.id,
+        projection="application_identity",
+        session=test_session,
+        current_user=test_user,
+    )
+    assert identity["application_identity"] == {
+        "n_samples": 2,
+        "specimen_ids": ["corn-001", "corn-002"],
+        "sample_ids": ["mp5-001", "mp5-002"],
+    }
+
     with pytest.raises(HTTPException) as denied:
         await get_retained_run_output(
             row.id, "center", "default", project_id=project.id + 1, session=test_session, current_user=test_user

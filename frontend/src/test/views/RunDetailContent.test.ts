@@ -1416,3 +1416,45 @@ it('keeps existing application runs unchanged when no prediction context is reta
   const {wrapper} = await open('?project=1');
   expect(wrapper.find('[aria-label="Prediction scope"]').exists()).toBe(false);
 });
+
+it.each([null, 'mg/g'])('reopens MP5 predictions with specimen row identity and units %s', async units => {
+  const exact = { state: 'exact', storage: 'file' };
+  const input = { n_samples: 4, specimen_ids: ['specimen-a', 'specimen-b', 'specimen-c', 'specimen-d'] };
+  get.mockImplementation(async (url: string) => {
+    if (url.endsWith('/evidence')) return { data: {
+      ...structuredClone(fixture),
+      run: { ...fixture.run, run_kind: 'batch_inference' },
+      prediction_context: { role: 'prediction_only', instrument_relation: 'different', calibration_instrument: 'M5',
+        prediction_instrument: 'MP5', transfer_correction: 'none', held_out_accuracy_applies: false },
+      evidence: { qualification: 'qualified', outputs: {
+        __workflow__: { definition: exact },
+        __application__: { selection: exact, input: exact },
+        'saved-model': { default: exact },
+        'saved-model::model_apply': { result: exact, model_id: exact },
+      } },
+      node_statuses: { 'saved-model::model_apply': 'completed' },
+    } };
+    if (url.endsWith('/__workflow__/definition')) return { data: { value: {
+      schema_version: 1, nodes: [{ node_id: 'saved-model::model_apply', node_type: 'model.load_apply', label: 'Saved model', parameters: {} }], edges: [],
+    } } };
+    if (url.endsWith('/__application__/selection')) return { data: { value: { successful_artifact_uids: ['saved-model'] } } };
+    if (url.endsWith('/__application__/input')) return { data: { application_identity: input } };
+    if (url.endsWith('/saved-model/default')) return { data: { value: {
+      artifact_uid: 'saved-model', model_type: 'pls', sample_indices: [3, 1], predictions: [[2.5], [1.25]],
+      metadata: { selected_target: 'Moisture', ...(units ? { response_identity: { names: ['Moisture'], units: [units] } } : {}) },
+    } } };
+    if (url.endsWith('/model_id')) return { data: { value: 'saved-model' } };
+    if (url.endsWith('/result')) return { data: { value: [[2.5], [1.25]] } };
+    throw new Error(`Unexpected request ${url}`);
+  });
+  const { wrapper } = await open('?project=1&view=Results&node=saved-model%3A%3Amodel_apply');
+  const table = wrapper.get('[aria-label="Retained predictions"]');
+  expect(table.text()).toContain(`Predicted Moisture (${units ?? 'units not recorded'})`);
+  expect(table.findAll('tbody tr').map(row => row.findAll('td').map(cell => cell.text()))).toEqual([
+    ['4', 'specimen-d', '2.5'], ['2', 'specimen-b', '1.25'],
+  ]);
+  expect(get).toHaveBeenCalledWith(expect.stringContaining('/__application__/input'), expect.objectContaining({
+    params: expect.objectContaining({ projection: 'application_identity' }),
+  }));
+  wrapper.unmount();
+});

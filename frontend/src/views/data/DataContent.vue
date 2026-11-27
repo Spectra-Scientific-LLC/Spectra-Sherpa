@@ -1288,6 +1288,16 @@
                   calibration, test, normal, or fault role is imposed on a new workflow.
                 </small>
               </aside>
+              <div v-if="cornTransferFiles" class="active-view-set">
+                <Button
+                  label="Start Corn instrument transfer"
+                  outlined
+                  size="small"
+                  :loading="startingCornTransfer"
+                  @click="startCornTransfer"
+                />
+                <small>Reference M5 · Source MP5. Uses matched specimens and reserves a separate check set.</small>
+              </div>
             </div>
           </div>
           <div class="dataset-preview-shell">
@@ -3286,6 +3296,49 @@ const activePackageViewNames = computed(() =>
     .map((file) => registeredPackageView(file.file_path))
     .filter((value): value is string => value !== null),
 );
+const startingCornTransfer = ref(false);
+const cornTransferFiles = computed(() => {
+  if (activeExperimentMetadata.value?.reference_package_id !== "eigenvector-corn-v1") return null;
+  const files = dataStore.experimentFiles.filter(file => file.stage === "raw");
+  const reference = files.find(file => extractFileName(file.file_path).toLowerCase() === "corn-m5.mat");
+  const secondary = files.find(file => extractFileName(file.file_path).toLowerCase() === "corn-mp5.mat");
+  return reference && secondary ? { reference, secondary } : null;
+});
+
+async function startCornTransfer() {
+  const projectId = projectStore.currentProjectId;
+  const experimentId = dataStore.activeExperimentId;
+  const files = cornTransferFiles.value;
+  if (projectId == null || experimentId == null || !files || startingCornTransfer.value) return;
+  const userId = authStore.user?.id;
+  const sessionRevision = authStore.sessionRevision;
+  const current = () => authStore.user?.id === userId && authStore.sessionRevision === sessionRevision &&
+    projectStore.currentProjectId === projectId && dataStore.activeExperimentId === experimentId &&
+    cornTransferFiles.value === files;
+  startingCornTransfer.value = true;
+  try {
+    const { data } = await api.get<{ templates: Array<{ id: number; slug: string }> }>("/workflow-templates");
+    if (!current()) return;
+    const template = data.templates.find(candidate => candidate.slug === "calibration_transfer");
+    if (!template) throw new Error("The instrument transfer starter is unavailable on this site.");
+    const sheet = await workflowStore.instantiateTemplate(template.id, {
+      workflowName: "Corn instrument transfer — MP5 to M5",
+      projectId,
+      launchMode: "user",
+      dataBindings: {
+        primary_1: { experimentId, fileIds: [files.reference.id], displayName: "M5 reference instrument" },
+        secondary_1: { experimentId, fileIds: [files.secondary.id], displayName: "MP5 instrument to standardize" },
+      },
+    });
+    if (current()) await router.push({ path: "/workflow", query: { project_id: projectId, workflow_id: sheet.workflowId } });
+  } catch (error) {
+    if (current()) toast.add({ severity: "error", summary: "Instrument transfer could not start",
+      detail: getErrorMessage(error, "Check the two Corn instrument views and try again."), life: 6000 });
+  } finally {
+    startingCornTransfer.value = false;
+  }
+}
+
 const activePackageViewSummary = computed(() => {
   const views = activeSelectedFiles.value.flatMap((file) => {
     const label = registeredPackageView(file.file_path);

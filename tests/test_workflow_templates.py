@@ -4041,3 +4041,101 @@ async def test_example_import_error_privacy_and_cleanup(auth_client, test_sessio
         assert response.json()["detail"] == str(error)
     else:
         assert private_path in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_paired_instrument_transfer_retains_separate_check_spectra(
+    auth_client, test_session, test_user, monkeypatch
+):
+    import numpy as np
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from spectra_sherpa.app.core.config import app_config
+    from spectra_sherpa.app.core.template_loader import TemplateLoader
+    from spectra_sherpa.app.db import session as db_session
+    from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
+    from spectra_sherpa.app.lib.export_artifact import build_export_artifact
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+    from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
+
+    project = Project(user_id=test_user.id, name="Instrument transfer", description="")
+    test_session.add(project)
+    await test_session.flush()
+    experiment = Experiment(
+        user_id=test_user.id,
+        project_id=project.id,
+        name="Paired standards",
+        metadata_path="{}",
+    )
+    test_session.add(experiment)
+    await test_session.flush()
+    pid, eid = project.id, experiment.id
+    client, db = auth_client, test_session
+    template = WorkflowTemplate(
+        **next(row for row in TemplateLoader().load_all() if row["slug"] == "calibration_transfer")
+    )
+    db.add(template)
+    await db.commit()
+    template_id = template.id
+    spectra = np.random.default_rng(255).normal(size=(80, 12))
+    specimen_ids = [f"specimen-{i}" for i in range(80)]
+
+    async def upload(instrument, X, specimens):
+        dataset = SherpaDataset(
+            X,
+            feature_axis=SpectralAxis(values=np.arange(1100.0, 1112.0), title="Wavelength", units="nm"),
+            sample_axis=SampleAxis(
+                labels=[f"{instrument}-{i}" for i in range(80)],
+                sample_table={"specimen_id": specimens},
+            ),
+            data_role="X_spectra",
+        )
+        name = f"{instrument}.csv"
+        content = build_export_artifact(dataset, filename=name, format="portable_csv")["content"].encode()
+        response = await client.post(
+            f"/api/v1/experiments/{eid}/files", data={"stage": "raw"}, files={"file": (name, content, "text/csv")}
+        )
+        assert response.status_code == 201, response.text
+        return {"experiment_id": eid, "file_ids": [response.json()["id"]]}
+
+    primary = await upload("M5", spectra, specimen_ids)
+    secondary = await upload("MP5", 1.4 * spectra + 0.15, specimen_ids)
+    reordered = await upload("mispaired", 1.4 * spectra + 0.15, specimen_ids[:-2] + specimen_ids[-2:][::-1])
+
+    async def launch(mp5):
+        return await client.post(
+            f"/api/v1/workflow-templates/{template_id}/instantiate",
+            json={
+                "project_id": pid,
+                "workflow_name": "MP5 to M5",
+                "launch_mode": "user",
+                "data_bindings": {"primary_1": primary, "secondary_1": mp5},
+            },
+        )
+
+    monkeypatch.setattr(app_config, "site_profile", "demo")
+    monkeypatch.setattr(db_session, "async_session", async_sessionmaker(test_session.bind, expire_on_commit=False))
+    ensure_type_registry_loaded()
+    refused = await launch(reordered)
+    assert refused.status_code == 400, refused.text
+    assert "ordered sample identities" in refused.text
+    await test_session.refresh(test_user)
+    created = await launch(secondary)
+    assert created.status_code == 201, created.text
+    wid = created.json()["id"]
+    executed = await client.post(f"/api/v1/workflows/{wid}/execute", json={})
+    assert executed.status_code == 200 and executed.json()["status"] == "completed", executed.json().get("error")
+    result = executed.json()
+    for prefix in ("pds", "ds", "sws"):
+        assert result["results"][f"{prefix}_fit_1"]["transfer_error"]["reference_samples"] == 60
+        saved = await client.get(
+            f"/api/v1/runs/{result['run_id']}/outputs/{prefix}_apply_1/default", params={"project_id": pid}
+        )
+        assert saved.status_code == 200, saved.text
+        retained = saved.json()["value"]
+        assert retained["y_axis"]["sample_table"]["specimen_id"] == specimen_ids[60:]
+        assert retained["shape"] == [20, 12]
+        np.testing.assert_array_equal(retained["x_axis"]["data"], np.arange(1100.0, 1112.0))
+        before = np.linalg.norm((1.4 * spectra[60:] + 0.15) - spectra[60:])
+        after = np.linalg.norm(np.asarray(retained["data"]) - spectra[60:])
+        assert after < before

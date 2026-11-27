@@ -17665,6 +17665,7 @@ export interface operations {
         parameters: {
             query: {
                 project_id: number;
+                projection?: "application_identity" | null;
             };
             header?: never;
             path: {

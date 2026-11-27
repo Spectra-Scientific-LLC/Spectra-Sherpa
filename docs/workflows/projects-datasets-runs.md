@@ -83,6 +83,25 @@ It is now excluded from workbook tabs and sheet ordering by its purpose. The
 record remains available for managed operations and project preservation;
 scientific calibration, preprocessing, and validation sheets remain usable.
 
+### Corn instrument transfer
+
+In My Dataset, open the curated Eigenvector Corn package and choose **Start
+Corn instrument transfer**. M5 is the reference instrument. MP5 is the source
+to standardize into M5's spectral space. The starter verifies the ordered
+specimen pairs and the common wavelength grid before creating the workflow.
+
+The supplied Corn package has 80 matched specimens. The default sequential
+split uses 60 pairs to fit the transfer and reserves 20 other pairs as a check
+set. The workflow fits piecewise direct standardization (PDS), direct
+standardization (DS), and single-wavelength standardization on the same fitting
+pairs. It saves each standardized MP5 check spectrum and keeps the measured M5
+check spectra in the M5 split's test output. Compare the standardized output
+with those measurements before applying a calibration to corrected spectra.
+
+The training diagnostics describe agreement for the fitting pairs. Qualification
+of transferred Moisture predictions requires an M5 calibration and separate
+reference-based evaluation of its predictions on the corrected MP5 check set.
+
 ## Run
 
 A run is one execution of a workflow. Open **Runs** to review saved executions.
