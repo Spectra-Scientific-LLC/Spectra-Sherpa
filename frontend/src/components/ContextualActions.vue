@@ -1,6 +1,7 @@
 <template>
   <div v-if="visibleActions.length || (error && showError)" class="contextual-actions">
-    <Button v-for="action in visibleActions" :key="action.key" :label="action.label" :icon="action.icon"
+    <Button
+      v-for="action in visibleActions" :key="action.key" :label="action.label" :icon="action.icon"
       :loading="running === action.key" :disabled="running !== null || action.disabled" @click="execute(action.key)" />
     <p v-if="error && showError" role="alert">{{ error }}</p>
   </div>

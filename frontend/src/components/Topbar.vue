@@ -41,7 +41,8 @@
     </div>
 
     <nav v-if="projectStore.currentProjectId != null" class="topbar-center" aria-label="Workflow progress">
-      <RouterLink v-for="stage in workflowStages" :key="stage.kind" :to="stage.to"
+      <RouterLink
+        v-for="stage in workflowStages" :key="stage.kind" :to="stage.to"
         class="workflow-stage" :title="stage.detail" :aria-label="`${stage.label}: ${stage.detail}`">
         <span v-if="stage.state" class="status-light" :class="`status-${stage.state}`" aria-hidden="true"></span>
         <span>{{ stage.label }}</span>
