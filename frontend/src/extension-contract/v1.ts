@@ -9,6 +9,7 @@ import type { AxiosInstance } from "axios";
 import type { Component, DeepReadonly, Ref } from "vue";
 import type { Router, RouteLocationRaw, RouteRecordRaw } from "vue-router";
 import type { AppConfig as HostAppConfig, AppLimits } from "./config";
+import type { HostNavigation } from "./navigation-v1";
 
 /** Existing descriptor/module handshake; extraction does not bump the wire version. */
 export const EXTENSION_CONTRACT_VERSION = 1;
@@ -160,6 +161,7 @@ export interface HostContext {
   authStore: HostAuthStore;
   topbarMenu: HostTopbarMenu;
   primaryNavigation?: HostPrimaryNavigation;
+  navigation?: HostNavigation;
   appConfig: AppConfig;
   contributorId: string;
   /** Registers a route owned by this registration's lifetime. */

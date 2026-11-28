@@ -8,6 +8,7 @@ const { Backend } = require('./backend.cjs');
 const { installSessionBoundary, protectWindow } = require('./security.cjs');
 const { Lifecycle, readActivity, stopOwnedBackend } = require('./lifecycle.cjs');
 const { installFolderPicker, configureDownloads, saveDiagnostics } = require('./native-actions.cjs');
+const { installNavigation } = require('./navigation.cjs');
 const { loadCredentialKey } = require('./credential.cjs');
 const { claimProfile, eraseProfile } = require('./profile-erase.cjs');
 
@@ -23,6 +24,7 @@ let backendVersion = 'Starting';
 let lifecycle;
 let startTask;
 let tray;
+let resetNavigation;
 let keptAfterErase = [];
 const statusPage = (title, description) => {
   const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -132,6 +134,8 @@ async function createWindow() {
   });
   protectWindow(window, { get endpoint() { return backend?.endpoint; } });
   configureDownloads(isolated, () => window);
+  window.webContents.on('did-start-loading', () => resetNavigation?.());
+  window.webContents.on('render-process-gone', () => resetNavigation?.());
   window.on('close', event => {
     if (!lifecycle.allowClose) { event.preventDefault(); void lifecycle.request('close'); }
   });
@@ -185,7 +189,7 @@ if (!app.requestSingleInstanceLock()) {
       quit: () => { quitting = true; if (tray) tray.destroy(); app.quit(); },
     });
     installFolderPicker(ipcMain, dialog, () => window, () => backend?.endpoint);
-    Menu.setApplicationMenu(Menu.buildFromTemplate([
+    const baseMenu = [
       { label: 'Application', submenu: [
         { label: 'About Spectra Sherpa', click: async () => {
           const copyright = 'Copyright © 2026 Spectra Scientific LLC. All rights reserved.';
@@ -219,7 +223,8 @@ if (!app.requestSingleInstanceLock()) {
       ] },
       { role: 'editMenu' },
       { label: 'View', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }] },
-    ]));
+    ];
+    resetNavigation = installNavigation(ipcMain, Menu, baseMenu, () => window, () => backend?.endpoint);
     await createWindow();
   }).catch(() => { quitting = true; void Promise.resolve(backend?.stop()).finally(() => app.quit()); });
 }

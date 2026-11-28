@@ -1,14 +1,9 @@
 <template>
-  <main class="provenance-page">
-    <header class="page-heading">
-      <div>
-        <p class="eyebrow">Current project</p>
-        <h1>{{ summary?.project_name ?? projectStore.currentProject?.name ?? "Project provenance" }}</h1>
-      </div>
-      <button type="button" class="refresh-button" :disabled="store.loading" @click="refresh">Refresh</button>
-    </header>
+  <section class="provenance-page">
+    <WorkspacePageHeader title="Provenance" :identity="summary?.project_name ?? projectStore.currentProject?.name" />
 
-    <p v-if="projectStore.currentProjectId == null" class="empty-note">Select a project to see its evidence.</p>
+    <p v-if="projectAdmissionError" role="alert" class="error-note">{{ projectAdmissionError }}</p>
+    <p v-else-if="projectStore.currentProjectId == null" class="empty-note">Select a project to see its evidence.</p>
     <p v-else-if="store.error" role="alert" class="error-note">{{ store.error }}</p>
     <p v-else-if="store.loading && !summary" class="empty-note">Checking project evidence…</p>
 
@@ -60,12 +55,16 @@
         </ul>
       </section>
     </template>
-  </main>
+  </section>
 </template>
 
 <script setup lang="ts">
+import WorkspacePageHeader from "@/components/workspace/WorkspacePageHeader.vue";
+import { useRoute } from "vue-router";
+import { useScopedRequest } from "@/composables/useScopedRequest";
+import { navigationRegistry } from "@/navigation/workspace";
 import MethodHelp from "@/components/MethodHelp.vue";
-import { computed, ref, watch } from "vue";
+import { computed, onScopeDispose, ref, watch } from "vue";
 import api from "@/api/client";
 import { useProjectStore } from "@/stores/project";
 import { availabilityDetail, availabilityState, useProjectProvenanceStore, type ProjectProvenanceRecord } from "@/stores/projectProvenance";
@@ -75,6 +74,27 @@ interface DatasetViewChoice { id: number; name: string }
 
 const projectStore = useProjectStore();
 const store = useProjectProvenanceStore();
+const route = useRoute();
+const projectAdmissionError = ref("");
+const projectRequests = useScopedRequest(() => [route.path, JSON.stringify(route.query.project ?? route.query.project_id)]);
+watch(() => [route.query.project, route.query.project_id], async ([project, alias]) => {
+  projectAdmissionError.value = "";
+  const ticket = projectRequests.begin();
+  const raw = project ?? alias;
+  if (raw == null) {
+    await projectStore.ensureProjectForBrowserTab({ signal: ticket.signal });
+    return;
+  }
+  const id = typeof raw === "string" ? Number(raw) : NaN;
+  if (!Number.isSafeInteger(id) || id < 1 || (project != null && alias != null && project !== alias)) {
+    projectAdmissionError.value = "Project unavailable — invalid project link.";
+    return;
+  }
+  const selected = await projectStore.fetchProject(id, { signal: ticket.signal });
+  if (ticket.isCurrent() && !selected && projectStore.error) {
+    projectAdmissionError.value = "Project unavailable — choose a project.";
+  }
+}, { immediate: true });
 const summary = computed(() => store.projectId === projectStore.currentProjectId ? store.summary : null);
 const analysisWorkflows = computed(() => projectStore.currentProject?.workflows.filter((workflow) => workflow.purpose === "analysis") ?? []);
 const datasetViews = ref<Record<number, DatasetViewChoice[]>>({});
@@ -105,6 +125,15 @@ async function refresh(): Promise<void> {
   await Promise.all([store.refresh(id), loadChoices(id)]);
 }
 
+const releasePrimary = navigationRegistry.register("host", { primaryActions: [{
+  id: "project.verify", scope: { pageId: "project", sectionId: "project.provenance" },
+  label: "Verify all", accelerator: "CmdOrCtrl+Enter",
+  available: ({ projectId }) => !projectAdmissionError.value && projectId != null && projectId === projectStore.currentProjectId,
+  disabled: () => store.loading,
+  execute: refresh,
+}] });
+onScopeDispose(releasePrimary);
+
 async function loadChoices(projectId: number): Promise<void> {
   const generation = ++choiceGeneration;
   choicesLoading.value = true;
@@ -133,8 +162,6 @@ watch(() => projectStore.currentProjectId, (id) => {
 
 <style scoped>
 .provenance-page { max-width: 1100px; margin: 0 auto; padding: 24px; color: var(--ss-action-text); }
-.page-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-.eyebrow { color: var(--ss-text-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; }
 h1 { margin: 0; font-size: 1.8rem; }
 h2 { margin: 0; font-size: 1rem; }
 .scope-note, .choice-section p, .record-text p { color: var(--ss-text-muted); }
@@ -153,6 +180,5 @@ h2 { margin: 0; font-size: 1rem; }
 .choice-section { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--ss-border); }
 .choice-list { display: grid; gap: 10px; padding-left: 22px; }
 .choice-list li { display: flex; flex-wrap: wrap; gap: 12px; }
-.refresh-button { border: 1px solid var(--ss-border-strong); border-radius: 6px; background: var(--ss-surface); padding: 7px 14px; cursor: pointer; }
 .error-note { color: var(--ss-danger); }
 </style>

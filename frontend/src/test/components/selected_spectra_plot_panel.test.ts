@@ -499,4 +499,30 @@ describe("SelectedSpectraPlotPanel", () => {
     expect(wrapper.text()).toContain("Open Wavenumber Align");
     expect(wrapper.emitted("harmonize")).toHaveLength(1);
   });
+  it("colours spectra by the modelling target until the user picks a colour", async () => {
+    const full = dataset("A");
+    full.n_samples = 4;
+    full.data = [[1, 2, 3], [4, 5, 6], [7, 8, 9], [2, 3, 4]];
+    full.y_axis = { labels: ["A", "B", "C", "D"], sample_table: {
+      sample_id: ["A", "B", "C", "D"], Moisture: [10.1, 10.5, 11.2, 9.8], Oil: [3.1, 3.4, 3.5, 3.0] } };
+    const wrapper = mount(SelectedSpectraPlotPanel, { props: {
+      plotDatasetCount: 1, plotFileCount: 1, targetName: "Moisture",
+      plotDatasets: [source(1, "Corn", [{ id: 1, name: "corn.csv", dataset: full }])],
+    } });
+    const colourBar = () => {
+      const traces = wrapper.getComponent({ name: "PlotlyChart" }).props("data") as Array<{ marker?: { colorbar?: { title: { text: string } } } }>;
+      return traces.at(-1)?.marker?.colorbar?.title.text ?? null;
+    };
+    expect(colourBar()).toBe("Moisture");
+    // A changed target is followed while the colour is still the automatic one.
+    await wrapper.setProps({ targetName: "Oil" });
+    expect(colourBar()).toBe("Oil");
+    // The user's own choice stops the default, even when the target changes again.
+    wrapper.getComponent({ name: "SampleMetadataStyleControls" }).vm.$emit("update:colorValue", "__none__");
+    await wrapper.vm.$nextTick();
+    await wrapper.setProps({ targetName: "Moisture" });
+    expect(colourBar()).toBeNull();
+    wrapper.unmount();
+  });
+
 });

@@ -3,7 +3,7 @@
     <p v-if="appConfig?.desktop">Local desktop application. It does not connect to Spectra Scientific services.</p>
     <!-- Data & Privacy -->
     <div class="section">
-      <h3>Data &amp; Privacy</h3>
+      <h3>{{ privacyScope === "chat" ? "What chat can see" : "Data & Privacy" }}</h3>
       <p class="muted-text">Control how your data is shared with external services. Changes take effect immediately.</p>
 
       <div v-if="privacyLoadError" class="message error">
@@ -17,6 +17,7 @@
         </div>
 
         <template v-else>
+          <template v-if="privacyScope !== 'services'">
           <div class="toggle-row">
             <div class="toggle-info">
               <strong>Enable Chat Access</strong>
@@ -37,6 +38,8 @@
             <InputSwitch v-model="privacyForm.allow_llm_context" :disabled="!contextToggleEnabled" @change="savePrivacy" />
           </div>
 
+          </template>
+          <template v-if="privacyScope !== 'chat'">
           <div class="toggle-row">
             <div class="toggle-info">
               <strong>NIST WebBook Queries</strong>
@@ -75,6 +78,7 @@
             </div>
             <InputSwitch v-model="privacyForm.allow_spectrasherpa_sync" @change="savePrivacy" />
           </div>
+          </template>
         </template>
 
         <div v-if="privacySaveMessage" class="message success">
@@ -88,8 +92,8 @@
       </div>
     </div>
 
-    <InspectionSettingsSection v-if="appMode === 'local' && !appConfig?.desktop" />
-    <CustomNodesSettingsSection v-if="appMode === 'local' && !appConfig?.desktop && !privacyOnly" />
+    <InspectionSettingsSection v-if="privacyScope !== 'chat' && appMode === 'local' && !appConfig?.desktop" />
+    <CustomNodesSettingsSection v-if="appMode === 'local' && !appConfig?.desktop && !privacyOnly && !privacyScope" />
   </div>
 </template>
 <script setup lang="ts">
@@ -103,7 +107,7 @@ import { useDemoMode } from '@/composables/useDemoMode';
 import { getErrorMessage } from '@/utils/errors';
 import InputSwitch from 'primevue/inputswitch';
 
-defineProps<{ privacyOnly?: boolean }>();
+defineProps<{ privacyOnly?: boolean; privacyScope?: "chat" | "services" }>();
 const { appConfig, loadConfig, isFeatureEnabled } = useAppConfig();
 const appMode = computed(() => appConfig.value?.mode);
 const { isDemoMode } = useDemoMode();

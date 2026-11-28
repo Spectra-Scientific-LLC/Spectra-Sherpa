@@ -1,45 +1,6 @@
 <template>
   <section class="project-content">
-    <!-- Header --------------------------------------------------------- -->
-    <WorkspaceHeader title="Project" :actions="headerActionItems">
-        <Button
-          label="New Project" icon="pi pi-plus" class="p-button-sm"
-          data-action="new_project"
-          @click="editingProject = null; dialogVisible = true" />
-        <Button
-          v-if="isServerBacked && !qualified && projectStore.currentProjectId"
-          label="Memory Map"
-          icon="pi pi-sitemap"
-          class="p-button-text p-button-sm"
-          @click="openMemoryMap"
-        />
-        <Button
-          v-if="projectStore.currentProjectId && !['demo', 'pro'].includes(appConfig?.siteProfile || '') && (appConfig?.audit?.localQuery || appConfig?.audit?.fullPipeline)"
-          label="Audit"
-          icon="pi pi-shield"
-          class="p-button-text p-button-sm"
-          @click="openProjectAudit"
-        />
-        <template v-if="activeProject">
-          <Button
-            label="Edit"
-            :disabled="qualified && !availability?.write"
-            icon="pi pi-pencil"
-            class="p-button-text p-button-sm"
-            @click="showEditProjectDialog(activeProject)"
-          />
-          <Button
-            label="Export"
-            icon="pi pi-download"
-            class="p-button-text p-button-sm"
-            :disabled="exportInProgress || (qualified && !availability?.export)"
-            :loading="exportInProgress"
-            @click="onExportProject(activeProject)"
-          />
-          <Button v-if="qualified" label="Remove Project" icon="pi pi-trash" class="p-button-text p-button-danger p-button-sm"
-            :disabled="!availability?.delete" @click="removeDialog = true; removeName = ''" />
-        </template>
-    </WorkspaceHeader>
+    <WorkspacePageHeader :title="activeProject?.name || 'Project'" :identity="projectIdentity" :actions="headerActionItems" />
 
     <p v-if="qualified" role="status">{{ availabilityError || availability?.limitations }}</p>
     <!-- Loading -------------------------------------------------------- -->
@@ -52,7 +13,7 @@
 
     <!-- No projects at all -->
     <WorkspaceState v-else-if="!projectStore.projects.length" kind="empty" variant="page" message="No projects yet.">
-      <p>Choose New Project to start with your own data, or New Analysis on the Dashboard.</p>
+      <p>Choose New project to start with your own data.</p>
     </WorkspaceState>
 
     <!-- Projects exist but none selected -->
@@ -70,38 +31,6 @@
       <WorkspaceState v-if="objectErrors.length" kind="error" :message="`Could not load ${objectErrors.join(', ')}.`">
         <Button label="Retry" @click="loadObjects(activeProject.id)" />
       </WorkspaceState>
-      <!-- Active project header section ----------------------------- -->
-      <section class="current-section">
-        <div class="current-head">
-          <div class="current-head__main">
-            <h2 class="current-name">{{ activeProject.name }}</h2>
-            <p v-if="activeProject.description" class="current-desc">
-              {{ activeProject.description }}
-            </p>
-          </div>
-          <span class="current-time" :title="absoluteTimestamp(activeProject.updated_at)">
-            <RelativeTime :value="activeProject.updated_at" />
-          </span>
-        </div>
-
-        <div class="current-meta">
-          <span v-if="activeProject.technique">{{ activeProject.technique }}</span>
-          <span v-if="activeProject.sample_type">{{ activeProject.sample_type }}</span>
-          <span
-            ><strong>{{ activeProject.experiment_count }}</strong> data</span
-          >
-          <span
-            ><strong>{{ activeProject.workflow_count }}</strong> workflows</span
-          >
-          <span><strong>{{ runTotal ?? "—" }}</strong> runs</span>
-          <span><strong>{{ activeProject.model_count }}</strong> models</span>
-          <span v-for="collection in collections" :key="collection.key"><strong>{{ collection.total }}</strong> {{ collection.label.toLowerCase() }}</span>
-          <span>created <RelativeTime :value="activeProject.created_at" /></span>
-        </div>
-
-
-      </section>
-
       <section v-if="canonicalProjectMetadata" class="canonical-project-panel">
         <div class="canonical-project-panel__copy">
           <span class="eyebrow">Reviewed Scientific Package</span>
@@ -203,10 +132,11 @@
       </section>
 
       <!-- Data ------------------------------------------------------- -->
+      <div class="project-overview-grid">
       <section class="object-section">
         <div class="object-section__head">
           <div class="object-section__title">
-            <span class="eyebrow">Data</span>
+            <h2>Data</h2>
             <span class="object-section__count">{{ experiments.length }}</span>
           </div>
           <Button
@@ -261,7 +191,7 @@
       <section class="object-section">
         <div class="object-section__head">
           <div class="object-section__title">
-            <span class="eyebrow">Workflows</span>
+            <h2>Workflows</h2>
             <span class="object-section__count">{{ workflows.length }}</span>
           </div>
           <Button
@@ -274,15 +204,11 @@
         </div>
 
         <div v-if="workflows.length" class="object-list">
-          <div
+          <RouterLink
             v-for="workflow in workflows"
             :key="workflow.id"
             class="object-row"
-            role="button"
-            tabindex="0"
-            @click="openWorkflows"
-            @keydown.enter.prevent="openWorkflows"
-            @keydown.space.prevent="openWorkflows"
+            :to="{ path: '/workflow', query: { project_id: activeProject.id, workflow_id: workflow.id } }"
           >
             <span class="dot" :class="workflowStageTone(workflow)"></span>
             <div class="object-row__main">
@@ -308,14 +234,14 @@
             <span class="lifecycle-pill" :class="workflowStageTone(workflow)">
               {{ workflowStageLabel(workflow) }}
             </span>
-          </div>
+          </RouterLink>
         </div>
         <p v-else class="object-empty">{{ objectsLoading ? "Loading workflows…" : objectErrors.includes("Workflows") ? "Workflows unavailable." : "No workflows in this project." }}</p>
       </section>
 
       <section class="object-section" data-testid="project-runs">
         <div class="object-section__head">
-          <div class="object-section__title"><span class="eyebrow">Runs</span><span class="object-section__count">{{ runTotal ?? "—" }}</span></div>
+          <div class="object-section__title"><h2>Runs</h2><span class="object-section__count">{{ runTotal ?? "—" }}</span></div>
           <Button label="Runs" icon="pi pi-arrow-right" iconPos="right" class="p-button-text p-button-sm" @click="router.push('/runs?tab=run_history')" />
         </div>
         <div v-for="run in runs" :key="run.id" class="object-row" role="button" tabindex="0"
@@ -325,45 +251,15 @@
         </div>
         <p v-if="!runs.length" class="object-empty">{{ objectsLoading ? "Loading runs…" : runTotal === null ? "Runs unavailable." : "No saved runs in this project." }}</p>
         <small v-if="runTotal !== null && runTotal > runs.length">Showing {{ runs.length }} of {{ runTotal }} runs.</small>
-      </section>
-      <section v-for="collection in collections" :key="collection.key" class="object-section">
-        <div class="object-section__head">
-          <div class="object-section__title"><span class="eyebrow">{{ collection.label }}</span><span class="object-section__count">{{ collection.total }}</span></div>
-          <Button :label="collection.label" icon="pi pi-arrow-right" iconPos="right" class="p-button-text p-button-sm" @click="router.push(collection.to)" />
-        </div>
-        <div v-for="item in collection.items" :key="item.id" class="object-row collection-summary">
-          <div class="object-row__main"><strong>{{ item.title }}</strong><small>{{ item.status }}</small></div>
-          <span class="object-row__time"><RelativeTime :value="item.createdAt" /></span>
-        </div>
-        <p v-if="!collection.items.length" class="object-empty">No {{ collection.label.toLowerCase() }} in this project.</p>
-        <small v-if="collection.total > collection.items.length">Showing {{ collection.items.length }} of {{ collection.total }} {{ collection.label.toLowerCase() }}.</small>
-      </section>
-      <!-- Artifacts -------------------------------------------------- -->
-      <section class="object-section">
-        <div class="object-section__head">
-          <div class="object-section__title">
-            <span class="eyebrow">Models</span>
-            <span class="object-section__count">{{ activeProject.model_count }}</span>
-          </div>
-          <Button
-            label="Models"
-            icon="pi pi-arrow-right"
-            iconPos="right"
-            class="p-button-text p-button-sm"
-            @click="openArtifacts"
-          />
-        </div>
-
+        <details class="project-models">
+          <summary>Models · {{ activeProject.model_count }}</summary>
+          <RouterLink :to="{ path: '/runs', query: { project: activeProject.id, section: 'models' } }">Open Models</RouterLink>
         <div v-if="models.length" class="object-list">
-          <div
+          <RouterLink
             v-for="model in models"
             :key="model.artifact_uid"
             class="object-row"
-            role="button"
-            tabindex="0"
-            @click="openArtifacts"
-            @keydown.enter.prevent="openArtifacts"
-            @keydown.space.prevent="openArtifacts"
+            :to="{ path: '/runs', query: { project: activeProject.id, section: 'models', artifact: model.artifact_uid } }"
           >
             <span class="dot ready"></span>
             <div class="object-row__main">
@@ -377,11 +273,40 @@
               <RelativeTime :value="model.updated_at || model.created_at" />
             </span>
             <span class="lifecycle-pill ready">Trained</span>
-          </div>
+          </RouterLink>
         </div>
         <p v-else class="object-empty">{{ objectsLoading ? "Loading models…" : objectErrors.includes("Models") ? "Models unavailable." : "No models in this project yet." }}</p>
         <small v-if="activeProject.model_count > models.length">Showing {{ models.length }} of {{ activeProject.model_count }} models.</small>
+      </details>
       </section>
+      <section class="object-section">
+        <h2>Optimization campaigns</h2>
+        <template v-if="collections.length">
+          <section v-for="collection in collections" :key="collection.key">
+            <div v-for="item in collection.items" :key="item.id" class="object-row collection-summary">
+              <RouterLink :to="item.to">{{ item.title }}</RouterLink>
+              <span>{{ item.status }}</span>
+            </div>
+            <RouterLink :to="collection.to">{{ collection.total ? `All ${collection.total}` : 'Open Optimize' }}</RouterLink>
+          </section>
+        </template>
+        <p v-else class="object-empty">{{ objectsLoading ? "Loading…" : "No campaigns available." }}</p>
+      </section>
+      <section class="object-section">
+        <h2>Reports</h2>
+        <RouterLink :to="{ path: '/report', query: { project: activeProject.id } }">Open draft</RouterLink>
+      </section>
+      <section class="object-section">
+        <h2>Recent</h2>
+        <ul v-if="runs.length" class="project-recent">
+          <li v-for="run in runs.slice(0, 4)" :key="run.id">
+            <RelativeTime :value="run.executed_at" />
+            <RouterLink :to="{ path: `/runs/${run.id}`, query: { project: activeProject.id } }">{{ run.name || 'Saved run' }}</RouterLink>
+          </li>
+        </ul>
+        <p v-else class="object-empty">{{ objectsLoading ? "Loading…" : "No recent runs." }}</p>
+      </section>
+      </div>
     </template>
 
     <Dialog v-model:visible="removeDialog" header="Remove project" modal>
@@ -406,8 +331,8 @@
 import RelativeTime from "@/components/RelativeTime.vue";
 import { formatMetricValue, formatTimestamp } from "@/utils/format";
 import { regressionMetricPresentation, regressionMetricQualification } from "@/utils/regressionMetricPresentation";
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { computed, onMounted, onScopeDispose, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
@@ -416,7 +341,8 @@ import api from "@/api/client";
 import CampaignReproduction from "./CampaignReproduction.vue";
 import ProjectDialog, { type ProjectFormData } from "@/components/ProjectDialog.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
-import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import WorkspacePageHeader from "@/components/workspace/WorkspacePageHeader.vue";
+import { navigationRegistry } from "@/navigation/workspace";
 import { projectCollectionsLoader, type ProjectCollection } from "@/lib/projectCollections";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useAppConfig } from "@/composables/useAppConfig";
@@ -444,6 +370,7 @@ interface ModelRow {
 }
 
 const router = useRouter();
+const route = useRoute();
 const toast = useToast();
 const projectStore = useProjectStore();
 const workflowStore = useWorkflowStore();
@@ -456,9 +383,8 @@ async function removeQualifiedProject() {
   if (await projectStore.deleteProject(activeProject.value.id, removeName.value)) removeDialog.value = false;
   else toast.add({ severity: "error", summary: "Project not removed", detail: projectStore.error || undefined, life: 5000 });
 }
-const { config: appConfig, appMode } = useAppConfig();
+const { appMode } = useAppConfig();
 
-const isServerBacked = computed(() => appMode.value !== "local");
 const activeProject = computed(() => projectStore.currentProject);
 const exportInProgress = computed(
   () => !!activeProject.value && projectStore.exportingProjectIds.includes(activeProject.value.id),
@@ -473,31 +399,25 @@ const headerActionItems = computed(() => [
       command: () => { removeDialog.value = true; removeName.value = ""; } }] : []),
   ] : []),
   {
-    label: "New Project",
+    label: "New project",
     icon: "pi pi-plus",
     command: () => { editingProject.value = null; dialogVisible.value = true; },
   },
-  ...(isServerBacked.value && !qualified.value && projectStore.currentProjectId
-    ? [
-        {
-          label: "Memory Map",
-          icon: "pi pi-sitemap",
-          command: openMemoryMap,
-        },
-      ]
-    : []),
-  ...(!["demo", "pro"].includes(appConfig.value?.siteProfile || "")
-    && (appConfig.value?.audit?.localQuery || appConfig.value?.audit?.fullPipeline)
-    && projectStore.currentProjectId
-    ? [
-        {
-          label: "Audit",
-          icon: "pi pi-shield",
-          command: openProjectAudit,
-        },
-      ]
-    : []),
 ]);
+
+const projectIdentity = computed(() => {
+  const project = activeProject.value;
+  if (!project) return undefined;
+  return `Created ${formatTimestamp(project.created_at)} · Last change ${formatTimestamp(project.updated_at)}`;
+});
+const releaseNewWorkflow = navigationRegistry.register("host", { primaryActions: [{
+  id: "project.new-workflow", scope: { pageId: "project", sectionId: "project.overview" },
+  label: "New workflow", accelerator: "CmdOrCtrl+Enter",
+  available: ({ projectId }) => projectId != null && projectId === activeProject.value?.id,
+  disabled: () => qualified.value && !availability.value?.write,
+  execute: async ({ projectId }) => { await router.push({ path: "/workflow", query: { project_id: projectId, templates: "1" } }); },
+}] });
+onScopeDispose(releaseNewWorkflow);
 
 const dialogVisible = ref(false);
 const editingProject = ref<ProjectSummary | null>(null);
@@ -694,9 +614,13 @@ const formatMetric = formatMetricValue;
 
 onMounted(async () => {
   await projectStore.fetchProjects();
-  const projectId = projectStore.currentProjectId ?? projectStore.recentProjects[0]?.id ?? null;
+  const linked = route?.query?.project ?? route?.query?.project_id;
+  const projectId = typeof linked === "string" && /^[1-9]\d*$/.test(linked) && Number.isSafeInteger(Number(linked))
+    ? Number(linked) : projectStore.currentProjectId ?? projectStore.recentProjects[0]?.id ?? null;
   if (projectId != null) {
-    await Promise.allSettled([projectStore.fetchProject(projectId), loadObjects(projectId)]);
+    const alreadyActive = projectStore.currentProjectId === projectId;
+    await projectStore.fetchProject(projectId);
+    if (alreadyActive && projectStore.currentProjectId === projectId) await loadObjects(projectId);
   }
   void syncAdvisorForProject();
 });
@@ -814,25 +738,6 @@ async function syncAdvisorForProject(): Promise<void> {
 
 // Navigation helpers --------------------------------------------------
 
-function openMemoryMap(): void {
-  router.push("/project/memory-map");
-}
-
-function openProjectAudit(): void {
-  const projectId = projectStore.currentProjectId;
-  if (!projectId || ["demo", "pro"].includes(appConfig.value?.siteProfile || "")
-    || !(appConfig.value?.audit?.localQuery || appConfig.value?.audit?.fullPipeline)) return;
-  void router.push({
-    path: "/audit",
-    query: {
-      scope_type: "Project",
-      scope_id: String(projectId),
-      target_type: "Project",
-      target_id: String(projectId),
-    },
-  });
-}
-
 function openData(): void {
   router.push("/data");
 }
@@ -883,10 +788,6 @@ async function bindCanonicalData(): Promise<void> {
   } finally {
     canonicalBinding.value = false;
   }
-}
-
-function openArtifacts(): void {
-  router.push("/runs?tab=models");
 }
 
 // Project CRUD --------------------------------------------------------
@@ -1380,4 +1281,20 @@ function absoluteTimestamp(dateStr: string): string {
     margin-left: 1.25rem;
   }
 }
+.project-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
+.project-overview-grid .object-section {
+  margin: 0;
+  min-width: 0;
+  padding: 1rem;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--surface-border);
+  border-radius: .65rem;
+  background: var(--surface-card);
+}
+.project-overview-grid h2 { font-size: 1rem; margin-block: 0 .75rem; }
+.project-overview-grid .object-section__title h2 { margin: 0; }
+.project-models { margin-block-start: 1rem; }
+.project-models summary { cursor: pointer; }
+.project-recent { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.project-recent li { display: flex; flex-wrap: wrap; gap: .5rem; }
 </style>

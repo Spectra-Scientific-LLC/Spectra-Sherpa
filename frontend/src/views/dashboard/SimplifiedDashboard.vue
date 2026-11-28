@@ -1,53 +1,8 @@
 <template>
   <section class="simplified-dashboard">
-    <WorkspaceHeader
-      title="Dashboard"
-      :actions="headerActionItems"
-    >
-      <Button
-        v-if="activeDashboardTab !== 'starter'"
-        label="New Analysis"
-        icon="pi pi-bolt"
-        class="p-button-sm"
-        @click="startAnalysisFlow"
-      />
-      <ProjectImportAction ref="projectImportAction" />
-      <Button
-label="Project" icon="pi pi-arrow-right" iconPos="right"
-        class="p-button-text p-button-sm" @click="router.push('/project')" />
-    </WorkspaceHeader>
-
-    <WorkspaceContext label="Dashboard context">
-      <WorkspaceContextItem
-        v-if="activeDashboardTab === 'starter'"
-        label="Starter"
-        :value="activeGoalProject ? `${activeGoalProject.name}: ${activeGoalProject.goal_plan?.intent_label}` : ''"
-      />
-      <WorkspaceContextItem
-        v-else
-        :label="activeDashboardTab === 'archive' ? 'Archive' : 'Your Project'"
-        :value="
-          activeDashboardTab === 'archive'
-              ? `${projectStore.archivedProjects.length} archived projects`
-              : projectStore.currentProject?.name || 'Choose a project'
-        "
-      >
-        <template v-if="activeDashboardTab === 'projects'"
-          >{{ projectStore.projects.length }} {{ projectStore.projects.length === 1 ? "project" : "projects" }}</template
-        >
-      </WorkspaceContextItem>
-      <div
-        v-if="activeDashboardTab === 'projects' && projectStore.currentProject"
-        class="current-strip__meta"
-      >
-        <span
-          class="current-strip__time"
-          :title="absoluteTimestamp(projectStore.currentProject.updated_at)"
-        >
-          <RelativeTime :value="projectStore.currentProject.updated_at" />
-        </span>
-      </div>
-    </WorkspaceContext>
+    <WorkspacePageHeader :title="dashboardTitle" :identity="dashboardIdentity">
+      <template #secondary><ProjectImportAction /></template>
+    </WorkspacePageHeader>
 
     <WorkspaceTabs
       :model-value="activeDashboardTab"
@@ -63,7 +18,7 @@ label="Project" icon="pi pi-arrow-right" iconPos="right"
           @overview="onStarterOverview"
         />
       </TabPanel>
-      <TabPanel header="Your Project">
+      <TabPanel header="Projects">
         <!-- Primary surface: pick the right project from the user's set.
          Clicking the already-active card jumps into /project; clicking
          an inactive card selects it. One click pattern, two outcomes. -->
@@ -83,7 +38,7 @@ label="Project" icon="pi pi-arrow-right" iconPos="right"
               <div class="project-card-head">
                 <div class="title-stack">
                   <button
-type="button" class="project-open"
+                    type="button" class="project-open"
                     :aria-label="`${project.id === projectStore.currentProjectId ? 'Open' : 'Select'} project ${project.name}`"
                     @click="selectProject(project)">{{ project.name }}</button>
                   <Tag
@@ -96,15 +51,9 @@ type="button" class="project-open"
                   <span class="last-touched" :title="absoluteTimestamp(project.updated_at)">
                     <RelativeTime :value="project.updated_at" />
                   </span>
-                  <button
-                    type="button"
-                    class="trash-btn"
-                    aria-label="Archive project"
-                    @click.stop="requestArchive(project)"
-                    @keydown.stop
-                  >
-                    <i class="pi pi-box"></i>
-                  </button>
+                  <RowActions :subject="project.name" :actions="[
+                    { label: 'Archive project', icon: 'pi pi-box', danger: true, command: () => requestArchive(project) },
+                  ]" />
                 </div>
               </div>
               <p v-if="project.description" class="project-description">
@@ -129,13 +78,20 @@ type="button" class="project-open"
 
           <!-- Has projects but none match search -->
           <WorkspaceState v-else kind="empty" variant="page" message="No matches." />
+          <section v-if="runningJobs.length" class="dashboard-running" aria-label="Running">
+            <h2>Running</h2>
+            <ul>
+              <li v-for="job in runningJobs" :key="job.id">
+                {{ job.progress_message || 'Job in progress' }}
+                <progress :value="Math.min(Math.max(job.progress, 0), 100)" max="100" aria-label="Job progress" />
+              </li>
+            </ul>
+          </section>
         </div>
 
       </TabPanel>
       <TabPanel header="Archive">
         <div class="projects-section archived-section">
-          <div class="section-header">
-          </div>
           <WorkspaceState v-if="!projectStore.archivedProjects.length" kind="empty" variant="page" message="No archived projects." />
           <div v-else class="projects-grid">
             <div
@@ -153,19 +109,10 @@ type="button" class="project-open"
                 {{ project.description }}
               </p>
               <div class="archive-actions">
-                <Button
-                  label="Restore"
-                  icon="pi pi-replay"
-                  class="p-button-text p-button-sm"
-                  @click="restoreArchived(project)"
-                />
-                <Button
-                  label="Permanently delete"
-                  icon="pi pi-trash"
-                  severity="danger"
-                  class="p-button-text p-button-sm"
-                  @click="requestDelete(project)"
-                />
+                <RowActions :subject="project.name" :actions="[
+                  { label: 'Restore project', icon: 'pi pi-replay', command: () => restoreArchived(project) },
+                  { label: 'Permanently delete', icon: 'pi pi-trash', danger: true, command: () => requestDelete(project) },
+                ]" />
               </div>
             </div>
           </div>
@@ -176,7 +123,7 @@ type="button" class="project-open"
     <Dialog
       v-model:visible="templateGalleryVisible"
       modal
-      header="New Analysis"
+      header="New project"
       :style="{ width: '880px' }"
       class="new-analysis-dialog"
     >
@@ -280,14 +227,15 @@ label="Data → Import" icon="pi pi-upload" class="p-button-text p-button-sm"
 
 <script setup lang="ts">
 import RelativeTime from "@/components/RelativeTime.vue";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onScopeDispose, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
-import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import WorkspacePageHeader from "@/components/workspace/WorkspacePageHeader.vue";
+import RowActions from "@/components/RowActions.vue";
+import { navigationRegistry } from "@/navigation/workspace";
+import { useJobStore } from "@/stores/job";
 import ProjectImportAction from "@/components/ProjectImportAction.vue";
-import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
-import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import TabPanel from "primevue/tabpanel";
 import Dialog from "primevue/dialog";
@@ -335,17 +283,26 @@ watch(
 );
 const toast = useToast();
 const projectStore = useProjectStore();
-const projectImportAction = ref<InstanceType<typeof ProjectImportAction> | null>(null);
-const headerActionItems = computed(() => [
-  ...(activeDashboardTab.value === "starter" ? [] : [{ label: "New Analysis", icon: "pi pi-bolt", command: startAnalysisFlow }]),
-  {
-    label: "Import Project",
-    icon: "pi pi-upload",
-    disabled: projectImportAction.value?.disabled ?? false,
-    command: () => projectImportAction.value?.triggerImport(),
-  },
-  { label: "Project", icon: "pi pi-arrow-right", command: () => router.push("/project") },
-]);
+const jobStore = useJobStore();
+const runningJobs = computed(() => (jobStore.jobs ?? []).filter((job) => job.status === "running"));
+const dashboardTitle = computed(() => ({
+  starter: "Starter", projects: "Projects", archive: "Archive",
+}[activeDashboardTab.value] ?? "Projects"));
+const dashboardIdentity = computed(() => {
+  if (activeDashboardTab.value === "starter") return activeGoalProject.value?.goal_plan?.intent_label;
+  const archive = activeDashboardTab.value === "archive";
+  const count = (archive ? projectStore.archivedProjects : projectStore.projects).length;
+  const projects = `${count} ${archive ? "archived " : ""}project${count === 1 ? "" : "s"}`;
+  const running = runningJobs.value.length;
+  return archive || !running ? projects : `${projects} · ${running} running`;
+});
+const releaseNewProject = navigationRegistry.register("host", { primaryActions: [{
+  id: "dashboard.new-project", scope: { pageId: "dashboard" },
+  label: "New project", accelerator: "CmdOrCtrl+Enter",
+  available: () => activeDashboardTab.value !== "starter",
+  execute: startAnalysisFlow,
+}] });
+onScopeDispose(releaseNewProject);
 const workflowStore = useWorkflowStore();
 const { appMode } = useAppConfig();
 const isLocalMode = computed(() => appMode.value === "local");
@@ -1211,4 +1168,8 @@ function absoluteTimestamp(dateStr: string): string {
     gap: 0.5rem;
   }
 }
+.dashboard-running { margin-block-start: 1rem; }
+.dashboard-running h2 { font-size: 1rem; }
+.dashboard-running ul { list-style: none; display: grid; gap: .5rem; padding: 0; }
+.dashboard-running li { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
 </style>

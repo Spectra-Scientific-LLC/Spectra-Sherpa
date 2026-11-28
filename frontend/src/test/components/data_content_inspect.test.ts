@@ -160,7 +160,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("vue-router", () => ({
   useRoute: () => mocks.route,
   useRouter: () => ({
-    push: mocks.routerPush,
+    push: (location) => typeof location === "object" && location.path === (mocks.route as { path?: string }).path && location.query?.tab
+      ? mocks.routerReplace(location)
+      : mocks.routerPush(location),
     replace: mocks.routerReplace.mockImplementation(async ({ query }) => {
       mocks.route.query = query;
     }),
@@ -766,7 +768,7 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     expect(
       wrapper
         .findAll("button")
-        .find((b) => b.text() === "Load")!
+        .find((b) => b.text() === "Choose files")!
         .attributes("disabled"),
     ).toBeDefined();
     expect(
@@ -791,7 +793,7 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     expect(
       wrapper
         .findAll("button")
-        .find((b) => b.text() === "Load")!
+        .find((b) => b.text() === "Choose files")!
         .attributes("disabled"),
     ).toBeDefined();
     rejectAccess(new Error("Network interrupted"));
@@ -810,7 +812,7 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     expect(
       wrapper
         .findAll("button")
-        .find((b) => b.text() === "Load")!
+        .find((b) => b.text() === "Choose files")!
         .attributes("disabled"),
     ).toBeUndefined();
     expect(api.get).toHaveBeenLastCalledWith("/commercial/projects/3/availability");
@@ -877,7 +879,7 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     await flushPromises();
     wrapper.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", 0);
     await flushPromises();
-    expect(wrapper.text()).toContain("Reference catalog");
+    expect(wrapper.text()).toContain("Reference set");
     expect(wrapper.text()).toContain("Automatic provider downloads are unavailable");
     expect(wrapper.text()).not.toContain("Reference import unavailable");
     expect(mocks.dataStore.fetchReferenceCatalog).toHaveBeenCalled();
@@ -1122,33 +1124,31 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
       mocks.route.query = { tab, experiment: "11" };
       const wrapper = mountDataContent();
       await flushPromises();
-      const header = wrapper.get(".workspace-header");
-      const labels = header.findAll("button").map((button) => button.text());
-      expect(labels).not.toContain("Workflow");
-      expect(labels.filter((label) => ["Guide", "Load", "My Dataset"].includes(label)))
-        .toEqual(["synthesis", "library"].includes(tab) ? ["Guide", "My Dataset"] : tab === "upload" ? ["Load", "My Dataset"] : ["My Dataset"]);
+      const header = wrapper.get(".workspace-page-header");
+      expect(header.find('[data-action="open_workflow"]').exists()).toBe(false);
       expect(wrapper.find(".synthesis-toolbar").exists()).toBe(false);
       if (tab === "synthesis") {
-        await header.get('[data-action="synthesis_open_guide"]').trigger("click");
-        expect(mocks.routerPush).toHaveBeenCalledWith("/documentation");
+        const actions = header.getComponent({ name: "ResponsiveHeaderActions" }).props("items");
+        actions.find((action: { label: string }) => action.label === "Guide").command();
+        await flushPromises();
+        expect(wrapper.get("h1").text()).toBe("Ready to model?");
       }
-      await header.findAll("button").find((button) => button.text() === "My Dataset")!.trigger("click");
+      wrapper.getComponent({ name: "TabView" }).vm.$emit("update:activeIndex", 5);
       await flushPromises();
       expect(wrapper.find('[data-testid="data-tabs"]').attributes("data-active-index")).toBe("5");
-      expect(wrapper.get(".workspace-header").text()).toContain("Workflow");
+      expect(header.get('[data-action="open_workflow"]').text()).toBe("Build workflow");
       expect(mocks.dataStore.activeExperimentId).toBe(11);
     },
   );
 
   it.each([
     ["import", "importDatasetName"], ["upload", "uploadDatasetName"], ["library", "libraryDatasetName"],
-  ] as const)("shows the actual %s save name in the subtitle", async (tab, field) => {
+  ] as const)("resolves the actual %s save name", async (tab, field) => {
     mocks.route.query = { tab };
     const wrapper = mountDataContent();
     await flushPromises();
     (wrapper.vm as unknown as DataContentVm)[field] = "  Chemometric qualification  ";
     await flushPromises();
-    expect(wrapper.get('[aria-label="Data workspace context"]').text()).toContain("Chemometric qualification");
     const resolved = (wrapper.vm as unknown as Record<string, string>)[
       tab === "import" ? "resolvedImportDatasetName" : tab === "upload" ? "resolvedUploadDatasetName" : "resolvedLibraryDatasetName"
     ];
@@ -1163,12 +1163,12 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
       await flushPromises();
       expect(wrapper.find(".library-header").exists()).toBe(false);
       expect(wrapper.get(".library-database-field").element.firstElementChild?.textContent).toBe("Database");
-      expect(wrapper.get('[aria-label="Data workspace context"]').text()).toContain("2 entries");
+      expect(wrapper.get(".workspace-page-identity").text()).toContain("2 entries");
       (wrapper.vm as unknown as DataContentVm).librarySearch = "Acetone";
       await flushPromises();
-      expect(wrapper.get('[aria-label="Data workspace context"]').text()).toContain("1 entry");
-      await wrapper.get(".workspace-header").findAll("button")
-        .find((button) => button.text() === "Guide")!.trigger("click");
+      expect(wrapper.get(".workspace-page-identity").text()).toContain("1 entry");
+      const actions = wrapper.getComponent({ name: "ResponsiveHeaderActions" }).props("items");
+      actions.find((action: { label: string }) => action.label === "Guide").command();
       expect(open).toHaveBeenCalledWith(
         "https://docs.spectrascientific.ai/workflows/references-synthesis/#nist-library",
         "_blank", "noopener,noreferrer",
@@ -1734,9 +1734,11 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     await flushPromises();
 
     const actions = wrapper.get(".upload-source-actions");
-    const buttons = wrapper.get(".workspace-header").findAll('button[aria-controls="upload-source-menu"]');
-    expect(buttons).toHaveLength(1);
-    expect(buttons[0].text()).toContain("Load");
+    const chooser = wrapper.get(".workspace-page-header");
+    expect(chooser.get("button").text()).toBe("Choose files");
+    const folder = wrapper.get(".load-source").findAll("label").find((item) => item.text() === "Folder")!;
+    await folder.get("input").setValue(true);
+    expect(chooser.get("button").text()).toBe("Choose folder");
     expect(actions.findAll("button")).toHaveLength(0);
     expect(wrapper.text()).not.toContain("Files, folders or ZIPs.");
     expect(actions.findAll('input[type="file"]')).toHaveLength(2);
@@ -3537,7 +3539,7 @@ it.each(["resolved", "refused"])("targeted all-files preprocessed portfolio reta
     const preview = wrapper.getComponent({ name: "DatasetSourcePreview" });
     expect(preview.props("title")).toBe("Eigenvector Corn M5");
     expect(preview.props("hideHeading")).toBe(true);
-    expect(wrapper.get('[aria-label="Data workspace context"]').text()).toContain("Eigenvector Corn M5");
+    expect(wrapper.get(".workspace-page-identity").text()).toContain("Eigenvector Corn M5");
     expect(preview.props("sourceRef")).toBeNull();
     expect(preview.props("acquisitionRequired")).toBe(true);
   });

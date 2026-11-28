@@ -373,6 +373,117 @@ describe('Retained run request scope', () => {
 });
 
 describe("Persistent run inspection", () => {
+  it('does not let a model lookup that fails after the user opens another run write into that run', async () => {
+    const lookup = deferred<{ data: unknown }>();
+    get.mockImplementation(async (url: string) => {
+      const run = url.startsWith('/runs/43/') ? 43 : 42;
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture),
+        run: { ...fixture.run, id: run, name: `Run ${run}`, produced_artifact_uids: run === 42 ? ['pls-auto'] : [] },
+        params_snapshot: { model_1: { component_fit_mode: 'one_standard_error' } },
+        evidence: { qualification: 'qualified', outputs: {
+          __workflow__: { definition: { state: 'exact', storage: 'file' } },
+          ...(run === 42 ? { model_1: { component_curve: { state: 'missing', reason: 'Output exceeded the configured limit.' } } } : {}),
+        } } } };
+      if (url.endsWith('/__workflow__/definition')) return { data: { value: { schema_version: 1, nodes: run === 42 ? [
+        { node_id: 'model_1', node_type: 'model.fitted_pls', label: 'Train PLS', parameters: { component_fit_mode: 'one_standard_error' } },
+      ] : [{ node_id: 'snv_1', node_type: 'preprocess.normalize', label: 'SNV', parameters: {} }], edges: [] } } };
+      if (url === '/models/pls-auto') return lookup.promise;
+      return { data: { value: null } };
+    });
+    const { wrapper, router } = await open('?project=1&view=Summary');
+    await router.push('/runs/43?project=1&view=Summary'); await flushPromises();
+    lookup.reject(new Error('Network down')); await flushPromises();
+    expect(wrapper.text()).toContain('Run 43');
+    expect(wrapper.text()).not.toContain('Train PLS');
+    expect(wrapper.text()).not.toContain('model_1/component_curve');
+    wrapper.unmount();
+  });
+  it.each(['recorded', 'absent', 'other-node'] as const)('reads an automatic fitted LV count only from the model this run node produced (%s)', async (record) => {
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture),
+        run: { ...fixture.run, id: 42, produced_artifact_uids: ['pls-auto'] },
+        params_snapshot: { model_1: { component_fit_mode: 'one_standard_error', n_components: 15 } },
+        evidence: { qualification: 'qualified', outputs: {
+          __workflow__: { definition: { state: 'exact', storage: 'file' } },
+          model_1: { component_curve: { state: 'missing', reason: 'Output exceeded the configured limit.' } },
+        } } } };
+      if (url.endsWith('/__workflow__/definition')) return { data: { value: { schema_version: 1, nodes: [
+        { node_id: 'model_1', node_type: 'model.fitted_pls', label: 'Train PLS', parameters: { component_fit_mode: 'one_standard_error' } },
+      ], edges: [] } } };
+      if (url === '/models/pls-auto') return { data: record === 'absent' ? {} : {
+        n_components: 9, source_run_id: 42, node_id: record === 'other-node' ? 'model_2' : 'model_1' } };
+      return { data: { value: null } };
+    });
+    const { wrapper } = await open('?project=1&view=Summary');
+    const card = wrapper.get('[aria-label="Model summary"]');
+    if (record === 'recorded') {
+      expect(card.text()).toContain('9 latent variables');
+      expect(card.text()).not.toContain('fitted count not saved');
+      // The count is back; the curve's RMSEC/RMSECV, CV design and selection rule are still missing.
+      expect(wrapper.get('.summary-error').text()).toContain(
+        'model_1/component_curve (fitted LV count recovered from the saved model; component-selection and cross-validation curve not saved)');
+    } else {
+      // No count from a record that is absent or belongs to another model node.
+      expect(card.text()).toContain('fitted count not saved');
+      expect(card.text()).not.toContain('9 latent variables');
+      expect(wrapper.get('.summary-error').text()).toContain('model_1/component_curve (not saved in this run)');
+    }
+    wrapper.unmount();
+  });
+
+  it.each(['omitted', 'missing', 'unreadable'] as const)("keeps retained statistics visible when the component curve is %s", async (curve) => {
+    const comparison = (role: string, target: string, metrics: Record<string, number>) => ({
+      schema_version: 'spectrasherpa-regression-comparison/1', data: [], metadata: { role },
+      statistics: { targets: [{ target, metrics }] },
+    });
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture),
+        params_snapshot: { model_1: { n_components: 3, scale: false } },
+        evidence: { qualification: 'qualified', outputs: {
+          __workflow__: { definition: { state: 'exact', storage: 'file' } },
+          __diagnostics__: { _scientific_presentations: { state: 'exact', storage: 'file' } },
+          model_1: {
+            calibration_comparison: { state: 'exact', storage: 'file' },
+            ...(curve === 'missing' && { component_curve: { state: 'missing', reason: 'Output exceeded the configured limit.' } }),
+            ...(curve === 'unreadable' && { component_curve: { state: 'exact', storage: 'file' } }),
+          },
+          eval_1: { comparison: { state: 'exact', storage: 'file' } },
+        } } } };
+      if (url.endsWith('/__workflow__/definition')) return { data: { value: { schema_version: 1, nodes: [
+        { node_id: 'snv_1', node_type: 'preprocess.normalize', label: 'SNV', parameters: {} },
+        { node_id: 'model_1', node_type: 'model.fitted_pls', label: 'Train PLS', parameters: { n_components: 7 } },
+        { node_id: 'eval_1', node_type: 'diagnostics.labeled_regression_evaluator', label: 'Test Evaluation', parameters: {} },
+      ], edges: [{ from_node_id: 'snv_1', from_output: 'default', to_node_id: 'model_1', to_input: 'default' }] } } };
+      if (url.endsWith('/_scientific_presentations')) return { data: { value: {
+        model_1: { contract: { presentations: [{ presentation_id: 'calibration_fit', kind: 'regression_comparison', source_ports: ['calibration_comparison'] }] } },
+        eval_1: { contract: { presentations: [{ presentation_id: 'held_out_comparison', kind: 'regression_comparison', source_ports: ['comparison'] }] } },
+      } } };
+      if (url.endsWith('/model_1/calibration_comparison')) return { data: { value: comparison('calibration', 'Target 1', { n_samples: 30, rmse: 0.2894, r2: 0.9999 }) } };
+      if (url.endsWith('/model_1/component_curve')) throw new Error('Saved output unavailable');
+      if (url.endsWith('/eval_1/comparison')) return { data: { value: comparison('held_out_test', 'Moisture', { n_samples: 10, rmse: 0.3975, r2: 0.9992 }) } };
+      return { data: { value: null } };
+    });
+    const { wrapper } = await open('?project=1&view=Summary');
+    const card = wrapper.get('[aria-label="Model summary"]');
+    expect(card.text()).toContain('PLS regression');
+    // Effective parameters, never the authored value or a current default.
+    expect(card.text()).toContain('3 latent variables');
+    expect(card.text()).not.toContain('7 latent');
+    expect(card.text()).toContain('SNV');
+    const statistics = wrapper.get('.summary [aria-label="Model summary"]');
+    expect(statistics.text()).toContain('RMSEC (units not declared) 0.2894');
+    expect(statistics.text()).toContain('RMSEP (units not declared) 0.3975');
+    expect(statistics.text()).toContain('Calibration fit');
+    expect(statistics.text()).toContain('Held-out test');
+    const curveReads = get.mock.calls.filter(([url]) => url.endsWith('/model_1/component_curve'));
+    expect(curveReads).toHaveLength(curve === 'unreadable' ? 1 : 0);
+    if (curve === 'omitted') {
+      expect(wrapper.find('.summary-error').exists()).toBe(false);
+    } else {
+      expect(wrapper.get('.summary-error').text()).toContain('model_1/component_curve');
+    }
+    wrapper.unmount();
+  });
   it('shows retained paired evaluation after reopening Inspect without requiring a workflow snapshot', async () => {
     get.mockImplementation(async (url: string) => {
       if (url.endsWith('/evidence')) return {data: {run: {...fixture.run, id: 42, project_id: 1, source_type: 'paired_evaluation', run_kind: 'other'}, evidence: {qualification: 'qualified', outputs: {__evaluation__: {record: {state: 'exact', storage: 'file'}}}}, node_statuses: {}}};
@@ -457,6 +568,76 @@ describe("Persistent run inspection", () => {
     expect(unavailable.wrapper.find('[aria-label="Retained prediction trust"]').exists()).toBe(false);
     expect(unavailable.wrapper.text()).toContain('Applicability unavailable: no matching, exact fitted row-level screen');
     unavailable.wrapper.unmount();
+  });
+  it('lists applied predictions by the sample IDs of the input saved with the run, and names trust rows by them too', async () => {
+    const original = get.getMockImplementation()!;
+    let withTrust = false;
+    let withGap = false;
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture), run: { ...fixture.run, run_kind: 'batch_inference' }, evidence: { qualification: 'qualified', outputs: {
+        __workflow__: { definition: { state: 'exact', storage: 'file' } },
+        'file_0::input': { default: { state: 'exact', storage: 'file' } },
+        'file_0::model': {
+          result: { state: 'exact', storage: 'file' },
+          // A regression application also saves the same matrix as its predictions.
+          y_pred: { state: 'exact', storage: 'file' },
+          model_id: { state: 'exact', storage: 'file' },
+          ...(withTrust ? { labels: { state: 'exact', storage: 'file' }, applicability: { state: 'exact', storage: 'file', sha256: 'd'.repeat(64) } } : {}),
+        },
+      } }, node_statuses: { 'file_0::model': 'completed' } } };
+      if (url.endsWith('/__workflow__/definition')) return { data: { value: {
+        schema_version: 1, nodes: [
+          { node_id: 'file_0::input', node_type: 'deploy.input', label: 'Deploy Input', parameters: {} },
+          { node_id: 'file_0::model', node_type: 'model.load_apply', label: 'Saved model', parameters: {} },
+        ], edges: [{ from_node_id: 'file_0::input', from_output: 'default', to_node_id: 'file_0::model', to_input: 'X_new' }],
+      } } };
+      if (url.endsWith('/file_0%3A%3Amodel/result') || url.endsWith('/file_0%3A%3Amodel/y_pred')) {
+        return { data: { value: [[8.61], [withGap ? null : 8.9], [9.25]] } };
+      }
+      // The input saved with the run declares its rows' sample IDs.
+      if (url.endsWith('/file_0%3A%3Ainput/default')) return { data: { value: {
+        type: 'SherpaDataset', data: [[0.1], [0.2], [0.3]],
+        y_axis: { labels: ['a', 'b', 'c'], sample_table: { sample_id: ['corn-mp5-001', 'corn-mp5-002', 'corn-mp5-003'] } },
+      } } };
+      if (url.endsWith('/file_0%3A%3Amodel/model_id')) return { data: { value: 'saved-pls' } };
+      if (url.endsWith('/file_0%3A%3Amodel/labels')) return { data: { value: ['Pass', 'Pass', 'Fail'] } };
+      if (url.endsWith('/file_0%3A%3Amodel/applicability')) return { data: { value: {
+        claim_scope: 'provisional_calibration_screening', method: 'prediction_f_and_residual_spectrum_0.95_strict_greater',
+        reference_samples: 12, t2_limit: 4, q_limit: 1,
+        rows: [0, 1, 2].map(row_index => ({ row_index, screening_status: 'within_global_screen', t2: 1, q: .1 })),
+      } } };
+      return original(url);
+    });
+    const plain = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
+    const table = plain.wrapper.get('[aria-label="Predictions by sample"]');
+    expect(table.findAll('tbody tr').map(row => row.text())).toEqual(['corn-mp5-0018.610', 'corn-mp5-0028.900', 'corn-mp5-0039.250']);
+    await table.get('button').trigger('click');
+    expect(downloadCsv).toHaveBeenCalledWith(
+      [['Sample', 'Predicted'], ['corn-mp5-001', 8.61], ['corn-mp5-002', 8.9], ['corn-mp5-003', 9.25]], expect.any(String));
+    // The predictions plot still comes first; the table follows it.
+    const plot = plain.wrapper.findComponent({ name: 'QuickPlotModal' });
+    expect(plot.exists()).toBe(true);
+    expect(plot.element.compareDocumentPosition(table.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    plain.wrapper.unmount();
+    // A missing prediction is shown and exported as missing, never as 0.
+    withGap = true;
+    (downloadCsv as any).mockClear?.();
+    const gap = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
+    const gapTable = gap.wrapper.get('[aria-label="Predictions by sample"]');
+    expect(gapTable.findAll('tbody tr')[1].text()).toBe('corn-mp5-002—');
+    await gapTable.get('button').trigger('click');
+    expect(downloadCsv).toHaveBeenLastCalledWith(
+      [['Sample', 'Predicted'], ['corn-mp5-001', 8.61], ['corn-mp5-002', ''], ['corn-mp5-003', 9.25]], expect.any(String));
+    gap.wrapper.unmount();
+    withGap = false;
+    withTrust = true;
+    const trusted = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
+    const trust = trusted.wrapper.get('[aria-label="Retained prediction trust"]');
+    expect(trust.get('thead').text()).toContain('Sample');
+    expect(trust.text()).toContain('corn-mp5-002');
+    // The trust table lists the predictions; no second list repeats them.
+    expect(trusted.wrapper.find('[aria-label="Predictions by sample"]').exists()).toBe(false);
+    trusted.wrapper.unmount();
   });
   it('shows retained PLS-DA trust rows in batch history and exports safe assembled positions', async () => {
     const original = get.getMockImplementation()!;
@@ -699,7 +880,7 @@ describe("Persistent run inspection", () => {
     });
     const { wrapper } = await open('?project=1&view=Summary');
     expect((wrapper.get('[aria-label="Run name"]').element as HTMLInputElement).value).toBe('PLS — abc12345');
-    expect(wrapper.get('.run-detail__identity').text()).not.toContain('Run #42');
+    expect((wrapper.vm as unknown as { retainedHeader: { title: string } }).retainedHeader.title).toBe('Peak Find + PLS');
     expect(wrapper.get('.summary').text()).toContain('PLS — abc12345');
     expect(wrapper.get('[aria-label="Workflow: Peak Find + PLS"]').text()).toBe('Workflow');
     wrapper.unmount();

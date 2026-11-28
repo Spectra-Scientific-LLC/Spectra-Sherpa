@@ -38,7 +38,7 @@ const selectedTab = (view: ReturnType<typeof mount>) =>
 describe("Runs → retained exclusions → Back", () => {
   beforeEach(() => {
     vi.clearAllMocks(); localStorage.clear();
-    m.project = reactive({ ensureProjectForBrowserTab: vi.fn(), currentProjectId: 1, currentProject: { id: 1, name: "Corn" } });
+    m.project = reactive({ ensureProjectForBrowserTab: vi.fn(), exportingProjectIds: [], currentProjectId: 1, currentProject: { id: 1, name: "Corn" } });
     m.runs = reactive({ runs: [], total: 0, selectedRunIds: new Set([41, 42]), selectedCount: 2, runsLoading: false,
       comparison: { runs: [], metric_keys: [], diff: {} }, loadError: null, fetchProjectRuns: vi.fn(), clearSelection: vi.fn() });
     m.get.mockImplementation(async (path: string) => ({ data: path === "/runs" ? { runs: [], total: 0 } : [] }));

@@ -67,7 +67,7 @@ describe("Settings Storage", () => {
     await tabs[0].trigger("click");
     await flushPromises();
     expect(router.currentRoute.value.query.tab).toBe(
-      profile === "local" ? "api-keys" : "preferences",
+      "general",
     );
     wrapper.unmount();
   });

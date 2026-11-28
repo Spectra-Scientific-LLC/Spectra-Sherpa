@@ -4,7 +4,25 @@ export type ToastMessage = {
   severity?: string;
   summary?: unknown;
   detail?: unknown;
+  life?: number;
 };
+
+/** How long a confirmation stays visible; warnings, errors and refusals stay until dismissed. */
+export const CONFIRMATION_LIFE_MS = 4000;
+
+/**
+ * A toast answers something the user just did. A confirmation (success or
+ * info) closes by itself; a warning, failure or refusal stays until the user
+ * dismisses it, because it may change what they do next. State that is true
+ * without a click belongs in page text, not in a toast.
+ */
+export function applyToastLife(message: ToastMessage): void {
+  if (notificationSeverityFromToast(message.severity)) {
+    delete message.life;
+  } else if (message.life == null) {
+    message.life = CONFIRMATION_LIFE_MS;
+  }
+}
 
 export type ToastServiceApi = {
   add?: (message: ToastMessage) => void;
@@ -37,8 +55,8 @@ function notificationSeverityFromToast(
  * The single path from toasts to the notification centre.
  *
  * Every warning or error toast, from the shell or a server module, is kept in
- * the notification centre exactly once; success and info toasts stay
- * transient. Callers just call `toast.add` and must not also add the same
+ * the notification centre exactly once and stays on screen until dismissed;
+ * success and info toasts close by themselves (see `applyToastLife`). Callers just call `toast.add` and must not also add the same
  * message to the notification store.
  */
 export function persistWarningAndErrorToasts(
@@ -68,6 +86,7 @@ export function persistWarningAndErrorToasts(
         detail,
       });
     }
+    applyToastLife(message);
     originalAdd(message);
   };
 }

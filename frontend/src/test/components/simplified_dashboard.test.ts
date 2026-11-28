@@ -1,18 +1,20 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import PrimeVue from "primevue/config";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
 import type { ProjectDetail } from "@/types";
 import SimplifiedDashboard from "@/views/dashboard/SimplifiedDashboard.vue";
 
+enableAutoUnmount(afterEach);
+
 const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
   routerReplace: vi.fn(),
   toastAdd: vi.fn(),
-  route: { hash: "#storage" },
+  route: { path: "/dashboard", fullPath: "/dashboard", params: {}, query: {}, hash: "#storage" },
 }));
 
 vi.mock("vue-router", () => ({
@@ -174,11 +176,12 @@ describe("SimplifiedDashboard analysis starters", () => {
       });
       await flushPromises();
       const tabs = wrapper.findAll('[role="tab"]');
-      expect(tabs.map((tab) => tab.text())).toEqual(["Starter", "Your Project", "Archive"]);
-      expect(wrapper.findAll('.workspace-header .responsive-header-actions__full button').map(button => button.text())).toEqual(["New Analysis", "Import Project", "Inspect archive", "Project"]);
+      expect(tabs.map((tab) => tab.text())).toEqual(["Starter", "Projects", "Archive"]);
+      const actions = wrapper.get('.workspace-page-header').findAll('button');
+      expect(actions.map(button => button.text())).toEqual(expect.arrayContaining(["New project", "Import Project"]));
       const archiveChooser = wrapper.get('input[accept=".sherpa,.spectrapy,.zip"]');
       const openArchiveChooser = vi.spyOn(archiveChooser.element as HTMLInputElement, "click").mockImplementation(() => {});
-      await wrapper.findAll('.workspace-header .responsive-header-actions__full button')[1].trigger("click");
+      await actions.find(button => button.text() === "Import Project")!.trigger("click");
       expect(openArchiveChooser).toHaveBeenCalledOnce();
       expect(wrapper.find('.current-strip__meta button').exists()).toBe(false);
       if (hash === "#storage") {
@@ -194,7 +197,7 @@ describe("SimplifiedDashboard analysis starters", () => {
 
       await wrapper
         .findAll("button")
-        .find((button) => button.text() === "New Analysis")!
+        .find((button) => button.text() === "New project")!
         .trigger("click");
       expect(wrapper.get('.starter-card button').attributes('disabled')).toBeUndefined();
       expect(wrapper.get('[data-test="template-start"]').attributes('disabled')).toBeDefined();
@@ -205,7 +208,7 @@ describe("SimplifiedDashboard analysis starters", () => {
       }));
       expect(mocks.routerPush).toHaveBeenLastCalledWith('/project');
       expect(window.sessionStorage.getItem('sherpa:data-entry-dataset-intent')).toBeNull();
-      await wrapper.findAll('button').find(button => button.text() === 'New Analysis')!.trigger('click');
+      await wrapper.findAll('button').find(button => button.text() === 'New project')!.trigger('click');
       expect(wrapper.text()).toContain("Synthetic atmospheric mixture · Spectra Scientific synthetic benchmarks");
       expect(wrapper.text()).toContain("Iris · scikit-learn datasets");
       expect(wrapper.text()).toContain("Eigenvector Corn M5 · User-acquired Eigenvector datasets · Needs file import");
@@ -217,7 +220,7 @@ describe("SimplifiedDashboard analysis starters", () => {
       expect(projectStore.createProject).toHaveBeenLastCalledWith(expect.objectContaining({
         name: 'Eigenvector Corn M5 analysis',
       }));
-      await wrapper.findAll('button').find(button => button.text() === 'New Analysis')!.trigger('click');
+      await wrapper.findAll('button').find(button => button.text() === 'New project')!.trigger('click');
       await wrapper
         .get('[data-test="dataset-dropdown"]')
         .setValue("builtin:lavender-essential-oil-v1");
@@ -255,17 +258,16 @@ describe("SimplifiedDashboard analysis starters", () => {
       await flushPromises();
       await wrapper.get('.project-open').trigger('click');
       expect(select).toHaveBeenCalledWith(99);
-      await wrapper.get('[aria-label="Archive project"]').trigger("click");
+      wrapper.findAllComponents({ name: "RowActions" })[0].props("actions")[0].command();
+      await flushPromises();
       expect(wrapper.text()).toContain("You can restore it from Archive");
 
       projectStore.archivedProjects = [{ ...createdProject(), version_count: 0 }];
       await flushPromises();
       await tabs[2].trigger("click");
       expect(mocks.routerReplace).toHaveBeenLastCalledWith({ hash: "#archive" });
-      await wrapper
-        .findAll("button")
-        .find((button) => button.text() === "Permanently delete")!
-        .trigger("click");
+      wrapper.findAllComponents({ name: "RowActions" }).at(-1)!.props("actions")[1].command();
+      await flushPromises();
       expect(wrapper.text()).toContain("internal read-only provenance record");
     },
   );

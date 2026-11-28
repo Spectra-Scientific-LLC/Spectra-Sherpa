@@ -1,100 +1,24 @@
 <template>
   <ProjectUnavailable v-if="projectSelectionUnavailable" retryable @retry="initializeWorkbook(true)" />
   <section v-else class="workflow-builder-content">
-    <WorkspaceHeader title="Workflow" :actions="actionMenuItems">
-      <template #badge>
-        <span v-if="workflowStore.workflowExcludedCount" class="workflow-meta-badge" role="status">
-          {{ workflowStore.workflowExcludedCount }} excluded
-        </span>
-        <span
-          v-if="isManagedCandidateAuthority"
-          class="workflow-meta-badge"
-          title="Persisted candidate workflow from a governed campaign; inspectable but not runnable from the canvas"
-        >
-          <i class="pi pi-shield"></i>
-          Campaign candidate
-        </span>
-      </template>
+    <WorkspacePageHeader :title="activeSheetName === 'No sheet open' ? 'Workflow' : activeSheetName"
+      :role="isManagedCandidateAuthority ? 'Campaign candidate' : undefined" :identity="workflowIdentity" :actions="actionMenuItems">
       <template #primary>
         <Button
-          :label="isWorkflowStale ? 'Run (Mod)' : 'Run'"
+          label="Run"
           icon="pi pi-play"
           data-action="run_workflow"
           class="p-button-sm"
           :loading="isExecuting || isBatchExecuting || Boolean(contextualRunning)"
-          :disabled="
-            workflowRunAction?.disabled ||
-            workflowContextLoading ||
-            isTrialTabActive ||
-            isManagedCandidateAuthority ||
-            retainedReadOnly ||
-            pendingDataSelection ||
-            nodes.length === 0 ||
-            workflowParameterErrors.length > 0 ||
-            isExecuting ||
-            isBatchExecuting
-          "
+          :disabled="runDisabled"
           @click="onRunClick"
           :title="runButtonTitle"
         />
       </template>
-        <div class="toolbar-action-group">
-          <Button v-if="workflowStore.workflowExcludedCount" label="Restore all" icon="pi pi-undo"
-            class="p-button-outlined p-button-sm" :disabled="isExecuting || retainedReadOnly"
-            data-action="restore_workflow_observations" @click="workflowStore.restoreWorkflowObservations()" />
-          <Button
-            label="Analysis Starter"
-            data-action="open_analysis_starters"
-            :data-guidance-ready="!templatePickerVisible ? 'open_analysis_starters' : undefined"
-            icon="pi pi-sparkles"
-            class="p-button-outlined p-button-sm"
-            :disabled="isTrialTabActive || (pendingDataSelection && !dataSelectionReceipt)"
-            :title="
-              pendingDataSelection && !dataSelectionReceipt
-                ? 'Return to My Dataset to restore the missing selection receipt'
-                : undefined
-            "
-            :aria-describedby="
-              pendingDataSelection && !dataSelectionReceipt ? 'workflow-selection-unavailable' : undefined
-            "
-            @click="openTemplatePicker"
-          />
-          <Button
-            label="Save"
-            icon="pi pi-save"
-            class="p-button-outlined p-button-sm"
-            :loading="autosaveStatus === 'saving'"
-            :disabled="saveActionDisabled"
-            @click="triggerAutosave()"
-          />
-          <Button label="Review Workflow" icon="pi pi-list" class="p-button-outlined p-button-sm"
-            :disabled="workflowContextLoading || !nodes.length" @click="workflowReviewVisible = true" />
-          <Button
-            label="Export"
-            icon="pi pi-download"
-            class="p-button-outlined p-button-sm"
-            :disabled="isTrialTabActive || retainedReadOnly"
-            @click="toggleExportMenu"
-            :title="workflowStore.hasFoldValidationPlan ? 'Project packages retain the cross-validation plan and available fitted models. Standalone code export is unavailable for this plan.' : 'Project packages include available fitted models; code exports reproduce the recipe.'"
-          />
-          <Button
-            label="Audit"
-            icon="pi pi-shield"
-            class="p-button-outlined p-button-sm"
-            :disabled="isTrialTabActive || workflowStore.workflowId === null"
-            v-if="!['demo', 'pro'].includes(appConfig?.siteProfile || '') && (appConfig?.audit?.localQuery || appConfig?.audit?.fullPipeline)"
-            @click="openWorkflowAudit"
-            title="Open audit trail for this workflow"
-          />
-        </div>
-        <Menu ref="exportMenuRef" :model="exportMenuItems" :popup="true" />
-
         <template #after>
           <ContextualActions :context="savedWorkflowActionContext" :show-error="false" />
           <span v-if="pendingRecoveryDraft" role="status">
-            Unsaved browser draft found. The saved workflow is shown.
-            <Button label="Restore draft" class="p-button-text p-button-sm" @click="applyRecoveryDraft" />
-            <Button label="Keep saved workflow" class="p-button-text p-button-sm" @click="discardRecoveryDraft" />
+            Saved workflow shown — browser draft available.
           </span>
           <span v-else-if="hasChanges && autosaveStatus === 'idle'" role="status">Unsaved changes</span>
           <span v-if="autosaveStatus === 'saving'" class="autosave-indicator">
@@ -160,12 +84,10 @@
             </div>
           </OverlayPanel>
         </template>
-    </WorkspaceHeader>
-    <WorkspaceContext label="Workflow workspace context" layout="workflow">
-      <WorkspaceContextItem label="Data Portfolio" :value="portfolioName" wrap>
-        {{ portfolioSummary }}
-      </WorkspaceContextItem>
-    </WorkspaceContext>
+    </WorkspacePageHeader>
+    <section v-if="workflowStore.workflowExcludedCount" role="status" class="workflow-meta-badge">
+      {{ workflowStore.workflowExcludedCount }} excluded from this workflow
+    </section>
     <PromotionFitContext v-if="route.query.promotion_artifact && workflowStore.workflowId" :artifact-uid="String(route.query.promotion_artifact)" :workflow-id="workflowStore.workflowId" :source-run-id="Number(route.query.promotion_source_run) || null" />
 
     <p v-if="workflowContextLoading" role="status" aria-label="Loading workflow">Loading workflow…</p>
@@ -184,7 +106,7 @@
       <div>
         <strong>The incoming data selection is unavailable</strong>
         <span>
-          Its navigation receipt is missing, expired, or belongs to another browser tab. Return to
+          Its saved location is missing, expired, or belongs to another browser tab. Return to
           My Dataset and choose Next: Workflow again.
         </span>
       </div>
@@ -258,25 +180,27 @@
       </ul>
     </Dialog>
 
-    <!-- Execution status banner -->
-    <div v-if="executionCount > 0" class="execution-banner">
-      <i class="pi pi-check-circle"></i>
-      <span>Workflow executed {{ executionCount }} time{{ executionCount !== 1 ? "s" : "" }}</span>
-      <span v-if="lastExecutionTime" class="execution-time">Last run: {{ lastExecutionTime }}</span>
-    </div>
-
-    <div v-if="recentlyDeletedSnapshot" class="node-undo-banner" role="status">
-      <span>{{ recentlyDeletedSnapshot.label }} deleted</span>
-      <Button
-        label="Undo"
-        icon="pi pi-undo"
-        class="p-button-text p-button-sm"
-        @click="restoreDeletedNodes"
-      />
-    </div>
+    <section v-show="builderView === 'active-sheet'" class="workflow-view" aria-label="Active Sheet">
+      <h2>Active Sheet</h2>
+      <ol v-if="nodes.length">
+        <li v-for="node in nodes" :key="node.id">{{ node.label || getNodeLabel(node.type) }}</li>
+      </ol>
+      <p v-else>No workflow steps.</p>
+    </section>
+    <section v-show="builderView === 'data-portfolio'" class="workflow-view" aria-label="Workflow workspace context">
+      <h2>Data Portfolio</h2>
+      <strong :title="portfolioName">{{ portfolioName }}</strong>
+      <p v-if="portfolioSummary">{{ portfolioSummary }}</p>
+      <ul v-if="activeWorkflowDataSourceNames.length">
+        <li v-for="name in activeWorkflowDataSourceNames" :key="name">{{ name }}</li>
+      </ul>
+    </section>
+    <p v-if="recentlyDeletedSnapshot" class="node-undo-banner" role="status">
+      {{ recentlyDeletedSnapshot.label }} deleted
+    </p>
 
     <!-- Three-column layout: Toolbar | Canvas | Inspector Sidebar -->
-    <div
+    <div v-show="builderView === 'canvas'"
       class="workflow-workspace"
       :style="{ '--inspector-scale': inspectorScale }"
       :class="{
@@ -407,7 +331,6 @@ import { storeToRefs } from "pinia";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import Checkbox from "primevue/checkbox";
-import Menu from "primevue/menu";
 import OverlayPanel from "primevue/overlaypanel";
 import { useToast } from "primevue/usetoast";
 import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
@@ -424,9 +347,9 @@ import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
 import ProjectUnavailable from "@/views/ProjectUnavailable.vue";
 import RetainedGraphView from "@/components/RetainedGraphView.vue";
-import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
-import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
-import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import WorkspacePageHeader from "@/components/workspace/WorkspacePageHeader.vue";
+import { navigationRegistry } from "@/navigation/workspace";
+import { useWorkspaceNavigation } from "@/composables/useWorkspaceNavigation";
 import PromotionFitContext from "@/components/PromotionFitContext.vue";
 import { portfolioDetail } from "@/utils/dataPortfolio";
 import { formatTimestamp } from "@/utils/format";
@@ -489,7 +412,6 @@ const clipboardStore = useClipboardStore();
 const versionHistoryVisible = ref(false);
 const templatePickerVisible = ref(false);
 const canvasRef = ref();
-const exportMenuRef = ref();
 const settingsPanelRef = ref();
 const RETIRED_DATA_SELECTION_STORAGE_KEY = "spectra-my-dataset-workflow-selection-v1";
 const DATA_ENTRY_MODE_KEY = "sherpa:data-entry-mode";
@@ -1350,6 +1272,19 @@ onMounted(async () => {
   window.addEventListener("pagehide", flushWorkflowDraftBeforeUnload);
   document.addEventListener("visibilitychange", flushWorkflowDraftBeforeUnload);
 });
+
+// Project's New workflow action opens the existing picker after workbook admission.
+watch(
+  () => [workbookContextReady.value, route.query.templates, route.query.project_id, projectStore.currentProjectId] as const,
+  ([ready, templates, linkedProject, project]) => {
+    if (!ready || templates !== "1" || project == null || String(project) !== linkedProject) return;
+    openTemplatePicker();
+    const query = { ...route.query };
+    delete query.templates;
+    void router.replace({ query });
+  },
+  { flush: "post" },
+);
 
 // Clean up BroadcastChannel and autosave timer on unmount
 onUnmounted(() => {
@@ -2372,7 +2307,34 @@ const openRunHistory = () => {
   void router.push({ path: "/runs", query: { project: projectStore.currentProjectId, tab: "run_history" } });
 };
 
+const builderView = computed(() => {
+  const view = route.query.view;
+  return view === "active-sheet" || view === "data-portfolio" ? view : "canvas";
+});
+const workflowIdentity = computed(() => {
+  if (workflowContextLoading.value) return undefined;
+  const count = nodes.value.length;
+  return [
+    !pendingDataSelection.value && builderView.value !== "data-portfolio" ? portfolioName.value : null,
+    `${count} step${count === 1 ? "" : "s"}`,
+    isWorkflowStale.value ? "Modified" : null,
+    lastExecutionTime.value ? `Last run ${lastExecutionTime.value}` : null,
+  ].filter(Boolean).join(" · ");
+});
+const runDisabled = computed(() => Boolean(
+  workflowRunAction.value?.disabled || workflowContextLoading.value || isTrialTabActive.value
+  || isManagedCandidateAuthority.value || retainedReadOnly.value || pendingDataSelection.value
+  || !nodes.value.length || workflowParameterErrors.value.length || isExecuting.value || isBatchExecuting.value,
+));
+
 const actionMenuItems = computed(() => [
+  ...(pendingRecoveryDraft.value ? [
+    { label: "Restore draft", icon: "pi pi-history", command: applyRecoveryDraft },
+    { label: "Keep saved workflow", icon: "pi pi-check", command: discardRecoveryDraft },
+  ] : []),
+  ...(recentlyDeletedSnapshot.value ? [{ label: "Undo delete", icon: "pi pi-undo", command: restoreDeletedNodes }] : []),
+  { label: "Reload workbook", icon: "pi pi-refresh", disabled: hasChanges.value || isExecuting.value || isBatchExecuting.value, command: () => initializeWorkbook(false) },
+
   ...(workflowStore.workflowExcludedCount ? [{ label: `Restore all (${workflowStore.workflowExcludedCount} excluded)`,
     icon: "pi pi-undo", disabled: isExecuting.value || retainedReadOnly.value, command: () => workflowStore.restoreWorkflowObservations() }] : []),
   {
@@ -2433,10 +2395,6 @@ const openWorkflowAudit = () => {
       target_id: String(workflowStore.workflowId),
     },
   });
-};
-
-const toggleExportMenu = (event: Event) => {
-  exportMenuRef.value?.toggle(event);
 };
 
 const copyWorkflowIntegrity = async (hash: string) => {
@@ -2531,6 +2489,16 @@ const onRunClick = async () => {
     await executeWorkflow();
   }
 };
+
+const releaseRunAction = useWorkspaceNavigation() ? navigationRegistry.register("host", { primaryActions: [{
+  id: "workflow.run", scope: { pageId: "workflow", sectionId: "workflow.builder" },
+  label: "Run", accelerator: "CmdOrCtrl+Enter",
+  available: ({ projectId }) => projectId != null && projectId === projectStore.currentProjectId,
+  disabled: () => runDisabled.value,
+  execute: (_, signal) => { if (!signal.aborted) return onRunClick(); },
+}] }) : undefined;
+onUnmounted(() => releaseRunAction?.());
+
 
 const executeWorkbook = async () => {
   if (workbookStore.sheets.length === 0) return;
@@ -3269,4 +3237,6 @@ const onDeleteNode = (nodeId: string) => {
   font-weight: 600;
   color: var(--ss-text-strong);
 }
+.workflow-view { width: min(100%, 64rem); padding: 1rem; border-radius: .65rem; background: var(--surface-card); }
+.workflow-view h2 { margin: 0 0 .75rem; font-size: 1rem; }
 </style>

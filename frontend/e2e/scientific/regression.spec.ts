@@ -94,7 +94,7 @@ test("Synthetic moisture: PLS preserves held-out identity and response units @sm
   await expect(body).not.toContainText("[object Object]");
   const preview = await page.locator('iframe[title="Report preview"]').getAttribute("srcdoc");
   const downloaded = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("button", { name: "Other formats", exact: true }).click();
   await page.getByRole("menuitem", { name: "HTML Report" }).click();
   expect(await readFile((await (await downloaded).path())!, "utf8")).toBe(preview);
 });

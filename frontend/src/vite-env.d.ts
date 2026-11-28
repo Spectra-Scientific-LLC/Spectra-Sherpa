@@ -11,5 +11,9 @@ declare const __SHERPA_FRONTEND_VERSION__: string;
 
 interface Window {
   /** Available only inside the isolated native desktop renderer. */
-  spectraDesktop?: { chooseWatchFolder(): Promise<string | null> };
+  spectraDesktop?: {
+    chooseWatchFolder(): Promise<string | null>;
+    publishNavigation?(snapshot: unknown): void;
+    onNavigationCommand?(callback: (command: import("./navigation/native").NativeMenuCommand) => void): () => void;
+  };
 }

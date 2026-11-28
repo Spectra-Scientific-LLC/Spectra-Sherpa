@@ -421,6 +421,7 @@
 </template>
 
 <script setup lang="ts">
+import { navigationTab } from "@/router/legacyRoutes";
 import { diagnosticCitation as resolveDiagnosticCitation } from "@/utils/diagnosticAdvisor";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -573,7 +574,7 @@ const hasExecutionResults = computed(
 );
 
 const requestedTab = computed<ChatTab | null>(() => {
-  const rawTab = route.query.tab;
+  const rawTab = navigationTab(route.query);
   if (rawTab === "sherpa" || rawTab === "llm") {
     return rawTab;
   }
@@ -1251,7 +1252,7 @@ const sendMessage = async () => {
 function captureByokView(): ByokView | undefined {
   const project_id = projectStore.currentProjectId;
   if (project_id == null) return;
-  if (route.path === "/data" && route.query.tab === "my-dataset") {
+  if (route.path === "/data" && navigationTab(route.query) === "my-dataset") {
     const data = useDataStore();
     const experiment = data.experiments.find((item) => item.id === data.activeExperimentId);
     const dataset_id = experiment?.project_id === project_id && !data.fileInfoLoading && !data.fileInfoError
@@ -1262,7 +1263,7 @@ function captureByokView(): ByokView | undefined {
     const workflow_id = workflowStore.workflowId ?? undefined;
     return { screen: "workflow", project_id, workflow_id };
   }
-  if (route.path === "/runs" && route.query.tab === "compare") {
+  if (route.path === "/runs" && navigationTab(route.query) === "compare") {
     const runs = useRunsStore();
     const displayed = runs.comparison?.runs.map(run => run.id) ?? [];
     const [left, right] = displayed;

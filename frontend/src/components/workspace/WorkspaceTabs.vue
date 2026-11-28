@@ -4,6 +4,8 @@ import { useRoute } from "vue-router";
 import TabView from "primevue/tabview";
 import { useWorkspaceNavigation, type WorkspaceNavigationItem } from "@/composables/useWorkspaceNavigation";
 
+interface SectionGroup { id: string; label: string; tabs: readonly string[] }
+
 function panels(nodes: VNode[]): VNode[] {
   return nodes.flatMap((node) => {
     if (node.type === Fragment && Array.isArray(node.children)) return panels(node.children as VNode[]);
@@ -16,6 +18,7 @@ export default defineComponent({
     modelValue: { type: String, required: true },
     tabIds: { type: Array as PropType<readonly string[]>, required: true },
     // Custom visual headers can supply a plain-text navigation label.
+    sections: { type: Array as PropType<readonly SectionGroup[]>, default: () => [] },
     labels: { type: Object as PropType<Record<string, string>>, default: () => ({}) },
   },
   emits: { "update:modelValue": (_id: string) => true },
@@ -29,8 +32,21 @@ export default defineComponent({
       if (items.some((item) => item.id === id && !item.disabled)) emit("update:modelValue", id);
     };
     const publish = () => {
-      if (navigation && route) navigation.publish(owner, {
-        path: route.path, selected: props.modelValue, items, select,
+      if (!navigation || !route) return;
+      const groups = props.sections;
+      const targets = groups.map((group) => ({
+        group, target: items.find((item) => item.id === props.modelValue && group.tabs.includes(item.id))
+          ?? group.tabs.map((tab) => items.find((item) => item.id === tab)).find((item) => item && !item.disabled),
+      }));
+      const published = groups.length ? targets.flatMap(({ group, target }) => target
+        ? [{ ...target, id: group.id, label: group.label }] : []) : items;
+      const selected = groups.find((group) => group.tabs.includes(props.modelValue))?.id ?? props.modelValue;
+      navigation.publish(owner, {
+        path: route.path, selected, items: published,
+        select: groups.length ? (id) => {
+          const target = targets.find(({ group }) => group.id === id)?.target;
+          if (target) select(target.id);
+        } : select,
       });
     };
     onMounted(publish);

@@ -1,10 +1,10 @@
 <template>
   <section class="settings-content">
-    <WorkspaceHeader title="Settings" />
+    <WorkspacePageHeader :title="settingsTitles[activeTab] || 'Settings'" :identity="settingsIdentity" />
     <WorkspaceTabs
 :model-value="activeTab" :tab-ids="settingsTabIds" class="settings-tabs"
       @update:model-value="selectSettingsTab">
-    <TabPanel v-if="isManaged" header="Preferences">
+    <TabPanel v-if="isManaged" header="General">
     <!-- Hosted Pro exposes personal disclosure and acquisition preferences. -->
     <div v-if="isHostedPro" class="demo-region">
       <div class="demo-notice" role="status">
@@ -42,15 +42,35 @@
     </div>
 
     </TabPanel>
-      <TabPanel v-if="!isManaged" header="API Keys">
-        <ApiKeysTab />
-      </TabPanel>
-      <TabPanel v-if="!isManaged" header="Integrations">
-        <IntegrationsTab />
-      </TabPanel>
-      <TabPanel v-if="!isManaged" header="Data">
+      <TabPanel v-if="!isManaged" header="General">
+        <section class="navigation-setting">
+          <fieldset>
+            <legend>Navigation</legend>
+            <label><input name="navigation-mode" type="radio" :checked="navigationMode === 'menu-bar'"
+              :disabled="!hasNativeNavigation" @change="setNavigationMode('menu-bar')" /> Menu bar</label>
+            <label><input name="navigation-mode" type="radio" :checked="navigationMode === 'sidebar'"
+              @change="setNavigationMode('sidebar')" /> Sidebar</label>
+          </fieldset>
+        </section>
         <PlateFormatSettingsSection />
         <DisplayPreferencesSection />
+      </TabPanel>
+      <TabPanel v-if="!isManaged" header="Compute">
+        <dl class="compute-status" aria-label="Current work">
+          <dt>Running jobs</dt><dd>{{ runningJobs }}</dd>
+          <dt>Queued jobs</dt><dd>{{ queuedJobs }}</dd>
+        </dl>
+      </TabPanel>
+      <TabPanel v-if="!isManaged" :header="appMode === 'local' ? 'Chat' : 'API Keys'">
+        <ApiKeysTab />
+        <div v-if="appMode === 'local'" id="settings-chat-privacy" />
+      </TabPanel>
+      <TabPanel v-if="!isManaged" header="Integrations">
+        <div v-if="appMode === 'local'" id="settings-service-privacy" />
+        <IntegrationsTab v-else />
+      </TabPanel>
+      <TabPanel v-if="canEditCustomNodes" header="Custom nodes">
+        <CustomNodesSettingsSection />
       </TabPanel>
       <TabPanel v-if="!isManaged && showGuidanceSettings" header="Guidance">
         <GuidanceSettingsSection />
@@ -59,11 +79,19 @@
         <RetainedStorageRecovery />
       </TabPanel>
     </WorkspaceTabs>
+    <Teleport v-if="!isManaged && appMode === 'local'" defer
+      :to="activeTab === 'chat' ? '#settings-chat-privacy' : '#settings-service-privacy'">
+      <IntegrationsTab :privacy-scope="activeTab === 'chat' ? 'chat' : 'services'" />
+    </Teleport>
   </section>
 </template>
 
 <script setup lang="ts">
-import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import { navigationTab } from "@/router/legacyRoutes";
+import WorkspacePageHeader from "@/components/workspace/WorkspacePageHeader.vue";
+import CustomNodesSettingsSection from "./CustomNodesSettingsSection.vue";
+import { hasNativeNavigation, navigationMode, setNavigationMode } from "@/navigation/mode";
+import { useJobStore } from "@/stores/job";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
@@ -79,24 +107,38 @@ import { useDemoMode } from "@/composables/useDemoMode";
 
 const route = useRoute();
 const router = useRouter();
-const activeTab = ref("api-keys");
+const activeTab = ref("general");
 const { isDemoMode } = useDemoMode();
-const { appMode, siteProfile, isFeatureEnabled } = useAppConfig();
+const { appMode, siteProfile, isFeatureEnabled, appConfig } = useAppConfig();
 const isHostedPro = computed(() => appMode.value === "enterprise" && siteProfile?.value === "pro");
 const isManaged = computed(() => isHostedPro.value || isDemoMode.value);
 const showGuidanceSettings = computed(
   () => appMode.value !== "local" && isFeatureEnabled("sherpaGuidance"),
 );
-const settingsTabIds = computed(() => isManaged.value ? ["preferences", "storage"] : [
-  "api-keys", "integrations", "data", ...(showGuidanceSettings.value ? ["guidance"] : []), "storage",
+const canEditCustomNodes = computed(() => !isManaged.value && appMode.value === "local" && !appConfig?.value?.desktop);
+const jobStore = useJobStore();
+const runningJobs = computed(() => (jobStore.jobs ?? []).filter(job => job.status === "running").length);
+const queuedJobs = computed(() => (jobStore.jobs ?? []).filter(job => job.status === "pending").length);
+const settingsTitles: Record<string, string> = {
+  general: "General", compute: "Compute", chat: "Chat", "api-keys": "API Keys",
+  integrations: "Integrations", "custom-nodes": "Custom nodes", guidance: "Guidance", storage: "Storage",
+};
+const settingsIdentity = computed(() => activeTab.value === "chat" ? "Used by chat and Data Story" : undefined);
+const settingsTabIds = computed(() => isManaged.value ? ["general", "storage"] : [
+  "general", "compute", appMode.value === "local" ? "chat" : "api-keys", "integrations",
+  ...(canEditCustomNodes.value ? ["custom-nodes"] : []),
+  ...(showGuidanceSettings.value ? ["guidance"] : []), "storage",
 ]);
-watch([() => route.query.tab, () => route.hash, settingsTabIds], () => {
-  const requested = typeof route.query.tab === "string" ? route.query.tab : route.hash?.slice(1);
-  activeTab.value = requested && settingsTabIds.value.includes(requested) ? requested : settingsTabIds.value[0];
+watch([() => navigationTab(route.query), () => route.hash, settingsTabIds], () => {
+  const tab = navigationTab(route.query);
+  const requested = typeof tab === "string" ? tab : route.hash?.slice(1);
+  const selected = requested === "preferences" || requested === "data" ? "general"
+    : requested === "api-keys" && appMode.value === "local" ? "chat" : requested;
+  activeTab.value = selected && settingsTabIds.value.includes(selected) ? selected : settingsTabIds.value[0];
 }, { immediate: true });
 function selectSettingsTab(tab: string): void {
   activeTab.value = tab;
-  void router.replace({ query: { ...route.query, tab }, hash: "" });
+  void router.push({ query: { ...route.query, tab }, hash: "" });
 }
 </script>
 
@@ -223,4 +265,9 @@ function selectSettingsTab(tab: string): void {
   padding: 1.5rem 0;
   background: transparent;
 }
+.navigation-setting fieldset { display: flex; flex-wrap: wrap; gap: .75rem 1rem; border: 1px solid var(--surface-border); border-radius: .65rem; }
+.navigation-setting label { display: inline-flex; align-items: center; gap: .35rem; }
+.navigation-setting input { accent-color: var(--ss-action); }
+.compute-status { display: grid; grid-template-columns: max-content auto; gap: .5rem 1rem; }
+.compute-status dd { margin: 0; }
 </style>

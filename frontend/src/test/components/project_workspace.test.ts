@@ -1,9 +1,11 @@
-import { flushPromises, shallowMount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { enableAutoUnmount, flushPromises, shallowMount } from "@vue/test-utils";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "vue";
+enableAutoUnmount(afterEach);
+
 const mocks = vi.hoisted(() => ({ project: null as any, config: { siteProfile: "demo" }, get: vi.fn(), push: vi.fn(), list: vi.fn() }));
 vi.mock("@/api/client", () => ({ default: { get: mocks.get } }));
-vi.mock("vue-router", () => ({ useRouter: () => ({ push: mocks.push }) }));
+vi.mock("vue-router", () => ({ useRouter: () => ({ push: mocks.push }), useRoute: () => ({ path: "/project", query: {} }) }));
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: vi.fn() }) }));
 vi.mock("@/stores/project", async () => {
   const { reactive } = await import("vue");
@@ -20,7 +22,7 @@ import ProjectContent from "@/views/project/ProjectContent.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import { installProjectCollections, projectCollectionsLoader } from "@/lib/projectCollections";
 const project = (id: number) => ({ id, name: `Project ${id}`, description: "Wide project description", model_count: 60, experiment_count: 1, workflow_count: 1, created_at: "2026-10-01", updated_at: "2026-10-01" });
-function mountView() { return shallowMount(ProjectContent, { global: { renderStubDefaultSlot: true } }); }
+function mountView() { return shallowMount(ProjectContent, { global: { renderStubDefaultSlot: true, stubs: { RouterLink: { name: "RouterLink", props: ["to"], template: "<a><slot /></a>" } } } }); }
 describe("Project resource workspace", () => {
   beforeEach(() => {
     vi.clearAllMocks(); projectCollectionsLoader.value = null;
@@ -32,24 +34,17 @@ describe("Project resource workspace", () => {
     const view = mountView(); await flushPromises();
     expect(view.get('[data-testid="project-runs"]').text()).toContain("12");
     expect(view.text()).toContain("Showing 1 of 12 runs");
-    expect(view.text()).toContain("60 models");
-    const header = view.findComponent({ name: "WorkspaceHeader" });
-    expect(header.findAllComponents({ name: "Button" }).map(b => b.attributes("label"))).toEqual(expect.arrayContaining(["Edit", "Export"]));
-    const button = view.findAllComponents({ name: "Button" }).find(b => b.attributes("label") === "Models")!;
-    button.vm.$emit("click"); expect(mocks.push).toHaveBeenCalledWith("/runs?tab=models"); view.unmount();
+    expect(view.text()).toContain("Models · 60");
+    const header = view.getComponent({ name: "WorkspacePageHeader" });
+    expect(header.props("actions").map((item: { label: string }) => item.label)).toEqual(expect.arrayContaining(["Edit", "Export"]));
+    expect(view.findAllComponents({ name: "RouterLink" }).some((link) => link.props("to")?.query?.section === "models")).toBe(true);
   });
-  it.each(["demo", "pro", ""])("allows a blank project from both header surfaces in %s", async (profile) => {
+  it.each(["demo", "pro", ""])("allows a blank project from Actions in %s", async (profile) => {
     mocks.config.siteProfile = profile;
     const view = mountView(); await flushPromises();
-    const header = view.getComponent({ name: "WorkspaceHeader" });
-    const action = header.props("actions").find((item: { label: string }) => item.label === "New Project");
+    const header = view.getComponent({ name: "WorkspacePageHeader" });
+    const action = header.props("actions").find((item: { label: string }) => item.label === "New project");
     expect(action.disabled).not.toBe(true);
-    const button = header.findAllComponents({ name: "Button" }).find(b => b.attributes("label") === "New Project")!;
-    expect(button.attributes("disabled")).toBeUndefined();
-    button.vm.$emit("click"); await flushPromises();
-    expect(view.getComponent({ name: "ProjectDialog" }).props("visible")).toBe(true);
-    view.getComponent({ name: "ProjectDialog" }).vm.$emit("update:visible", false);
-    await flushPromises();
     action.command(); await flushPromises();
     expect(view.getComponent({ name: "ProjectDialog" }).props("visible")).toBe(true);
     view.unmount();
@@ -72,9 +67,9 @@ describe("Project resource workspace", () => {
   });
   it("clears optional collections when their extension is removed", async () => {
     const dispose = installProjectCollections(async () => [{ key: "campaigns", label: "Campaigns", total: 7, to: "/campaigns", items: [{ id: "study-1", title: "Draft study", status: "draft", createdAt: "2026-10-01", to: "/campaigns" }] }]);
-    const view = mountView(); await flushPromises(); expect(view.text()).toContain("7 campaigns");
+    const view = mountView(); await flushPromises(); expect(view.text()).toContain("All 7");
     expect(view.get(".collection-summary").attributes("role")).toBeUndefined();
     await view.get(".collection-summary").trigger("click"); expect(mocks.push).not.toHaveBeenCalled();
-    dispose(); await flushPromises(); expect(view.text()).not.toContain("7 campaigns"); view.unmount();
+    dispose(); await flushPromises(); expect(view.text()).not.toContain("All 7"); view.unmount();
   });
 });

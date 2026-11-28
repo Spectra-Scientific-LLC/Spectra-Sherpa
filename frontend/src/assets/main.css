@@ -266,6 +266,18 @@ select {
   border-color: var(--ss-border-strong);
 }
 
+.workspace-page-header .responsive-header-actions__primary .p-button.p-component:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight) {
+  color: var(--ss-on-action);
+  background: var(--ss-action);
+  border-color: var(--ss-action);
+}
+
+.workspace-page-header .responsive-header-actions__primary .p-button.p-component:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):not(.p-highlight):enabled:is(:hover, :focus-visible) {
+  background: var(--ss-action-hover);
+  border-color: var(--ss-action-hover);
+}
+
+
 .header-actions .p-button:not(.p-dialog-header-icon),
 .topbar .p-button:not(.p-dialog-header-icon),
 .hero-actions .p-button:not(.p-dialog-header-icon),

@@ -1,7 +1,7 @@
 <template>
   <header class="topbar">
     <div class="topbar-left">
-      <button
+      <button v-if="!nativeNavigation"
         type="button"
         class="nav-collapse-toggle"
         :aria-label="props.navCollapsed ? 'Expand navigation' : 'Collapse navigation'"
@@ -40,7 +40,7 @@
       </div>
     </div>
 
-    <nav v-if="projectStore.currentProjectId != null" class="topbar-center" aria-label="Workflow progress">
+    <nav v-if="!nativeNavigation && projectStore.currentProjectId != null" class="topbar-center" aria-label="Workflow progress">
       <RouterLink
         v-for="stage in workflowStages" :key="stage.kind" :to="stage.to"
         class="workflow-stage" :title="stage.detail" :aria-label="`${stage.label}: ${stage.detail}`">
@@ -50,7 +50,8 @@
     </nav>
 
     <div class="topbar-right">
-      <details class="connection-status">
+      <Teleport defer :to="nativeNavigation ? '#desktop-status' : 'body'" :disabled="!nativeNavigation">
+      <details class="connection-status" :class="{ 'connection-status--desktop': nativeNavigation }">
         <summary>{{ connectionLabel }}</summary>
         <div class="connection-details">
       <!-- Basic availability; detailed provenance is shown separately. -->
@@ -103,6 +104,7 @@
       </div>
         </div>
       </details>
+      </Teleport>
       <Button
         v-if="showChatToggle !== false"
         icon="pi pi-comments"
@@ -177,6 +179,7 @@ const props = defineProps<{
   navCollapsed: boolean;
   chatCollapsed: boolean;
   showChatToggle?: boolean;
+  nativeNavigation?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -425,15 +428,6 @@ const onProjectChange = async () => {
       }
     }
     await projectStore.selectProject(selectedProjectId.value);
-    const project = projectStore.currentProject;
-    if (project) {
-      toast.add({
-        severity: "info",
-        summary: "Project Loaded",
-        detail: `Switched to "${project.name}"`,
-        life: 2000,
-      });
-    }
   }
 };
 </script>
@@ -786,4 +780,5 @@ const onProjectChange = async () => {
     display: none;
   }
 }
+.connection-status--desktop .connection-details { top: auto; bottom: calc(100% + .4rem); }
 </style>

@@ -47,19 +47,21 @@
       </button>
     </div>
 
-    <Sidebar :collapsed="effectiveNavCollapsed" @expand="toggleNav" />
+    <Sidebar v-if="!menuNavigation" :collapsed="effectiveNavCollapsed" @expand="toggleNav" />
     <div ref="workspaceElement" class="workspace">
       <div class="main">
         <Topbar
           :nav-collapsed="effectiveNavCollapsed"
+          :native-navigation="menuNavigation"
           :chat-collapsed="chatCollapsed"
           :show-chat-toggle="true"
           @toggle-nav="toggleNav"
           @toggle-chat="toggleChat"
         />
-        <main class="content">
+        <main class="content" :tabindex="menuNavigation ? -1 : undefined">
           <router-view />
         </main>
+        <div v-if="menuNavigation" id="desktop-status" class="desktop-status" aria-label="System status" />
         <AppFooter />
       </div>
       <div
@@ -80,7 +82,7 @@
 
     <!-- Only valid navigation choices (or the scrim) dismiss the drawer. -->
     <PrimeSidebar
-      v-if="isNarrow"
+      v-if="isNarrow && !menuNavigation"
       v-model:visible="navDrawerOpen"
       position="left"
       :style="{ width: '224px' }"
@@ -96,6 +98,8 @@ import { readBrowserSession, readBrowserToken, sameBrowserSession } from '@/exte
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { setAttentionWindow } from "@/lib/sherpaAttention";
 import { useRoute } from "vue-router";
+import { menuNavigation } from "@/navigation/mode";
+import { useNativeNavigation } from "@/navigation/native";
 import ChatPanel from "@/components/ChatPanel.vue";
 import GuidanceGlowOverlay from "@/components/guidance/GuidanceGlowOverlay.vue";
 import GuidanceToast from "@/components/guidance/GuidanceToast.vue";
@@ -119,7 +123,7 @@ import { sessionExpiryMinutesRemaining } from "@/utils/sessionExpiry";
 import { provideWorkspaceNavigation } from "@/composables/useWorkspaceNavigation";
 import ConfirmActionDialog from "@/components/ConfirmActionDialog.vue";
 
-provideWorkspaceNavigation();
+useNativeNavigation(provideWorkspaceNavigation());
 
 const { appMode, appConfig, siteProfile } = useAppConfig();
 const guidance = useGuidance();
@@ -194,7 +198,7 @@ const clampChatWidth = (value: number) => {
 };
 
 const layoutStyle = computed(() => ({
-  "--nav-width": effectiveNavCollapsed.value ? "72px" : "224px",
+  "--nav-width": menuNavigation.value ? "0px" : effectiveNavCollapsed.value ? "72px" : "224px",
   "--chat-width": chatCollapsed.value ? "0px" : `${chatWidth.value}px`,
 }));
 
@@ -545,4 +549,5 @@ watch([backendConnected, () => authStore.user, () => siteProfile?.value], ([isCo
 .app-shell:has(.session-expiry-banner) {
   padding-top: 48px;
 }
+.desktop-status { display: flex; justify-content: flex-end; padding: .25rem 1rem; border-top: 1px solid var(--surface-border); }
 </style>

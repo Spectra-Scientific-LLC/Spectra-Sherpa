@@ -7,48 +7,10 @@
         store or use API keys. Analysis still works; features that need a saved key stay disabled.
       </p>
     </div>
-    <!-- App Authentication Key — local and explicitly composed products only (not enterprise managed-auth) -->
-    <div v-if="isFeatureEnabled('apiTokenSettings')" class="key-section">
-      <div class="section-header">
-        <h3>Application access <MethodHelp topic="applicationAccess" label="Configure application access" /></h3>
-        <span class="badge required">Required</span>
-      </div>
-      <p class="description">
-        Stored in this browser; sent only to your Sherpa backend.
-      </p>
-      <div class="field">
-        <label for="app-key">App API Key</label>
-        <InputText
-          id="app-key"
-          v-model="appApiKey"
-          placeholder="local-key"
-          class="key-input"
-          autocomplete="off"
-        />
-      </div>
-      <div class="actions">
-        <Button
-          label="Save App Key"
-          icon="pi pi-save"
-          :loading="savingApp"
-          :disabled="!appApiKey.trim() || savingApp"
-          @click="saveAppKey"
-        />
-      </div>
-      <div v-if="appMessage" class="message success">
-        <i class="pi pi-check-circle" />
-        {{ appMessage }}
-      </div>
-      <div v-if="appError" class="message error">
-        <i class="pi pi-times-circle" />
-        {{ appError }}
-      </div>
-    </div>
-
     <!-- BYO Chat Config — local/OSS mode only. -->
     <div v-if="appMode === 'local'" class="key-section">
       <div class="section-header">
-        <h3>BYO Chat <MethodHelp topic="localChat" label="Configure local chat" /></h3>
+        <h3>Model <MethodHelp topic="localChat" label="Configure local chat" /></h3>
         <Tag v-if="byoChatConfigured" severity="success" value="Configured" />
         <span v-else class="badge optional">Optional</span>
       </div>
@@ -156,14 +118,14 @@
 
       <div class="actions">
         <Button
-          label="Save LLM Configuration"
+          label="Save"
           icon="pi pi-save"
           :loading="savingByo"
           :disabled="byoNeedsKey || savingByo || testingByo"
           @click="saveByoChatConfig"
         />
         <Button
-          label="Test Connection"
+          label="Test connection"
           icon="pi pi-bolt"
           class="p-button-outlined"
           :loading="testingByo"
@@ -178,6 +140,44 @@
       <div v-if="byoError" class="message error">
         <i class="pi pi-times-circle" />
         {{ byoError }}
+      </div>
+    </div>
+
+    <!-- App Authentication Key — local and explicitly composed products only (not enterprise managed-auth) -->
+    <div v-if="isFeatureEnabled('apiTokenSettings')" class="key-section">
+      <div class="section-header">
+        <h3>Application access <MethodHelp topic="applicationAccess" label="Configure application access" /></h3>
+        <span class="badge required">Required</span>
+      </div>
+      <p class="description">
+        Stored in this browser; sent only to your Sherpa backend.
+      </p>
+      <div class="field">
+        <label for="app-key">App API Key</label>
+        <InputText
+          id="app-key"
+          v-model="appApiKey"
+          placeholder="local-key"
+          class="key-input"
+          autocomplete="off"
+        />
+      </div>
+      <div class="actions">
+        <Button
+          label="Save App Key"
+          icon="pi pi-save"
+          :loading="savingApp"
+          :disabled="!appApiKey.trim() || savingApp"
+          @click="saveAppKey"
+        />
+      </div>
+      <div v-if="appMessage" class="message success">
+        <i class="pi pi-check-circle" />
+        {{ appMessage }}
+      </div>
+      <div v-if="appError" class="message error">
+        <i class="pi pi-times-circle" />
+        {{ appError }}
       </div>
     </div>
 
@@ -372,7 +372,7 @@
       <div class="actions">
         <Button
           v-if="!isDemoMode"
-          label="Save LLM Configuration"
+          label="Save"
           icon="pi pi-save"
           :loading="savingLlm"
           :disabled="(!llmApiKey.trim() && !isCurrentProviderKeySaved) || savingLlm"
@@ -380,7 +380,7 @@
         />
         <Button
           v-if="hasLlmKey"
-          label="Test Connection"
+          label="Test connection"
           icon="pi pi-bolt"
           class="p-button-outlined"
           :loading="testing"

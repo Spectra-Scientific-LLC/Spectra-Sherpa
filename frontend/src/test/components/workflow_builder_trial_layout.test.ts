@@ -555,12 +555,13 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     const wrapper = await mountBuilder();
     await flushPromises();
 
-    const menu = wrapper.find('[data-testid="export-menu"]');
-    expect(wrapper.find('[aria-label="Validated workflow export"]').exists()).toBe(false);
-    expect(menu.text()).toContain("Project package (.sherpa)");
-    expect(menu.text()).not.toContain("Download Bundle (.zip)");
-    expect(menu.text()).not.toContain("Jupyter Notebook");
-    await menu.get("button").trigger("click");
+    const actions = wrapper.getComponent({ name: "WorkspacePageHeader" }).props("actions");
+    const exports = actions.find((item: { label?: string }) => item.label === "Export").items;
+    const labels = exports.map((item: { label?: string }) => item.label);
+    expect(labels).toContain("Project package (.sherpa)");
+    expect(labels).not.toContain("Download Bundle (.zip)");
+    expect(labels).not.toContain("Jupyter Notebook (.ipynb)");
+    await exports.find((item: { label?: string }) => item.label === "Project package (.sherpa)").command();
     expect(projectStore.exportProject).toHaveBeenCalledWith(1);
     wrapper.unmount();
   });
@@ -570,11 +571,11 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     const wrapper = await mountBuilder();
     await flushPromises();
 
-    const menu = wrapper.find('[data-testid="export-menu"]');
-    expect(menu.text()).toContain("Workflow Python (.py)");
-    expect(menu.text()).toContain("Jupyter Notebook (.ipynb)");
-    expect(menu.text()).toContain("Download Bundle (.zip)");
-    expect(menu.text()).toContain("Project package (.sherpa)");
+    const actions = wrapper.getComponent({ name: "WorkspacePageHeader" }).props("actions");
+    const exports = actions.find((item: { label?: string }) => item.label === "Export").items;
+    expect(exports.map((item: { label?: string }) => item.label)).toEqual(expect.arrayContaining([
+      "Workflow Python (.py)", "Jupyter Notebook (.ipynb)", "Download Bundle (.zip)", "Project package (.sherpa)",
+    ]));
     wrapper.unmount();
   });
 
@@ -720,12 +721,8 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
         .find((button) => button.text() === "Run")
         ?.attributes(),
     ).toHaveProperty("disabled");
-    expect(
-      wrapper
-        .findAll("button")
-        .find((button) => button.text() === "Analysis Starter")
-        ?.attributes(),
-    ).toHaveProperty("disabled");
+    const actions = wrapper.getComponent({ name: "WorkspacePageHeader" }).props("actions");
+    expect(actions.find((item: { label?: string }) => item.label === "Analysis Starter").disabled).toBe(true);
     wrapper.unmount();
   });
 
@@ -863,20 +860,22 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     expect(context.text()).not.toContain("ProjectIris PCA");
     expect(context.text()).toContain("Data PortfolioSynthetic Atmospheric FTIR");
     expect(context.text()).not.toContain("1 dataset bound");
-    expect(context.get(".workspace-context-item strong").attributes("title")).toBe(
+    expect(context.get("strong").attributes("title")).toBe(
       "Synthetic Atmospheric FTIR",
     );
     wrapper.unmount();
   });
 
-  it("does not repeat the active sheet name or SHA beside the Workflows title", async () => {
+  it("shows the sheet once and keeps its SHA out of the subtitle", async () => {
     workbookStore.activeIndex = 0;
     workflowStore.workflowHash = "a".repeat(64);
     const wrapper = await mountBuilder();
     await flushPromises();
 
-    expect(wrapper.get(".workspace-header__title h1").text()).toBe("Workflow");
-    expect(wrapper.find(".workspace-header__title .workflow-meta-badge").exists()).toBe(false);
+    const header = wrapper.get(".workspace-page-header");
+    expect(header.get("h1").text()).toBe("PCA Sheet");
+    expect(header.get(".workspace-page-identity").text()).not.toContain("PCA Sheet");
+    expect(header.text()).not.toContain("a".repeat(64));
     wrapper.unmount();
   });
 
@@ -1293,8 +1292,8 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     window.dispatchEvent(closing);
     expect(closing.defaultPrevented).toBe(true);
     expect(wrapper.text()).toContain("Unsaved changes");
-    const save = wrapper.findAll("button").find(button => button.text() === "Save")!;
-    await save.trigger("click");
+    const actions = wrapper.getComponent({ name: "WorkspacePageHeader" }).props("actions");
+    await actions.find((item: { label?: string }) => item.label === "Save").command();
     await flushPromises();
     expect(workflowStore.saveWorkflow).toHaveBeenCalled();
     wrapper.unmount();
@@ -1386,11 +1385,11 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     }));
     const wrapper = await mountBuilder();
     await flushPromises();
-    expect(wrapper.text()).toContain("The saved workflow is shown");
+    expect(wrapper.text()).toContain("Saved workflow shown — browser draft available.");
     expect(workflowStore.setNodes).not.toHaveBeenCalled();
     expect(workflowStore.saveWorkflow).not.toHaveBeenCalled();
-    const keep = wrapper.findAll("button").find((button) => button.text() === "Keep saved workflow")!;
-    await keep.trigger("click");
+    const actions = wrapper.getComponent({ name: "WorkspacePageHeader" }).props("actions");
+    await actions.find((item: { label?: string }) => item.label === "Keep saved workflow").command();
     expect(localStorage.getItem(key)).toBeNull();
     expect(workflowStore.setNodes).not.toHaveBeenCalled();
     wrapper.unmount();
@@ -1431,10 +1430,10 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     }));
     const wrapper = await mountBuilder();
     await flushPromises();
-    expect(wrapper.text()).toContain("The saved workflow is shown");
+    expect(wrapper.text()).toContain("Saved workflow shown — browser draft available.");
     workflowStore.workflowId = 999;
     await flushPromises();
-    expect(wrapper.text()).not.toContain("Restore draft");
+    expect(wrapper.getComponent({ name: "WorkspacePageHeader" }).props("actions").some((item: { label?: string }) => item.label === "Restore draft")).toBe(false);
     expect(localStorage.getItem(key)).not.toBeNull();
     expect(workflowStore.setNodes).not.toHaveBeenCalled();
     wrapper.unmount();

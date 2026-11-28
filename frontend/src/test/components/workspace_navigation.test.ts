@@ -170,7 +170,7 @@ describe("active workspace sidebar sections", () => {
     expect(view.get(".nav-children").attributes("aria-label")).toBe("Runs sections");
     await router.push("/project");
     await flushPromises();
-    expect(view.find(".nav-children").exists()).toBe(false);
+    expect(view.get(".nav-children").attributes("aria-label")).toBe("Project sections");
     expect(navigation.entry.value).toBeNull();
     usePrimaryNavigation().addItems([{ to: "/campaigns", label: "Optimize", icon: "pi pi-chart-line" }], "campaign");
     await router.push("/campaigns");

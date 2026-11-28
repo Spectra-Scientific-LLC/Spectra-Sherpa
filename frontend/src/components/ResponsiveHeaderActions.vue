@@ -2,7 +2,7 @@
   <div
     ref="rootRef"
     class="header-actions responsive-header-actions"
-    :class="{ 'is-collapsed': collapsed }"
+    :class="{ 'is-collapsed': collapsed || menuOnly }"
   >
     <div v-if="$slots.primary" ref="primaryRef" class="responsive-header-actions__primary">
       <slot name="primary" />
@@ -14,11 +14,11 @@
 
     <Button
       v-if="items.length > 0"
-      label="Actions"
+      :label="menuLabel"
       icon="pi pi-bars"
       :loading="items.some((item) => item.loading)"
       class="p-button-sm responsive-header-actions__trigger"
-      :aria-expanded="collapsed ? undefined : 'false'"
+      :aria-expanded="collapsed || menuOnly ? undefined : 'false'"
       @click="toggleMenu"
     />
     <TieredMenu ref="menuRef" :model="items" :popup="true" />
@@ -49,9 +49,13 @@ const props = withDefaults(
   defineProps<{
     items: HeaderActionMenuItem[];
     minTitleWidth?: number;
+    menuOnly?: boolean;
+    menuLabel?: string;
   }>(),
   {
     minTitleWidth: 220,
+    menuOnly: false,
+    menuLabel: "Actions",
   },
 );
 

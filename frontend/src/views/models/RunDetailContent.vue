@@ -1,24 +1,23 @@
 <template>
   <section class="run-detail">
-    <header class="run-detail__heading">
-      <div v-if="detail" class="run-detail__identity">
-        <input
-          v-model="runNameDraft"
-          class="run-detail__name"
-          aria-label="Run name"
-          maxlength="255"
-          :disabled="runNameSaving"
-          @blur="saveRunName"
-          @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-        />
-        <Tag :value="detail.run.status" />
-        <span :title="detail.run.executed_at">{{ detail.run.run_kind }} · {{ formatTimestamp(detail.run.executed_at) }}</span>
-      </div>
+    <details v-if="detail" class="run-name-editor">
+      <summary>Rename run</summary>
+      <label class="sr-only" for="retained-run-name">Run name</label>
+      <input
+        id="retained-run-name"
+        v-model="runNameDraft"
+        class="run-detail__name"
+        aria-label="Run name"
+        maxlength="255"
+        :disabled="runNameSaving"
+        @blur="saveRunName"
+        @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+      />
       <p v-if="runNameError" role="alert">{{ runNameError }}</p>
-    </header>
+    </details>
     <Teleport :to="actionsTarget || 'body'" :disabled="!actionsTarget">
       <div class="run-detail__actions" role="group" aria-label="Run actions">
-        <template v-for="action in headerActions" :key="action.label">
+        <template v-for="action in menuOnly ? [] : headerActions" :key="action.label">
           <select v-if="action.items?.length" v-model="producedArtifactUid" class="p-inputtext p-inputtext-sm" aria-label="Fitted model to open">
             <option value="">Choose a fitted model</option><option v-for="item in action.items" :key="item.label" :value="item.label">{{ item.label }}</option>
           </select>
@@ -71,10 +70,10 @@
           <dt v-if="detail.evidence.reason">Evidence note</dt><dd v-if="detail.evidence.reason">{{ detail.evidence.reason }}</dd>
           <dt>Notes</dt><dd>{{ detail.notes || 'None' }}</dd>
         </dl>
-        <details class="audit-details">
-          <summary>Audit details</summary>
+        <details v-if="!menuOnly || route.query.view === 'provenance'" class="audit-details" :open="route.query.view === 'provenance'">
+          <summary>Recorded evidence</summary>
           <dl>
-            <dt>Saved workflow revision</dt><dd>{{ detail.integrity_hash || 'Not recorded' }}</dd>
+            <template v-if="!menuOnly"><dt>Saved workflow revision</dt><dd>{{ detail.integrity_hash || 'Not recorded' }}</dd></template>
             <dt>Retention</dt><dd>{{ detail.evidence.qualification }}</dd>
             <dt>Executed at (UTC)</dt><dd>{{ detail.run.executed_at }}</dd>
           </dl>
@@ -188,9 +187,9 @@
                 <p v-if="nodeTrust.rows.length > 200">Showing the first 200 of {{ nodeTrust.rows.length }} rows. Download the complete table.</p>
                 <Button label="Download prediction trust CSV" class="p-button-text p-button-sm" @click="exportApplicationTrust(nodeTrust)" />
                 <div class="application-trust__scroll"><table>
-                  <thead><tr><th>File dataset position</th><th>Prediction</th><th>Global T²/Q screen</th><th>T²</th><th>Q</th><th>Advisor</th></tr></thead>
+                  <thead><tr><th>{{ trustSampleIds ? 'Sample ID' : 'File dataset position' }}</th><th>Prediction</th><th>Global T²/Q screen</th><th>T²</th><th>Q</th><th>Advisor</th></tr></thead>
                   <tbody><tr v-for="row in nodeTrust.rows.slice(0, 200)" :key="row.sampleIndex">
-                    <td>{{ row.sampleIndex + 1 }}</td><td>{{ formatPrediction(row.prediction) }}</td>
+                    <td>{{ trustSampleIds?.[row.sampleIndex] ?? row.sampleIndex + 1 }}</td><td>{{ formatPrediction(row.prediction) }}</td>
                     <td>{{ trustLabel(row.status) }}</td><td>{{ row.t2 ?? '—' }}</td><td>{{ row.q ?? '—' }}</td>
                     <td><Button label="Ask Sherpa" class="p-button-text p-button-sm" :disabled="!applicationAdvisorAvailable" @click="askRunApplicationAdvisor(row.sampleIndex)" /></td>
                   </tr></tbody>
@@ -240,6 +239,18 @@
                 :node-input="nodeInput" :node-inputs="nodeInputs" />
               <p v-else-if="!selectedDefinition">No saved node definition is available for scientific plotting. Retained values are shown below.</p>
               <p v-else-if="!rawNodeOutput">No scientific output was retained for this node.</p>
+              <section v-if="samplePredictions" :aria-label="`${samplePredictions.title} by sample`">
+                <h3>{{ samplePredictions.title }}</h3>
+                <Button label="Download CSV" class="p-button-text p-button-sm" @click="downloadSamplePredictions" />
+                <div class="prediction-table-scroll">
+                  <table class="prediction-table">
+                    <thead><tr><th scope="col">Sample</th><th v-for="(column, i) in samplePredictions.columns" :key="i" scope="col">{{ column }}</th></tr></thead>
+                    <tbody><tr v-for="(row, i) in samplePredictions.rows" :key="i">
+                      <th scope="row">{{ row.sample }}</th><td v-for="(cell, j) in row.cells" :key="j">{{ formatAppliedCell(cell, samplePredictions.decimals[j]) }}</td>
+                    </tr></tbody>
+                  </table>
+                </div>
+              </section>
               <details v-if="Object.keys(values).length" class="audit-details">
                 <summary>Raw saved outputs (for audit)</summary>
                 <details v-for="(value, port) in values" :key="port" @toggle="rawOpen[port] = ($event.target as HTMLDetailsElement).open"><summary>{{ port }}</summary><pre v-if="rawOpen[port]">{{ JSON.stringify(value, null, 2) }}</pre></details>
@@ -279,6 +290,7 @@ import RetainedPopulationMap from "@/components/results/RetainedPopulationMap.vu
 /* eslint-disable @typescript-eslint/no-explicit-any -- saved node payloads use the shared scientific renderer contract. */
 import { computed, ref, shallowRef, watch, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { navigationRegistry } from '@/navigation/workspace';
 import Button from 'primevue/button';
 import Panel from 'primevue/panel';
 import ProgressSpinner from 'primevue/progressspinner';
@@ -299,6 +311,8 @@ import { buildNodeOutput } from '@/utils/nodeOutput';
 import { availableScientificPresentations, resolveScientificPresentation, projectScientificPresentation, presentationResolutionError, scientificPlotOptions } from '@/utils/scientificPresentation';
 import QuickPlotModal from '@/views/workflow-builder/modals/QuickPlotModal.vue';
 import SavedValue from './SavedValue.vue';
+import { appliedResultTable, type AppliedCell, type AppliedResultTable } from '@/utils/appliedResultTable';
+import { columnDecimals, formatMeasurement } from '@/utils/scientificDisplay';
 import { downloadCsv, downloadJson } from '@/utils/download';
 import { applicationTrustView, retainedNodeTrustView, type ApplicationTrustView } from '@/utils/applicationTrust';
 import ContextualActions from '@/components/ContextualActions.vue';
@@ -370,7 +384,7 @@ const applicationAdvisorAvailable = computed(() => appMode.value !== 'local' &&
   appConfig.value?.advisorContextPolicy !== 'receipt' &&
   (isFeatureEnabled('sherpaAdvisor') || appConfig.value?.siteProfile === 'pro'));
 const emit = defineEmits<{ (event: 'renamed'): void }>();
-const props = defineProps<{ actionsTarget?: HTMLElement | null; primaryActionsTarget?: HTMLElement | null }>();
+const props = defineProps<{ actionsTarget?: HTMLElement | null; primaryActionsTarget?: HTMLElement | null; menuOnly?: boolean }>();
 const detail = ref<Detail | null>(null);
 const retainedSummaryAnchor = ref<InstanceType<typeof RetainedPopulationSummary> | null>(null);
 const producedArtifactUid = ref('');
@@ -464,6 +478,37 @@ const predictionTable = computed(() => {
     rows: indices.map((index, i) => ({ index, identity: column?.[index], value: predictions[i] })),
   };
 });
+const appliedSampleIds = computed<string[] | null>(() => {
+  if (selectedDefinition.value?.node_type !== 'model.load_apply') return null;
+  const input = nodeInputs.value?.X_new as { y_axis?: { sample_table?: { sample_id?: unknown } } } | undefined;
+  const ids = input?.y_axis?.sample_table?.sample_id;
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string' && id.length > 0)) return null;
+  return new Set(ids).size === ids.length ? (ids as string[]) : null;
+});
+// The per-file trust table already lists every prediction; it then names rows by sample ID instead.
+const trustSampleIds = computed(() => {
+  const ids = appliedSampleIds.value;
+  return nodeTrust.value && ids && ids.length === nodeTrust.value.rows.length ? ids : null;
+});
+// The applied model's saved output by sample, named from what the run saved with it and
+// following the output chosen above. Hidden when the trust table or the validation ledger
+// already lists these values per sample.
+const samplePredictions = computed<AppliedResultTable | null>(() => {
+  if (predictionTable.value || selectedDefinition.value?.node_type !== 'model.load_apply' || nodeTrust.value || validationRows.value.length) return null;
+  const presentation = selectedPresentation.value?.presentation;
+  const port = selectedPresentation.value?.sourcePort ?? 'result';
+  return appliedResultTable(values.value, port, appliedSampleIds.value, presentation?.label ?? null, columnDecimals);
+});
+function formatAppliedCell(cell: AppliedCell, decimals: number | null): string {
+  if (cell == null) return '—';
+  return typeof cell === 'number' && decimals != null ? formatMeasurement(cell, decimals) : String(cell);
+}
+function downloadSamplePredictions() {
+  const table = samplePredictions.value;
+  if (!table) return;
+  downloadCsv([['Sample', ...table.columns], ...table.rows.map((row) => [row.sample, ...row.cells.map((cell) => cell ?? '')])],
+    `${detail.value?.run.name || 'run'}-${table.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.csv`);
+}
 const applicationTrust = computed(() => applicationOutputs.value.map(applicationTrustView).filter((value): value is ApplicationTrustView => value !== null));
 function applicationMetadata(artifactUid: string): Record<string, unknown> | null {
   const output = applicationOutputs.value.find(item =>
@@ -523,13 +568,49 @@ async function downloadPopulationMap(nodeId: string) {
   }
 }
 const tabs = ["Summary", "Results", "Validation"];
+const routedRunViews = {
+  results: "Results",
+  steps: "Validation",
+  outputs: "Results",
+  provenance: "Summary",
+  samples: "Results",
+  predictions: "Results",
+} as const;
+const navigationScope = "runs.inspect";
+const runRole = computed(() => {
+  const saved = detail.value;
+  if (!saved) return undefined;
+  if (saved.prediction_context?.role === "prediction_only" || saved.run.run_kind === "batch_inference") return "Application";
+  if (saved.run.source_type === "paired_evaluation") return "Paired evaluation";
+  const measured = [...(modelSummary.value?.regression ?? []), ...(modelSummary.value?.classification ?? [])];
+  if (measured.some(row => row.role === "held_out_test")) return "Held-out evaluation";
+  if (saved.run.run_kind === "training") return "Development";
+  return undefined;
+});
+function hasRunSection(): boolean {
+  return navigationRegistry.tree().some(({ id, sections }) => id === "host:runs"
+    && sections.some(({ entry }) => entry.id === navigationScope));
+}
+
+function retainedNavigationPath() {
+  const run = detail.value?.run;
+  return run && run.id === Number(route.params.runId) && run.project_id === project.currentProjectId ? route.path : undefined;
+}
 const expandedSections = ref<string[]>([]);
 const inspectingNode = computed(() => expandedSections.value.includes('Results') || expandedSections.value.includes('Validation'));
 function setSectionCollapsed(section: string, collapsed: boolean) {
   expandedSections.value = collapsed ? expandedSections.value.filter(name => name !== section) : [...new Set([...expandedSections.value, section])];
-  if (!collapsed) setTab(section);
+  if (!collapsed && !routedView.value) setTab(section);
 }
+const routedView = computed(() => {
+  const view = route.query.view;
+  if (typeof view === "string" && Object.prototype.hasOwnProperty.call(routedRunViews, view)) {
+    return routedRunViews[view as keyof typeof routedRunViews];
+  }
+  return undefined;
+});
 const tab = computed(() => {
+  if (routedView.value) return routedView.value;
   if (tabs.includes(String(route.query.view))) return String(route.query.view);
   const nodeId = selectedNode.value || preferredNode.value || "";
   const hasOutput = Object.values(detail.value?.evidence.outputs[nodeId] ?? {}).some(
@@ -564,6 +645,23 @@ const preferredNode = computed(() => {
   const model = saved.find(node => /^(model|classification)\./.test(node.node_type) && retained(node.node_id));
   return evaluation?.node_id ?? model?.node_id ?? nodes.value[0]?.id;
 });
+watch([retainedNavigationPath, runRole, hasRunSection, preferredNode], ([path, role, registered, preferred], _, onCleanup) => {
+  if (!path || !registered) return;
+  const nextViews = [
+    ["results", "Results"],
+    ...(role === "Application" ? [["predictions", "Predictions"]] : []),
+    ...(role === "Held-out evaluation" ? [["samples", "Samples"]] : []),
+    ["steps", "Steps"], ["outputs", "Outputs"], ["provenance", "Provenance"],
+  ];
+  onCleanup(navigationRegistry.register("host", { views: nextViews.map(([id, label]) => ({
+    id: `${navigationScope}.${id}`, sectionId: navigationScope, label,
+    route: { path, query: {
+      section: "inspect", view: id,
+      ...(id === "samples" || id === "predictions" ? { node: preferred, presentation: undefined, output: undefined } : {}),
+    } },
+  })) }));
+}, { flush: "post" });
+
 const evidenceGaps = computed(() => detail.value?.evidence_gaps ?? []);
 const evidenceGapLabel = (gap: EvidenceGap): string =>
   visibleEvidenceGapLabel(
@@ -666,7 +764,17 @@ const retainedIdentity = computed(() => {
     buildSha: typeof buildSha === 'string' && /^[a-f\d]{40}$/i.test(buildSha) ? buildSha : null,
   };
 });
-defineExpose({ headerActions: headerMenuActions, retainedIdentity });
+const retainedHeader = computed(() => {
+  const run = detail.value?.run;
+  if (!run || !retainedIdentity.value) return undefined;
+  const workflow = run.workflow_name && run.workflow_name !== (run.display_name || run.name) ? run.workflow_name : null;
+  return {
+    title: run.display_name || run.name,
+    role: runRole.value,
+    identity: [workflow, run.status === "completed" ? "Completed" : run.status, formatTimestamp(run.executed_at)].filter(Boolean).join(" · "),
+  };
+});
+defineExpose({ headerActions: headerMenuActions, retainedIdentity, retainedHeader });
 const failure = (err: any) => String(err?.response?.data?.detail || err?.message || 'Saved evidence could not be loaded.');
 function setTab(value: string) { if (value) void router.replace({ query: { ...route.query, view: value } }); }
 function selectNode(id: string) { void router.replace({ query: { ...route.query, node: id, presentation: undefined, output: undefined } }); }
@@ -914,6 +1022,7 @@ async function loadBaselineWarnings(request: ScopedRequestTicket) {
 }
 // The model card reads only retained, backend-computed statistics; a record
 // that cannot be read is named rather than replaced with a recomputation.
+type ProducedModelRecord = { n_components?: unknown; source_run_id?: unknown; node_id?: unknown };
 async function loadModelSummary(request: ScopedRequestTicket) {
   if (!detail.value || !definition.value) return;
   try {
@@ -924,19 +1033,46 @@ async function loadModelSummary(request: ScopedRequestTicket) {
     const model = primaryModelNode(definition.value);
     const records: Array<{ source: any; value: unknown }> = [];
     const missing: string[] = [];
+    let curveMissing: string | null = null;
     for (const source of summarySources(definition.value, contracts, model?.node_id ?? null)) {
       const evidence = detail.value?.evidence.outputs[source.nodeId]?.[source.port];
       // A possible output is not a retention gap unless the run recorded it.
       if (!evidence) continue;
       if (!evidence.storage) {
-        if (source.port === 'component_curve') missing.push(`${source.nodeId}/component_curve (not retained in this run)`);
+        if (source.port === 'component_curve') curveMissing = `${source.nodeId}/component_curve (not saved in this run)`;
         continue;
       }
       try { records.push({ source, value: await read(source.nodeId, source.port) }); }
       catch { missing.push(`${source.nodeId}/${source.port}`); }
       if (!request.isCurrent()) return;
     }
-    modelSummary.value = buildModelSummary(definition.value, detail.value?.params_snapshot ?? null, records);
+    let summary = buildModelSummary(definition.value, detail.value?.params_snapshot ?? null, records);
+    // Automatic component choice without a saved curve: the fitted model this run's model
+    // node produced still records how many components it kept. Only that model counts.
+    const produced = detail.value?.run.produced_artifact_uids ?? [];
+    const runId = detail.value?.run.id;
+    const modelNodeId = summary.model?.nodeId;
+    let countRecovered = false;
+    if (produced.length === 1 && summary.model?.componentCountMissing) {
+      try {
+        const { data } = await api.get<ProducedModelRecord>(`/models/${encodeURIComponent(produced[0])}`, { signal: request.signal });
+        if (!request.isCurrent()) return;
+        if (typeof data?.n_components === 'number' && data.source_run_id === runId && data.node_id === modelNodeId) {
+          summary = buildModelSummary(definition.value, detail.value?.params_snapshot ?? null, records, data.n_components);
+          countRecovered = summary.model?.componentCountMissing === false;
+        }
+      } catch { /* The summary keeps saying the count was not recorded. */ }
+      // A lookup that ends after the user moved on must not write into the new view.
+      if (!request.isCurrent()) return;
+    }
+    modelSummary.value = summary;
+    // The model record restores only the count; the curve's RMSEC/RMSECV, Q², CV design and
+    // selection rule are still missing, so the limitation stays, stated precisely.
+    if (curveMissing) {
+      missing.unshift(countRecovered
+        ? `${modelNodeId}/component_curve (fitted LV count recovered from the saved model; component-selection and cross-validation curve not saved)`
+        : curveMissing);
+    }
     if (missing.length) summaryError.value = `Some summary statistics could not be loaded: ${missing.join(', ')}.`;
   } catch (err) {
     if (request.isCurrent()) summaryError.value = `Model summary unavailable: ${failure(err)}`;
@@ -992,7 +1128,7 @@ watch([() => auth.user?.id, () => auth.sessionRevision], () => {
   if (auth.user && project.currentProjectId != null) void loadRun(false);
 });
 watch([() => route.params.runId, () => route.query.project], () => void loadRun(), { immediate: true });
-watch([() => detail.value?.run.id, tab], ([id, view], [previousId]) => {
+watch([() => detail.value?.run.id, tab, () => route.query.view], ([id, view], [previousId]) => {
   if (id !== previousId || !tabs.includes(String(route.query.view))) expandedSections.value = [view];
   else if (!expandedSections.value.includes(view)) expandedSections.value.push(view);
 }, { immediate: true });
@@ -1010,9 +1146,8 @@ onBeforeUnmount(() => { runRequests.dispose(); nodeRequests.dispose(); nameReque
 
 <style scoped>
 .run-detail { min-width: 0; container-type: inline-size; overflow-wrap: anywhere; }
-.run-detail__heading { margin-bottom: 1rem; }
-.run-detail__heading h2 { margin: 0 0 .75rem; font-size: 1.25rem; }
-.run-detail__heading p { color: var(--text-color-secondary); margin: .5rem 0 0; }
+.run-name-editor { margin-block: .5rem; }
+.run-name-editor summary { cursor: pointer; color: var(--text-color-secondary); }
 .run-detail__identity { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; overflow-wrap: anywhere; }
 .run-detail__name { background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: 4px; color: var(--text-color); font: inherit; font-size: 1.125rem; font-weight: 600; max-width: min(100%, 30rem); padding: .3rem .45rem; }
 .run-detail__name:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
