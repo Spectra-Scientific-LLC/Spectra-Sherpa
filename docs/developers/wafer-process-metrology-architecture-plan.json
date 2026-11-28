@@ -1,0 +1,237 @@
+{
+  "schema_version": "spectrasherpa.implementation-plan/1",
+  "title": "Material and process associations for wafer spectra and site metrology",
+  "date": "2026-11-16",
+  "status": "Architecture and implementation plan only; no runtime feature delivered",
+  "problem": "Many lots contain many wafers. Each wafer undergoes repeated process steps in multiple chambers; some executions generate large spectral recordings. Each metrology execution has its own site definitions and a known tool; recipe-specific tool-matching corrections must remain traceable. File and observation identity alone do not capture these relationships.",
+  "scope": {
+    "approach": "Extend existing native ingestion, sample/specimen identity, collection definitions and retained evidence. Add typed material/event associations and related-source manifests. Do not replace the reader registry or create a second numerical/provenance authority.",
+    "delivery": "Plan in OSS; later implementation in the authorized isolated deployment first. Paired integration work is required only for actual shared/server changes. This PR does not authorize external deployment, publishing, merging or changes to the actual Sherpa checkout.",
+    "exclude": [
+      "A general MES/LIMS or material scheduling system",
+      "Automatic inference of physical identity from a filename or matching wafer number",
+      "Mandatory full process history or known chamber ID before valid raw upload",
+      "Universal connector builder or arbitrary relationship editor",
+      "Metrology implementation as a prerequisite for BOSCH raw-OES delivery",
+      "Any change to original spectral counts through a metrology correction"
+    ]
+  },
+  "existing_authorities": [
+    {
+      "owner": "io/types.py and io/registry.py",
+      "reuse": "SHA-bound source members, parser/version identities, selectable multi-assets, typed dimension roles and structural admission"
+    },
+    {
+      "owner": "app/lib/sample_identity.py and typed sample table",
+      "reuse": "sample_id is unique observation identity; repeated material membership belongs in declared specimen association, not labels"
+    },
+    {
+      "owner": "app/lib/collection_definition.py and collection_assembly.py",
+      "reuse": "Versioned source-row mappings and sample/specimen/block fields; extend compactly rather than one manifest JSON row per spectral acquisition"
+    },
+    {
+      "owner": "app/models/experiment_specimen.py",
+      "reuse": "Existing specimen UID/catalog concepts; mutable catalog is not authority for previously measured samples. Review cross-experiment scope and migration rather than invent an unrelated wafer registry."
+    },
+    {
+      "owner": "core/specimen_independence.py",
+      "reuse": "Repeated-specimen validation; preserve explicit distinction between specimen grouping and actual treatment/experimental-unit grouping"
+    },
+    {
+      "owner": "core/time_series_portfolio.py",
+      "reuse": "Exact original acquisition intervals, source/dictionary/segmentation hashes, disjoint membership and bounded batches; generalize by extension with legacy compatibility"
+    },
+    {
+      "owner": "app/services/dag and existing Report/export/retention stores",
+      "reuse": "Numerical transformations run in registered nodes; My Dataset/Reports consume retained typed results"
+    }
+  ],
+  "foundations": [
+    {
+      "id": "F01",
+      "name": "Typed material and process associations",
+      "required_for_bosch": true,
+      "contract": "Persistent material identity, scoped external aliases, run/event identity and versioned observation/source associations. Minimum BOSCH binding is day/lot + wafer + process execution; tool/chamber and wider history can remain explicitly unknown. Preserve existing sample IDs and bind repeated specimen identity using the existing authority."
+    },
+    {
+      "id": "F02",
+      "name": "Versioned related-source manifest",
+      "required_for_bosch": true,
+      "contract": "Bind source SHA-256, roles, parser/schema and dictionary versions, companion associations, identity mappings, join keys, relationship evidence and revisions. Permit compact recording/interval links; do not serialize millions of duplicate annotations or materialize spectra to browse."
+    }
+  ],
+  "entity_contracts": [
+    {
+      "entity": "Material",
+      "requirements": [
+        "Persistent internal material UID; wafer is a type, not a new parallel identity system.",
+        "External IDs are scoped by declared source/namespace; wafer position or Wafer_01 is not globally unique.",
+        "Lot membership, slot/carrier and human labels are separate from identity; transfers/history are explicit where supplied.",
+        "Same-wafer cross-file association requires source evidence or reviewed mapping. Unknown identity remains unresolved; file SHA proves bytes, not physical chain of custody."
+      ]
+    },
+    {
+      "entity": "Process execution / event",
+      "requirements": [
+        "A particular execution of a step has its own stable ID, distinct from recipe step name/version and workflow node ID.",
+        "Repeated executions/rework are distinct events; preserve supplied order/precedence even if clocks are incomplete or disagree.",
+        "Allow one event to involve several wafers and one wafer to have many events, with explicit association intervals when needed.",
+        "Process tool and chamber are distinct optional identities; unknown is not inferred.",
+        "Conditioning/equipment/background events can exist without a wafer."
+      ]
+    },
+    {
+      "entity": "Recording and observation association",
+      "requirements": [
+        "Keep immutable source/asset/row identity separate from material and event identity.",
+        "A recording may span multiple intervals/events; bind selection membership through retained selectors/associations.",
+        "OES is a chamber/plasma observation during processing, not automatically a direct assay of wafer composition.",
+        "Spectral measurements can be absent for some events; the history must not invent an empty spectral asset.",
+        "Every derived feature/summary retains exact contributing observations or a pinned membership receipt, plus mapping revisions."
+      ]
+    },
+    {
+      "entity": "Metrology execution and site definition",
+      "requirements": [
+        "Metrology is a distinct event with known tool identity when supplied and declared recipe revision.",
+        "Site IDs are scoped to the metrology execution and versioned site plan; same site number across steps does not imply the same location.",
+        "Preserve site coordinates, units, coordinate frame/orientation and source evidence when supplied; coordinates may be unknown.",
+        "A site can have repeated readings or spectra. Revisit/remapping across executions must be explicit; no join by row order or unreviewed nearest coordinates.",
+        "A measurement links to the wafer and the declared preceding process state/event or interval. Before/after and rework joins need explicit policy; do not select the latest timestamp silently."
+      ]
+    },
+    {
+      "entity": "Tool-matching correction revision",
+      "requirements": [
+        "Store raw result and adjusted result separately. A correction is a canonical numerical transformation, not an import display preference.",
+        "Pin tool ID, metrology recipe/version, response/units, correction parameters, operation/formula, source/approval evidence, reference tool/scale if supplied, revision and applicable acquisition-time range.",
+        "Do not assume the matching constant is additive, multiplicative or unitless; declare its meaning from the supplied metrology specification.",
+        "Choose correction valid at measurement time unless an explicit reviewed retrospective revision is requested. Missing or overlapping applicability must not silently select a constant.",
+        "Retain a pin for already-corrected source data to prevent applying the same correction twice. Revision changes produce a new result and stale downstream status; original bytes/raw values remain intact."
+      ]
+    }
+  ],
+  "relationship_model": "Typed relational associations with explicit cardinalities and revisions; a browser may project a tree/timeline. Do not force storage into a single lot->wafer->step->spectrum tree: batch events, shared recordings, repeated visits and changing site plans cross those boundaries. No graph database is required by this plan.",
+  "scale_contract": [
+    "Persist compact source/asset/event/site indexes and exact selectors. Browse inventories, counts and lineage without decoding full spectral matrices.",
+    "Use paged/filterable My Dataset queries by lot, wafer, execution, chamber/tool, recipe and metrology site; display matched and unresolved associations separately.",
+    "Read selected numerical arrays through admitted native-reader batch access. Index metadata once, invalidate by source/interpretation revision, and avoid repeated full-source hashing/scanning per preview request where immutable admission permits reuse.",
+    "Preserve native heterogeneous axes and variable-length recordings. Do not force all wafers into a dense rectangular matrix or average duplicate coordinates as presumed replicates.",
+    "Bound backend work, browser traces, retained previews and export generation independently; previews show exact population counts and sampling policy. Analytical population is pinned separately from display sampling.",
+    "Measure representative scale before choosing limits or changing existing safety bounds. Include cancellation, interrupted/resumable admission where justified, request ownership and partial-failure recovery."
+  ],
+  "work_orders": [
+    {
+      "id": "MP01",
+      "priority": "P0",
+      "depends_on": [],
+      "title": "Review authority extensions and compatibility",
+      "deliverable": "Map existing specimen UID, observation ID, source identity, collections and portfolio contracts. Specify typed additions, scope/alias rules, migrations and legacy-read behavior; retain old observations and historical receipts."
+    },
+    {
+      "id": "MP02",
+      "priority": "P0 / BOSCH prerequisite",
+      "depends_on": [
+        "MP01"
+      ],
+      "title": "Implement F01 material/event associations",
+      "deliverable": "Minimal persistent material aliases, process execution identity and immutable reviewed associations, projected to existing specimen/sample authority. Optional chamber/tool context and equipment-only events. No inference of physical identity or experimental independence."
+    },
+    {
+      "id": "MP03",
+      "priority": "P0 / BOSCH prerequisite",
+      "depends_on": [
+        "MP01",
+        "MP02"
+      ],
+      "title": "Implement F02 related-source manifest and admission",
+      "deliverable": "Versioned compact source roles, source hashes, dictionaries, parser versions, mapping/join rules and event/subject links; explicit unresolved associations; validate before analysis. Pin BOSCH companion mapping through this mechanism."
+    },
+    {
+      "id": "MP04",
+      "priority": "P0",
+      "depends_on": [
+        "MP02",
+        "MP03"
+      ],
+      "title": "Many-lot, multichamber process history",
+      "deliverable": "Repeated/rework/batch event relations, optional timing/order and equipment identities; source-authored or reviewed process-state joins. Prevent merging similarly named wafers across lots."
+    },
+    {
+      "id": "MP05",
+      "priority": "P0",
+      "depends_on": [
+        "MP02",
+        "MP03"
+      ],
+      "title": "Metrology execution and scoped site plans",
+      "deliverable": "Site-plan revisions, coordinate conventions, repeated observations and explicit process-state associations for each metrology execution; source adapters use these contracts."
+    },
+    {
+      "id": "MP06",
+      "priority": "P0",
+      "depends_on": [
+        "MP05"
+      ],
+      "title": "Canonical metrology tool matching",
+      "deliverable": "Versioned correction authority with applicability checks; canonical correction node and raw/adjusted retained results; exact recipe/tool/measurement-time binding and no double application."
+    },
+    {
+      "id": "MP07",
+      "priority": "P0",
+      "depends_on": [
+        "MP03"
+      ],
+      "title": "Scalable common My Dataset navigation",
+      "deliverable": "Paged lot/wafer history, event/recording and site views over compact indexes; explicit selection receipts, native batch reads and separate preview populations. BOSCH consumes shared association/manifest projections while keeping phase-specific UI."
+    },
+    {
+      "id": "MP08",
+      "priority": "P0",
+      "depends_on": [
+        "MP04",
+        "MP05",
+        "MP06",
+        "MP07"
+      ],
+      "title": "Lineage, report/export and scale qualification",
+      "deliverable": "Trace a result to material/process state/site/tool/correction/source/acquisition and all mapping revisions. Verify metadata-only browsing, cancellation, numerical lineage, restart, migration and export across representative large collections. Record actual local scope and any deferred platform checks."
+    }
+  ],
+  "acceptance_scenarios": [
+    "Two lots both contain Wafer_01: they remain distinct. Two independently uploaded sources explicitly mapped to the same wafer retain one material identity while preserving different observation IDs. Renaming a file/label does not silently change material identity.",
+    "One wafer visits chamber A, chamber B, then chamber A again: three executions persist. An execution without spectra remains visible; unknown chamber and a conditioning event with no wafer are valid.",
+    "A shared chamber recording/batch execution associates with multiple wafers only through declared membership and intervals; it is not duplicated as independent evidence per wafer.",
+    "One metrology step has 9 sites and the next 49. Site 1 in both is not automatically joined. Repeated readings and declared coordinate transforms remain traceable.",
+    "Measurements with two tool/recipe correction revisions retain original values, valid-time correction pins and adjusted outputs. Missing/ambiguous applicability fails adjustment without blocking inspection of raw data. Already-corrected input cannot silently be corrected twice.",
+    "Rework and incomplete/misaligned clocks cannot create an automatic wrong before/after join. Ambiguous material/process/site associations are shown for review.",
+    "Changing identity mapping, site plan, interval membership or correction revision creates a new scientific revision and stale dependent results; old retained reports remain reproducible.",
+    "Selecting many lots for analysis streams original data with bounded resources. My Dataset browsing does not decode all arrays, and display subsampling cannot change analytical populations.",
+    "Group/split/DOE summaries preserve acquisition, site, wafer, lot and treatment-level distinctions; thousands of spectra/sites are never advertised as thousands of independent wafers or lots.",
+    "Existing collection definitions, source bindings, exact BOSCH portfolios and ordinary single-spectrum imports remain valid; migration cannot rewrite historical identities or qualification receipts.",
+    "Full browser upload -> association review -> wafer/process/site navigation -> canonical transformation -> retained report/export -> restart passes with fresh evidence; run scoped tests, generated-contract and evidence checks."
+  ],
+  "relationship_to_bosch_pr_207": {
+    "ownership": "This architecture plan owns the F01/F02 contracts and their generic implementation work. BOSCH #207 consumes them and may deliver their minimal reusable slice first under coordinated implementation. One shared implementation/authority only; do not implement a second wafer catalog or manifest in BOSCH.",
+    "minimum_gate": [
+      "F01: scoped wafer/material identity, lot/context association and process execution link, with explicit unknown chamber",
+      "F02: versioned source/companion/dictionary/condition manifest and reviewed join rules"
+    ],
+    "does_not_block_bosch": [
+      "Full multichamber history UI",
+      "Metrology/site adapters and tool matching",
+      "Cross-step process-to-metrology analysis",
+      "A universal connector framework"
+    ],
+    "release_order": "Approve contracts first; implement/test the minimal shared F01/F02 slice once; consume in BOSCH. Continue broader process/metrology slices independently. Record paired source reconciliation when implementation is submitted; neither planning PR implies a merge or release.",
+    "bosch_ownership": "BOSCH decoding, clock alignment, phase labeling/overrides, interval preview, raw OES peak measurement/assignment, DOE aggregation and OES report remain in #207."
+  },
+  "open_implementation_inputs": [
+    "Representative large wafer/lot source inventory and measured performance envelope",
+    "Supplied wafer alias namespaces and evidence for cross-file material/process matching",
+    "Metrology recipe/site-plan examples and coordinate conventions",
+    "Exact semantics, units, reference and validity rules of tool-matching constants"
+  ],
+  "input_policy": "These inputs refine adapters and performance limits; the architecture must not guess them. Preserve unknowns and raw data until reviewed mapping/correction is available.",
+  "verification": "Plan only. JSON/schema/dependency review is not runtime or scientific qualification."
+}
