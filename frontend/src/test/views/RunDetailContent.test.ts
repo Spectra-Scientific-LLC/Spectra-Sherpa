@@ -621,7 +621,7 @@ describe("Persistent run inspection", () => {
     plain.wrapper.unmount();
     // A missing prediction is shown and exported as missing, never as 0.
     withGap = true;
-    (downloadCsv as any).mockClear?.();
+    vi.mocked(downloadCsv).mockClear();
     const gap = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
     const gapTable = gap.wrapper.get('[aria-label="Predictions by sample"]');
     expect(gapTable.findAll('tbody tr')[1].text()).toBe('corn-mp5-002—');

@@ -3,7 +3,8 @@
     <WorkspacePageHeader :title="sectionTitle" :identity="sectionIdentity">
       <template #primary>
         <ContextualActions v-if="!isHostedDeployment && activeTab === 'application'" :context="deployActionContext" />
-        <Button v-if="!isHostedDeployment && activeTab === 'watches'" label="New watch" icon="pi pi-plus" class="p-button-sm"
+        <Button
+v-if="!isHostedDeployment && activeTab === 'watches'" label="New watch" icon="pi pi-plus" class="p-button-sm"
           data-action="create_folder_watch" :disabled="deployStore.loading || deployStore.applicationsLoading"
           @click="showCreateDialog = true" />
       </template>
@@ -87,7 +88,8 @@
               selectedApplication.artifact_digest
             }}</code>
           </details>
-          <Button v-if="selectedApplication" label="Open qualification" icon="pi pi-check-circle" text
+          <Button
+v-if="selectedApplication" label="Open qualification" icon="pi pi-check-circle" text
             @click="selectDeploySection('qualification')" />
         </TabPanel>
         <!-- ======================== FOLDER WATCHES TAB ======================== -->
@@ -432,14 +434,17 @@
           <WorkspaceState v-else-if="!deployStore.watches.length" kind="empty" message="Create a watch before adding instrument checks." />
           <div v-else class="deploy-view">
             <label for="instrument-qc-watch">Folder watch</label>
-            <Dropdown input-id="instrument-qc-watch" v-model="sectionQcWatchId" :options="deployStore.watches"
+            <Dropdown
+input-id="instrument-qc-watch" v-model="sectionQcWatchId" :options="deployStore.watches"
               option-label="name" option-value="id" placeholder="Choose a watch" />
-            <InstrumentQCPanel v-if="sectionQcWatchId !== null && deployStore.watches.some(watch => watch.id === sectionQcWatchId)"
+            <InstrumentQCPanel
+v-if="sectionQcWatchId !== null && deployStore.watches.some(watch => watch.id === sectionQcWatchId)"
               :key="sectionQcWatchId" :watch-id="sectionQcWatchId" />
           </div>
         </TabPanel>
         <TabPanel header="Qualification">
-          <QualificationPanel v-if="selectedApplication" :workflow-id="selectedApplication.workflow_id"
+          <QualificationPanel
+v-if="selectedApplication" :workflow-id="selectedApplication.workflow_id"
             :canonical-artifact-id="selectedApplication.canonical_artifact_id" :project-id="projectStore.currentProjectId" />
           <WorkspaceState v-else kind="empty" message="Choose an application to review its qualification.">
             <Button label="Open applications" text @click="selectDeploySection('application')" />

@@ -51,7 +51,8 @@
                   <span class="last-touched" :title="absoluteTimestamp(project.updated_at)">
                     <RelativeTime :value="project.updated_at" />
                   </span>
-                  <RowActions :subject="project.name" :actions="[
+                  <RowActions
+:subject="project.name" :actions="[
                     { label: 'Archive project', icon: 'pi pi-box', danger: true, command: () => requestArchive(project) },
                   ]" />
                 </div>
@@ -109,7 +110,8 @@
                 {{ project.description }}
               </p>
               <div class="archive-actions">
-                <RowActions :subject="project.name" :actions="[
+                <RowActions
+:subject="project.name" :actions="[
                   { label: 'Restore project', icon: 'pi pi-replay', command: () => restoreArchived(project) },
                   { label: 'Permanently delete', icon: 'pi pi-trash', danger: true, command: () => requestDelete(project) },
                 ]" />

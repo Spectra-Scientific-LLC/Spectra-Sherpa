@@ -11,7 +11,8 @@
       <p class="model-summary__populations">
         <span v-for="item in populations" :key="item.role"><strong>{{ item.n }}</strong> {{ item.label.toLowerCase() }}</span>
       </p>
-      <p v-for="line in (display === 'context' ? headline : [])" :key="line.target" class="model-summary__headline"
+      <p
+v-for="line in (display === 'context' ? headline : [])" :key="line.target" class="model-summary__headline"
         :aria-label="headline.length > 1 ? `Headline statistics for ${line.target}` : 'Headline statistics'">
         <span v-if="headline.length > 1" class="model-summary__response">{{ line.target }}</span>
         <span v-for="item in line.items" :key="item.role">

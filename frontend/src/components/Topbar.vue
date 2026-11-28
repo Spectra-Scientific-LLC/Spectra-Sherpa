@@ -1,7 +1,8 @@
 <template>
   <header class="topbar">
     <div class="topbar-left">
-      <button v-if="!nativeNavigation"
+      <button
+v-if="!nativeNavigation"
         type="button"
         class="nav-collapse-toggle"
         :aria-label="props.navCollapsed ? 'Expand navigation' : 'Collapse navigation'"

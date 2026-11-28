@@ -1,7 +1,8 @@
 <template>
   <ProjectUnavailable v-if="projectSelectionUnavailable" retryable @retry="initializeWorkbook(true)" />
   <section v-else class="workflow-builder-content">
-    <WorkspacePageHeader :title="activeSheetName === 'No sheet open' ? 'Workflow' : activeSheetName"
+    <WorkspacePageHeader
+:title="activeSheetName === 'No sheet open' ? 'Workflow' : activeSheetName"
       :role="isManagedCandidateAuthority ? 'Campaign candidate' : undefined" :identity="workflowIdentity" :actions="actionMenuItems">
       <template #primary>
         <Button
@@ -200,7 +201,8 @@
     </p>
 
     <!-- Three-column layout: Toolbar | Canvas | Inspector Sidebar -->
-    <div v-show="builderView === 'canvas'"
+    <div
+v-show="builderView === 'canvas'"
       class="workflow-workspace"
       :style="{ '--inspector-scale': inspectorScale }"
       :class="{

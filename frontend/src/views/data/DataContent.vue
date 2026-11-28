@@ -2,10 +2,12 @@
   <section class="data-content">
     <WorkspacePageHeader :title="dataTitle" :identity="dataIdentity" :actions="dataHeaderMenu">
       <template v-if="showBuildWorkflow || activeTab === TAB_CONTENTS || activeTab === TAB_UPLOAD" #primary>
-        <Button v-if="showBuildWorkflow" label="Build workflow" data-action="open_workflow" icon="pi pi-arrow-right"
+        <Button
+v-if="showBuildWorkflow" label="Build workflow" data-action="open_workflow" icon="pi pi-arrow-right"
           :loading="workflowHandoffBusy" :disabled="workflowHandoffBusy" :title="workflowHandoffTitle" @click="goToWorkflow()" />
         <Button v-else-if="activeTab === TAB_CONTENTS" label="Load data" icon="pi pi-folder-open" @click="activeTabId = 'upload'" />
-        <Button v-else
+        <Button
+v-else
           :label="folderSourceSelected ? 'Choose folder' : 'Choose files'"
           :icon="folderSourceSelected ? 'pi pi-folder-open' : 'pi pi-file-import'"
           :disabled="dataUploadDisabled"
@@ -1459,7 +1461,8 @@
             <li v-for="file in dataStore.experimentFiles" :key="file.id">
               <button type="button" class="data-file-link" @click="openInventoryFile(file)">{{ dataViewLabel(file) }}</button>
               <span>{{ formatDatasetFileShape(file) || 'Shape not recorded' }}</span>
-              <RowActions :subject="dataViewLabel(file)" :actions="[
+              <RowActions
+:subject="dataViewLabel(file)" :actions="[
                 { label: 'Download', icon: 'pi pi-download', command: () => dataStore.downloadFile(file.id, extractFileName(file.file_path)) },
                 { label: 'Delete', icon: 'pi pi-trash', danger: true, command: () => confirmDeleteFile(file) },
               ]" />

@@ -25,7 +25,10 @@ import ResponsiveHeaderActions, { type HeaderActionMenuItem } from "@/components
 import { useNavigationActionContext } from "@/navigation/actionContext";
 
 withDefaults(defineProps<{ title: string; role?: string; identity?: string; actions?: HeaderActionMenuItem[]; menuLabel?: string }>(), {
+  role: "",
+  identity: "",
   actions: () => [],
+  menuLabel: "Actions",
 });
 const { primary, invoke, busy, error } = useNavigationActionContext();
 </script>

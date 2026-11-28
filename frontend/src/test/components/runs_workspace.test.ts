@@ -166,7 +166,10 @@ describe("Runs workspace", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     const view = await selectedModelView();
-    await (view.vm as unknown as { exportActiveTab: () => Promise<void> }).exportActiveTab();
+    const provenance = view.get('#selected-model-detail details.run-identifiers');
+    expect(provenance.get('summary').text()).toBe('Provenance');
+    await provenance.get('[label="Copy metadata"]').trigger('click');
+    await flushPromises();
     expect(writeText).toHaveBeenCalledOnce();
     expect(JSON.parse(writeText.mock.calls[0][0])).toEqual(fitted);
     expect(m.patch).not.toHaveBeenCalled();

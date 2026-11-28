@@ -33,7 +33,8 @@
             </button>
             <ul v-else class="nav-children" :aria-label="item.label + ' sections'">
               <li v-for="section in activePageSections" :key="section.id">
-                <button v-if="legacySection(section.entry.id)"
+                <button
+v-if="legacySection(section.entry.id)"
                   type="button" class="nav-child"
                   :class="{ 'nav-child--active': isActiveSection(section) }"
                   :aria-current="isActiveSection(section) ? 'true' : undefined"
@@ -42,13 +43,15 @@
                   @click="selectLegacySection(section.entry.id)">
                   {{ section.entry.label }}
                 </button>
-                <RouterLink v-else class="nav-child"
+                <RouterLink
+v-else class="nav-child"
                   :class="{ 'nav-child--active': isActiveSection(section) }"
                   :to="workspaceDestination(section.entry.route, route)"
                   @click="emit('navigate')">{{ section.entry.label }}</RouterLink>
                 <ul v-if="isActiveSection(section) && section.views.length" class="nav-views" :aria-label="`${section.entry.label} views`">
                   <li v-for="view in section.views" :key="view.id">
-                    <RouterLink class="nav-child"
+                    <RouterLink
+class="nav-child"
                       :to="workspaceDestination(view.entry.route, route)"
                       :aria-current="isActiveView(view.entry.route, section.entry.route) ? 'page' : undefined"
                       :class="{ 'nav-child--active': isActiveView(view.entry.route, section.entry.route) }"

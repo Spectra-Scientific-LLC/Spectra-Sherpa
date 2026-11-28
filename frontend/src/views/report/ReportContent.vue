@@ -7,9 +7,11 @@
       :menu-label="reportStore.isReady && activeTab !== 'exports' ? 'Other formats' : 'Actions'"
     >
       <template v-if="activeTab === 'exports' || activeTab === 'setup' || reportStore.isReady" #primary>
-        <Button v-if="activeTab === 'exports'" label="Open draft" icon="pi pi-arrow-left"
+        <Button
+v-if="activeTab === 'exports'" label="Open draft" icon="pi pi-arrow-left"
           @click="selectReportSection(reportStore.isReady ? 'preview' : 'setup')" />
-        <Button v-else-if="activeTab === 'setup'" label="Generate report" icon="pi pi-file"
+        <Button
+v-else-if="activeTab === 'setup'" label="Generate report" icon="pi pi-file"
           :loading="reportStore.loading" :disabled="!reportStore.selectedWorkflowId" @click="generateReport" />
         <Button v-else label="Export PDF" icon="pi pi-file-pdf" @click="exportPdf" />
       </template>
@@ -210,7 +212,8 @@
         <WorkspaceState v-if="!reportStore.isReady" kind="empty" variant="page" message="Generate a draft to export it." />
         <section v-else class="report-formats" aria-label="Available formats">
           <Button label="Export PDF" icon="pi pi-file-pdf" outlined @click="exportPdf" />
-          <Button v-for="item in availableReportFormats" :key="item.label" :label="item.label"
+          <Button
+v-for="item in availableReportFormats" :key="item.label" :label="item.label"
             :icon="item.icon" :disabled="item.disabled" outlined @click="item.command?.()" />
         </section>
       </TabPanel>

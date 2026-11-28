@@ -740,6 +740,7 @@ const props = withDefaults(
   }>(),
   {
     focusTarget: false,
+    focusEvidence: undefined,
     scopeKey: "",
     activeDatasetName: null,
     selectedFileCount: null,

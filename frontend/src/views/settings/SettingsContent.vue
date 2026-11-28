@@ -46,9 +46,11 @@
         <section class="navigation-setting">
           <fieldset>
             <legend>Navigation</legend>
-            <label><input name="navigation-mode" type="radio" :checked="navigationMode === 'menu-bar'"
+            <label><input
+name="navigation-mode" type="radio" :checked="navigationMode === 'menu-bar'"
               :disabled="!hasNativeNavigation" @change="setNavigationMode('menu-bar')" /> Menu bar</label>
-            <label><input name="navigation-mode" type="radio" :checked="navigationMode === 'sidebar'"
+            <label><input
+name="navigation-mode" type="radio" :checked="navigationMode === 'sidebar'"
               @change="setNavigationMode('sidebar')" /> Sidebar</label>
           </fieldset>
         </section>
@@ -79,7 +81,8 @@
         <RetainedStorageRecovery />
       </TabPanel>
     </WorkspaceTabs>
-    <Teleport v-if="!isManaged && appMode === 'local'" defer
+    <Teleport
+v-if="!isManaged && appMode === 'local'" defer
       :to="activeTab === 'chat' ? '#settings-chat-privacy' : '#settings-service-privacy'">
       <IntegrationsTab :privacy-scope="activeTab === 'chat' ? 'chat' : 'services'" />
     </Teleport>

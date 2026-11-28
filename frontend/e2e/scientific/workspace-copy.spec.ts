@@ -169,6 +169,12 @@ test("Inspect opens its exact fitted model under Models without promoting it @sm
     await expect(page.locator("#selected-model-detail").getByRole("button", { name: model.is_deploy_ready ? "Withdraw deploy-ready" : "Make Application", exact: true })).toBeVisible();
     await expect(page.locator("#selected-model-detail").getByRole("button", { name: "Review for promotion", exact: true })).toHaveCount(0);
   }
+  await page.setViewportSize({ width: 390, height: 1000 });
+  const content = page.locator("main.content");
+  await expect.poll(() => content.evaluate(el => el.clientWidth)).toBeGreaterThanOrEqual(316);
+  await expect(content.locator(".object-row__main small").filter({ hasText: /\bPCs?\b/ })).toBeVisible();
+  await expect.poll(() => content.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  await page.setViewportSize({ width: 1440, height: 1000 });
   const after = await request.get(`/api/v1/models/${encodeURIComponent(uid)}`);
   expect((await after.json()).is_deploy_ready).toBe(model.is_deploy_ready);
   await nav.getByRole("button", { name: "History", exact: true }).click();

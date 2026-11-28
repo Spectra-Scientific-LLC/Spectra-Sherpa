@@ -143,7 +143,8 @@
 
               <Column header="More" style="width: 60px">
                 <template #body="{ data }">
-                  <RowActions :subject="data.display_name || data.name" :actions="[
+                  <RowActions
+:subject="data.display_name || data.name" :actions="[
                     { label: 'Delete run', icon: 'pi pi-trash', danger: true, command: () => confirmDelete(data) },
                   ]" />
                 </template>
@@ -161,7 +162,8 @@
               <dt>Workflow SHA-256</dt><dd>{{ inspectedIdentity.workflowSha || 'Not recorded' }}</dd>
               <dt>Build SHA-1</dt><dd>{{ inspectedIdentity.buildSha || 'Not recorded' }}</dd>
             </dl>
-            <Button label="Copy run identity" icon="pi pi-copy" outlined
+            <Button
+label="Copy run identity" icon="pi pi-copy" outlined
               :disabled="!inspectedIdentity.workflowSha && !inspectedIdentity.buildSha" @click="copyRunIdentity" />
           </section>
           <WorkspaceState v-if="latestInspectionLoading && !route.params?.runId" kind="loading" variant="page" message="Opening the latest run…" />
@@ -199,7 +201,8 @@
                 </li>
               </ul>
               <p v-if="runsStore.compareCandidatesError" role="alert">{{ runsStore.compareCandidatesError }}</p>
-              <Button v-if="runsStore.compareCandidates.length < runsStore.compareCandidatesTotal"
+              <Button
+v-if="runsStore.compareCandidates.length < runsStore.compareCandidatesTotal"
                 :label="`Load older runs (${runsStore.compareCandidates.length} of ${runsStore.compareCandidatesTotal} shown)`"
                 class="p-button-text p-button-sm" :loading="runsStore.compareCandidatesLoading" @click="loadCompareCandidates(true)" />
             </template>
@@ -321,13 +324,7 @@
                     @click="inspectRun(selectedModel.source_run_id)"
                   />
                   <span v-else>Source run not recorded</span>
-                  <RetainedRunMapLink v-if="selectedModel.source_run_id != null"
-                    :run-id="selectedModel.source_run_id" :project-id="projectStore.currentProjectId" />
                 </dd>
-              </div>
-              <div>
-                <dt>Source node</dt>
-                <dd>{{ selectedModel.node_id ?? "—" }}</dd>
               </div>
               <div>
                 <dt>Used by</dt>
@@ -344,6 +341,19 @@
                 <dd><RelativeTime :value="selectedModel.updated_at" /></dd>
               </div>
             </dl>
+
+            <details class="run-identifiers">
+              <summary>Provenance</summary>
+              <dl class="detail-grid">
+                <div>
+                  <dt>Source run</dt><dd>{{ selectedModel.source_run_id ?? "—" }}</dd>
+                  <RetainedRunMapLink :run-id="selectedModel.source_run_id" :project-id="projectStore.currentProjectId" />
+                </div>
+                <div><dt>Source workflow</dt><dd>{{ selectedModel.workflow_id ?? "—" }}</dd></div>
+                <div><dt>Source node</dt><dd>{{ selectedModel.node_id ?? "—" }}</dd></div>
+              </dl>
+              <Button label="Copy metadata" class="p-button-text p-button-sm" @click="copySelectedModel" />
+            </details>
 
             <div v-if="selectedModelMetricRows.length" class="detail-metrics" role="group" aria-label="Performance">
               <span class="detail-subhead">Performance</span>
@@ -367,7 +377,7 @@
             <section v-if="artifactComponentSummary" aria-label="Saved model component evidence">
               <ModelSummaryCard :summary="artifactComponentSummary" :can-edit-selection="Boolean(selectedModel.workflow_id)" evidence-subset
                 @edit-selection="openSelectedModelWorkflow" />
-              <p class="detail-note">Exact component evidence retained by source run #{{ selectedModel.source_run_id }}.</p>
+              <p class="detail-note">Component evidence comes from the source run.</p>
             </section>
             <p v-else-if="artifactComponentMessage" class="detail-note" role="note">{{ artifactComponentMessage }}</p>
 
@@ -622,11 +632,9 @@ const headerActionItems = computed(() => [
   ...(activeTab.value === TAB_COMPARE && runsStore.comparison ? [{
     label: "Change runs", icon: "pi pi-pencil", command: changeComparedRuns,
   }] : []),
-  ...([TAB_RUN_HISTORY, TAB_MODELS].includes(activeTab.value) ? [{
-    label: activeTab.value === TAB_MODELS ? "Copy model metadata" : "Export history",
-    icon: activeTab.value === TAB_MODELS ? "pi pi-copy" : "pi pi-download",
-    disabled: !canExportActiveTab.value,
-    command: exportActiveTab,
+  ...(activeTab.value === TAB_RUN_HISTORY ? [{
+    label: "Export history", icon: "pi pi-download",
+    disabled: runsStore.runs.length === 0, command: exportRunHistory,
   }] : []),
 ]);
 
@@ -882,12 +890,6 @@ const filteredRuns = computed(() => {
 
 const filteredModels = computed(() => {
   return models.value;
-});
-
-const canExportActiveTab = computed(() => {
-  if (activeTab.value === TAB_RUN_HISTORY) return runsStore.runs.length > 0;
-  if (activeTab.value === TAB_MODELS) return selectedModel.value != null;
-  return false;
 });
 
 const runsTitle = computed(() => {
@@ -1475,18 +1477,18 @@ async function confirmDelete(run: RunListItem): Promise<void> {
   }
 }
 
-async function exportActiveTab(): Promise<void> {
-  const projectSlug = safeFilename(activeProjectName.value || "project");
-  if (activeTab.value === TAB_MODELS) {
-    if (!selectedModel.value) return;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(selectedModel.value, null, 2));
-      toast.add({ severity: "success", summary: "Model metadata copied", life: 2500 });
-    } catch {
-      toast.add({ severity: "warn", summary: "Copy unavailable", detail: "Your browser did not allow clipboard access.", life: 3500 });
-    }
-    return;
+async function copySelectedModel(): Promise<void> {
+  if (!selectedModel.value) return;
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(selectedModel.value, null, 2));
+    toast.add({ severity: "success", summary: "Model metadata copied", life: 2500 });
+  } catch {
+    toast.add({ severity: "warn", summary: "Copy unavailable", detail: "Your browser did not allow clipboard access.", life: 3500 });
   }
+}
+
+function exportRunHistory(): void {
+  const projectSlug = safeFilename(activeProjectName.value || "project");
   downloadJson(runsStore.runs, `${projectSlug}-run-history.json`);
 }
 
@@ -1653,12 +1655,13 @@ watch(
 function modelSubtitle(model: ModelSummary): string {
   const parts: string[] = [model.model_type, `${model.n_features} feat`];
   if (model.n_components != null) {
-    parts.push(`${model.n_components} LV`);
+    const pca = model.model_type === "pca";
+    const pls = ["pls", "plsda"].includes(model.model_type);
+    const unit = pca ? (model.n_components === 1 ? "PC" : "PCs") : pls ? "LV" : "components";
+    parts.push(`${model.n_components} ${unit}`);
   }
   const metric = modelMetricSummary(model.metrics ?? null);
   if (metric) parts.push(metric);
-  if (model.node_id) parts.push(`node ${model.node_id}`);
-  if (model.workflow_id != null) parts.push(`wf #${model.workflow_id}`);
   return parts.join(" · ");
 }
 
@@ -2736,9 +2739,14 @@ function safeFilename(value: string): string {
 .object-row__main small {
   color: var(--text-color-secondary);
   font-size: 0.8125rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.object-row__main :deep(.p-button) {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .object-row__time {
