@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import * as contract from "@/extension-contract/v1";
+import * as navigation from "@/extension-contract/navigation-v1";
 import * as requests from "@/extension-contract/requests-v1";
 import { useScopedRequest } from "@/composables/useScopedRequest";
 import { CONTEXTUAL_ACTIONS_VERSION } from "@/composables/useContextualActions";
@@ -14,6 +15,10 @@ describe("public frontend extension contract", () => {
       EXTENSION_CONTRACT_VERSION: 1,
       CONTEXTUAL_ACTIONS_VERSION,
     });
+  });
+
+  it("versions navigation independently of the existing boot handshake", () => {
+    expect({ ...navigation }).toEqual({ NAVIGATION_CONTRACT_VERSION: 1 });
   });
 
   it("shares the exact request primitive, not a host-specific implementation", () => {

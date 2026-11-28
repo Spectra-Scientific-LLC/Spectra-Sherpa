@@ -70,9 +70,10 @@ test("paired preprocessing plots retain their full height in Quick Plot and Deta
   // A linked run first generates its initial preview. Let that navigation
   // finish before changing Setup, rather than competing with its completion.
   await expect(page.locator('iframe[title="Report preview"]')).toBeVisible();
-  await page.getByRole("button", { name: "Setup", exact: true }).click();
+  await page.getByRole("button", { name: "Other formats", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Edit inputs", exact: true }).click();
   await page.getByRole("checkbox", { name: "Include figures and individual reference/prediction values" }).check();
-  await page.getByRole("button", { name: "Generate Report", exact: true }).click();
+  await page.getByRole("button", { name: "Generate report", exact: true }).click();
   const body = page.frameLocator('iframe[title="Report preview"]').locator("body");
   const snv = body.locator(".report-node-plots").filter({ has: page.getByRole("heading", { name: /SNV Normalize/ }) });
   const heatmap = snv.locator("figure").filter({ has: page.getByRole("heading", { name: /Heatmap/ }) });
@@ -90,7 +91,7 @@ test("paired preprocessing plots retain their full height in Quick Plot and Deta
   const preview = await page.locator('iframe[title="Report preview"]').getAttribute("srcdoc");
   for (const format of ["HTML Report", "Markdown"]) {
     const downloaded = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await page.getByRole("button", { name: "Other formats", exact: true }).click();
     await page.getByRole("menuitem", { name: format, exact: true }).click();
     const content = await readFile((await (await downloaded).path())!, "utf8");
     expect(content).toContain(format === "Markdown" ? reportMarkdownText(text) : text);

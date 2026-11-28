@@ -1,18 +1,20 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import PrimeVue from "primevue/config";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
 import type { ProjectDetail, StarterPlan } from "@/types";
 import SimplifiedDashboard from "@/views/dashboard/SimplifiedDashboard.vue";
 
+enableAutoUnmount(afterEach);
+
 const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
   routerReplace: vi.fn(),
   toastAdd: vi.fn(),
-  route: { hash: "" },
+  route: { path: "/dashboard", fullPath: "/dashboard", params: {}, query: {}, hash: "" },
   starter: null as null | { emit: (event: string, payload: unknown) => void },
 }));
 
@@ -153,12 +155,12 @@ describe("SimplifiedDashboard Starter tab", () => {
     const tabs = wrapper.findAll('[role="tab"]');
     expect(tabs[0].text()).toBe("Starter");
     expect(tabs[1].attributes("aria-selected")).toBe("true");
-    expect(wrapper.findAll("button").some(button => button.text() === "New Analysis")).toBe(true);
+    expect(wrapper.findAll("button").some(button => button.text() === "New project")).toBe(true);
     mocks.starter!.emit("overview", { is_first_run: true });
     await flushPromises();
     expect(mocks.routerReplace).toHaveBeenLastCalledWith({ hash: "#starter" });
     expect(tabs[0].attributes("aria-selected")).toBe("true");
-    expect(wrapper.findAll("button").some(button => button.text() === "New Analysis")).toBe(false);
+    expect(wrapper.findAll("button").some(button => button.text() === "New project")).toBe(false);
 
     mocks.routerReplace.mockClear();
     mocks.route.hash = "#archive";

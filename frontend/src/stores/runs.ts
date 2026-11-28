@@ -35,6 +35,15 @@ export const useRunsStore = defineStore("runs", () => {
     () => { comparisonLoading.value = false; comparison.value = null; },
   );
   const mutationScope = useScopedRequest(identity);
+  // Compare chooses from every saved run in the project, apart from History's page and filter.
+  const compareCandidates = ref<RunListItem[]>([]);
+  const compareCandidatesTotal = ref<number | null>(null);
+  const compareCandidatesLoading = ref(false);
+  const compareCandidatesError = ref<string | null>(null);
+  const candidateScope = useScopedRequest(
+    () => [useAuthStore().user?.id, useAuthStore().sessionRevision, activeProjectScope.value],
+    () => { compareCandidatesLoading.value = false; },
+  );
   // Independent writes may complete concurrently. They share a scope lease,
   // not a latest-read lane; a navigation invalidates all their UI effects.
   let mutationTicket: ScopedRequestTicket | undefined;
@@ -47,6 +56,11 @@ export const useRunsStore = defineStore("runs", () => {
     listScope.invalidate();
     comparisonScope.invalidate();
     mutationScope.invalidate();
+    candidateScope.invalidate();
+    compareCandidates.value = [];
+    compareCandidatesTotal.value = null;
+    compareCandidatesLoading.value = false;
+    compareCandidatesError.value = null;
     listOwner.value = "";
     total.value = 0;
     loadError.value = null;
@@ -128,6 +142,28 @@ export const useRunsStore = defineStore("runs", () => {
       loadError.value = "Could not load run history. Retry to refresh.";
     } finally {
       if (request.isCurrent()) runsLoading.value = false;
+    }
+  }
+
+  /** Loads the next 50 saved runs for Compare (newest first), keeping those already loaded. */
+  async function fetchCompareCandidates(projectId: number, more = false): Promise<void> {
+    const request = candidateScope.begin();
+    const offset = more ? compareCandidates.value.length : 0;
+    compareCandidatesLoading.value = true;
+    compareCandidatesError.value = null;
+    try {
+      const response = await api.get<components["schemas"]["RunPage"]>("/runs", {
+        signal: request.signal,
+        params: { project_id: projectId, limit: 50, offset, sort_by: "executed_at", sort_order: "desc" },
+      });
+      if (!request.isCurrent()) return;
+      const page = response.data.runs.map(runListItem);
+      compareCandidates.value = more ? [...compareCandidates.value, ...page] : page;
+      compareCandidatesTotal.value = response.data.total;
+    } catch {
+      if (request.isCurrent()) compareCandidatesError.value = "Could not load the project's runs.";
+    } finally {
+      if (request.isCurrent()) compareCandidatesLoading.value = false;
     }
   }
 
@@ -274,6 +310,11 @@ export const useRunsStore = defineStore("runs", () => {
     // Computed
     selectedRuns,
     selectedCount,
+    compareCandidates,
+    compareCandidatesTotal,
+    compareCandidatesLoading,
+    compareCandidatesError,
+    fetchCompareCandidates,
 
     // Actions
     fetchRuns,

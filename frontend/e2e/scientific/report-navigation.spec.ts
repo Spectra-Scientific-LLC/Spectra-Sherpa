@@ -18,9 +18,9 @@ test("collapsed sidebar separates page links from section expanders @smoke", asy
   await expect(page.locator(".sidebar")).not.toHaveClass(/collapsed/);
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).click();
   await expect(page.locator(".sidebar")).toHaveClass(/collapsed/);
-  for (const name of ["Report", "Data", "Runs"]) {
+  for (const [name, title] of [["Report", "Report"], ["Data", dataset.experiment.name], ["Runs", "Runs"]]) {
     await page.getByRole("link", { name, exact: true }).click();
-    await expect(page.getByRole("heading", { name, exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: title, exact: true, level: 1 })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/${name.toLowerCase()}(?:[?#]|$)`));
   }
 });

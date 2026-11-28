@@ -463,7 +463,7 @@
           </div>
         </section>
 
-        <section class="dataset-step" aria-label="Dataset metadata and quality">
+        <section ref="metadataDetailsSection" tabindex="-1" class="dataset-step" aria-label="Dataset metadata and quality">
           <div class="essential-card-heading">
             <span class="essential-card-number">4</span>
             <h4 class="panel-title">Dataset metadata and quality</h4>
@@ -723,6 +723,7 @@ function clearSampleTableSaveError(): void {
 const props = withDefaults(
   defineProps<{
     focusTarget?: boolean;
+    focusEvidence?: "samples" | "metadata";
     scopeKey?: string;
     activeDatasetName?: string | null;
     selectedFileCount?: number | null;
@@ -739,6 +740,7 @@ const props = withDefaults(
   }>(),
   {
     focusTarget: false,
+    focusEvidence: undefined,
     scopeKey: "",
     activeDatasetName: null,
     selectedFileCount: null,
@@ -757,16 +759,15 @@ const props = withDefaults(
 
 const focusedDatasetDetails = ref<HTMLDetailsElement | null>(null);
 const sampleDetailsSection = ref<HTMLElement | null>(null);
-let focusedTargetSource: unknown = null;
-watch(() => [props.focusTarget, dataStore.fileInfoLoading, dataStore.fileInfo] as const, async ([requested, loading, info]) => {
-  if (!requested) { focusedTargetSource = null; return; }
-  if (loading || !info || focusedTargetSource === info) return;
+const metadataDetailsSection = ref<HTMLElement | null>(null);
+watch(() => [props.focusTarget, props.focusEvidence, dataStore.fileInfoLoading, dataStore.fileInfo] as const, async ([target, evidence, loading, info]) => {
+  if ((!target && !evidence) || loading || !info) return;
   await nextTick();
-  if (!props.focusTarget || dataStore.fileInfo !== info || !focusedDatasetDetails.value) return;
-  focusedTargetSource = info;
+  if (props.focusTarget !== target || props.focusEvidence !== evidence || dataStore.fileInfo !== info || !focusedDatasetDetails.value) return;
   focusedDatasetDetails.value.open = true;
-  sampleDetailsSection.value?.scrollIntoView?.({ block: "start" });
-  sampleDetailsSection.value?.focus({ preventScroll: true });
+  const section = evidence === "metadata" ? metadataDetailsSection.value : sampleDetailsSection.value;
+  section?.scrollIntoView?.({ block: "start" });
+  section?.focus({ preventScroll: true });
 }, { immediate: true, flush: "post" });
 
 // File identity changes synchronously, even if Vue batches an A → B → A render.

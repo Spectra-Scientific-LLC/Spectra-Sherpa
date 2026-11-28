@@ -1,29 +1,14 @@
 <template>
   <section class="page-content deploy-content">
-    <WorkspaceHeader title="Deploy" :actions="headerActionItems">
-      <ContextualActions v-if="!isHostedDeployment && activeTab === 'application'" :context="deployActionContext" />
-      <Button
-        v-if="!isHostedDeployment && activeTab === 'watches'"
-        label="New Watch"
-        icon="pi pi-plus"
-        class="p-button-sm"
-        data-action="create_folder_watch"
-        @click="showCreateDialog = true"
-      />
-    </WorkspaceHeader>
-
-    <WorkspaceContext label="Deployment context">
-      <WorkspaceContextItem
-        :label="sectionTitle"
-        :value="sectionSubtitle"
-      >
-        <span
-          v-if="!isHostedDeployment && activeTab === 'application' && selectedApplication?.campaign_validation_recorded"
-          title="Campaign validation evidence recorded; accuracy on new samples is not certified."
-          >★</span
-        >
-      </WorkspaceContextItem>
-    </WorkspaceContext>
+    <WorkspacePageHeader :title="sectionTitle" :identity="sectionIdentity">
+      <template #primary>
+        <ContextualActions v-if="!isHostedDeployment && activeTab === 'application'" :context="deployActionContext" />
+        <Button
+v-if="!isHostedDeployment && activeTab === 'watches'" label="New watch" icon="pi pi-plus" class="p-button-sm"
+          data-action="create_folder_watch" :disabled="deployStore.loading || deployStore.applicationsLoading"
+          @click="showCreateDialog = true" />
+      </template>
+    </WorkspacePageHeader>
 
     <SavedModelsForDeployment v-if="isHostedDeployment" />
 
@@ -38,8 +23,8 @@
     </section>
 
     <template v-else>
-      <WorkspaceTabs v-model="activeTab" :tab-ids="tabIds">
-        <TabPanel header="Application">
+      <WorkspaceTabs :model-value="activeTab" :tab-ids="tabIds" @update:model-value="selectDeploySection">
+        <TabPanel header="Applications">
           <SavedModelsForDeployment />
           <section class="released-applications" aria-labelledby="released-applications-heading">
             <div class="section-heading">
@@ -94,7 +79,7 @@
           </section>
 
           <details v-if="selectedApplication">
-            <summary>Details</summary>
+            <summary>Provenance</summary>
             <p v-if="selectedApplication.source_run_id">
               Source run {{ selectedApplication.source_run_id }}
             </p>
@@ -103,23 +88,12 @@
               selectedApplication.artifact_digest
             }}</code>
           </details>
-          <details v-if="selectedApplication && appMode === 'local'">
-            <summary>Optional qualification and evidence</summary>
-            <QualificationPanel
-              :workflow-id="selectedApplication.workflow_id"
-              :canonical-artifact-id="selectedApplication.canonical_artifact_id"
-              :project-id="projectStore.currentProjectId"
-            />
-          </details>
-          <QualificationPanel
-            v-else-if="selectedApplication"
-            :workflow-id="selectedApplication.workflow_id"
-            :canonical-artifact-id="selectedApplication.canonical_artifact_id"
-            :project-id="projectStore.currentProjectId"
-          />
+          <Button
+v-if="selectedApplication" label="Open qualification" icon="pi pi-check-circle" text
+            @click="selectDeploySection('qualification')" />
         </TabPanel>
         <!-- ======================== FOLDER WATCHES TAB ======================== -->
-        <TabPanel header="Folder Watches">
+        <TabPanel header="Watches">
           <WorkspaceState
             v-if="deployStore.loading && deployStore.watches.length === 0"
             kind="loading"
@@ -452,6 +426,30 @@
             </template>
           </DataTable>
         </TabPanel>
+        <TabPanel header="Instrument QC">
+          <WorkspaceState v-if="deployStore.watchesError" kind="error" :message="deployStore.watchesError">
+            <Button label="Retry" @click="syncOperationalState" />
+          </WorkspaceState>
+          <WorkspaceState v-else-if="deployStore.loading" kind="loading" message="Loading watches…" />
+          <WorkspaceState v-else-if="!deployStore.watches.length" kind="empty" message="Create a watch before adding instrument checks." />
+          <div v-else class="deploy-view">
+            <label for="instrument-qc-watch">Folder watch</label>
+            <Dropdown
+input-id="instrument-qc-watch" v-model="sectionQcWatchId" :options="deployStore.watches"
+              option-label="name" option-value="id" placeholder="Choose a watch" />
+            <InstrumentQCPanel
+v-if="sectionQcWatchId !== null && deployStore.watches.some(watch => watch.id === sectionQcWatchId)"
+              :key="sectionQcWatchId" :watch-id="sectionQcWatchId" />
+          </div>
+        </TabPanel>
+        <TabPanel header="Qualification">
+          <QualificationPanel
+v-if="selectedApplication" :workflow-id="selectedApplication.workflow_id"
+            :canonical-artifact-id="selectedApplication.canonical_artifact_id" :project-id="projectStore.currentProjectId" />
+          <WorkspaceState v-else kind="empty" message="Choose an application to review its qualification.">
+            <Button label="Open applications" text @click="selectDeploySection('application')" />
+          </WorkspaceState>
+        </TabPanel>
       </WorkspaceTabs>
     </template>
 
@@ -636,6 +634,7 @@
 </template>
 
 <script setup lang="ts">
+import { navigationTab } from "@/router/legacyRoutes";
 import MethodHelp from "@/components/MethodHelp.vue";
 import RelativeTime from "@/components/RelativeTime.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- deployment run payloads are backend-shaped and vary by execution status. */
@@ -647,9 +646,7 @@ import WatchDryRun from "./WatchDryRun.vue";
 import QualificationPanel from "./QualificationPanel.vue";
 import SavedValue from "@/views/models/SavedValue.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
-import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
-import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
-import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
+import WorkspacePageHeader from "@/components/workspace/WorkspacePageHeader.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import { focusSection } from "@/lib/sherpaAttention";
 import TabPanel from "primevue/tabpanel";
@@ -684,23 +681,25 @@ const projectStore = useProjectStore();
 const advisorStore = useAdvisorStore();
 const { appMode } = useAppConfig();
 const qcWatchId = ref<number | null>(null);
+const sectionQcWatchId = ref<number | null>(null);
 const dryRunWatchId = ref<number | null>(null);
 const qcSnapshot = ref<Record<string, unknown> | null>(null);
 const isHostedDeployment = computed(() => appMode?.value === "enterprise");
 
-const tabIds = ["application", "watches", "history"] as const;
+const tabIds = ["application", "watches", "history", "instrument-qc", "qualification"] as const;
 const activeTab = ref<string>("application");
-const sectionTitle = computed(
-  () =>
-    isHostedDeployment.value ? "Application" : ({ application: "Application", watches: "Folder Watches", history: "Prediction History" })[
-      activeTab.value
-    ] || "Application",
-);
-const sectionSubtitle = computed(() => {
-  if (isHostedDeployment.value) return "Review saved models for Workbench deployment";
-  if (activeTab.value === "watches") return "Process new files with a fitted application";
-  if (activeTab.value === "history") return "Review predictions from folder watches";
-  return selectedApplication.value?.name || "Review and select a fitted application";
+const sectionTitle = computed(() => isHostedDeployment.value ? "Applications" : ({
+  application: "Applications", watches: "Watches", history: "Prediction History",
+  "instrument-qc": "Instrument QC", qualification: "Qualification",
+})[activeTab.value] || "Applications");
+const sectionIdentity = computed(() => {
+  if (isHostedDeployment.value) return undefined;
+  if (activeTab.value === "qualification") return selectedApplication.value?.name;
+  if (activeTab.value === "watches" && !deployStore.loading) {
+    const n = deployStore.watches.length;
+    return `${n} folder watch${n === 1 ? "" : "es"}`;
+  }
+  return undefined;
 });
 const applicationError = ref("");
 let mounted = false;
@@ -813,9 +812,13 @@ function deployTab(value: unknown): string {
   if (tab === "jobs") return "history";
   return tabIds.includes(tab as (typeof tabIds)[number]) ? tab : "application";
 }
-watch(() => route.query.tab, value => { activeTab.value = deployTab(value); }, { immediate: true });
+watch(() => navigationTab(route.query), value => { activeTab.value = deployTab(value); }, { immediate: true });
+function selectDeploySection(section: string): void {
+  if (isHostedDeployment.value) return;
+  void router.push({ query: { ...route.query, tab: section } });
+}
 watch(activeTab, value => {
-  if (!isHostedDeployment.value && deployTab(route.query.tab) !== value) {
+  if (!isHostedDeployment.value && deployTab(navigationTab(route.query)) !== value) {
     void router.replace({ query: { ...route.query, tab: value } });
   }
 });
@@ -992,20 +995,6 @@ function requestedApplicationId(): string | null {
 
 // Watch CRUD state
 const showCreateDialog = ref(false);
-const headerActionItems = computed(() => {
-  if (isHostedDeployment.value || activeTab.value !== "watches") return [];
-  return [
-    {
-      label: "New Watch",
-      visible: true,
-      disabled: deployStore.loading || deployStore.applicationsLoading,
-      icon: "pi pi-plus",
-      command: () => {
-        showCreateDialog.value = true;
-      },
-    },
-  ];
-});
 const creating = ref(false);
 const nativeFolderPicker = window.spectraDesktop?.chooseWatchFolder;
 const choosingFolder = ref(false);
@@ -1105,6 +1094,7 @@ watch(
     showCreateDialog.value = false;
     newWatch.artifact_uid = null;
     qcWatchId.value = null;
+    sectionQcWatchId.value = null;
     dryRunWatchId.value = null;
     selectedPrediction.value = null;
     deployStore.resetProjectScope?.();
@@ -1590,4 +1580,5 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 }
 
 
+.deploy-view { display: grid; gap: .75rem; max-width: 64rem; }
 </style>

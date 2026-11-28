@@ -99,56 +99,58 @@
       <p aria-live="polite">{{ selected.length }} observations selected.</p>
       <label>Find observation <input v-model="query" type="search" /></label>
       <label><input v-model="selectedOnly" type="checkbox" /> Selected only</label>
-      <table>
-        <caption>
-          Linked sample table —
-          {{
-            filteredRows.length
-          }}
-          observations
-        </caption>
-        <thead>
-          <tr>
-            <th>Select</th>
-            <th>Observation</th>
-            <th>Group</th>
-            <th>Role / decision</th>
-            <th>T²</th>
-            <th>Q</th>
-            <template v-if="isPls"
-              ><th>Measured</th>
-              <th>Predicted</th>
-              <th>Residual</th></template
+      <div class="saved-diagnostics__table" role="region" aria-label="Linked sample results" tabindex="0">
+        <table>
+          <caption>
+            Linked sample table —
+            {{
+              filteredRows.length
+            }}
+            observations
+          </caption>
+          <thead>
+            <tr>
+              <th>Select</th>
+              <th>Observation</th>
+              <th>Group</th>
+              <th>Role / decision</th>
+              <th>T²</th>
+              <th>Q</th>
+              <template v-if="isPls"
+                ><th>Measured</th>
+                <th>Predicted</th>
+                <th>Residual</th></template
+              >
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in pageRows"
+              :key="row.id"
+              :class="{ 'is-selected': selectedSet.has(row.id) }"
             >
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="row in pageRows"
-            :key="row.id"
-            :class="{ 'is-selected': selectedSet.has(row.id) }"
-          >
-            <td>
-              <input
-                type="checkbox"
-                :aria-label="`Select sample ${reviewRowLabel(row)}`"
-                :checked="selectedSet.has(row.id)"
-                @change="toggle(row.id)"
-              />
-            </td>
-            <td :title="row.id">{{ reviewRowLabel(row) }}</td>
-            <td :style="{ color: groupColors.get(row.group) }">{{ row.group }}</td>
-            <td>{{ roleLabel(row) }}{{ marked.has(row.id) ? " · marked outlier" : "" }}</td>
-            <td>{{ number(row.t2) }}</td>
-            <td>{{ number(row.q) }}</td>
-            <template v-if="isPls">
-              <td>{{ number(row.reference?.[responseIndex] ?? null) }}</td>
-              <td>{{ number(row.predicted?.[responseIndex] ?? null) }}</td>
-              <td>{{ number(row.residual?.[responseIndex] ?? null) }}</td>
-            </template>
-          </tr>
-        </tbody>
-      </table>
+              <td>
+                <input
+                  type="checkbox"
+                  :aria-label="`Select sample ${reviewRowLabel(row)}`"
+                  :checked="selectedSet.has(row.id)"
+                  @change="toggle(row.id)"
+                />
+              </td>
+              <td :title="row.id">{{ reviewRowLabel(row) }}</td>
+              <td :style="{ color: groupColors.get(row.group) }">{{ row.group }}</td>
+              <td>{{ roleLabel(row) }}{{ marked.has(row.id) ? " · marked outlier" : "" }}</td>
+              <td>{{ number(row.t2) }}</td>
+              <td>{{ number(row.q) }}</td>
+              <template v-if="isPls">
+                <td>{{ number(row.reference?.[responseIndex] ?? null) }}</td>
+                <td>{{ number(row.predicted?.[responseIndex] ?? null) }}</td>
+                <td>{{ number(row.residual?.[responseIndex] ?? null) }}</td>
+              </template>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <div class="saved-diagnostics__controls">
         <button type="button" :disabled="page === 0" @click="page--">Previous</button>
         <span>Page {{ page + 1 }} / {{ pages }}</span>
@@ -613,7 +615,7 @@ function setPcaAdvisorFocus(value: { variables: string[]; response: number; samp
 }
 .saved-diagnostics__plots {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
   gap: 1rem;
 }
 .saved-diagnostics__controls {
@@ -622,6 +624,10 @@ function setPcaAdvisorFocus(value: { variables: string[]; response: number; samp
   align-items: center;
   gap: 1rem;
   margin: 0.75rem 0;
+}
+.saved-diagnostics__table {
+  max-width: 100%;
+  overflow-x: auto;
 }
 .saved-diagnostics table {
   width: 100%;

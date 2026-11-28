@@ -28,6 +28,7 @@ vi.mock("@/stores/project", () => ({ useProjectStore: () => ({ currentProjectId:
 vi.mock("vue-router", () => ({ useRouter: () => ({ push: mocks.push }), useRoute: () => ({ query: {} }) }));
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: vi.fn() }) }));
 vi.mock("@/stores/advisor", () => ({ useAdvisorStore: () => ({ switchScope: vi.fn() }) }));
+vi.mock("@/stores/job", () => ({ useJobStore: () => ({ jobs: [] }) }));
 vi.mock("@/stores/runs", () => ({ useRunsStore: () => ({ fetchPredictions: mocks.fetchPredictions }) }));
 vi.mock("@/stores/deploy", () => ({ useDeployStore: () => ({
   watches: [], deployRuns: [], loading: false, runsLoading: false, ...mocks.deployErrors,
@@ -36,7 +37,7 @@ vi.mock("@/stores/deploy", () => ({ useDeployStore: () => ({
 vi.mock("@/api/client", () => ({ default: { get: mocks.get } }));
 const settingsOptions = { global: { stubs: {
   ApiKeysTab: true, IntegrationsTab: true, PlateFormatSettingsSection: true,
-  GuidanceSettingsSection: true,
+  GuidanceSettingsSection: true, DisplayPreferencesSection: true, CustomNodesSettingsSection: true,
   TabView: { template: "<div><slot /></div>" }, TabPanel: { template: "<div><slot /></div>" },
 } } };
 describe("Pro routes with operator-owned configuration", () => {
@@ -80,8 +81,8 @@ describe("Pro routes with operator-owned configuration", () => {
     await flushPromises();
     (deploy.vm as unknown as { activeTab: string }).activeTab = "history";
     await flushPromises();
-    expect(deploy.get('[aria-label="Deployment context"]').text()).toContain("Application");
-    expect(deploy.get('[aria-label="Deployment context"]').text()).not.toContain("Prediction History");
+    expect(deploy.get(".workspace-page-header h1").text()).toBe("Applications");
+    expect(deploy.find('[header="Prediction History"]').exists()).toBe(false);
     expect(deploy.text()).toContain("Deploy from a Workbench");
     expect(deploy.text()).toContain("Folder watches and prediction history run on a Workbench");
     expect(deploy.text()).not.toContain("Released applications");
@@ -157,7 +158,7 @@ describe("Pro routes with operator-owned configuration", () => {
     mocks.get.mockResolvedValue({ data: [] });
     const titleOf = (view: ReturnType<typeof mount>) => view.get(".workspace-header h1").text();
     const settings = mount(SettingsContent, settingsOptions);
-    expect(titleOf(settings)).toBe("Settings");
+    expect(settings.get(".workspace-page-header h1").text()).toBe("General");
     settings.unmount();
     const audit = mount(AuditContent, { global: { stubs: {
       AuditCapabilityStrip: true, AuditFilterChips: true, AuditEventsTable: true,

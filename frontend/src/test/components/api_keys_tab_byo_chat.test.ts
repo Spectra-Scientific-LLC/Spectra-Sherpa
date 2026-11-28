@@ -125,7 +125,7 @@ describe("ApiKeysTab local BYO chat transports", () => {
 
     await wrapper.find("#byo-provider").setValue("anthropic");
     await wrapper.find("#byo-key").setValue("sk-ant-test");
-    await wrapper.findAll("button").find((button) => button.text() === "Save LLM Configuration")!.trigger("click");
+    await wrapper.findAll("button").find((button) => button.text() === "Save")!.trigger("click");
     await flushPromises();
 
     expect(mocks.apiPost).toHaveBeenCalledWith("/config/byo-chat-config", {
@@ -143,7 +143,7 @@ describe("ApiKeysTab local BYO chat transports", () => {
 
     await wrapper.find("#byo-provider").setValue("ollama");
     await wrapper.find("#byo-allow-private-endpoint").setValue(true);
-    await wrapper.findAll("button").find((button) => button.text() === "Save LLM Configuration")!.trigger("click");
+    await wrapper.findAll("button").find((button) => button.text() === "Save")!.trigger("click");
     await flushPromises();
 
     expect(mocks.apiPost).toHaveBeenCalledWith("/config/byo-chat-config", {
@@ -163,7 +163,7 @@ describe("ApiKeysTab local BYO chat transports", () => {
     await flushPromises();
 
     expect(wrapper.text()).not.toContain("Saved");
-    const saveButton = wrapper.findAll("button").find((button) => button.text() === "Save LLM Configuration")!;
+    const saveButton = wrapper.findAll("button").find((button) => button.text() === "Save")!;
     expect(saveButton.attributes("disabled")).toBeDefined();
   });
 });

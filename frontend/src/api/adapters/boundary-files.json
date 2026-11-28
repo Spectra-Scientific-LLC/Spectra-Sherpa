@@ -36,6 +36,7 @@
     "src/stores/workflow.ts": [0, 0, 0],
     "src/stores/workflowBuilderConfig.ts": [0, 0, 0],
     "src/extension-contract/config.ts": [17, 1, 0],
+    "src/extension-contract/navigation-v1.ts": [8, 0, 0],
     "src/extension-contract/v1.ts": [15, 2, 0],
     "src/extension-contract/requests-v1.ts": [2, 0, 0],
     "src/types/config.ts": [0, 0, 0],

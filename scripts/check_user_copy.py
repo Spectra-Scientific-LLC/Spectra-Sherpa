@@ -24,6 +24,8 @@ RULES = {
     "artifact-apply-copy": (r"\bartifact apply\b", "model apply"),
     "omitted-model-artifact-copy": (r"\bsaved model artifact\(s\)\b", "saved model(s)"),
     "harness-authority-badge": (r"\bHarness authority\b", "Campaign candidate"),
+    "owner-scoped-copy": (r"\bowner-scoped workspace\b", "project workspace"),
+    "navigation-receipt-copy": (r"\bnavigation receipt\b", "saved location"),
     "governed-harness-copy": (r"\bgoverned Harness\b", "its Optimize campaign"),
 }
 ATTRIBUTES = {"label", "title", "header", "placeholder", "aria-label", "alt"}

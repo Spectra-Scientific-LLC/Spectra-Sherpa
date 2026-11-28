@@ -1,4 +1,5 @@
-import { computed, readonly, ref, type ComputedRef, type Ref } from "vue";
+import { computed } from "vue";
+import { navigationRegistry, routePath } from "@/navigation/workspace";
 
 export interface PrimaryNavigationItem {
   label: string;
@@ -7,43 +8,46 @@ export interface PrimaryNavigationItem {
   before?: string;
 }
 
-interface InternalEntry extends PrimaryNavigationItem {
-  __contributorId: string;
-}
+const disposers = new Map<string, () => void>();
 
-const entries: Ref<InternalEntry[]> = ref([]);
-
-function addItems(
-  items: PrimaryNavigationItem[],
-  contributorId: string = "anonymous",
-): void {
-  if (!Array.isArray(items) || items.length === 0) return;
-  entries.value = [
-    ...entries.value,
-    ...items.map((item) => ({ ...item, __contributorId: contributorId })),
-  ];
+/** Compatibility adapter for extensions that still supply flat page links. */
+function addItems(items: PrimaryNavigationItem[], contributorId = "anonymous"): void {
+  if (!Array.isArray(items) || !items.length) return;
+  const pages = navigationRegistry.tree();
+  const dispose = navigationRegistry.register(contributorId, {
+    pages: items.map((item) => ({
+      id: legacyNavigationId(item.to), label: item.label, icon: item.icon, route: item.to,
+      before: pages.find((page) => routePath(page.entry.route) === item.before)?.entry.id,
+    })),
+  });
+  const previous = disposers.get(contributorId);
+  disposers.set(contributorId, () => { dispose(); previous?.(); });
 }
 
 function removeItems(contributorId: string): void {
-  entries.value = entries.value.filter(
-    (entry) => entry.__contributorId !== contributorId,
-  );
+  disposers.get(contributorId)?.();
+  disposers.delete(contributorId);
 }
 
 function clear(): void {
-  entries.value = [];
+  for (const contributor of disposers.keys()) removeItems(contributor);
 }
 
-const visibleItems: ComputedRef<PrimaryNavigationItem[]> = computed(() =>
-  entries.value.map(({ __contributorId: _id, ...item }) => item),
-);
+function legacyNavigationId(location: string): string {
+  return `legacy.${location.replace(/[^\w.-]/g, (character) => `_${character.codePointAt(0)?.toString(16)}_`)}`;
+}
+
+const items = computed<PrimaryNavigationItem[]>(() => {
+  const pages = navigationRegistry.tree();
+  return pages.flatMap(({ contributor, entry }) => {
+    const to = typeof entry.route === "string" ? entry.route : routePath(entry.route);
+    if (contributor === "host" || !to) return [];
+    const before = pages.find((candidate) => candidate.entry.id === entry.before
+      && (candidate.contributor === contributor || candidate.contributor === "host"));
+    return [{ label: entry.label, to, icon: entry.icon, ...(before ? { before: routePath(before.entry.route) } : {}) }];
+  });
+});
 
 export function usePrimaryNavigation() {
-  return {
-    items: visibleItems,
-    addItems,
-    removeItems,
-    clear,
-    _internal: readonly(entries),
-  };
+  return { items, addItems, removeItems, clear };
 }

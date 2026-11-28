@@ -3,7 +3,7 @@
     <header class="validation-ledger__header">
       <div>
         <h3>Sample predictions</h3>
-        <small>{{ roleSummary }}</small>
+        <small>{{ roleSummary }}<template v-if="singleTarget"> · {{ singleTarget }}</template></small>
       </div>
       <Button label="Download CSV" icon="pi pi-download" class="p-button-sm p-button-text" @click="download" />
     </header>
@@ -45,10 +45,13 @@ import { columnDecimals, evaluationRoleLabel, formatMeasurement, fullPrecisionTi
 
 const props = defineProps<{ rows: ValidationLedgerRow[]; title?: string }>();
 const visibleRows = computed(() => props.rows.slice(0, 200));
-const hasTarget = computed(() => props.rows.some((row) => row.target != null));
+const targets = computed(() => [...new Set(props.rows.map((row) => row.target ?? null))]);
+const singleTarget = computed(() => targets.value.length === 1 ? targets.value[0] : null);
+const hasTarget = computed(() => !singleTarget.value && targets.value.some((target) => target != null));
 const hasResidual = computed(() => props.rows.some((row) => row.residual != null));
 const hasCorrect = computed(() => props.rows.some((row) => row.correct != null));
-const hasRole = computed(() => props.rows.some((row) => row.role != null));
+const roles = computed(() => [...new Set(props.rows.map((row) => row.role ?? null))]);
+const hasRole = computed(() => roles.value.length > 1 && roles.value.some((role) => role != null));
 const calibrationOnly = computed(() => props.rows.length > 0 && props.rows.every((row) => row.role === "calibration"));
 
 // One precision per target: reference, prediction and residual share the
@@ -73,7 +76,7 @@ const roleSummary = computed(() => {
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
   const total = `${props.rows.length} sample-level prediction${props.rows.length === 1 ? "" : "s"}`;
-  return counts.size && hasRole.value
+  return counts.size && roles.value.some((role) => role != null)
     ? `${total} · ${[...counts].map(([label, count]) => `${count} ${label.toLowerCase()}`).join(", ")}`
     : total;
 });

@@ -1,80 +1,27 @@
 <template>
   <section class="data-content">
-    <WorkspaceHeader title="Data" :actions="headerActionItems">
-      <Button
-        v-if="activeTab === TAB_UPLOAD"
-        label="Load"
-        icon="pi pi-folder-open"
-        class="p-button-sm"
-        :disabled="dataUploadDisabled"
-        aria-haspopup="true"
-        aria-controls="upload-source-menu"
-        @click="toggleUploadSourceMenu"
-      />
-      <Menu
-        v-if="activeTab === TAB_UPLOAD"
-        id="upload-source-menu"
-        ref="uploadSourceMenuRef"
-        :model="uploadSourceMenuItems"
-        :popup="true"
-      />
-      <Button
-        v-if="activeTab === TAB_SYNTHESIS || activeTab === TAB_LIBRARY"
-        label="Guide"
-        icon="pi pi-book"
-        class="p-button-sm p-button-outlined"
-        :data-action="activeTab === TAB_SYNTHESIS ? 'synthesis_open_guide' : undefined"
-        @click="openSourceGuide"
-      />
-      <Button
-        v-if="activeTab !== TAB_MY_DATASET"
-        label="My Dataset"
-        icon="pi pi-arrow-right"
-        iconPos="right"
-        class="p-button-sm"
-        @click="openMyDataset"
-      />
-      <Button
-        v-else-if="!workflowSelectionContextRequested"
-        label="Workflow"
-        data-action="open_workflow"
-        icon="pi pi-arrow-right"
-        iconPos="right"
-        class="p-button-sm"
-        :loading="workflowHandoffBusy"
-        :disabled="workflowHandoffBusy"
-        :title="workflowHandoffTitle"
-        @click="goToWorkflow()"
-      />
-    </WorkspaceHeader>
-    <WorkspaceContext label="Data workspace context">
-      <WorkspaceContextItem
-        :label="activeSubtabLabel"
-        :value="activeSubtabValue"
-        aria-live="polite"
-      >
-        {{ activeSubtabDetail }}
-      </WorkspaceContextItem>
-      <WorkspaceContextItem
-        v-if="activeTab === TAB_IMPORT && previewRefDataset && previewRefTitle !== sourceSaveName"
-        label="Reference"
-        :value="previewRefTitle"
-        wrap
-      />
-      <WorkspaceContextItem
-        v-if="activeTab !== TAB_MY_DATASET"
-        label="Dataset"
-        :value="sourceSaveName"
-        wrap
-      />
-      <WorkspaceContextItem
-        v-if="activeTab === TAB_MY_DATASET"
-        label="Data Portfolio"
-        :value="dataPortfolioName"
-        wrap
-        >{{ dataPortfolioDetail }}</WorkspaceContextItem
-      >
-    </WorkspaceContext>
+    <WorkspacePageHeader :title="dataTitle" :identity="dataIdentity" :actions="dataHeaderMenu">
+      <template v-if="showBuildWorkflow || activeTab === TAB_CONTENTS || activeTab === TAB_UPLOAD" #primary>
+        <Button
+v-if="showBuildWorkflow" label="Build workflow" data-action="open_workflow" icon="pi pi-arrow-right"
+          :loading="workflowHandoffBusy" :disabled="workflowHandoffBusy" :title="workflowHandoffTitle" @click="goToWorkflow()" />
+        <Button v-else-if="activeTab === TAB_CONTENTS" label="Load data" icon="pi pi-folder-open" @click="activeTabId = 'upload'" />
+        <Button
+v-else
+          :label="folderSourceSelected ? 'Choose folder' : 'Choose files'"
+          :icon="folderSourceSelected ? 'pi pi-folder-open' : 'pi pi-file-import'"
+          :disabled="dataUploadDisabled"
+          @click="folderSourceSelected ? openUploadFolderPicker() : openUploadFilesPicker()"
+        />
+      </template>
+    </WorkspacePageHeader>
+
+    <section v-if="isLoadSection" class="load-source" aria-label="Source">
+      <label v-for="source in loadSources" :key="source.id">
+        <input name="load-source" type="radio" :checked="selectedLoadSource === source.id" @change="selectLoadSource(source.id)" />
+        {{ source.label }}
+      </label>
+    </section>
 
     <section
       v-if="workflowSelectionContextRequested"
@@ -161,7 +108,8 @@
     <WorkspaceTabs
       v-model="activeTabId"
       :tab-ids="DATA_TAB_IDS"
-      :labels="{ synthesis: 'Synthesis', library: 'Library' }"
+      :sections="dataNavigationSections"
+      :labels="{ synthesis: 'Synthetic', library: 'Library' }"
     >
       <!-- ======================== IMPORT TAB ======================== -->
       <TabPanel header="Import">
@@ -1275,11 +1223,8 @@
               >
                 <strong>Workflow view set:</strong>
                 <span>{{ activePackageViewSummary }}</span>
-                <small v-if="activePackageViewNames.length > 1">
-                  These package views have different feature spaces and cannot be combined as one
-                  ordinary workflow source. Choose <b>Use only</b> beside one view.
-                </small>
-                <small v-else>
+                <small v-if="combinedViewsWarning">{{ combinedViewsWarning }}</small>
+                <small v-else-if="activePackageViewNames.length === 1">
                   This is the single view used for preview and workflow modeling. Clicking a file
                   name changes inspection focus only.
                 </small>
@@ -1302,6 +1247,7 @@
           </div>
           <div class="dataset-preview-shell">
             <SelectedSpectraPlotPanel
+              :target-name="analysisChoice.target || null"
               :plot-datasets="plotDatasetSources"
               :plot-dataset-count="plottedExperimentIds.length"
               :plot-file-count="plottedFileCount"
@@ -1316,7 +1262,15 @@
             <div v-once id="active-dataset-display-settings" class="dataset-display-settings-target" />
           </div>
           <ContextualActions v-if="datasetActionContext" :context="datasetActionContext" />
+          <nav v-if="dataStore.fileInfo && !dataStore.catalogDatasetInfo" class="data-detail-links" aria-label="Dataset evidence">
+            <RouterLink
+              v-for="item in datasetDetails"
+              :key="item.id"
+              :to="{ path: '/data', query: { ...route.query, focus: item.id } }"
+            >{{ item.label }}</RouterLink>
+          </nav>
           <DataContentsPanel
+            :focus-evidence="route.query.focus === 'samples' || route.query.focus === 'metadata' ? route.query.focus : undefined"
             :focus-target="route.query.focus === 'target'"
             :scope-key="JSON.stringify(dataScopeIdentity())"
             :show-data-story="false"
@@ -1499,6 +1453,42 @@
           </div>
         </div>
       </TabPanel>
+      <TabPanel header="Contents">
+        <section class="data-overview-card" aria-label="Files">
+          <h2>Files</h2>
+          <p v-if="!dataStore.experimentFiles.length">No files in this dataset.</p>
+          <ul v-else class="data-inventory">
+            <li v-for="file in dataStore.experimentFiles" :key="file.id">
+              <button type="button" class="data-file-link" @click="openInventoryFile(file)">{{ dataViewLabel(file) }}</button>
+              <span>{{ formatDatasetFileShape(file) || 'Shape not recorded' }}</span>
+              <RowActions
+:subject="dataViewLabel(file)" :actions="[
+                { label: 'Download', icon: 'pi pi-download', command: () => dataStore.downloadFile(file.id, extractFileName(file.file_path)) },
+                { label: 'Delete', icon: 'pi pi-trash', danger: true, command: () => confirmDeleteFile(file) },
+              ]" />
+            </li>
+          </ul>
+        </section>
+        <section class="data-overview-card" aria-label="Saved selections">
+          <h2>Saved selections</h2>
+          <ul v-if="datasetViews.length" class="data-inventory">
+            <li v-for="view in datasetViews" :key="view.id">
+              <RouterLink :to="datasetViewDestination(view.id)">{{ view.name }}</RouterLink>
+            </li>
+          </ul>
+          <p v-else>No saved selections.</p>
+        </section>
+      </TabPanel>
+      <TabPanel header="Guide">
+        <section class="data-overview-card" aria-label="Modelling checks">
+          <h2>Modelling checks <MethodHelp topic="previewSelection" label="Modelling checks" /></h2>
+          <ul class="data-inventory">
+            <li><strong>Input data</strong><span>{{ dataStore.fileInfo || dataStore.catalogDatasetInfo ? inspectedDatasetShape : 'Choose a dataset' }}</span></li>
+            <li><strong>Reference values</strong><span>{{ analysisChoice.target || 'Choose a response' }}</span></li>
+            <li v-if="analysisChoice.group"><strong>Independent groups</strong><span>{{ analysisChoice.group }}</span></li>
+          </ul>
+        </section>
+      </TabPanel>
     </WorkspaceTabs>
 
     <!-- ======================== DIALOGS ======================== -->
@@ -1598,6 +1588,7 @@
 </template>
 
 <script setup lang="ts">
+import { navigationTab } from "@/router/legacyRoutes";
 import { useDatasetInspection } from "./composables/useDatasetInspection";
 import { resolveDatasetProject, useDatasetNavigation } from "./composables/useDatasetNavigation";
 import { useScopedRequest } from "@/composables/useScopedRequest";
@@ -1605,11 +1596,10 @@ import { useDatasetDefinitions, type DatasetView } from "./composables/useDatase
 import { useDatasetReadinessSelection, type AnalysisChoice } from "./composables/useDatasetReadinessSelection";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { ref, reactive, computed, toRaw, nextTick, onMounted, onBeforeUnmount, watch } from "vue";
-import { portfolioDetail } from "@/utils/dataPortfolio";
 import { useConfirmAction } from "@/composables/useConfirmAction";
 import { formatTimestamp } from "@/utils/format";
 import { readRememberedTab, writeRememberedTab } from "@/utils/rememberedTab";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter, type LocationQuery, type LocationQueryRaw } from "vue-router";
 import TabPanel from "primevue/tabpanel";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
@@ -1620,7 +1610,6 @@ import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
 import Dropdown from "primevue/dropdown";
 import InputNumber from "primevue/inputnumber";
-import Menu from "primevue/menu";
 import Panel from "primevue/panel";
 import ProgressSpinner from "primevue/progressspinner";
 import ProgressBar from "primevue/progressbar";
@@ -1655,16 +1644,17 @@ import type {
   SherpaDatasetDict,
 } from "@/types";
 import type { ReferenceDatasetOption } from "@/stores/workflow";
-import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
-import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
-import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
+import WorkspacePageHeader from "@/components/workspace/WorkspacePageHeader.vue";
+import RowActions from "@/components/RowActions.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import ContextualActions from "@/components/ContextualActions.vue";
+import MethodHelp from "@/components/MethodHelp.vue";
 import { resolveMethodHelpUrl } from "@/utils/documentation";
 import PlotSelectionCheckbox from "@/components/data/PlotSelectionCheckbox.vue";
 import DataContentsPanel from "./DataContentsPanel.vue";
 import DataStoryCard from "./DataStoryCard.vue";
+import { combinedViewsExplanation, registeredViewRelation } from "@/utils/packageViewRelations";
 import SelectedSpectraPlotPanel from "./SelectedSpectraPlotPanel.vue";
 import DatasetCurationPanel from "@/components/DatasetCurationPanel.vue";
 import { savedPortfolioInclusion, type CurationSource, type SampleInclusionState } from "@/utils/datasetCuration";
@@ -1709,6 +1699,8 @@ const TAB_UPLOAD = 2;
 const TAB_LIBRARY = 3;
 const TAB_MULTI_WELL = 4;
 const TAB_MY_DATASET = 5;
+const TAB_CONTENTS = 6;
+const TAB_GUIDE = 7;
 
 interface AnalysisStarterDatasetIntent {
   schema_version: "spectra-analysis-starter-dataset-intent/1";
@@ -1799,7 +1791,6 @@ const workflowSelectionApplying = ref(false);
 const workflowSelectionReason = ref("");
 const synthesisPanelRef = ref<InstanceType<typeof SynthesisPanel> | null>(null);
 const multiWellPanelRef = ref<InstanceType<typeof MultiWellAcquisitionPanel> | null>(null);
-const uploadSourceMenuRef = ref<InstanceType<typeof Menu> | null>(null);
 const uploadFilesInputRef = ref<HTMLInputElement | null>(null);
 const uploadFolderInputRef = ref<HTMLInputElement | null>(null);
 const registeredReferenceInputRef = ref<HTMLInputElement | null>(null);
@@ -1816,7 +1807,7 @@ const {
   status: analysisSelectionStatus,
 } = readinessSelection;
 function scientificRouteScope(): string {
-  const { tab: _tab, ...source } = route.query;
+  const { tab: _tab, section: _section, ...source } = route.query;
   return JSON.stringify(source);
 }
 const navigation = useDatasetNavigation(() => [
@@ -1868,13 +1859,6 @@ const dataPortfolioName = computed(
     Array.isArray(plotFileSelections.value[dataStore.activeExperimentId ?? -1])
       ? "Unsaved selection"
       : "Default selection"),
-);
-const dataPortfolioDetail = computed(() =>
-  portfolioDetail(
-    activeSelectedFileCount.value,
-    analysisChoice.value.target,
-    analysisChoice.value.group,
-  ),
 );
 
 const curationReason = ref("");
@@ -2294,7 +2278,21 @@ const DATA_TAB_IDS = [
   "library",
   "multi-well",
   "my-dataset",
+  "contents",
+  "guide",
 ] as const;
+const datasetDetails = [
+  { id: "target", label: "Targets" },
+  { id: "samples", label: "Samples" },
+  { id: "metadata", label: "Metadata" },
+] as const;
+const dataNavigationSections = [
+  { id: "my-dataset", label: "My Dataset", tabs: ["my-dataset"] },
+  { id: "load", label: "Load", tabs: ["upload", "import", "library", "multi-well"] },
+  { id: "contents", label: "Contents", tabs: ["contents"] },
+  { id: "synthesis", label: "Synthetic", tabs: ["synthesis"] },
+  { id: "guide", label: "Guide", tabs: ["guide"] },
+];
 const activeTab = ref(0);
 const activeTabId = computed({
   get: () => DATA_TAB_IDS[activeTab.value] ?? "import",
@@ -2307,54 +2305,71 @@ const activeTabId = computed({
 });
 const measuredSamplesRevision = ref(0);
 const isGuidedExampleSession = ref(false);
-function openMyDataset() {
-  activeTabId.value = "my-dataset";
-}
 function openSourceGuide() {
   if (activeTab.value === TAB_LIBRARY) {
     const url = resolveMethodHelpUrl("referenceLibrary");
     if (url) window.open(url, "_blank", "noopener,noreferrer");
   } else {
-    router.push("/documentation");
+    activeTabId.value = "guide";
   }
 }
-const headerActionItems = computed(() => [
-  ...(activeTab.value === TAB_UPLOAD
-    ? [{
-        label: "Load",
-        icon: "pi pi-folder-open",
-        disabled: dataUploadDisabled.value,
-        items: uploadSourceMenuItems,
-      }]
-    : []),
+const dataHeaderMenu = computed(() => [
   ...([TAB_SYNTHESIS, TAB_LIBRARY].includes(activeTab.value)
-    ? [{ label: "Guide", icon: "pi pi-book", command: openSourceGuide }]
-    : []),
-  ...(activeTab.value !== TAB_MY_DATASET
-    ? [{ label: "My Dataset", icon: "pi pi-arrow-right", command: openMyDataset }]
-    : workflowSelectionContextRequested.value
-      ? []
-      : [
-          {
-            label: "Workflow",
-            icon: "pi pi-arrow-right",
-            disabled: workflowHandoffBusy.value,
-            command: () => goToWorkflow(),
-          },
-        ]),
+    ? [{ label: "Guide", icon: "pi pi-book", command: openSourceGuide }] : []),
 ]);
-const uploadSourceMenuItems = [
-  {
-    label: "Files or ZIP",
-    icon: "pi pi-file-import",
-    command: () => openUploadFilesPicker(),
-  },
-  {
-    label: "Folder",
-    icon: "pi pi-folder-open",
-    command: () => openUploadFolderPicker(),
-  },
-];
+const isLoadSection = computed(() => [TAB_IMPORT, TAB_UPLOAD, TAB_LIBRARY, TAB_MULTI_WELL].includes(activeTab.value));
+const showBuildWorkflow = computed(() => [TAB_MY_DATASET, TAB_GUIDE].includes(activeTab.value) && !workflowSelectionContextRequested.value);
+const dataTitle = computed(() => {
+  if (isLoadSection.value) return "Load data";
+  if (activeTab.value === TAB_CONTENTS) return "Contents";
+  if (activeTab.value === TAB_SYNTHESIS) return "Synthetic mixtures";
+  if (activeTab.value === TAB_GUIDE) return "Ready to model?";
+  return selectedExperiment.value?.name || dataStore.catalogDatasetInfo?.label || "My Dataset";
+});
+const dataIdentity = computed(() => {
+  if (activeTab.value === TAB_CONTENTS) return `${dataStore.experimentFiles.length} files · ${datasetViews.value.length} saved selections`;
+  if (activeTab.value === TAB_MY_DATASET) {
+    if (!selectedExperiment.value && !dataStore.catalogDatasetInfo) return undefined;
+    return [currentPortfolioView.value ? dataPortfolioName.value : undefined, inspectedDatasetShape.value].filter(Boolean).join(" · ");
+  }
+  return activeSubtabDetail.value || undefined;
+});
+const folderSourceSelected = ref(false);
+const loadSources = computed(() => [
+  { id: "upload", label: "Files or ZIP" },
+  { id: "folder", label: "Folder" },
+  { id: "import", label: "Reference set" },
+  ...(!qualified.value ? [{ id: "nist", label: "NIST" }, { id: "hitran", label: "HITRAN" }] : []),
+  { id: "multi-well", label: "Plate" },
+]);
+const selectedLoadSource = computed(() => {
+  if (activeTab.value === TAB_LIBRARY) return librarySource.value === "nist" ? "nist" : "hitran";
+  if (activeTab.value === TAB_UPLOAD && folderSourceSelected.value) return "folder";
+  return DATA_TAB_IDS[activeTab.value];
+});
+function datasetViewDestination(id: number) {
+  const query: LocationQueryRaw = { ...route.query, section: "my-dataset", viewId: String(id), experiment: dataStore.activeExperimentId };
+  delete query.tab;
+  delete query.experimentId;
+  delete query.fileId;
+  delete query.focus;
+  return { path: "/data", query };
+}
+function selectLoadSource(id: string) {
+  folderSourceSelected.value = id === "folder";
+  if (id === "nist" || id === "hitran") {
+    if (librarySource.value !== id) {
+      librarySource.value = id;
+      onLibrarySourceChange();
+    }
+    activeTabId.value = "library";
+  } else {
+    activeTabId.value = id === "folder" ? "upload" : id;
+  }
+}
+async function openInventoryFile(file: ExperimentFile): Promise<void> {
+  await onInspectFile(file);
+}
 
 // R3 — Sherpa Advisor scope routing for the Data tab.  The UI now has
 // clearer Data workspace tabs, while the server still owns the stable
@@ -2785,16 +2800,6 @@ const uploadDatasetName = ref("");
 const resolvedImportDatasetName = computed(() => importDatasetName.value.trim() || defaultImportDatasetName());
 const resolvedUploadDatasetName = computed(() => uploadDatasetName.value.trim() || defaultUploadDatasetName());
 const resolvedLibraryDatasetName = computed(() => libraryDatasetName.value.trim() || defaultLibraryDatasetName());
-const sourceSaveName = computed(() => {
-  switch (activeTab.value) {
-    case TAB_IMPORT: return resolvedImportDatasetName.value;
-    case TAB_UPLOAD: return resolvedUploadDatasetName.value;
-    case TAB_LIBRARY: return resolvedLibraryDatasetName.value;
-    case TAB_SYNTHESIS: return synthesisPanelRef.value?.datasetName || "";
-    default: return selectedExperimentName.value;
-  }
-});
-
 function clearUploadFileSelection() {
   selectedFile.value = null;
   if (uploadFilesInputRef.value) uploadFilesInputRef.value.value = "";
@@ -3357,6 +3362,14 @@ async function startCornTransfer() {
   }
 }
 
+const combinedViewsWarning = computed(() => activePackageViewNames.value.length > 1 ? combinedViewsExplanation(
+  registeredViewRelation(
+    activeExperimentMetadata.value?.reference_package_id,
+    activeSelectedFiles.value.map((file) => packageViewStem(file.file_path)),
+    (dataStore.referenceCatalog?.registered ?? []).map((dataset) => dataset.dataset_package),
+  ),
+  activePackageViewNames.value,
+) : null);
 const activePackageViewSummary = computed(() => {
   const views = activeSelectedFiles.value.flatMap((file) => {
     const label = registeredPackageView(file.file_path);
@@ -3589,74 +3602,16 @@ const inspectedDatasetShape = computed(() => {
   return `${selectedExperimentFileCount.value} file${selectedExperimentFileCount.value === 1 ? "" : "s"}`;
 });
 
-const syntheticFileCount = computed(() => filesForStage("synthetic").length);
-
-const synthesisStateLabel = computed(() =>
-  syntheticFileCount.value > 0
-    ? `${syntheticFileCount.value} synthetic file${syntheticFileCount.value === 1 ? "" : "s"}`
-    : "Ready to generate",
-);
-
 const synthesisStateDetail = computed(() =>
   selectedExperiment.value
     ? "FTIR · Beer–Lambert mixtures"
     : "Select or create a dataset record first",
 );
 
-// Two-cell context strip: which subtab am I on, and what should the
-// right-side label / value / detail mirror for that subtab? All four
-// non-"My Dataset" subtabs are means of producing or interacting with
-// My Dataset, so each one is a transient working surface; My Dataset
-// is the persistent store and gets its own right-justified tab.
-// Tab indices after IA split:
-//   0 Import, 1 Synthesis, 2 Upload, 3 Library  (source group, left)
-//   4 My Dataset                                (store + contents, right)
-const activeSubtabLabel = computed(() => {
-  switch (activeTab.value) {
-    case TAB_IMPORT:
-      return "Import";
-    case TAB_SYNTHESIS:
-      return "Synthesis";
-    case TAB_UPLOAD:
-      return "Upload";
-    case TAB_LIBRARY:
-      return "Library";
-    case TAB_MULTI_WELL:
-      return "Multi-well";
-    case TAB_MY_DATASET:
-      return "My Dataset";
-    default:
-      return "—";
-  }
-});
-
-const activeSubtabValue = computed(() => {
-  switch (activeTab.value) {
-    case TAB_IMPORT:
-      return "Reference catalog";
-    case TAB_SYNTHESIS:
-      return synthesisStateLabel.value;
-    case TAB_UPLOAD:
-      return "Scientific files";
-    case TAB_LIBRARY:
-      return selectedLibraryKeys.size
-        ? `${selectedLibraryKeys.size} in basket`
-        : "Pure compound library";
-    case TAB_MULTI_WELL:
-      return "Acquisition plan";
-    case TAB_MY_DATASET:
-      return selectedExperimentName.value;
-    default:
-      return "—";
-  }
-});
-
 const activeSubtabDetail = computed(() => {
   switch (activeTab.value) {
     case TAB_IMPORT:
-      return qualified.value
-        ? "Local catalog references and exact registered uploads"
-        : "";
+      return previewRefDataset.value ? previewRefTitle.value : "";
     case TAB_SYNTHESIS:
       return synthesisStateDetail.value;
     case TAB_UPLOAD:
@@ -4856,7 +4811,9 @@ function routeTabIndex(value: unknown): number | null {
   const normalized = value.trim().toLowerCase();
   if (normalized === "import") return TAB_IMPORT;
   if (normalized === "synthesis") return TAB_SYNTHESIS;
-  if (normalized === "upload") return TAB_UPLOAD;
+  if (normalized === "upload" || normalized === "load") return TAB_UPLOAD;
+  if (normalized === "contents") return TAB_CONTENTS;
+  if (normalized === "guide") return TAB_GUIDE;
   if (normalized === "library") return TAB_LIBRARY;
   if (normalized === "multi-well" || normalized === "multi_well") return TAB_MULTI_WELL;
   if (normalized === "inspect" || normalized === "explore") return TAB_MY_DATASET;
@@ -5055,11 +5012,11 @@ const dataRouteWrites = useScopedRequest(() => [
   authStore.user?.id, projectStore.currentProjectId, route.fullPath,
 ]);
 let pendingDataRoute: { query: typeof route.query; isCurrent: () => boolean } | null = null;
-async function replaceDataRoute(location: { path: string; query: typeof route.query }) {
+async function replaceDataRoute(location: { path: string; query: typeof route.query }, historyEntry = false) {
   const pending = { query: location.query, isCurrent: dataRouteWrites.begin().isCurrent };
   pendingDataRoute = pending;
   try {
-    return await router.replace(location);
+    return await (historyEntry ? router.push(location) : router.replace(location));
   } finally {
     if (pendingDataRoute === pending) pendingDataRoute = null;
   }
@@ -5068,11 +5025,11 @@ async function replaceDataRoute(location: { path: string; query: typeof route.qu
 async function applyRouteExploreState(ticket = navigation.route.begin(), tabChoiceCurrent = navigation.captureTabChoice(), query = { ...route.query }) {
   syncGuidedExampleSession();
   const wantsExplore =
-    query.tab === "inspect" ||
-    query.tab === "explore" ||
-    query.tab === "my-dataset" ||
-    query.tab === "my_dataset" ||
-    query.tab === "dataset" ||
+    navigationTab(query) === "inspect" ||
+    navigationTab(query) === "explore" ||
+    navigationTab(query) === "my-dataset" ||
+    navigationTab(query) === "my_dataset" ||
+    navigationTab(query) === "dataset" ||
     query.experimentId != null ||
     query.experiment != null ||
     query.fileId != null ||
@@ -5166,7 +5123,7 @@ async function applyRouteExploreState(ticket = navigation.route.begin(), tabChoi
 
 async function applyRouteDataState(tabChoiceCurrent = navigation.captureTabChoice(), query = { ...route.query }) {
   const ticket = navigation.route.begin();
-  const requestedTab = routeTabIndex(query.tab);
+  const requestedTab = routeTabIndex(navigationTab(query));
   const starterIntent = pendingAnalysisStarterIntent();
   const explicitSelection = query.experimentId != null || query.experiment != null || query.fileId != null || query.viewId != null;
   if (!explicitSelection && starterIntent?.imported_experiment_id != null && (requestedTab === null || requestedTab === TAB_MY_DATASET)) {
@@ -5816,7 +5773,7 @@ onMounted(async () => {
     if (!ticket.isCurrent()) return;
   }
 
-  const requestedTab = routeTabIndex(route.query.tab);
+  const requestedTab = routeTabIndex(navigationTab(route.query));
   const sourceTabRequested = tabChoiceCurrent()
     ? (requestedTab != null && requestedTab !== TAB_MY_DATASET) || pendingAnalysisStarterIntent() != null
     : activeTab.value !== TAB_MY_DATASET;
@@ -5887,7 +5844,11 @@ function onDataTabSelected(tabIndex: number) {
   const tab = DATA_TAB_IDS[tabIndex];
   // Even choosing the committed tab must cancel a conflicting pending move.
   const query = pendingDataRoute?.isCurrent() ? pendingDataRoute.query : route.query;
-  if (tab) void replaceDataRoute({ path: route.path, query: { ...query, tab } });
+  if (tab) {
+    const destination: LocationQuery = { ...query, tab };
+    if (tab !== "my-dataset") delete destination.focus;
+    void replaceDataRoute({ path: route.path, query: destination }, true);
+  }
   if (tabIndex === TAB_MY_DATASET) void ensureInitialContentsSelection();
   if (tabIndex === TAB_IMPORT) void resumeStarterImport();
 }
@@ -5909,7 +5870,7 @@ watch(
 
 watch(
   () => [
-    route.query.tab,
+    navigationTab(route.query),
     route.query.experimentId,
     route.query.experiment,
     route.query.fileId,
@@ -6793,9 +6754,6 @@ async function onFileSelect(event: { files?: File[] }) {
   }
 }
 
-function toggleUploadSourceMenu(event: Event) {
-  uploadSourceMenuRef.value?.toggle(event);
-}
 
 function openUploadFilesPicker() {
   uploadFilesInputRef.value?.click();
@@ -7006,6 +6964,7 @@ async function onInspectFile(file: ExperimentFile, options: { updateRoute?: bool
     if (updateRoute) {
       const query = { ...route.query };
       delete query.tab;
+      delete query.section;
       await replaceDataRoute({
         path: "/data",
         query: {
@@ -7087,10 +7046,12 @@ function extractFileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() || filePath;
 }
 
+function packageViewStem(filePath: string): string {
+  return extractFileName(filePath).replace(/\.[^.]+$/, "").toLowerCase();
+}
+
 function registeredPackageView(filePath: string): string | null {
-  const stem = extractFileName(filePath)
-    .replace(/\.[^.]+$/, "")
-    .toLowerCase();
+  const stem = packageViewStem(filePath);
   const labels: Record<string, string> = {
     "cgl-spectra": "Complete spectra",
     "corn-m5": "M5",
@@ -7348,7 +7309,8 @@ function formatDate(dateStr: string): string {
   border-radius: 8px;
   display: flex;
   flex-direction: column;
-  height: 520px;
+  min-height: 12rem;
+  max-height: min(30rem, 55vh);
   overflow: hidden;
   padding: 0.75rem;
 }
@@ -8665,4 +8627,13 @@ function formatDate(dateStr: string): string {
     grid-template-columns: 1fr;
   }
 }
+.load-source { display: flex; flex-wrap: wrap; gap: .5rem 1rem; padding: .5rem 0; }
+.load-source label { display: inline-flex; align-items: center; gap: .35rem; }
+.load-source input { accent-color: var(--ss-action); }
+.data-overview-card { padding: 1rem; margin-block: 1rem; background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: .65rem; }
+.data-overview-card h2 { font-size: 1rem; margin: 0; }
+.data-detail-links { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+.data-inventory { list-style: none; padding: 0; margin: .5rem 0 0; }
+.data-inventory li { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding-block: .4rem; min-width: 0; overflow-wrap: anywhere; }
+.data-file-link { color: var(--ss-action); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-align: left; }
 </style>

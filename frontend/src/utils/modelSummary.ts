@@ -115,7 +115,11 @@ export interface PlsdaComponentSelectionSummary {
 }
 
 export interface ModelSummary {
-  model: { nodeId: string; method: string; label: string; settings: Array<[string, string]> } | null;
+  model: {
+    nodeId: string; method: string; label: string; settings: Array<[string, string]>;
+    /** Automatic component choice whose fitted count this run did not record. */
+    componentCountMissing?: boolean;
+  } | null;
   preprocessing: string[];
   regression: RegressionStatistics[];
   classification: ClassificationStatistics[];
@@ -221,7 +225,7 @@ function plsdaComponentSelectionFromRecord(value: unknown): PlsdaComponentSelect
     nCalibration, classes: value.classes as string[],
     cvMethod: cv.status === "available" && typeof cv.method === "string" ? cv.method : null,
     cvFolds: cv.status === "available" ? finite(cv.n_folds) : null,
-    cvReason: cv.status === "available" ? null : typeof cv.reason === "string" ? cv.reason : "Cross-validation was not retained.",
+    cvReason: cv.status === "available" ? null : typeof cv.reason === "string" ? cv.reason : "Cross-validation was not saved.",
     rows, suggestedComponents: suggestion };
 }
 
@@ -245,7 +249,7 @@ function pcaComponentSelectionFromRecord(value: unknown): PcaComponentSelectionS
     reconstructionSpace: typeof value.reconstruction_space === "string" ? value.reconstruction_space : "unknown",
     cvMethod: cv.status === "available" && typeof cv.method === "string" ? cv.method : null,
     cvFolds: cv.status === "available" ? finite(cv.n_folds) : null,
-    cvReason: cv.status === "available" ? null : typeof cv.reason === "string" ? cv.reason : "Cross-validation was not retained.",
+    cvReason: cv.status === "available" ? null : typeof cv.reason === "string" ? cv.reason : "Cross-validation was not saved.",
     rows };
 }
 
@@ -290,7 +294,7 @@ function componentSelectionFromRecord(value: unknown, source: string): Component
     selectionRuleStatus: typeof value.selection_rule_status === "string" ? value.selection_rule_status : "unverified",
     selectedInCurve: value.selected_in_curve === true,
     nCalibration: count, cvStatus: cvAvailable ? "available" : "unavailable",
-    cvReason: cvAvailable ? null : typeof cv.reason === "string" ? cv.reason : "Cross-validation evidence was not retained.",
+    cvReason: cvAvailable ? null : typeof cv.reason === "string" ? cv.reason : "Cross-validation evidence was not saved.",
     cvMethod: cvAvailable && typeof cv.method === "string" ? cv.method : null,
     cvFolds: cvAvailable ? finite(cv.n_folds) : null,
     cvGroups: cvAvailable ? finite(cv.n_groups) : null,
@@ -373,6 +377,8 @@ export function buildModelSummary(
   definition: SavedDefinition | null,
   effectiveParameters: Record<string, Record<string, unknown>> | null | undefined,
   records: Array<{ source: SummarySource; value: unknown }>,
+  /** Component count recorded on the fitted model this run produced, when no curve was saved. */
+  modelComponents: number | null = null,
 ): ModelSummary {
   const node = primaryModelNode(definition);
   const regression: RegressionStatistics[] = [];
@@ -396,16 +402,17 @@ export function buildModelSummary(
     // inactive manual value in automatic mode, or a count capped during fitting.
     const parameters = effectiveParameters?.[node.node_id] ?? node.parameters ?? {};
     const fittedComponents = componentSelection?.selectedComponents
-      ?? pcaComponentSelection?.selectedComponents ?? plsdaComponentSelection?.selectedComponents;
+      ?? pcaComponentSelection?.selectedComponents ?? plsdaComponentSelection?.selectedComponents
+      ?? (Number.isSafeInteger(modelComponents) && modelComponents! > 0 ? modelComponents! : undefined);
+    const componentCountMissing = fittedComponents == null && parameters.component_fit_mode === "one_standard_error";
     const settings = METHOD_SETTINGS.flatMap(([key, label, format]) => {
-      if (key === "n_components" && fittedComponents == null
-        && parameters.component_fit_mode === "one_standard_error") {
-        return [[label, "Automatic · fitted count not retained"] as [string, string]];
+      if (key === "n_components" && componentCountMissing) {
+        return [[label, "Automatic · fitted count not saved"] as [string, string]];
       }
       const text = format(key === "n_components" ? fittedComponents ?? parameters[key] : parameters[key], node.node_type);
       return text ? [[label, text] as [string, string]] : [];
     });
-    model = { nodeId: node.node_id, method: METHODS[node.node_type] ?? node.label ?? node.node_type, label: node.label ?? node.node_id, settings };
+    model = { nodeId: node.node_id, method: METHODS[node.node_type] ?? node.label ?? node.node_type, label: node.label ?? node.node_id, settings, componentCountMissing };
   }
   const unique = <T extends { role: SummaryRole; source: string }>(items: T[], key: (item: T) => string) =>
     [...new Map(items.map((item) => [key(item), item])).values()];

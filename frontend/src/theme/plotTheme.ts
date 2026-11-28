@@ -144,3 +144,21 @@ export function themedPlotLayout(
     ...(preference === "default" ? {} : { colorway: [...categoricalPalette(preference)] }),
   };
 }
+
+/** A perceptually ordered colour for a continuous value (viridis stops), for colouring spectra by a reference value. */
+const VIRIDIS: Array<[number, [number, number, number]]> = [
+  [0, [68, 1, 84]], [0.25, [59, 82, 139]], [0.5, [33, 145, 140]], [0.75, [94, 201, 98]], [1, [253, 231, 37]],
+];
+
+export const CONTINUOUS_COLORSCALE = VIRIDIS.map(([stop, [r, g, b]]) => [stop, `rgb(${r},${g},${b})`] as [number, string]);
+
+export function continuousColor(value: number, min: number, max: number): string {
+  const t = max > min ? Math.min(1, Math.max(0, (value - min) / (max - min))) : 0.5;
+  const upper = VIRIDIS.findIndex(([stop]) => stop >= t);
+  if (upper <= 0) return CONTINUOUS_COLORSCALE[0][1];
+  const [s0, c0] = VIRIDIS[upper - 1];
+  const [s1, c1] = VIRIDIS[upper];
+  const f = (t - s0) / (s1 - s0);
+  const mix = c0.map((channel, index) => Math.round(channel + (c1[index] - channel) * f));
+  return `rgb(${mix[0]},${mix[1]},${mix[2]})`;
+}

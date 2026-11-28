@@ -10,7 +10,7 @@ test("project cards and Data controls fit beside expanded navigation @smoke", as
   await expect(card).toBeVisible();
   const cardGeometry = await card.evaluate(element => ({ right: element.getBoundingClientRect().right, viewport: innerWidth }));
   expect(cardGeometry.right).toBeLessThanOrEqual(cardGeometry.viewport);
-  const archive = card.getByRole("button", { name: "Archive project", exact: true });
+  const archive = card.getByRole("button", { name: /^More actions for / });
   await archive.focus();
   await expect(archive).toBeInViewport();
   const open = card.getByRole("button", { name: /^(Open|Select) project/ });
@@ -18,7 +18,8 @@ test("project cards and Data controls fit beside expanded navigation @smoke", as
   await page.getByRole("link", { name: "Project", exact: true }).click();
   await expect(page).toHaveURL(/\/project(?:[?#]|$)/);
   await page.getByRole("link", { name: "Data", exact: true }).click();
-  await page.getByRole("button", { name: "Upload", exact: true }).click();
+  await page.getByRole("button", { name: "Load", exact: true }).click();
+  await page.getByRole("radio", { name: "Files or ZIP", exact: true }).check();
   const action = page.locator(".upload-action");
   await expect(action).toBeVisible();
   const upload = await action.evaluate(element => {
@@ -28,7 +29,7 @@ test("project cards and Data controls fit beside expanded navigation @smoke", as
   });
   expect(upload.buttonRight).toBeLessThanOrEqual(upload.right + 1);
   expect(upload.buttonWidth).toBeGreaterThan(140);
-  await page.getByRole("button", { name: "Synthesis", exact: true }).click();
+  await page.getByRole("button", { name: "Synthetic", exact: true }).click();
   for (const label of ["Samples", "Path length (cm)", "Noise sigma (AU)"]) {
     const input = page.getByRole("spinbutton", { name: label, exact: true });
     await expect(input).toBeVisible();

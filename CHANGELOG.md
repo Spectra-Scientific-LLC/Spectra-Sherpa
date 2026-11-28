@@ -5,6 +5,17 @@ All notable changes to SpectraSherpa will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - Unreleased
+
+### Changed
+
+- The workbench uses a consistent sidebar for pages, sections and retained
+  views. Desktop users can use the native menu or choose the sidebar in Settings.
+- Project, Data, Workflow and Runs show the active data and the next action.
+  Runs keeps development, held-out evaluation and application evidence distinct.
+- Report separates drafting from export and keeps the generated report while
+  switching between them.
+
 ## [0.7.0] - Unreleased
 
 Changes for `0.7.0` are listed below. Source version and date alone do not

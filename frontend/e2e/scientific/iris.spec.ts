@@ -66,7 +66,7 @@ test("Iris: import, execute and independently inspect retained scientific surfac
   const preview = await page.locator('iframe[title="Report preview"]').getAttribute("srcdoc");
   expect(preview).toBeTruthy();
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export", exact: true }).click();
+  await page.getByRole("button", { name: "Other formats", exact: true }).click();
   await page.getByRole("menuitem", { name: "HTML Report" }).click();
   const saved = await download;
   expect(await readFile((await saved.path())!, "utf8")).toBe(preview);

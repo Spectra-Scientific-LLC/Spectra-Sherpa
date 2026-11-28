@@ -1,3 +1,5 @@
+import { NAVIGATION_CONTRACT_VERSION } from "@/extension-contract/navigation-v1";
+import { navigationRegistry } from "@/navigation/workspace";
 import ProjectUnavailable from "@/views/ProjectUnavailable.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
@@ -172,6 +174,15 @@ function buildContext(
             usePrimaryNavigation().removeItems(contributorId),
         }
       : usePrimaryNavigation(),
+    navigation: {
+      version: NAVIGATION_CONTRACT_VERSION,
+      register: (contribution) => {
+        if (!scope?.current()) return () => {};
+        const dispose = navigationRegistry.register(contributorId, contribution, scope.current);
+        scope.cleanups.push(dispose);
+        return dispose;
+      },
+    },
     appConfig,
     contributorId,
     addRoute: (route) => {

@@ -17,7 +17,7 @@ import ModelsContent from "@/views/models/ModelsContent.vue";
 type RetainedIdentity = { runId: number; projectId: number; workflowSha: string | null; buildSha: string | null };
 function mountView(realTables = false, identity?: Ref<RetainedIdentity | null>) {
   return mount(ModelsContent, { global: { plugins: [PrimeVue], renderStubDefaultSlot: true,
-    stubs: { WorkspaceHeader: true, WorkspaceContext: true, WorkspaceContextItem: identity ? false : true,
+    stubs: { WorkspacePageHeader: true,
       RunDetailContent: identity ? defineComponent({ setup(_props, { expose }) {
         expose({ retainedIdentity: identity }); return () => h('div');
       } }) : true,
@@ -31,10 +31,53 @@ describe("Runs workspace", () => {
   beforeEach(() => {
     vi.clearAllMocks(); localStorage.clear(); m.query = {}; m.params = {}; m.mode = "local";
     m.auth = reactive({ user: { id: 1 }, sessionRevision: 0 });
-    m.project = { ensureProjectForBrowserTab: vi.fn(), currentProjectId: 1, currentProject: { id: 1, name: "Corn" } };
+    m.project = { ensureProjectForBrowserTab: vi.fn(), exportingProjectIds: [], currentProjectId: 1, currentProject: { id: 1, name: "Corn" } };
     m.runs = { runs: [], total: 0, selectedRunIds: new Set(), selectedCount: 0, runsLoading: false, comparison: null, loadError: null,
-      fetchProjectRuns: vi.fn(), clearSelection: vi.fn(), resetProjectScope: vi.fn() };
+      fetchProjectRuns: vi.fn(), clearSelection: vi.fn(), resetProjectScope: vi.fn(),
+      compareCandidates: [], compareCandidatesTotal: 0, compareCandidatesLoading: false, compareCandidatesError: null,
+      fetchCompareCandidates: vi.fn() };
     m.get.mockImplementation(async (path: string) => ({ data: path === "/deploy/capabilities" ? { privateBatchUpload: true } : path === "/runs" ? { runs: [], total: 0 } : [] }));
+  });
+  it('names a model by its cross-validated statistic, read from the stored metric key', async () => {
+    m.query.tab = 'artifacts';
+    const model = { artifact_uid: 'model-cv', name: 'PLS moisture', display_name: 'PLS moisture', model_type: 'pls',
+      n_features: 700, n_components: 9, metrics: { r2: 0.999, rmse: 0.01, r2_cv: 0.951, rmsecv: 0.12 },
+      created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z' };
+    m.get.mockImplementation(async (path: string) => ({ data: path === '/models' ? [model] : {} }));
+    const view = mountView(); await flushPromises();
+    const row = view.get('.object-row').text();
+    expect(row).toContain('pls · 700 feat · 9 LV · Q²');
+    expect(row).not.toContain('R² 0.999');
+    view.unmount();
+  });
+  it("lets Compare choose from every saved run, not History's page, and tells loading, failure and no runs apart", async () => {
+    m.query = { tab: "compare" };
+    const run = (id: number) => ({ id, name: `Run ${id}`, run_kind: "training" });
+    m.runs.compareCandidatesTotal = null;
+    let view = mountView(); await flushPromises();
+    // The picker asks for the project's runs itself, unfiltered.
+    expect(m.runs.fetchCompareCandidates).toHaveBeenCalledWith(1, false);
+    expect(view.get(".compare-picker").text()).not.toContain("No saved runs");
+    view.unmount();
+    m.runs.compareCandidatesError = "Could not load the project's runs.";
+    view = mountView(); await flushPromises();
+    expect(view.findAllComponents({ name: "WorkspaceState" }).some((state) => state.props("kind") === "error")).toBe(true);
+    expect(view.get(".compare-picker").text()).not.toContain("No saved runs");
+    view.unmount();
+    m.runs.compareCandidatesError = null; m.runs.compareCandidatesTotal = 0;
+    view = mountView(); await flushPromises();
+    expect(view.get(".compare-picker").text()).toContain("No saved runs in this project yet.");
+    view.unmount();
+    // History shows one filtered page; Compare still lists older runs and can load more.
+    m.runs.runs = [run(80)]; m.runs.total = 1;
+    m.runs.compareCandidates = Array.from({ length: 50 }, (_, index) => run(120 - index));
+    m.runs.compareCandidatesTotal = 120;
+    view = mountView(); await flushPromises();
+    expect(view.findAll(".compare-picker li")).toHaveLength(50);
+    const more = view.get('.compare-picker [label="Load older runs (50 of 120 shown)"]');
+    await more.trigger("click");
+    expect(m.runs.fetchCompareCandidates).toHaveBeenLastCalledWith(1, true);
+    view.unmount();
   });
   const fitted = { project_id: 1, artifact_uid: 'fitted-1', name: 'Saved PLS', model_type: 'pls', n_features: 13,
     n_components: 3, workflow_id: 7, workflow_version_id: 9, source_run_id: 42, is_deploy_ready: false };
@@ -42,59 +85,55 @@ describe("Runs workspace", () => {
   function inspectionContext(value: RetainedIdentity | null = {
     runId: 42, projectId: 1, workflowSha: 'a'.repeat(64), buildSha: recordedBuild,
   }) {
-    m.params = reactive({ runId: '42' }); m.query = reactive({ tab: 'inspect', project: '1' });
+    m.params = reactive({ runId: '42' }); m.query = reactive({ tab: 'inspect', project: '1', view: 'provenance' });
     m.project = reactive(m.project);
     const identity = ref(value);
     return { view: mountView(false, identity), identity };
   }
-  it('shows retained hashes in the second context item with full accessible values and copies complete identity', async () => {
+  it('shows and copies complete identity only in Provenance', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     const { view } = inspectionContext(); await flushPromises();
-    const items = view.findAll('.workspace-context-item');
-    expect(items).toHaveLength(2);
-    expect(items[0].text()).toContain('Run #42');
-    const item = items[1];
-    expect(item.text()).toContain(`Workflow SHA ${'a'.repeat(12)}`);
-    expect(item.text()).toContain(`Build SHA ${recordedBuild.slice(0, 12)}`);
-    expect(item.get('strong').attributes('title')).toBe(`Workflow SHA-256: ${'a'.repeat(64)}`);
-    expect(item.attributes('aria-label')).toContain(recordedBuild);
-    expect(item.get('.run-identity-build > span').attributes('title')).toBe(`Build SHA-1: ${recordedBuild}`);
-    await item.get('button[aria-label="Copy run identity for Run #42"]').trigger('click'); await flushPromises();
+    const identifiers = view.get('[aria-label="Identifiers"]');
+    expect(identifiers.text()).toContain(`Workflow SHA-256${'a'.repeat(64)}`);
+    expect(identifiers.text()).toContain(`Build SHA-1${recordedBuild}`);
+    await identifiers.get('button').trigger('click'); await flushPromises();
     expect(writeText).toHaveBeenCalledExactlyOnceWith(`Run #42\nWorkflow SHA-256: ${'a'.repeat(64)}\nBuild SHA-1: ${recordedBuild}`);
     expect(m.toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    m.query.view = 'results'; await flushPromises();
+    expect(view.text()).not.toContain(recordedBuild);
     view.unmount();
   });
-  it('hides stale context on route/project changes and when Inspect is left', async () => {
+  it('hides stale provenance on route/project changes and when Inspect is left', async () => {
     const { view, identity } = inspectionContext(); await flushPromises();
-    expect(view.findAll('.workspace-context-item')).toHaveLength(2);
+    const identifiers = () => view.find('[aria-label="Identifiers"]');
+    expect(identifiers().exists()).toBe(true);
     m.query.project = '2'; await flushPromises();
-    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    expect(identifiers().exists()).toBe(false);
     m.query.project = '1'; await flushPromises();
     m.params.runId = '43'; await flushPromises();
-    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    expect(identifiers().exists()).toBe(false);
     identity.value = { runId: 43, projectId: 1, workflowSha: 'b'.repeat(64), buildSha: recordedBuild };
-    await flushPromises(); expect(view.findAll('.workspace-context-item')).toHaveLength(2);
+    await flushPromises();
+    expect(identifiers().exists()).toBe(true);
     m.project.currentProjectId = 2; await flushPromises();
-    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    expect(identifiers().exists()).toBe(false);
     m.project.currentProjectId = 1; delete m.params.runId; m.query.tab = 'run_history'; await flushPromises();
-    expect(view.findAll('.workspace-context-item')).toHaveLength(1);
+    expect(identifiers().exists()).toBe(false);
     view.unmount();
   });
   it('shows missing recorded hashes without substitution and disables copy', async () => {
     const { view } = inspectionContext({ runId: 42, projectId: 1, workflowSha: null, buildSha: null });
     await flushPromises();
-    const item = view.findAll('.workspace-context-item')[1];
-    expect(item.text()).toContain('Workflow SHA Not recorded');
-    expect(item.text()).toContain('Build SHA Not recorded');
-    expect(item.get('button').attributes('disabled')).toBeDefined();
-    expect(item.attributes('aria-label')).not.toContain(recordedBuild);
+    const identifiers = view.get('[aria-label="Identifiers"]');
+    expect(identifiers.findAll('dd').map(value => value.text())).toEqual(['42', 'Not recorded', 'Not recorded']);
+    expect(identifiers.get('button').attributes('disabled')).toBeDefined();
     view.unmount();
   });
   it('reports clipboard failure without claiming success', async () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } });
     const { view } = inspectionContext(); await flushPromises();
-    await view.get('button[aria-label="Copy run identity for Run #42"]').trigger('click'); await flushPromises();
+    await view.get('[aria-label="Identifiers"] button').trigger('click'); await flushPromises();
     expect(m.toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Copy failed' }));
     expect(m.toast).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
     view.unmount();
@@ -127,7 +166,10 @@ describe("Runs workspace", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     const view = await selectedModelView();
-    await (view.vm as unknown as { exportActiveTab: () => Promise<void> }).exportActiveTab();
+    const provenance = view.get('#selected-model-detail details.run-identifiers');
+    expect(provenance.get('summary').text()).toBe('Provenance');
+    await provenance.get('[label="Copy metadata"]').trigger('click');
+    await flushPromises();
     expect(writeText).toHaveBeenCalledOnce();
     expect(JSON.parse(writeText.mock.calls[0][0])).toEqual(fitted);
     expect(m.patch).not.toHaveBeenCalled();
@@ -223,7 +265,7 @@ describe("Runs workspace", () => {
     const view = mountView(); await flushPromises();
     await (view.vm as unknown as {handleCompareRuns: () => Promise<void>}).handleCompareRuns(); await flushPromises();
     expect(m.runs.compareProjectRuns).toHaveBeenCalledWith(1, [41, 42]);
-    expect(m.replace).toHaveBeenCalledWith({query: {tab: "compare", project: "1"}});
+    expect(m.push).toHaveBeenCalledWith({ path: "/runs", query: { section: "compare", project: "1" } });
     view.unmount();
   });
   it("replaces old project deep links when the active project changes", async () => {
@@ -248,7 +290,7 @@ describe("Runs workspace", () => {
     expect(tabs.map(t => t.text())).toEqual(["History", "Inspect", "Compare", "Models", "Batch"]);
     expect(tabs[3].attributes("aria-selected")).toBe("true");
     expect(view.find('[label="Refresh"]').exists()).toBe(false);
-    expect(view.find('workspace-context-item-stub').attributes("label")).toBe("Models");
+    expect(view.getComponent({ name: "WorkspacePageHeader" }).props("title")).toBe("Models");
     view.unmount();
   });
   it("keeps History reachable when artifact loading fails", async () => {
@@ -284,7 +326,7 @@ describe("Runs workspace", () => {
     for (const tab of ["inspect", "compare"]) {
       m.query = { tab };
       const view = mountView(); await flushPromises();
-      const message = tab === "inspect" ? "Choose a run in History." : "Select 2–10 runs in History to compare.";
+      const message = tab === "inspect" ? "Choose a run in History." : "No saved runs in this project yet.";
       const state = view.findAllComponents({ name: "WorkspaceState" })
         .find(component => component.props("message") === message)!;
       expect(state.props("kind")).toBe("empty");

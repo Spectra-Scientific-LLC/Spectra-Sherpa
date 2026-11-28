@@ -45,6 +45,7 @@ schema or file format. A model's identifier is its **Model ID**. Bounded phrases
 | **Sample mask** | A boolean choice of rows included in an analysis without deleting the excluded rows. Example: an outlier can be masked, reviewed, and restored. |
 | **Scientific sufficiency** | Whether the data are adequate for the intended scientific claim. Example: structural compatibility with SIMCA does not prove enough replicates exist for residual limits. |
 | **Structural compatibility** | Whether data expose the roles a template requires. Example: PLS regression needs a continuous target; this check does not promise good calibration. See [Datasets and Providers](../workflows/datasets-and-providers.md). |
+| **Saved location** | A link to the current project, section, and view. |
 | **Source identity** | The exact originating file or governed source record. Example: a curve hover can retain its `.spa` filename while the collection has a different title. |
 | **Starter** | A readable, qualified workflow template that still requires the scientist to confirm data and intent. Example: the PCA starter connects loading, centering, PCA, plots, and outlier diagnostics. |
 | **Target** | The response or class a supervised analysis predicts. Example: moisture is continuous; botanical group is categorical. |

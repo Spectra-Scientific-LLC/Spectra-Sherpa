@@ -1,42 +1,23 @@
 <template>
   <section class="page-content report-content">
-    <!-- Header -->
-    <WorkspaceHeader title="Report" :actions="reportHeaderActionItems">
-      <Button
-        v-if="linkedRunId"
-        label="Run"
-        icon="pi pi-arrow-left"
-        class="p-button-sm p-button-text"
-        @click="openLinkedRun"
-      />
-      <Button
-        v-if="canQueryAudit && auditWorkflowId"
-        label="Audit"
-        icon="pi pi-shield"
-        class="p-button-sm p-button-outlined"
-        @click="openWorkflowAudit"
-      />
-      <Button
-        v-if="reportStore.isReady"
-        ref="exportBtnRef"
-        label="Export"
-        icon="pi pi-download"
-        class="p-button-sm"
-        @click="toggleExportMenu"
-      />
-      <Menu ref="exportMenuRef" :model="exportMenuItems" :popup="true" />
-    </WorkspaceHeader>
-    <WorkspaceContext label="Report context">
-      <WorkspaceContextItem :label="sectionTitle" :value="contextTitle">
-        {{
-          reportStore.reportData
-            ? `${reportStore.reportData.runs?.length || 0} retained runs`
-            : ""
-        }}
-      </WorkspaceContextItem>
-    </WorkspaceContext>
+    <WorkspacePageHeader
+      :title="activeTab === 'exports' ? 'Exports' : reportStore.reportData ? reportTitle : 'Report'"
+      :identity="draftIdentity"
+      :actions="reportHeaderActionItems"
+      :menu-label="reportStore.isReady && activeTab !== 'exports' ? 'Other formats' : 'Actions'"
+    >
+      <template v-if="activeTab === 'exports' || activeTab === 'setup' || reportStore.isReady" #primary>
+        <Button
+v-if="activeTab === 'exports'" label="Open draft" icon="pi pi-arrow-left"
+          @click="selectReportSection(reportStore.isReady ? 'preview' : 'setup')" />
+        <Button
+v-else-if="activeTab === 'setup'" label="Generate report" icon="pi pi-file"
+          :loading="reportStore.loading" :disabled="!reportStore.selectedWorkflowId" @click="generateReport" />
+        <Button v-else label="Export PDF" icon="pi pi-file-pdf" @click="exportPdf" />
+      </template>
+    </WorkspacePageHeader>
     <div v-if="reportStore.error" class="error-banner" role="alert">{{ reportStore.error }}</div>
-    <WorkspaceTabs v-model="activeTab" :tab-ids="tabIds">
+    <WorkspaceTabs :model-value="activeTab" :tab-ids="tabIds" :sections="reportNavigationSections" @update:model-value="selectReportSection">
       <TabPanel header="Setup">
         <p v-if="reportStore.workflowsError" role="alert">
           {{ reportStore.workflowsError }}
@@ -95,15 +76,6 @@
               class="w-full"
             />
           </div>
-          <div class="config-actions">
-            <Button
-              label="Generate Report"
-              icon="pi pi-file"
-              :loading="reportStore.loading"
-              :disabled="!reportStore.selectedWorkflowId"
-              @click="generateReport"
-            />
-          </div>
           <div
             v-if="reportStore.selectedRunIds.length"
             class="selected-runs-chips"
@@ -135,7 +107,7 @@
           Setup has changed; this preview and its exports retain the previously generated report.
         </p>
         <details v-if="reportStore.reportData">
-          <summary>Details</summary>
+          <summary>Provenance</summary>
           <p>
             Workflow {{ reportStore.reportData.workflow_id }} · Runs
             {{ reportStore.reportData.runs?.map((run) => run.id).join(", ") || "None" }}
@@ -236,11 +208,21 @@
           message="Choose inputs in Setup, then generate the report."
         />
       </TabPanel>
+      <TabPanel header="Exports">
+        <WorkspaceState v-if="!reportStore.isReady" kind="empty" variant="page" message="Generate a draft to export it." />
+        <section v-else class="report-formats" aria-label="Available formats">
+          <Button label="Export PDF" icon="pi pi-file-pdf" outlined @click="exportPdf" />
+          <Button
+v-for="item in availableReportFormats" :key="item.label" :label="item.label"
+            :icon="item.icon" :disabled="item.disabled" outlined @click="item.command?.()" />
+        </section>
+      </TabPanel>
     </WorkspaceTabs>
   </section>
 </template>
 
 <script setup lang="ts">
+import { navigationTab } from "@/router/legacyRoutes";
 import MethodHelp from "@/components/MethodHelp.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- report view bridges backend report payloads into export-generator types. */
 import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
@@ -248,16 +230,13 @@ import Dropdown from "primevue/dropdown";
 import Button from "primevue/button";
 import ToggleButton from "primevue/togglebutton";
 import ProgressSpinner from "primevue/progressspinner";
-import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
 import { useRoute, useRouter } from "vue-router";
 
 import MemoryAttribution from "@/components/MemoryAttribution.vue";
 import ReportPreviewFrame from "@/components/ReportPreviewFrame.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
-import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
-import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
-import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
+import WorkspacePageHeader from "@/components/workspace/WorkspacePageHeader.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import TabPanel from "primevue/tabpanel";
 import { focusSection } from "@/lib/sherpaAttention";
@@ -296,22 +275,31 @@ const auditConfig = computed(() => appConfig.value?.audit);
 const canQueryAudit = computed(() => !["demo", "pro"].includes(appConfig.value?.siteProfile || "")
   && Boolean(auditConfig.value?.localQuery || auditConfig.value?.fullPipeline));
 
-const tabIds = ["setup", "preview"];
+const tabIds = ["setup", "preview", "exports"];
+const reportNavigationSections = [
+  { id: "draft", label: "Draft", tabs: ["setup", "preview"] },
+  { id: "exports", label: "Exports", tabs: ["exports"] },
+];
 const activeTab = ref<string>("setup");
 watch(activeTab, () => {
   if (!tabIds.includes(activeTab.value)) activeTab.value = "setup";
 });
-const sectionTitle = computed(
-  () =>
-    ({ setup: "Setup", preview: "Preview" })[activeTab.value] ||
-    "Setup",
-);
-const contextTitle = computed(() =>
-  activeTab.value === "preview" && reportStore.reportData
-    ? reportTitle.value
-    : reportStore.workflows.find((item) => item.id === reportStore.selectedWorkflowId)?.name ||
-      "No workflow selected",
-);
+watch(() => navigationTab(route.query), (section) => {
+  activeTab.value = reportSection(section);
+});
+function selectReportSection(section: string): void {
+  activeTab.value = section;
+  void router.push({ query: { ...route.query, tab: section } });
+}
+function reportSection(section: unknown): string {
+  if (section === "draft") return reportStore.isReady ? "preview" : "setup";
+  return typeof section === "string" && tabIds.includes(section) ? section : "setup";
+}
+const draftIdentity = computed(() => {
+  if (!reportStore.reportData || activeTab.value === "exports") return undefined;
+  const n = reportStore.reportData.runs?.length ?? 0;
+  return `Draft · ${n} retained run${n === 1 ? "" : "s"}`;
+});
 const reportTitle = computed(() => {
   const data = reportStore.reportData;
   return data?.runs?.length === 1 ? data.runs[0].name : data?.name || "Report";
@@ -365,7 +353,6 @@ onMounted(() => {
   void syncAdvisorForReport();
 });
 
-const exportMenuRef = ref();
 
 const llmAvailable = computed(() => isFeatureEnabled("sherpaWriteReport"));
 
@@ -511,45 +498,37 @@ const historicalExecutableExport = computed(
     (reportStore.reportData?.runs?.length ?? 0) > 0,
 );
 
-// Export menu
-function toggleExportMenu(event: Event): void {
-  exportMenuRef.value?.toggle(event);
-}
-
 function getExportFilename(ext: string): string {
   const name = reportTitle.value;
   const safe = name.replace(/\s+/g, "_").toLowerCase();
   return `${safe}_report.${ext}`;
 }
 
+function exportPdf(): void {
+  const html = previewHtml.value;
+  if (!html) {
+    toast.add({ severity: "warn", summary: "Generate a report first", detail: "Select the saved runs and generate the report before exporting PDF.", life: 5000 });
+    return;
+  }
+  const opened = openReportPdfExport(html, getExportFilename("pdf"));
+  if (opened) {
+    toast.add({
+      severity: "success",
+      summary: "PDF Ready",
+      detail: "Use the print dialog to save the report as PDF.",
+      life: 5000,
+    });
+  } else {
+    toast.add({
+      severity: "warn",
+      summary: "Popup Blocked",
+      detail: "Allow popups for SpectraSherpa, then export PDF again.",
+      life: 5000,
+    });
+  }
+}
+
 const exportMenuItems = computed(() => [
-  {
-    label: "PDF",
-    icon: "pi pi-file-pdf",
-    command: () => {
-      const html = previewHtml.value;
-      if (!html) {
-        toast.add({ severity: "warn", summary: "Generate a report first", detail: "Select the saved runs and generate the report before exporting PDF.", life: 5000 });
-        return;
-      }
-      const opened = openReportPdfExport(html, getExportFilename("pdf"));
-      if (opened) {
-        toast.add({
-          severity: "success",
-          summary: "PDF Ready",
-          detail: "Use the print dialog to save the report as PDF.",
-          life: 5000,
-        });
-      } else {
-        toast.add({
-          severity: "warn",
-          summary: "Popup Blocked",
-          detail: "Allow popups for SpectraSherpa, then export PDF again.",
-          life: 5000,
-        });
-      }
-    },
-  },
   {
     label: "HTML Report",
     icon: "pi pi-code",
@@ -664,34 +643,18 @@ const exportMenuItems = computed(() => [
   },
 ]);
 
+const availableReportFormats = computed(() => exportMenuItems.value.filter(item => item.label && item.command));
 const reportHeaderActionItems = computed(() => [
-  ...(linkedRunId.value
-    ? [
-        {
-          label: "Run",
-          icon: "pi pi-arrow-left",
-          command: openLinkedRun,
-        },
-      ]
-    : []),
+  ...(activeTab.value === "preview" ? [{
+    label: "Edit inputs", icon: "pi pi-pencil", command: () => selectReportSection("setup"),
+  }] : []),
+  ...(activeTab.value === "setup" && reportStore.isReady ? [{
+    label: "Open preview", icon: "pi pi-eye", command: () => selectReportSection("preview"),
+  }] : []),
+  ...(linkedRunId.value ? [{ label: "Open source run", icon: "pi pi-arrow-left", command: openLinkedRun }] : []),
   ...(canQueryAudit.value && auditWorkflowId.value
-    ? [
-        {
-          label: "Audit",
-          icon: "pi pi-shield",
-          command: openWorkflowAudit,
-        },
-      ]
-    : []),
-  ...(reportStore.isReady
-    ? [
-        {
-          label: "Export",
-          icon: "pi pi-download",
-          items: exportMenuItems.value,
-        },
-      ]
-    : []),
+    ? [{ label: "Audit", icon: "pi pi-shield", command: openWorkflowAudit }] : []),
+  ...(reportStore.isReady && activeTab.value !== "exports" ? exportMenuItems.value : []),
 ]);
 
 const authStore = useAuthStore();
@@ -763,8 +726,8 @@ onMounted(async () => {
   reportMounted = true;
   await reportStore.fetchWorkflows();
   if (!isCurrent()) return;
-  const section = String(route.query.tab || "setup");
-  activeTab.value = tabIds.includes(section) ? section : "setup";
+  const section = String(navigationTab(route.query) || "setup");
+  activeTab.value = reportSection(section);
   if (
     !Number.isSafeInteger(workflowId) ||
     workflowId < 1 ||
@@ -792,7 +755,7 @@ onMounted(async () => {
   reportStore.selectedRunIds = [runId];
   await reportStore.fetchReportData();
   if (!isCurrent() || reportStore.selectedWorkflowId !== workflowId) return;
-  if (reportStore.isReady) activeTab.value = "preview";
+  if (reportStore.isReady && section !== "exports") activeTab.value = "preview";
   await reportStore.fetchRunsForWorkflow(workflowId);
 });
 </script>
@@ -994,4 +957,5 @@ onMounted(async () => {
 .w-full {
   width: 100%;
 }
+.report-formats { display: flex; flex-wrap: wrap; gap: .75rem; margin-block: 1rem; }
 </style>

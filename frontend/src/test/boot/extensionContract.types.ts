@@ -7,6 +7,8 @@ import type {
   HostPrimaryNavigationItem, HostProjectCollectionsLoader, HostUser, RegisterFn,
   ServerModule,
 } from "@/extension-contract/v1";
+import type { HostNavigation, NavPage, NavPrimaryAction } from "@/extension-contract/navigation-v1";
+import type { RouteLocationRaw } from "vue-router";
 import type { ImportModuleFn } from "@/boot/serverModules";
 import type { ActionContext, ContextualAction } from "@/composables/useContextualActions";
 import type { ConfirmActionOptions } from "@/composables/useConfirmAction";
@@ -32,6 +34,10 @@ export type ContractChecks = [
   Assert<Equal<HostPrimaryNavigationItem, PrimaryNavigationItem>>,
   Assert<Equal<HostProjectCollectionsLoader, ProjectCollectionsLoader>>,
   Assert<Equal<CurrentHostContext["api"], AxiosInstance>>,
+  Assert<Equal<CurrentHostContext["navigation"], HostNavigation>>,
+  Assert<Equal<HostContext["navigation"], HostNavigation | undefined>>,
+  Assert<Equal<NavPage["route"], RouteLocationRaw>>,
+  Assert<Equal<NavPrimaryAction["accelerator"], "CmdOrCtrl+Enter" | undefined>>,
   Assert<Equal<CurrentHostContext["authStore"]["user"], Ref<HostUser | null>>>,
   Assert<Equal<Awaited<ReturnType<ImportModuleFn>>, ServerModule>>,
   Assert<CurrentHostContext extends HostContext ? true : false>,

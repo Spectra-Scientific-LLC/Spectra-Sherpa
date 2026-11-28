@@ -8,7 +8,10 @@
         <span title="Used in the retained source result. Downstream use may differ.">used {{ source.usedCount }}</span>
         <span title="Excluded from the retained source result, not the current workflow.">excluded {{ source.excludedCount }}</span>
       </template>
-      <span v-else title="Retained map unavailable, unsupported or outside the summary budget; not zero exclusions.">unavailable</span>
+      <span v-else title="Sample map unavailable">
+        <template v-if="hasRecordedCounts">Sample counts not recorded for {{ labels?.[source.nodeId] || source.nodeId }}.</template>
+        <template v-else>Counts unavailable</template>
+      </span>
       <button type="button" :aria-label="`Inspect retained source map ${source.nodeId}`" title="Inspect individual retained decisions" @click="$emit('inspect', source.nodeId)">Map</button>
       <button v-if="source.available" type="button" :aria-label="`Download retained row map ${source.nodeId}`" title="Download the complete retained map" @click="$emit('download', source.nodeId)">JSON</button>
     </div>
@@ -24,6 +27,7 @@ import { retainedPopulationView } from '@/utils/retainedPopulationSummary';
 const props = defineProps<{ value: unknown; runId: number; labels?: Record<string, string> }>();
 defineEmits<{ inspect: [nodeId: string]; download: [nodeId: string] }>();
 const summary = computed(() => retainedPopulationView(props.value, props.runId));
+const hasRecordedCounts = computed(() => summary.value?.sources.some((source) => source.available));
 </script>
 
 <style scoped>

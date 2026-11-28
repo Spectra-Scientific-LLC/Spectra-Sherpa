@@ -11,6 +11,16 @@
       <p class="model-summary__populations">
         <span v-for="item in populations" :key="item.role"><strong>{{ item.n }}</strong> {{ item.label.toLowerCase() }}</span>
       </p>
+      <p
+v-for="line in (display === 'context' ? headline : [])" :key="line.target" class="model-summary__headline"
+        :aria-label="headline.length > 1 ? `Headline statistics for ${line.target}` : 'Headline statistics'">
+        <span v-if="headline.length > 1" class="model-summary__response">{{ line.target }}</span>
+        <span v-for="item in line.items" :key="item.role">
+          <span class="model-summary__name">{{ item.rmseName }}</span> <strong>{{ item.rmse }}</strong>
+          <template v-if="item.r2 != null"> · <span class="model-summary__name">{{ item.r2Name }}</span> {{ item.r2 }}</template>
+        </span>
+        <small v-if="line.unit">{{ line.unit }}</small>
+      </p>
     </header>
     <p v-if="summary.preprocessing.length" class="model-summary__pretreatment">
       <span class="model-summary__label">Upstream pretreatment</span>
@@ -25,7 +35,7 @@
       Held-out evaluation:
       <template v-if="heldOutCount != null">{{ heldOutCount }} held-out samples with retained evaluation.</template>
       <template v-else-if="evidenceSubset">Open the source run for any retained independent test evaluation.</template>
-      <template v-else>Not retained.</template>
+      <template v-else>Evidence is not saved with this run.</template>
     </p>
 
     <ul v-if="compact && compactWarnings.length" class="model-summary__caution" aria-label="Model limitations">
@@ -158,11 +168,11 @@
           <tr>
             <th scope="row">R²</th>
             <td v-for="column in block.columns" :key="column.role" :title="r2Name(column.role)">
-              <span class="model-summary__name">{{ column.role === "cross_validation" ? "Q²" : "R²" }}</span> {{ show(column.r2) }}
+              <span class="model-summary__name">{{ column.role === "cross_validation" ? "Q²" : "R²" }}</span> {{ column.r2 == null ? "—" : column.r2.toFixed(4) }}
             </td>
           </tr>
-          <tr><th scope="row">Bias</th><td v-for="column in block.columns" :key="column.role">{{ scientificErrorMetricLabel('bias', column) }}: {{ show(column.bias) }}</td></tr>
-          <tr><th scope="row">SEP</th><td v-for="column in block.columns" :key="column.role">{{ scientificErrorMetricLabel('sep', column) }}: {{ show(column.sep) }}</td></tr>
+          <tr><th scope="row">{{ unitLabel('Bias', block.columns) }}</th><td v-for="column in block.columns" :key="column.role" :title="scientificErrorMetricLabel('bias', column)">{{ column.bias === 0 ? '0.000' : show(column.bias) }}</td></tr>
+          <tr><th scope="row">{{ unitLabel('SEP', block.columns) }}</th><td v-for="column in block.columns" :key="column.role" :title="scientificErrorMetricLabel('sep', column)">{{ show(column.sep) }}</td></tr>
           <tr><th scope="row">Slope</th><td v-for="column in block.columns" :key="column.role">{{ show(column.slope) }}</td></tr>
         </tbody>
       </table>
@@ -226,14 +236,16 @@ const hasStatistics = computed(() => Boolean(props.summary?.regression.length ||
 const byRole = <T extends { role: SummaryRole }>(items: T[]): T[] =>
   SUMMARY_ROLES.flatMap((role) => items.filter((item) => item.role === role).slice(0, 1));
 
+const GENERIC_RESPONSE = /^(Target \d+|Response( \d+)?|y)$/i;
 const regressionTables = computed(() => {
   const rows = props.summary?.regression ?? [];
   const targets = [...new Set(rows.map((row) => row.target))];
   // Calibration statistics from the model node can name the response
-  // generically ("Target 1") while evaluators carry its name; a single
-  // response is one table either way.
-  if (targets.length > 1 && new Set(rows.map((row) => row.role)).size === rows.length) {
-    return [{ target: targets.find((name) => !/^Target \d+$/.test(name)) ?? targets[0], columns: byRole<RegressionStatistics>(rows) }];
+  // generically ("Target 1") while evaluators carry its name. Only such generic
+  // placeholders join the one named response; two named responses never merge.
+  const named = targets.filter((name) => !GENERIC_RESPONSE.test(name));
+  if (targets.length > 1 && named.length <= 1 && new Set(rows.map((row) => row.role)).size === rows.length) {
+    return [{ target: named[0] ?? targets[0], columns: byRole<RegressionStatistics>(rows) }];
   }
   return targets.map((target) => ({ target, columns: byRole(rows.filter((row) => row.target === target)) }));
 });
@@ -276,6 +288,27 @@ function componentPlot(response: ComponentSelectionResponse): { calibration: str
 }
 
 const show = (value: number | null) => (value == null ? "—" : scientificScalar(value));
+function unitLabel(name: string, columns: RegressionStatistics[]): string {
+  const label = scientificErrorMetricLabel("rmse", { target_units: columns.map((column) => column.target_units) }, name);
+  return label.replace("(units not declared)", "(units not recorded)");
+}
+// One headline entry per recorded population, in order calibration → CV → held-out.
+// One headline per response, each in its own unit (shown only when recorded; the
+// statistics table says when units are missing).
+const headline = computed(() => regressionTables.value.map((table) => {
+  const unit = unitLabel("", table.columns).trim().replace(/^\(|\)$/g, "");
+  return {
+    target: table.target,
+    unit: table.columns.length && unit !== "units not recorded" ? unit : "",
+    items: table.columns.filter((column) => column.rmse != null).map((column) => ({
+      role: column.role,
+      rmseName: rmseName(column.role),
+      rmse: show(column.rmse),
+      r2Name: column.role === "cross_validation" ? "Q²" : "R²",
+      r2: column.r2 == null ? null : column.r2.toFixed(4),
+    })),
+  };
+}).filter((line) => line.items.length));
 const percent = (value: number | null) => (value == null ? "—" : `${Number((value * 100).toPrecision(4))}%`);
 function classificationCvMessage(reason: string | null): string {
   if (!reason) return 'Classification cross-validation is unavailable.';

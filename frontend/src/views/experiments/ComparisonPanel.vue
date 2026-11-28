@@ -1,6 +1,6 @@
 <template>
   <div class="comparison-panel">
-    <div class="comparison-header">
+    <div v-if="showToolbar" class="comparison-header">
       <span class="comparison-title">
         <i class="pi pi-chart-bar"></i>
         Comparing {{ runs.length }} checked runs
@@ -129,13 +129,14 @@ import ScientificBasisHelp from "@/components/ScientificBasisHelp.vue";
 import type { EvidenceComparison } from "@/types/scientificComparison";
 import type { ExecutionRunDetail } from "@/types";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
+  showToolbar?: boolean;
   runs: ExecutionRunDetail[];
   metricKeys: string[];
   diff: Record<string, Record<string, unknown>>;
   rankableMetrics?: string[];
   scientificComparison?: EvidenceComparison | null;
-}>();
+}>(), { showToolbar: true });
 
 defineEmits<{ back: [] }>();
 

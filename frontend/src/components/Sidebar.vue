@@ -9,14 +9,14 @@
         <div v-if="group.id === 'secondary'" class="nav-separator"></div>
         <div
           v-for="item in group.items"
-          :key="item.to"
+          :key="item.id"
           class="nav-group"
-          :class="{ 'nav-group--sections': hasSections(item.to) }"
+          :class="{ 'nav-group--sections': hasSections(item.id) }"
         >
           <RouterLink
             class="nav-link"
-            :class="{ secondary: group.id === 'secondary', 'nav-dimmed': item.dimInDemo && isDemoMode }"
-            :to="item.to"
+            :class="{ secondary: group.id === 'secondary', 'nav-dimmed': item.dimInDemo && isDemoMode, 'router-link-active': activePage?.id === item.id }"
+            :to="workspaceDestination(item.route, route)"
             :title="item.dimInDemo && isDemoMode ? 'Managed by administrator' : item.label"
             :aria-label="item.label"
             @click="emit('navigate')"
@@ -24,7 +24,7 @@
             <i :class="item.icon" aria-hidden="true"></i>
             <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
           </RouterLink>
-          <template v-if="hasSections(item.to)">
+          <template v-if="hasSections(item.id)">
             <button
               v-if="collapsed" type="button" class="nav-expand"
               :aria-label="'Expand ' + item.label + ' sections'" :title="'Expand ' + item.label + ' sections'"
@@ -32,16 +32,32 @@
               <i class="pi pi-angle-right" aria-hidden="true"></i>
             </button>
             <ul v-else class="nav-children" :aria-label="item.label + ' sections'">
-              <li v-for="section in activeSections?.items" :key="section.id">
+              <li v-for="section in activePageSections" :key="section.id">
                 <button
+v-if="legacySection(section.entry.id)"
                   type="button" class="nav-child"
-                  :class="{ 'nav-child--active': activeSections?.selected === section.id }"
-                  :aria-current="activeSections?.selected === section.id ? 'true' : undefined"
-                  :aria-controls="section.panelId"
-                  :disabled="section.disabled"
-                  @click="selectSection(section.id)">
-                  {{ section.label }}
+                  :class="{ 'nav-child--active': isActiveSection(section) }"
+                  :aria-current="isActiveSection(section) ? 'true' : undefined"
+                  :aria-controls="legacySection(section.entry.id)?.panelId"
+                  :disabled="legacySection(section.entry.id)?.disabled"
+                  @click="selectLegacySection(section.entry.id)">
+                  {{ section.entry.label }}
                 </button>
+                <RouterLink
+v-else class="nav-child"
+                  :class="{ 'nav-child--active': isActiveSection(section) }"
+                  :to="workspaceDestination(section.entry.route, route)"
+                  @click="emit('navigate')">{{ section.entry.label }}</RouterLink>
+                <ul v-if="isActiveSection(section) && section.views.length" class="nav-views" :aria-label="`${section.entry.label} views`">
+                  <li v-for="view in section.views" :key="view.id">
+                    <RouterLink
+class="nav-child"
+                      :to="workspaceDestination(view.entry.route, route)"
+                      :aria-current="isActiveView(view.entry.route, section.entry.route) ? 'page' : undefined"
+                      :class="{ 'nav-child--active': isActiveView(view.entry.route, section.entry.route) }"
+                      @click="emit('navigate')">{{ view.entry.label }}</RouterLink>
+                  </li>
+                </ul>
               </li>
             </ul>
           </template>
@@ -54,10 +70,13 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useAuthStore } from "@/stores/auth";
-import { useRoute } from "vue-router";
+import { useRoute, type RouteLocationRaw } from "vue-router";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
-import { usePrimaryNavigation } from "@/composables/usePrimaryNavigation";
+import { navigationPage, navigationRegistry, routePath, workspaceDestination, workspaceView } from "@/navigation/workspace";
+import type { NavSection } from "@/extension-contract/navigation-v1";
+import type { Owned } from "@/navigation/registry";
+import { navigationTab } from "@/router/legacyRoutes";
 import { useWorkspaceNavigation } from "@/composables/useWorkspaceNavigation";
 
 defineProps<{
@@ -72,54 +91,50 @@ const activeSections = computed(() => {
   const entry = navigation?.entry.value;
   return entry?.path === route.path ? entry : null;
 });
-function hasSections(path: string): boolean {
-  return !!activeSections.value?.items.length && (route.path === path || route.path.startsWith(path + "/"));
+const activePage = computed(() => navigationPage(route.path));
+function hasSections(id: string): boolean {
+  return activePage.value?.id === id && activePageSections.value.length > 0;
 }
-function selectSection(id: string): void {
-  const entry = activeSections.value;
-  if (!entry?.items.some((item) => item.id === id && !item.disabled)) return;
-  entry.select(id);
+function legacySection(id: string) {
+  return activeSections.value?.items.find((item) => `${activePage.value?.entry.id}.${item.id}` === id);
+}
+function isActiveSection(section: Owned<NavSection>): boolean {
+  const item = legacySection(section.entry.id);
+  if (item) return item.id === activeSections.value?.selected;
+  const target = section.entry.route;
+  return routePath(target) === route.path &&
+    (typeof target === "string" || !("query" in target) || !target.query?.section || target.query.section === navigationTab(route.query));
+}
+function isActiveView(target: RouteLocationRaw, section: RouteLocationRaw): boolean {
+  const view = workspaceView(target);
+  return view != null && routePath(target) === route.path && view === (route.query.view ?? workspaceView(section));
+}
+function selectLegacySection(id: string): void {
+  const item = legacySection(id);
+  if (!item || item.disabled) return;
+  activeSections.value?.select(item.id);
   emit("navigate");
 }
 
 const { isDemoMode } = useDemoMode();
-const { appMode, siteProfile } = useAppConfig();
-const { items: contributedMainNavItems } = usePrimaryNavigation();
-
-const mainNavItems = [
-  { label: "Dashboard", to: "/dashboard", icon: "pi pi-home" },
-  { label: "Project", to: "/project", icon: "pi pi-folder" },
-  { label: "Data", to: "/data", icon: "pi pi-database" },
-  { label: "Workflow", to: "/workflow", icon: "pi pi-sitemap" },
-  { label: "Runs", to: "/runs", icon: "pi pi-history" },
-  { label: "Deploy", to: "/deploy", icon: "pi pi-cloud-upload" },
-  { label: "Report", to: "/report", icon: "pi pi-file-edit" },
-];
-
-const visibleMainNavItems = computed(() => {
-  const result = [...mainNavItems];
-  for (const item of contributedMainNavItems.value) {
-    const duplicate = result.findIndex((existing) => existing.to === item.to);
-    if (duplicate >= 0) result.splice(duplicate, 1);
-    const insertion = item.before
-      ? result.findIndex((existing) => existing.to === item.before)
-      : -1;
-    result.splice(insertion >= 0 ? insertion : result.length, 0, item);
-  }
-  return result;
+const { appMode, siteProfile, appConfig } = useAppConfig();
+const activePageSections = computed(() => {
+  const audit = appConfig?.value?.audit;
+  const showAudit = !["demo", "pro"].includes(siteProfile?.value ?? "") && (audit?.localQuery || audit?.fullPipeline);
+  return activePage.value?.sections.filter(({ id }) => id !== "host:project.audit" || showAudit) ?? [];
 });
-
-const secondaryNavItems = computed(() => [
-  ...(appMode.value === "enterprise" && (siteProfile?.value === "pro" ||
-    (siteProfile?.value === "demo" && (!auth.user?.capabilities?.admin || auth.user?.is_active === false))) ? [] :
-    [{ label: "Logs", to: "/logs", icon: "pi pi-list", dimInDemo: false }]),
-  { label: "Settings", to: "/settings", icon: "pi pi-sliders-h", dimInDemo: true },
-  { label: "Documentation", to: "/documentation", icon: "pi pi-book", dimInDemo: false },
-]);
-const navigationGroups = computed(() => [
-  { id: "main", items: visibleMainNavItems.value.map((item) => ({ ...item, dimInDemo: false })) },
-  { id: "secondary", items: secondaryNavItems.value },
-]);
+const secondary = new Set(["logs", "settings", "documentation"]);
+const navigationGroups = computed(() => {
+  const showLogs = !(appMode.value === "enterprise" && (siteProfile?.value === "pro" ||
+    (siteProfile?.value === "demo" && (!auth.user?.capabilities?.admin || auth.user?.is_active === false))));
+  const items = navigationRegistry.tree()
+    .filter((page) => page.id !== "host:logs" || showLogs)
+    .map((page) => ({ ...page.entry, id: page.id, dimInDemo: page.id === "host:settings" }));
+  return [
+    { id: "main", items: items.filter((page) => !secondary.has(page.id.slice(5)) || !page.id.startsWith("host:")) },
+    { id: "secondary", items: items.filter((page) => page.id.startsWith("host:") && secondary.has(page.id.slice(5))) },
+  ];
+});
 </script>
 
 <style scoped>
@@ -166,7 +181,7 @@ const navigationGroups = computed(() => [
   margin: 0;
   font-size: 1.05rem;
   font-weight: 600;
-  white-space: nowrap;
+  line-height: 1.1;
   color: var(--ss-accent);
 }
 
@@ -193,7 +208,9 @@ const navigationGroups = computed(() => [
   padding: 0 0 0.5rem 2.5rem;
   margin: 0;
 }
+.nav-views { list-style: none; padding-inline-start: .65rem; }
 .nav-child {
+  text-decoration: none;
   display: block;
   width: 100%;
   padding: 0.55rem 0.75rem;
@@ -300,5 +317,7 @@ const navigationGroups = computed(() => [
   color: var(--ss-accent);
 }
 .nav-link:focus-visible { outline: 2px solid var(--ss-accent); outline-offset: -2px; }
-.nav-child { color: var(--ss-text-secondary); }
+.nav-views { list-style: none; padding-inline-start: .65rem; }
+.nav-child {
+  text-decoration: none; color: var(--ss-text-secondary); }
 </style>

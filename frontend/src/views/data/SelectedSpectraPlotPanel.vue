@@ -43,8 +43,9 @@
           :title-options="[]"
         />
         <SampleMetadataStyleControls
-          v-if="metadataGrouping.kind === 'valid'"
-          v-model:color-value="sampleColorField"
+          v-if="metadataGrouping.kind === 'valid' || numericColumns.length"
+          :color-value="sampleColorField"
+          @update:color-value="chooseSampleColor"
           v-model:style-value="sampleLineField"
           :color-options="sampleColorOptions"
           :style-options="sampleLineOptions"
@@ -161,6 +162,7 @@ import {
 import { buildMetadataLineTraces, metadataGroupingState, subsetMetadataGrouping } from "@/utils/sampleMetadataGrouping";
 import SampleMetadataStyleControls from "@/views/workflow-builder/node-detail/panels/SampleMetadataStyleControls.vue";
 import { shouldReverseFeatureAxis } from "@/utils/plotLabels";
+import { CONTINUOUS_COLORSCALE, continuousColor, numericSampleColumns } from "@/utils/continuousColor";
 
 const props = withDefaults(
   defineProps<{
@@ -171,6 +173,8 @@ const props = withDefaults(
     plotDatasetsError?: string | null;
     activeExperimentId?: number | null;
     activeFileName?: string | null;
+    /** The response chosen for modelling; spectra are coloured by it when it is numeric. */
+    targetName?: string | null;
   }>(),
   {
     plotDatasets: () => [],
@@ -180,6 +184,7 @@ const props = withDefaults(
     plotDatasetsError: null,
     activeExperimentId: null,
     activeFileName: null,
+    targetName: null,
   },
 );
 const emit = defineEmits<{ harmonize: [] }>();
@@ -214,6 +219,14 @@ const selectedFeatureLabels = ref(PRIMARY_AXIS_SET);
 const selectedFeatureTitle = ref(PRIMARY_AXIS_SET);
 const selectedSampleLabels = ref(PRIMARY_AXIS_SET);
 const sampleColorField = ref("__none__");
+// Only a choice made in the colour control stops the target default; this panel's own
+// defaults and resets do not.
+let colorChosenByUser = false;
+let automaticColor: string | null = null;
+function chooseSampleColor(value: string): void {
+  colorChosenByUser = true;
+  sampleColorField.value = value;
+}
 const sampleLineField = ref("__none__");
 const FEATURE_TABLE_ROW_LIMIT = computed(() => displayPreferences.maxRows);
 const FEATURE_TABLE_COLUMN_LIMIT = 32;
@@ -444,11 +457,18 @@ const sampleAxisDisplay = computed(() =>
 const metadataGrouping = computed(() =>
   metadataGroupingState(singleDataset.value?.y_axis, singleDataset.value?.data.length ?? 0),
 );
-const sampleColorOptions = computed(() =>
-  metadataGrouping.value.kind === "valid"
-    ? [{ label: "None", value: "__none__" }, ...metadataGrouping.value.colorOptions]
-    : [],
-);
+const numericColumns = computed(() => {
+  const dataset = singleDataset.value;
+  const table = (dataset?.y_axis as { sample_table?: unknown } | undefined)?.sample_table;
+  return numericSampleColumns(table, dataset?.data.length ?? 0);
+});
+const GRADIENT = "gradient:";
+const sampleColorOptions = computed(() => {
+  const gradients = numericColumns.value.map(({ name }) => ({ label: `${name} (gradient)`, value: `${GRADIENT}${name}` }));
+  if (metadataGrouping.value.kind !== "valid") return gradients.length ? [{ label: "None", value: "__none__" }, ...gradients] : [];
+  const categorical = metadataGrouping.value.colorOptions.filter((option) => option.value !== "__none__");
+  return [{ label: "None", value: "__none__" }, ...gradients, ...categorical];
+});
 const sampleLineOptions = computed(() =>
   metadataGrouping.value.kind === "valid" ? metadataGrouping.value.symbolOptions : [],
 );
@@ -460,8 +480,8 @@ function preserveChoice(current: { value: string }, options: Array<{ value: stri
 }
 
 watch(
-  [featureAxisState, sampleAxisState, sampleColorOptions, sampleLineOptions],
-  ([feature, sample, colors, lines]) => {
+  [featureAxisState, sampleAxisState, sampleColorOptions, sampleLineOptions, () => props.targetName],
+  ([feature, sample, colors, lines, target]) => {
     if (feature.kind === "valid") {
       preserveChoice(selectedFeatureScale, feature.scaleOptions);
       preserveChoice(selectedFeatureLabels, feature.labelOptions);
@@ -469,6 +489,18 @@ watch(
     }
     if (sample.kind === "valid") preserveChoice(selectedSampleLabels, sample.labelOptions);
     preserveChoice(sampleColorField, colors);
+    // Colour by the modelling target by default, so the spectra show how the response varies.
+    // It follows a changed target until the user picks a colour themselves.
+    if (!colorChosenByUser && (sampleColorField.value === "__none__" || sampleColorField.value === automaticColor)) {
+      const wanted = target ? `${GRADIENT}${target}` : null;
+      if (wanted && colors.some((option) => option.value === wanted)) {
+        sampleColorField.value = wanted;
+        automaticColor = wanted;
+      } else if (automaticColor && sampleColorField.value === automaticColor) {
+        sampleColorField.value = "__none__";
+        automaticColor = null;
+      }
+    }
     preserveChoice(sampleLineField, lines);
   },
   { immediate: true },
@@ -496,6 +528,35 @@ const singlePlotData = computed(() => {
   const isActive = (index: number) =>
     props.activeExperimentId === singleSource.value?.experimentId &&
     props.activeFileName === fileNames[index];
+  const gradient = sampleColorField.value.startsWith(GRADIENT)
+    ? numericColumns.value.find(({ name }) => `${GRADIENT}${name}` === sampleColorField.value) : undefined;
+  if (gradient && rows.length) {
+    const values = selectedRows(gradient.values);
+    const { min, max } = values.reduce(
+      (range, value) => ({ min: Math.min(range.min, value), max: Math.max(range.max, value) }),
+      { min: values[0], max: values[0] },
+    );
+    const shown = rows.slice(0, displayPreferences.maxRows);
+    const lines = shown.map((row, index) => ({
+      type: "scatter",
+      mode: "lines",
+      x,
+      y: row,
+      name: labels[index] || `Spectrum ${index + 1}`,
+      showlegend: false,
+      line: { width: isActive(index) ? 3.2 : 1.4, color: continuousColor(values[index], min, max) },
+      customdata: x.map(() => [labels[index] || `Spectrum ${index + 1}`, fileNames[index], values[index]]),
+      hovertemplate:
+        `<b>%{customdata[0]}</b><br>${gradient.name}: %{customdata[2]}<br>Filename: %{customdata[1]}<br>` +
+        "X: %{x}<br>Value: %{y:.4f}<extra></extra>",
+    }));
+    // An invisible marker trace carries the colour bar that keys the gradient.
+    return [...lines, {
+      type: "scatter", mode: "markers", x: [x[0]], y: [null], hoverinfo: "skip", showlegend: false,
+      marker: { color: [min], cmin: min, cmax: max, colorscale: CONTINUOUS_COLORSCALE, showscale: true,
+        colorbar: { title: { text: gradient.name, side: "right" }, thickness: 12 } },
+    }];
+  }
   if (
     metadataGrouping.value.kind === "valid" &&
     sampleColorField.value !== "__none__" &&

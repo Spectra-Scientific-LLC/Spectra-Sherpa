@@ -1,15 +1,10 @@
 <template>
   <section class="models-content">
-    <WorkspaceHeader title="Runs" :actions="headerActionItems">
+    <WorkspacePageHeader :title="runsTitle" :role="inspectedHeader?.role" :identity="runsIdentity" :actions="headerActionItems">
       <template v-if="activeTab === TAB_INSPECT" #primary>
         <div ref="inspectPrimaryActionsTarget" />
       </template>
-      <span v-show="activeTab === TAB_INSPECT" ref="inspectActionsTarget" />
-      <Button
-        :label="activeTab === TAB_MODELS ? 'Copy model metadata' : 'Export'" :icon="activeTab === TAB_MODELS ? 'pi pi-copy' : 'pi pi-download'" class="p-button-text p-button-sm"
-        :title="activeTab === TAB_MODELS ? selectedModel ? 'Copy metadata as text; use Project export to transfer the fitted model.' : 'Select a model to copy its metadata.' : undefined"
-        :disabled="!canExportActiveTab" @click="exportActiveTab" />
-    </WorkspaceHeader>
+    </WorkspacePageHeader>
 
     <WorkspaceState v-if="!projectStore.currentProjectId" kind="empty" variant="page" message="No project selected.">
       <Button
@@ -22,30 +17,6 @@
     </WorkspaceState>
 
     <template v-else>
-      <WorkspaceContext label="Runs context">
-        <WorkspaceContextItem :label="activeSubtabLabel" :value="activeSubtabValue">{{ activeSubtabDetail }}</WorkspaceContextItem>
-        <WorkspaceContextItem
-          v-if="inspectedIdentity"
-          label="Run identity"
-          :value="`Workflow SHA ${inspectedIdentity.workflowSha?.slice(0, 12) || 'Not recorded'}`"
-          :detail="`Workflow SHA-256: ${inspectedIdentity.workflowSha || 'Not recorded'}`"
-          :aria-label="`Run #${inspectedIdentity.runId}; Workflow SHA-256: ${inspectedIdentity.workflowSha || 'Not recorded'}; Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`"
-        >
-          <span class="run-identity-build">
-            <span :title="`Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`" :aria-label="`Build SHA-1: ${inspectedIdentity.buildSha || 'Not recorded'}`">Build SHA {{ inspectedIdentity.buildSha?.slice(0, 12) || 'Not recorded' }}</span>
-            <Button
-              icon="pi pi-copy" class="p-button-text p-button-sm" title="Copy run identity"
-              :aria-label="`Copy run identity for Run #${inspectedIdentity.runId}`"
-              :disabled="!inspectedIdentity.workflowSha && !inspectedIdentity.buildSha" @click="copyRunIdentity" />
-          </span>
-        </WorkspaceContextItem>
-      </WorkspaceContext>
-      <label class="runs-section-picker">
-        Runs section
-        <select v-model="activeTabId">
-          <option v-for="id in MODEL_SUBSCOPES" :key="id" :value="id">{{ MODEL_SUBSCOPE_TITLES[id] }}</option>
-        </select>
-      </label>
       <WorkspaceTabs v-model="activeTabId" :tab-ids="MODEL_SUBSCOPES">
         <TabPanel header="History">
           <WorkspaceState v-if="runsStore.loadError" kind="error" :message="runsStore.loadError">
@@ -79,25 +50,7 @@
                   class="run-kind-dropdown"
                 />
               </div>
-              <span class="run-history-count">
-                {{ filteredRuns.length }} of {{ runsStore.total }} runs
-              </span>
-              <Button v-if="usedModelFilter" :label="`Using ${usedModelFilter}`" icon="pi pi-times" class="p-button-text" @click="clearModelFilter" />
-              <Button
-                :label="`Compare (${runsStore.selectedCount})`"
-                icon="pi pi-chart-bar"
-                :disabled="runsStore.selectedCount < 2 || runsStore.selectedCount > 10"
-                :loading="runsStore.comparisonLoading"
-                @click="handleCompareRuns"
-              />
-              <Button
-                v-if="runsStore.selectedCount"
-                label="Download project with runs"
-                icon="pi pi-download"
-                class="p-button-text p-button-sm"
-                :loading="projectStore.exportingProjectIds.includes(projectStore.currentProjectId)"
-                @click="downloadProjectWithRuns"
-              />
+              <Button v-if="usedModelFilter" label="Clear model filter" icon="pi pi-times" text @click="clearModelFilter" />
             </div>
 
             <DataTable
@@ -123,11 +76,10 @@
               </template>
               <Column selectionMode="multiple" headerStyle="width: 3rem" :pt="{ rowCheckbox: runSelectionAccessibility }" />
 
-              <Column field="name" header="Name" sortable style="min-width: 220px">
+              <Column field="name" header="Run" sortable style="min-width: 220px">
                 <template #body="{ data }">
                   <div class="run-name-cell">
                     <Button :label="data.display_name || data.name" class="p-button-link p-button-sm" @click="inspectRun(data.id)" />
-                    <small>Run #{{ data.id }}</small>
                     <RetainedRunMapLink :run-id="data.id" :project-id="projectStore.currentProjectId" />
                   </div>
                 </template>
@@ -143,7 +95,7 @@
                 </template>
               </Column>
 
-              <Column field="run_kind" header="Kind" sortable style="width: 140px">
+              <Column field="run_kind" header="Role" sortable style="width: 140px">
                 <template #body="{ data }">
                   <Tag
                     :value="formatRunKind(data.run_kind)"
@@ -189,14 +141,12 @@
                 </template>
               </Column>
 
-              <Column style="width: 60px">
+              <Column header="More" style="width: 60px">
                 <template #body="{ data }">
-                  <Button
-                    icon="pi pi-trash"
-                    class="p-button-text p-button-sm p-button-danger"
-                    title="Delete run"
-                    @click="confirmDelete(data)"
-                  />
+                  <RowActions
+:subject="data.display_name || data.name" :actions="[
+                    { label: 'Delete run', icon: 'pi pi-trash', danger: true, command: () => confirmDelete(data) },
+                  ]" />
                 </template>
               </Column>
             </DataTable>
@@ -204,9 +154,20 @@
         </TabPanel>
 
         <TabPanel header="Inspect">
-          <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" ref="inspectContent" :actions-target="inspectActionsTarget" :primary-actions-target="inspectPrimaryActionsTarget" @renamed="refreshRuns" />
-          <WorkspaceState v-else-if="latestInspectionLoading" kind="loading" variant="page" message="Opening the latest run…" />
-          <WorkspaceState v-else :kind="latestInspectionError ? 'error' : 'empty'" variant="page" :message="latestInspectionError || 'Choose a run in History.'">
+          <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" ref="inspectContent" menu-only :primary-actions-target="inspectPrimaryActionsTarget" @renamed="refreshRuns" />
+          <section v-if="inspectedIdentity && route.query.view === 'provenance'" class="run-identifiers" aria-label="Identifiers">
+            <h2>Identifiers</h2>
+            <dl>
+              <dt>Run</dt><dd>{{ inspectedIdentity.runId }}</dd>
+              <dt>Workflow SHA-256</dt><dd>{{ inspectedIdentity.workflowSha || 'Not recorded' }}</dd>
+              <dt>Build SHA-1</dt><dd>{{ inspectedIdentity.buildSha || 'Not recorded' }}</dd>
+            </dl>
+            <Button
+label="Copy run identity" icon="pi pi-copy" outlined
+              :disabled="!inspectedIdentity.workflowSha && !inspectedIdentity.buildSha" @click="copyRunIdentity" />
+          </section>
+          <WorkspaceState v-if="latestInspectionLoading && !route.params?.runId" kind="loading" variant="page" message="Opening the latest run…" />
+          <WorkspaceState v-else-if="!route.params?.runId" :kind="latestInspectionError ? 'error' : 'empty'" variant="page" :message="latestInspectionError || 'Choose a run in History.'">
             <Button label="Open History" icon="pi pi-arrow-left" class="p-button-text" @click="activeTabId = 'run_history'" />
           </WorkspaceState>
         </TabPanel>
@@ -220,11 +181,32 @@
             :diff="runsStore.comparison.diff"
             :rankable-metrics="runsStore.comparison.rankable_metric_keys"
             :scientific-comparison="runsStore.comparison.scientific_comparison"
-            @back="activeTab = TAB_RUN_HISTORY"
+            @back="changeComparedRuns" :show-toolbar="false"
           />
-          <WorkspaceState v-else kind="empty" variant="page" message="Select 2–10 runs in History to compare.">
-            <Button label="Open History" icon="pi pi-arrow-left" class="p-button-text" @click="activeTab = TAB_RUN_HISTORY" />
-          </WorkspaceState>
+          <section v-else class="compare-picker" aria-label="Choose runs to compare">
+            <WorkspaceState v-if="runsStore.compareCandidatesError && !runsStore.compareCandidates.length" kind="error" :message="runsStore.compareCandidatesError">
+              <Button label="Retry" class="p-button-text p-button-sm" @click="loadCompareCandidates()" />
+            </WorkspaceState>
+            <WorkspaceState v-else-if="runsStore.compareCandidatesTotal === null" kind="loading" message="Loading the project's runs…" />
+            <WorkspaceState v-else-if="!runsStore.compareCandidates.length" kind="empty" variant="page" message="No saved runs in this project yet." />
+            <template v-else>
+              <p>Choose 2–10 saved runs.</p>
+              <ul>
+                <li v-for="run in runsStore.compareCandidates" :key="run.id">
+                  <label>
+                    <input type="checkbox" :checked="runsStore.selectedRunIds.has(run.id)" @change="runsStore.toggleRunSelection(run.id)" />
+                    <span>{{ run.display_name || run.name || "Saved run" }}</span>
+                    <small>{{ formatRunKind(run.run_kind) }} · <RelativeTime :value="run.executed_at" /></small>
+                  </label>
+                </li>
+              </ul>
+              <p v-if="runsStore.compareCandidatesError" role="alert">{{ runsStore.compareCandidatesError }}</p>
+              <Button
+v-if="runsStore.compareCandidates.length < runsStore.compareCandidatesTotal"
+                :label="`Load older runs (${runsStore.compareCandidates.length} of ${runsStore.compareCandidatesTotal} shown)`"
+                class="p-button-text p-button-sm" :loading="runsStore.compareCandidatesLoading" @click="loadCompareCandidates(true)" />
+            </template>
+          </section>
         </TabPanel>
 
         <TabPanel header="Models">
@@ -310,11 +292,11 @@
                   @click="toggleSelectedDeployReady"
                 />
                 <Button
-                  v-if="selectedModel.is_deploy_ready && selectedModel.workflow_version_id"
+                  v-if="selectedModel.is_deploy_ready && selectedModel.workflow_version_id && !selectedModelActionContext"
                   label="Open Deploy"
                   icon="pi pi-external-link"
                   class="p-button-sm p-button-text"
-                  @click="openSelectedModelDeploy"
+                  @click="openSelectedModelDeploy()"
                 />
               </div>
             </header>
@@ -338,17 +320,11 @@
                   <Button
                     v-if="selectedModel.source_run_id != null"
                     class="p-button-link p-button-sm"
-                    :label="`Run #${selectedModel.source_run_id}`"
+                    label="Open source run"
                     @click="inspectRun(selectedModel.source_run_id)"
                   />
                   <span v-else>Source run not recorded</span>
-                  <RetainedRunMapLink v-if="selectedModel.source_run_id != null"
-                    :run-id="selectedModel.source_run_id" :project-id="projectStore.currentProjectId" />
                 </dd>
-              </div>
-              <div>
-                <dt>Source node</dt>
-                <dd>{{ selectedModel.node_id ?? "—" }}</dd>
               </div>
               <div>
                 <dt>Used by</dt>
@@ -365,6 +341,19 @@
                 <dd><RelativeTime :value="selectedModel.updated_at" /></dd>
               </div>
             </dl>
+
+            <details class="run-identifiers">
+              <summary>Provenance</summary>
+              <dl class="detail-grid">
+                <div>
+                  <dt>Source run</dt><dd>{{ selectedModel.source_run_id ?? "—" }}</dd>
+                  <RetainedRunMapLink :run-id="selectedModel.source_run_id" :project-id="projectStore.currentProjectId" />
+                </div>
+                <div><dt>Source workflow</dt><dd>{{ selectedModel.workflow_id ?? "—" }}</dd></div>
+                <div><dt>Source node</dt><dd>{{ selectedModel.node_id ?? "—" }}</dd></div>
+              </dl>
+              <Button label="Copy metadata" class="p-button-text p-button-sm" @click="copySelectedModel" />
+            </details>
 
             <div v-if="selectedModelMetricRows.length" class="detail-metrics" role="group" aria-label="Performance">
               <span class="detail-subhead">Performance</span>
@@ -388,7 +377,7 @@
             <section v-if="artifactComponentSummary" aria-label="Saved model component evidence">
               <ModelSummaryCard :summary="artifactComponentSummary" :can-edit-selection="Boolean(selectedModel.workflow_id)" evidence-subset
                 @edit-selection="openSelectedModelWorkflow" />
-              <p class="detail-note">Exact component evidence retained by source run #{{ selectedModel.source_run_id }}.</p>
+              <p class="detail-note">Component evidence comes from the source run.</p>
             </section>
             <p v-else-if="artifactComponentMessage" class="detail-note" role="note">{{ artifactComponentMessage }}</p>
 
@@ -497,35 +486,11 @@
       </template>
     </Dialog>
 
-    <Dialog
-      v-model:visible="showDeleteDialog"
-      header="Delete Run"
-      :modal="true"
-      :style="{ width: '400px' }"
-    >
-      <p>
-        Delete <strong>{{ deleteTarget?.name }}</strong>? This cannot be undone.
-        Unreferenced output files can then be reclaimed after their 24-hour finalization grace period.
-      </p>
-      <template #footer>
-        <Button
-          label="Cancel"
-          class="p-button-text"
-          @click="showDeleteDialog = false"
-        />
-        <Button
-          label="Delete"
-          icon="pi pi-trash"
-          class="p-button-danger"
-          :loading="deleting"
-          @click="handleDelete"
-        />
-      </template>
-    </Dialog>
   </section>
 </template>
 
 <script setup lang="ts">
+import { navigationTab } from "@/router/legacyRoutes";
 import MethodHelp from "@/components/MethodHelp.vue";
 import RelativeTime from "@/components/RelativeTime.vue";
 import { formatMetricValue } from "@/utils/format";
@@ -545,8 +510,6 @@ import InputText from "primevue/inputtext";
 import Panel from "primevue/panel";
 import TabPanel from "primevue/tabpanel";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
-import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
-import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
 import Tag from "primevue/tag";
 import Textarea from "primevue/textarea";
 import { useToast } from "primevue/usetoast";
@@ -555,7 +518,10 @@ import LabelChips from "@/components/LabelChips.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import ContextualActions from "@/components/ContextualActions.vue";
 import type { HostActionContext } from "@/extension-contract/v1";
-import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import WorkspacePageHeader from "@/components/workspace/WorkspacePageHeader.vue";
+import RowActions from "@/components/RowActions.vue";
+import { navigationRegistry } from "@/navigation/workspace";
+import type { NavPrimaryAction } from "@/extension-contract/navigation-v1";
 import { focusSection } from "@/lib/sherpaAttention";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useProjectStore } from "@/stores/project";
@@ -583,6 +549,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useDemoMode } from "@/composables/useDemoMode";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useScopedRequest } from "@/composables/useScopedRequest";
+import { confirmAction } from "@/composables/useConfirmAction";
 
 interface ModelSummary {
   artifact_uid: string;
@@ -605,6 +572,7 @@ interface ModelSummary {
 }
 
 const router = useRouter();
+const route = useRoute();
 const toast = useToast();
 const authStore = useAuthStore();
 const projectStore = useProjectStore();
@@ -630,7 +598,6 @@ watch(
   { immediate: true },
 );
 const inspectPrimaryActionsTarget = ref<HTMLElement | null>(null);
-const inspectActionsTarget = ref<HTMLElement | null>(null);
 const inspectContent = ref<InstanceType<typeof RunDetailContent> | null>(null);
 const inspectedIdentity = computed(() => {
   const identity = inspectContent.value?.retainedIdentity;
@@ -654,14 +621,21 @@ async function copyRunIdentity() {
     if (inspectedIdentity.value === identity) toast.add({ severity: 'error', summary: 'Copy failed', life: 2500 });
   }
 }
+const inspectedHeader = computed(() => inspectedIdentity.value ? inspectContent.value?.retainedHeader : undefined);
 const headerActionItems = computed(() => [
   ...(activeTab.value === TAB_INSPECT ? inspectContent.value?.headerActions || [] : []),
-  {
-    label: activeTab.value === TAB_MODELS ? "Copy model metadata" : "Export",
-    icon: activeTab.value === TAB_MODELS ? "pi pi-copy" : "pi pi-download",
-    disabled: !canExportActiveTab.value,
-    command: exportActiveTab,
-  },
+  ...(activeTab.value === TAB_RUN_HISTORY && runsStore.selectedCount ? [{
+    label: "Download selected runs", icon: "pi pi-download",
+    loading: projectStore.currentProjectId != null && projectStore.exportingProjectIds.includes(projectStore.currentProjectId),
+    command: downloadProjectWithRuns,
+  }] : []),
+  ...(activeTab.value === TAB_COMPARE && runsStore.comparison ? [{
+    label: "Change runs", icon: "pi pi-pencil", command: changeComparedRuns,
+  }] : []),
+  ...(activeTab.value === TAB_RUN_HISTORY ? [{
+    label: "Export history", icon: "pi pi-download",
+    disabled: runsStore.runs.length === 0, command: exportRunHistory,
+  }] : []),
 ]);
 
 const models = ref<ModelSummary[]>([]);
@@ -760,27 +734,33 @@ function openSelectedModelWorkflow() {
     project_id: projectStore.currentProjectId, workflow_id: selectedModel.value.workflow_id,
   } });
 }
-async function openSelectedModelDeploy(): Promise<void> {
-  if (!selectedModel.value) return;
+async function openSelectedModelDeploy(signal?: AbortSignal): Promise<void> {
+  const model = selectedModel.value;
+  const projectId = projectStore.currentProjectId;
+  const actor = authStore.user?.id;
+  const revision = authStore.sessionRevision;
+  if (!model?.is_deploy_ready || !model.workflow_version_id || projectId == null || signal?.aborted) return;
   let applicationHandle: string | undefined;
   if (!isHostedPro.value) {
     try {
       const { data } = await api.get<Array<{ handle?: string; model_artifact_uid?: string }>>(
         "/deploy/applications",
-        { params: { project_id: projectStore.currentProjectId } },
+        { params: { project_id: projectId }, signal },
       );
-      applicationHandle = data.find((item) => item.model_artifact_uid === selectedModel.value?.artifact_uid)?.handle;
+      applicationHandle = data.find((item) => item.model_artifact_uid === model.artifact_uid)?.handle;
     } catch {
       // Older Workbenches do not expose the release registry; Deploy resolves
       // the legacy artifact query during the rolling-upgrade window.
     }
   }
+  if (signal?.aborted || selectedModel.value !== model || projectStore.currentProjectId !== projectId
+    || authStore.user?.id !== actor || authStore.sessionRevision !== revision) return;
   await router.push({
     path: "/deploy",
     query: {
-      artifact: selectedModel.value.artifact_uid,
+      artifact: model.artifact_uid,
       ...(applicationHandle ? { application: applicationHandle } : {}),
-      project: projectStore.currentProjectId,
+      project: projectId,
     },
   });
 }
@@ -796,9 +776,6 @@ const saveDialogRunId = ref<number | null>(null);
 const saveRunName = ref("");
 const saveRunNotes = ref("");
 const saving = ref(false);
-const showDeleteDialog = ref(false);
-const deleteTarget = ref<RunListItem | null>(null);
-const deleting = ref(false);
 let artifactSearchTimer: ReturnType<typeof window.setTimeout> | null = null;
 
 const TAB_RUN_HISTORY = 0;
@@ -829,6 +806,8 @@ const activeTabId = computed({
     delete query.node;
     delete query.view;
     delete query.presentation;
+    delete query.output;
+    if (id !== "models") delete query.artifact;
     if (id === "inspect" && !inspectedRunId.value) {
       void openLatestInspection(query);
       return;
@@ -869,7 +848,7 @@ const activeProjectName = computed(() => projectStore.currentProject?.name ?? "�
 function runSelectionAccessibility(options: { parent?: { props?: { value?: RunListItem } } }) {
   const run = options.parent?.props?.value;
   return { input: { "aria-label": run
-    ? `Select run ${run.id}: ${run.display_name || run.name}`
+    ? `Select ${run.display_name || run.name}`
     : "Select run" } };
 }
 
@@ -886,6 +865,9 @@ const canSaveRun = computed(
 
 const selectedArtifactUidList = computed(() => [...selectedArtifactUids.value]);
 const makingApplication = ref(false);
+const runDeletionScope = useScopedRequest(() => [
+  authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId, route.fullPath,
+]);
 const applicationActions = useScopedRequest(
   () => [authStore.user?.id, authStore.sessionRevision, projectStore.currentProjectId, appMode?.value,
     selectedModel.value?.artifact_uid, selectedArtifactUidList.value.join("|")],
@@ -895,7 +877,7 @@ const applicationActions = useScopedRequest(
 
 const runKindOptions = [
   { label: "All", value: "all" },
-  { label: "Training", value: "training" },
+  { label: "Development", value: "training" },
   { label: "Batch inference", value: "batch_inference" },
   { label: "Data", value: "data" },
   { label: "Other", value: "other" },
@@ -910,53 +892,62 @@ const filteredModels = computed(() => {
   return models.value;
 });
 
-const canExportActiveTab = computed(() => {
-  if (activeTab.value === TAB_RUN_HISTORY) return runsStore.runs.length > 0;
-  if (activeTab.value === TAB_MODELS) return selectedModel.value != null;
-  return false;
+const runsTitle = computed(() => {
+  if (activeTab.value === TAB_INSPECT) return inspectedHeader.value?.title || "Inspect run";
+  if (activeTab.value === TAB_COMPARE) return "Compare runs";
+  if (activeTab.value === TAB_MODELS) return "Models";
+  if (activeTab.value === TAB_BATCH) return "Batch runs";
+  return "Runs";
 });
 
-const activeSubtabLabel = computed(() => {
-  switch (activeTab.value) {
-    case TAB_RUN_HISTORY: return "History";
-    case TAB_INSPECT: return "Inspect";
-    case TAB_COMPARE: return "Compare";
-    case TAB_MODELS: return "Models";
-    case TAB_BATCH: return "Batch";
-    default: return "—";
+const runsIdentity = computed(() => {
+  if (activeTab.value === TAB_INSPECT) return inspectedHeader.value?.identity;
+  if (activeTab.value === TAB_RUN_HISTORY && !runsStore.runsLoading) {
+    const total = runsStore.total;
+    return `${total} saved run${total === 1 ? "" : "s"}`;
   }
+  if (activeTab.value === TAB_COMPARE && runsStore.comparison) {
+    return `${runsStore.comparison.runs.length} runs`;
+  }
+  return undefined;
 });
 
-const activeSubtabValue = computed(() => {
-  if (activeTab.value === TAB_INSPECT) return inspectedRunId.value ? `Run #${inspectedRunId.value}` : "Choose a saved run";
-  if (activeTab.value === TAB_RUN_HISTORY) {
-    return `${filteredRuns.value.length} saved run${filteredRuns.value.length === 1 ? "" : "s"}`;
-  }
-  if (activeTab.value === TAB_COMPARE) return runsStore.comparison ? `${runsStore.comparison.runs.length} runs` : "No comparison";
-  if (activeTab.value === TAB_BATCH) return "Apply fitted models";
-  return selectedModel.value?.display_name || selectedModel.value?.name || "Pick a model";
-});
+const compareActions: NavPrimaryAction[] = ["run_history", "compare"].map(section => ({
+  id: `runs.${section}.compare`,
+  scope: { pageId: "runs", sectionId: `runs.${section}` },
+  label: "Compare runs",
+  accelerator: "CmdOrCtrl+Enter",
+  available: ({ projectId }) => projectId != null && (
+    section === "run_history" || (!runsStore.comparison && !route.query.evidence)
+  ),
+  disabled: () => runsStore.selectedCount < 2 || runsStore.selectedCount > 10 || runsStore.comparisonLoading,
+  execute: (_, signal) => handleCompareRuns(signal),
+}));
+const modelApplyAction: NavPrimaryAction = {
+  id: "runs.models.apply", scope: { pageId: "runs", sectionId: "runs.models" },
+  label: "Apply model",
+  accelerator: "CmdOrCtrl+Enter",
+  available: ({ projectId, artifactUid }) => projectId != null && artifactUid != null
+    && artifactUid === selectedModel.value?.artifact_uid
+    && Boolean(selectedModel.value.is_deploy_ready && selectedModel.value.workflow_version_id),
+  execute: (_, signal) => openSelectedModelDeploy(signal),
+};
+function runsSectionsReady(): boolean {
+  const page = navigationRegistry.tree().find(({ id }) => id === "host:runs");
+  return [...compareActions, modelApplyAction].every(({ scope }) =>
+    page?.sections.some(({ entry }) => entry.id === scope.sectionId));
+}
+watch(runsSectionsReady, (ready, _, onCleanup) => {
+  if (ready) onCleanup(navigationRegistry.register("host", {
+    primaryActions: [...compareActions, modelApplyAction],
+  }));
+}, { immediate: true, flush: "post" });
 
-const activeSubtabDetail = computed(() => {
-  switch (activeTab.value) {
-    case TAB_RUN_HISTORY:
-      return runsStore.runs.length
-        ? ""
-        : "Run a workflow to build history";
-    case TAB_COMPARE:
-      return "";
-    case TAB_INSPECT:
-      return "";
-    case TAB_MODELS:
-      return selectedModel.value
-        ? modelSubtitle(selectedModel.value)
-        : "";
-    case TAB_BATCH:
-      return "";
-    default:
-      return "";
-  }
-});
+function changeComparedRuns(): void {
+  runsStore.comparison = null;
+  clearRouteQueryParam("evidence");
+  loadCompareCandidates();
+}
 
 // Surface every numeric metric we got from the backend in the detail panel —
 // the subtitle only shows the headline one, but the detail view is where the
@@ -984,7 +975,6 @@ const selectedModelMetricRows = computed(() => {
 });
 
 // Inspecting a provenance link never changes checkbox selection.
-const route = useRoute();
 const latestInspectionLoading = ref(false);
 const latestInspectionError = ref<string | null>(null);
 const latestInspectionScope = useScopedRequest(
@@ -1041,7 +1031,7 @@ function applyRunDeepLink(): void {
     activeTab.value = TAB_INSPECT;
     return;
   }
-  const linkedTab = MODEL_SUBSCOPES.indexOf(route.query.tab as typeof MODEL_SUBSCOPES[number]);
+  const linkedTab = MODEL_SUBSCOPES.indexOf(navigationTab(route.query) as typeof MODEL_SUBSCOPES[number]);
   if (linkedTab >= 0) activeTab.value = linkedTab;
   // Back from a run lands on a run-free address, which cannot show Inspect
   // content. Return to the workspace tab instead of an empty Inspect page.
@@ -1075,10 +1065,10 @@ onMounted(async () => {
   }
   projectContextReady = true;
   restoreActiveRunsTab();
-  if (route.query.tab === "models" || route.query.tab === "artifacts") activeTab.value = TAB_MODELS;
-  if (route.query.tab === "compare") activeTab.value = TAB_COMPARE;
-  if (route.query.tab === "batch") activeTab.value = TAB_BATCH;
-  if (route.query.tab === "run_history") activeTab.value = TAB_RUN_HISTORY;
+  if (navigationTab(route.query) === "models" || navigationTab(route.query) === "artifacts") activeTab.value = TAB_MODELS;
+  if (navigationTab(route.query) === "compare") activeTab.value = TAB_COMPARE;
+  if (navigationTab(route.query) === "batch") activeTab.value = TAB_BATCH;
+  if (navigationTab(route.query) === "run_history") activeTab.value = TAB_RUN_HISTORY;
   const kind = String(route.query.kind || "all");
   if (runKindOptions.some(option => option.value === kind)) runKindFilter.value = kind;
   const offset = Number(route.query.offset);
@@ -1097,7 +1087,7 @@ onMounted(async () => {
 });
 
 watch(
-  () => [route.query.artifact, route.query.run, route.query.tab, route.params?.runId] as const,
+  () => [route.query.artifact, route.query.run, navigationTab(route.query), route.params?.runId] as const,
   () => {
     applyArtifactDeepLink();
     applyRunDeepLink();
@@ -1430,19 +1420,21 @@ async function downloadProjectWithRuns(): Promise<void> {
   }
 }
 
-async function handleCompareRuns(): Promise<void> {
+async function handleCompareRuns(signal?: AbortSignal): Promise<void> {
   const projectId = projectStore.currentProjectId;
-  if (projectId == null || runsStore.selectedCount < 2) return;
+  if (projectId == null || runsStore.selectedCount < 2 || runsStore.selectedCount > 10 || signal?.aborted) return;
   try {
     await runsStore.compareProjectRuns(projectId, [...runsStore.selectedRunIds]);
-    if (projectStore.currentProjectId === projectId && runsStore.comparison) {
+    if (!signal?.aborted && projectStore.currentProjectId === projectId && runsStore.comparison) {
       const query = { ...route.query };
-      query.tab = 'compare';
+      query.section = 'compare';
+      delete query.tab;
       delete query.evidence;
-      await router.replace({ query });
+      await router.push({ path: "/runs", query });
       activeTab.value = TAB_COMPARE;
     }
   } catch (err: any) {
+    if (signal?.aborted) return;
     toast.add({
       severity: "error",
       summary: "Compare failed",
@@ -1466,47 +1458,37 @@ async function handleUpdateLabels(runId: number, labels: string[]): Promise<void
   }
 }
 
-function confirmDelete(run: RunListItem): void {
-  deleteTarget.value = run;
-  showDeleteDialog.value = true;
-}
-
-async function handleDelete(): Promise<void> {
+async function confirmDelete(run: RunListItem): Promise<void> {
   const projectId = projectStore.currentProjectId;
-  if (projectId == null || !deleteTarget.value) return;
-  deleting.value = true;
+  if (projectId == null || (run.project_id != null && run.project_id !== projectId)) return;
+  const owner = runDeletionScope.capture();
+  const accepted = await confirmAction({
+    title: "Delete run",
+    message: `Delete “${run.display_name || run.name}”? Unreferenced outputs can be reclaimed after 24 hours.`,
+    acceptLabel: "Delete",
+    destructive: true,
+  }, { signal: owner.signal });
+  if (!accepted || !owner.isCurrent()) return;
   try {
-    await runsStore.deleteProjectRun(projectId, deleteTarget.value.id);
-    showDeleteDialog.value = false;
-    toast.add({
-      severity: "info",
-      summary: "Run deleted",
-      life: 2000,
-    });
-  } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: "Delete failed",
-      detail: err?.message || "Could not delete run.",
-      life: 5000,
-    });
-  } finally {
-    deleting.value = false;
+    await runsStore.deleteProjectRun(projectId, run.id);
+    if (owner.isCurrent()) toast.add({ severity: "info", summary: "Run deleted", life: 2000 });
+  } catch (error) {
+    if (owner.isCurrent()) toast.add({ severity: "error", summary: "Delete failed", detail: getErrorMessage(error), life: 5000 });
   }
 }
 
-async function exportActiveTab(): Promise<void> {
-  const projectSlug = safeFilename(activeProjectName.value || "project");
-  if (activeTab.value === TAB_MODELS) {
-    if (!selectedModel.value) return;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(selectedModel.value, null, 2));
-      toast.add({ severity: "success", summary: "Model metadata copied", life: 2500 });
-    } catch {
-      toast.add({ severity: "warn", summary: "Copy unavailable", detail: "Your browser did not allow clipboard access.", life: 3500 });
-    }
-    return;
+async function copySelectedModel(): Promise<void> {
+  if (!selectedModel.value) return;
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(selectedModel.value, null, 2));
+    toast.add({ severity: "success", summary: "Model metadata copied", life: 2500 });
+  } catch {
+    toast.add({ severity: "warn", summary: "Copy unavailable", detail: "Your browser did not allow clipboard access.", life: 3500 });
   }
+}
+
+function exportRunHistory(): void {
+  const projectSlug = safeFilename(activeProjectName.value || "project");
   downloadJson(runsStore.runs, `${projectSlug}-run-history.json`);
 }
 
@@ -1656,15 +1638,30 @@ async function promotionConfirmed(): Promise<void> {
   modelOverviewRevision.value++;
 }
 
+function loadCompareCandidates(more = false): void {
+  const projectId = projectStore.currentProjectId;
+  if (projectId != null) void runsStore.fetchCompareCandidates(projectId, more);
+}
+// The picker loads its own run list the first time Compare opens without a comparison.
+watch(
+  () => [activeTab.value === TAB_COMPARE && !runsStore.comparison && typeof route.query.evidence !== "string",
+    projectStore.currentProjectId] as const,
+  ([picking]) => {
+    if (picking && runsStore.compareCandidatesTotal === null && !runsStore.compareCandidatesLoading) loadCompareCandidates();
+  },
+  { immediate: true },
+);
+
 function modelSubtitle(model: ModelSummary): string {
   const parts: string[] = [model.model_type, `${model.n_features} feat`];
   if (model.n_components != null) {
-    parts.push(`${model.n_components} LV`);
+    const pca = model.model_type === "pca";
+    const pls = ["pls", "plsda"].includes(model.model_type);
+    const unit = pca ? (model.n_components === 1 ? "PC" : "PCs") : pls ? "LV" : "components";
+    parts.push(`${model.n_components} ${unit}`);
   }
   const metric = modelMetricSummary(model.metrics ?? null);
   if (metric) parts.push(metric);
-  if (model.node_id) parts.push(`node ${model.node_id}`);
-  if (model.workflow_id != null) parts.push(`wf #${model.workflow_id}`);
   return parts.join(" · ");
 }
 
@@ -1673,24 +1670,24 @@ function modelSubtitle(model: ModelSummary): string {
 // scores. Anything not in this list is hidden from the subtitle (it remains
 // available in the detail panel).
 const METRIC_PRIORITY: Array<{ key: string; label: string }> = [
-  { key: "cv_balanced_accuracy", label: "cv_bal_acc" },
-  { key: "cv_accuracy", label: "cv_acc" },
-  { key: "cv_f1_macro", label: "cv_f1" },
-  { key: "cv_sensitivity_macro", label: "cv_sens" },
-  { key: "cv_specificity_macro", label: "cv_spec" },
-  { key: "f1_macro", label: "f1" },
-  { key: "balanced_accuracy", label: "bal_acc" },
-  { key: "accuracy_test", label: "acc_test" },
-  { key: "accuracy", label: "acc" },
-  { key: "train_balanced_accuracy", label: "train_bal_acc" },
-  { key: "f1", label: "f1" },
-  { key: "r2_cv", label: "r2_cv" },
-  { key: "r2_test", label: "r2_test" },
-  { key: "r2", label: "r2" },
-  { key: "rmsecv", label: "rmsecv" },
-  { key: "rmse_test", label: "rmse_test" },
-  { key: "rmse", label: "rmse" },
-  { key: "mae", label: "mae" },
+  { key: "cv_balanced_accuracy", label: "Balanced accuracy (CV)" },
+  { key: "cv_accuracy", label: "Accuracy (CV)" },
+  { key: "cv_f1_macro", label: "Macro F1 (CV)" },
+  { key: "cv_sensitivity_macro", label: "Sensitivity (CV)" },
+  { key: "cv_specificity_macro", label: "Specificity (CV)" },
+  { key: "f1_macro", label: "Macro F1" },
+  { key: "balanced_accuracy", label: "Balanced accuracy" },
+  { key: "accuracy_test", label: "Accuracy (test)" },
+  { key: "accuracy", label: "Accuracy" },
+  { key: "train_balanced_accuracy", label: "Balanced accuracy (training)" },
+  { key: "f1", label: "Macro F1" },
+  { key: "r2_cv", label: "Q²" },
+  { key: "r2_test", label: "R² (test)" },
+  { key: "r2", label: "R²" },
+  { key: "rmsecv", label: "RMSECV" },
+  { key: "rmse_test", label: "RMSEP" },
+  { key: "rmse", label: "RMSE" },
+  { key: "mae", label: "MAE" },
 ];
 
 function modelMetricSummary(
@@ -2150,7 +2147,7 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
 function formatRunKind(kind: string | null | undefined): string {
   switch (kind) {
     case "training":
-      return "Training";
+      return "Development";
     case "batch_inference":
       return "Batch";
     case "data":
@@ -2742,9 +2739,14 @@ function safeFilename(value: string): string {
 .object-row__main small {
   color: var(--text-color-secondary);
   font-size: 0.8125rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.object-row__main :deep(.p-button) {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .object-row__time {
@@ -2945,26 +2947,6 @@ function safeFilename(value: string): string {
   }
 }
 
-.runs-section-picker {
-  display: none;
-}
-
-@media (max-width: 768px) {
-  .runs-section-picker {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .runs-section-picker select {
-    color: var(--text-color);
-    background: var(--surface-card);
-    border: 1px solid var(--ss-border-strong);
-    border-radius: 6px;
-    font: inherit;
-    padding: 0.375rem 0.5rem;
-  }
-}
+.run-identifiers { margin-block: 1rem; }
+.run-identifiers dd { overflow-wrap: anywhere; }
 </style>

@@ -47,4 +47,13 @@ describe("toast to notification centre", () => {
     expect(kept.title).toBe("Error");
     expect(kept.detail).toContain('"status": 500');
   });
+
+  it("closes confirmations by themselves and keeps warnings, failures and refusals until dismissed", () => {
+    toast.add!({ severity: "success", summary: "Saved" });
+    toast.add!({ severity: "info", summary: "Copied", life: 1500 });
+    toast.add!({ severity: "warn", summary: "Clipboard unavailable", life: 3000 });
+    toast.add!({ severity: "error", detail: "Another design cannot score these held-out samples again.", life: 5000 });
+
+    expect(shown.mock.calls.map(([message]) => message.life)).toEqual([4000, 1500, undefined, undefined]);
+  });
 });

@@ -37,7 +37,7 @@ const slot = { template: "<div><slot /></div>" };
 const stubs = {
   SavedModelsForDeployment: true,
   Button: { props: ["label"], template: "<button @click=\"$emit('click')\">{{label}}</button>" },
-  ResponsiveHeaderActions: slot,
+  ResponsiveHeaderActions: { template: '<div><slot name="primary" /><slot /><slot name="after" /></div>' },
   ContextualActions: true,
   QualificationPanel: true,
   MemoryAttribution: true,
@@ -198,7 +198,7 @@ describe("Report workspace generated evidence", () => {
     expect(report.fetchReportData).not.toHaveBeenCalled();
     w.unmount();
   });
-  it("keeps Report to two tabs even when audit is entitled, without changing retained preview", async () => {
+  it("keeps Draft and Exports independent of audit without changing the retained preview", async () => {
     mocks.audit = { localQuery: true, fullPipeline: true, reportPack: true, exportAudited: true };
     report.isReady = true;
     report.isStale = true;
@@ -208,7 +208,7 @@ describe("Report workspace generated evidence", () => {
     report.reportData = { workflow_id: 7, name: "Retained A", nodes: [], edges: [], runs: [] };
     const w = await open(ReportContent, "/report?tab=preview");
     expect(w.findAll("[header]").map(tab => tab.attributes("header")))
-      .toEqual(["Setup", "Preview"]);
+      .toEqual(["Setup", "Preview", "Exports"]);
     expect(w.text()).toContain("Setup has changed");
     const before = w.get("iframe").attributes("srcdoc");
     expect(before).toContain("Short summary");
@@ -231,7 +231,7 @@ describe("Report workspace generated evidence", () => {
       const w = await open(ReportContent, "/report?tab=validation");
       expect(w.text()).not.toContain("Validation Walkthrough");
       expect((w.vm as any).activeTab).toBe("setup");
-      expect(w.findAll("[header]").map(tab => tab.attributes("header"))).toEqual(["Setup", "Preview"]);
+      expect(w.findAll("[header]").map(tab => tab.attributes("header"))).toEqual(["Setup", "Preview", "Exports"]);
       (w.vm as any).activeTab = "validation";
       await flushPromises();
       expect((w.vm as any).activeTab).toBe("setup");
@@ -242,7 +242,6 @@ describe("Report workspace generated evidence", () => {
     mocks.audit = { localQuery: enabled };
     const w = await open(ReportContent);
     const menu = (w.vm as any).reportHeaderActionItems;
-    expect(w.findAll('button').some(button => button.text() === 'Audit')).toBe(enabled);
       expect(w.text()).not.toContain("Validation Walkthrough");
     expect(menu.some((item: any) => item.label === 'Audit')).toBe(enabled);
     await (w.vm as any).openWorkflowAudit();
@@ -254,7 +253,7 @@ describe("Report workspace generated evidence", () => {
     mocks.profile = "demo";
     mocks.audit = { localQuery: true, fullPipeline: true, reportPack: true, exportAudited: true };
     const w = await open(ReportContent);
-    expect(w.findAll("[header]").map(tab => tab.attributes("header"))).toEqual(["Setup", "Preview"]);
+    expect(w.findAll("[header]").map(tab => tab.attributes("header"))).toEqual(["Setup", "Preview", "Exports"]);
     expect(w.findAll("button").some(button => button.text() === "Audit")).toBe(false);
     expect((w.vm as any).reportHeaderActionItems.some((item: any) => item.label === "Audit")).toBe(false);
     await (w.vm as any).openWorkflowAudit();
@@ -479,11 +478,11 @@ it('keeps Application first and changing the selection never rebinds an existing
   deploy.fetchApplications=vi.fn().mockResolvedValue(null);
   deploy.updateWatch=vi.fn(); deploy.toggleWatch=vi.fn();
   const w=await open(DeployContent,'/deploy');
-  expect(w.findAll('[header]').map((panel:any)=>panel.attributes('header')).slice(0,3)).toEqual(['Application','Folder Watches','Prediction History']);
+  expect(w.findAll('[header]').map((panel:any)=>panel.attributes('header')).slice(0,3)).toEqual(['Applications','Watches','Prediction History']);
   expect((w.vm as any).activeTab).toBe('application');
   expect(w.find('[title="Refresh"]').exists()).toBe(false);
   await w.findAll('.application-card')[0].trigger('click'); await flushPromises();
-  expect(w.find('.workspace-context').text()).toContain('Application A');
+  expect(w.get('.selected-application').text()).toContain('Application A');
   expect(w.find('.campaign-validation-star').exists()).toBe(true);
   await w.findAll('.application-card')[1].trigger('click'); await flushPromises();
   expect((w.vm as any).newWatch.artifact_uid).toBe('model-b');
@@ -527,16 +526,16 @@ describe('Deploy subtab pages', () => {
     const wrapper = await open(DeployContent, '/deploy?tab=application', true);
     const vm = wrapper.vm as any;
     expect(wrapper.find('saved-models-for-deployment-stub').exists()).toBe(true);
-    expect(wrapper.text()).not.toContain('New Watch');
+    expect(wrapper.text()).not.toContain('New watch');
     vm.activeTab = 'watches'; await flushPromises();
     expect(vm.$route.query.tab).toBe('watches');
     expect((wrapper.get('saved-models-for-deployment-stub').element.closest('[role="tabpanel"]') as HTMLElement).style.display).toBe('none');
-    expect(wrapper.text()).toContain('New Watch');
-    expect(wrapper.get('[aria-label="Deployment context"]').text()).toContain('Process new files');
+    expect(wrapper.text()).toContain('New watch');
+    expect(wrapper.get(".workspace-page-header h1").text()).toBe("Watches");
     await vm.$router.push('/deploy?tab=history'); await flushPromises();
-    expect(wrapper.text()).not.toContain('New Watch');
+    expect(wrapper.text()).not.toContain('New watch');
     expect((wrapper.get('saved-models-for-deployment-stub').element.closest('[role="tabpanel"]') as HTMLElement).style.display).toBe('none');
-    expect(wrapper.get('[aria-label="Deployment context"]').text()).toContain('Review predictions');
+    expect(wrapper.get(".workspace-page-header h1").text()).toBe("Prediction History");
     await vm.$router.push('/deploy?tab=application'); await flushPromises();
     expect(wrapper.find('saved-models-for-deployment-stub').exists()).toBe(true);
     wrapper.unmount();

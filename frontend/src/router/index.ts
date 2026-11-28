@@ -3,6 +3,8 @@ import { createRouter, createWebHistory, type RouteLocation } from "vue-router";
 
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useAuthStore } from "@/stores/auth";
+import { navigationPage } from "@/navigation/workspace";
+import { legacyNavigationRedirect } from "./legacyRoutes";
 import { legacyStorageRedirect } from "./storageRedirect";
 
 // OSS owns the core routes. Managed-auth routes (/login, /register,
@@ -40,12 +42,12 @@ const routes = [
     // ``LocalAdvisorMemoryAdapter.getMemoryMap`` returns null.
     path: "/project/memory-map",
     component: () => import("@/views/project/MemoryMapView.vue"),
-    meta: { standalone: true },
+    meta: { nav: "project" },
   },
   {
     path: "/project/provenance",
     component: () => import("@/views/project/ProjectProvenanceView.vue"),
-    meta: { standalone: true },
+    meta: { nav: "project" },
   },
   {
     path: "/data",
@@ -115,6 +117,11 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+});
+
+router.beforeEach((to) => {
+  const page = navigationPage(to.path);
+  return legacyNavigationRedirect(to, !!page && page.contributor !== "host");
 });
 
 router.beforeEach(async (to, from, next) => {
